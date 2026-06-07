@@ -1,3 +1,10 @@
+/**
+ * Compact status badge primitive.
+ *
+ * Uses brand-book semantic colors (success / error) at low opacity for the
+ * background plus full opacity for icon and text. Border-radius and tracking
+ * follow the design skill §5.5.
+ */
 import { CheckIcon, Cross2Icon } from "@radix-ui/react-icons";
 
 type StatusBadgeProps = {
@@ -14,10 +21,10 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const Icon = isReady ? CheckIcon : Cross2Icon;
 
   const baseClasses =
-    "inline-flex h-7 items-center gap-1.5 rounded border px-2 text-xs font-medium uppercase tracking-[0.05em]";
+    "inline-flex h-7 items-center gap-1.5 rounded-badge border px-2 text-xs font-medium uppercase tracking-[0.05em]";
   const variantClasses = isReady
-    ? "border-status-success-border bg-status-success-bg text-status-success-text"
-    : "border-status-error-border bg-status-error-bg text-status-error-text";
+    ? "border-success/30 bg-success/10 text-success"
+    : "border-error/30 bg-error/10 text-error";
 
   return (
     <span className={`${baseClasses} ${variantClasses}`}>

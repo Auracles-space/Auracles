@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/app/**/*.{ts,tsx}",
     "./src/components/**/*.{ts,tsx}",
@@ -9,32 +10,33 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        canvas: "#0A0A0A",
-        sidebar: "#111111",
-        surface: "#161616",
-        card: "#1A1A1A",
-        border: "#2A2A2A",
-        "border-hover": "#3A3A3A",
-        hover: "#262626",
-        active: "#303030",
-        selected: "#525252",
-        primary: "#F5F5F5",
-        secondary: "#A3A3A3",
-        muted: "#737373",
-        status: {
-          "success-bg": "#1A2A1A",
-          "success-border": "#2A3A2A",
-          "success-text": "#86EFAC",
-          "warning-bg": "#2A2010",
-          "warning-border": "#3A3020",
-          "warning-text": "#FCD34D",
-          "error-bg": "#2A1010",
-          "error-border": "#3A2020",
-          "error-text": "#FCA5A5",
-          "info-bg": "#101A2A",
-          "info-border": "#202A3A",
-          "info-text": "#93C5FD",
+        // Surfaces — driven by CSS variables so they swap with mode
+        background: "var(--background)",
+        "surface-1": "var(--surface-1)",
+        "surface-2": "var(--surface-2)",
+        "surface-3": "var(--surface-3)",
+
+        // Text
+        foreground: "var(--foreground)",
+        "foreground-muted": "var(--foreground-muted)",
+        "foreground-subtle": "var(--foreground-subtle)",
+
+        // Borders
+        "border-default": "var(--border-default)",
+        "border-strong": "var(--border-strong)",
+
+        // Brand
+        brand: {
+          DEFAULT: "#0025CC",
+          hover: "#0020B0",
+          active: "#001A95",
         },
+
+        // Semantic
+        success: "#16A34A",
+        warning: "#F59E0B",
+        error: "#DC2626",
+        info: "#2563EB",
       },
       fontFamily: {
         heading: ["Inter Rounded", "Inter", "sans-serif"],
@@ -43,6 +45,7 @@ const config: Config = {
       borderRadius: {
         card: "8px",
         control: "6px",
+        badge: "4px",
       },
     },
   },

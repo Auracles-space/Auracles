@@ -2,8 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Auracles color tokens.
+ *
+ * Mirrors docs/auracles-brand-book.pdf §12 (Color System). Light mode is the
+ * default; .dark on <html> swaps to dark mode tokens. All component classes
+ * reference these CSS variables via Tailwind utilities (bg-surface-1, etc.)
+ * so the same component renders correctly in both modes.
+ */
+
 :root {
+  color-scheme: light;
+
+  --background: #fffffb;
+  --surface-1: #f8f6f2;
+  --surface-2: #f1ede6;
+  --surface-3: #eae5dc;
+
+  --foreground: #111111;
+  --foreground-muted: #555555;
+  --foreground-subtle: #8a8a8a;
+
+  --border-default: #eae5dc;
+  --border-strong: #d4cfc4;
+}
+
+.dark {
   color-scheme: dark;
+
+  --background: #000000;
+  --surface-1: #0a0a0a;
+  --surface-2: #111111;
+  --surface-3: #1a1a1a;
+
+  --foreground: #f5f5f5;
+  --foreground-muted: #a3a3a3;
+  --foreground-subtle: #737373;
+
+  --border-default: #1a1a1a;
+  --border-strong: #2a2a2a;
 }
 
 * {
@@ -17,8 +54,8 @@ body {
 
 body {
   margin: 0;
-  background: #0a0a0a;
-  color: #f5f5f5;
+  background: var(--background);
+  color: var(--foreground);
   font-family: Poppins, sans-serif;
 }
 

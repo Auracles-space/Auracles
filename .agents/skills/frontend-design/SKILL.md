@@ -1,84 +1,102 @@
 ---
 name: frontend-design
-description: Auracles design system. Dark grayscale, institutional, no bright colors, no gradients. Inter Rounded headers, Poppins body, borders not shadows.
+description: Auracles design system from Brand Book v1.0. Dual-mode (light + dark), Brand Blue primary, Inter Rounded + Poppins typography, borders not shadows.
 ---
 
 # Protocol: Auracles UI Design System
 
-## 1. Protocol Overview
+## 1. Source of Truth
 
-Auracles is a professional knowledge marketplace. The interface must feel:
-**Professional. Institutional. Architectural. Trustworthy. Premium. Technical.**
+This skill mirrors `docs/auracles-brand-book.pdf` (Brand Book v1.0). If the brand book and this skill disagree, the brand book wins — propose an update to the skill, do not silently deviate.
 
-Reference feel: GitHub + Linear + Notion Template Gallery — but for professional intellectual property on a dark canvas.
+The interface must consistently feel:
+**Expert. Institutional. Precise. Warm. Trusted.**
 
-This protocol enforces the Auracles Visual Design System exactly as defined in `docs/auracles-full-spec.md`. Do not deviate from the palette, typography, or component rules below.
+Communicated through: Trust, Professionalism, Structure, Clarity, Intelligence, Permanence.
 
 ## 2. Absolute Negative Constraints (Banned Elements)
 
-- DO NOT use bright colors — no blue, green, red, or any saturated color on large surfaces.
-- DO NOT use gradients anywhere.
-- DO NOT use glassmorphism or frosted-glass effects.
-- DO NOT use heavy shadows (`shadow-md`, `shadow-lg`, `shadow-xl`). Use borders for separation, not shadows.
-- DO NOT use visual clutter — every element earns its place.
+- DO NOT use gradients or 3D glassmorphism.
+- DO NOT use heavy shadows (`shadow-md`, `shadow-lg`, `shadow-xl`). Use borders for separation; subtle shadows only.
+- DO NOT use saturated, non-brand colors as decorative accents (only Brand Blue and the four semantic colors are allowed).
 - DO NOT use `rounded-full` (pill shapes) for cards, containers, or primary buttons. Cards use `8px` radius.
-- DO NOT use Roboto or generic system UI fonts. Use Inter Rounded and Poppins as specified.
+- DO NOT mix in additional typefaces. Inter Rounded and Poppins only.
 - DO NOT use emojis in code, markup, headings, or alt text. Use Phosphor Icons or Radix UI Icons.
-- DO NOT use generic placeholder content ("Lorem Ipsum", "John Doe", "Acme Corp"). Use realistic Auracles context (framework names, contributor names, industry terms).
-- DO NOT use AI copywriting clichés: "Elevate", "Seamless", "Unleash", "Next-Gen", "Delve". Write plain, specific language.
+- DO NOT use marketing jargon, buzzwords, hyperbolic claims, or corporate clichés.
+  - Bad: "Leverage next-generation governance solutions to accelerate transformational outcomes."
+  - Good: "Purchase a governance framework and begin implementation immediately."
+- DO NOT use generic placeholder content ("Lorem Ipsum", "John Doe", "Acme Corp"). Use realistic Auracles context.
 
 ## 3. Typographic Architecture
 
-Auracles uses two typefaces only. No mixing in additional fonts.
+Two typefaces only.
 
-- **Headers (page titles, section headers, dashboard metrics, marketplace titles):**
+- **Headers** (page titles, section headers, dashboard metrics, marketplace titles):
   `font-family: 'Inter Rounded', 'Inter', sans-serif`
   Weights: 600, 700, 800
-  Large, confident headings. Tight tracking (`letter-spacing: -0.02em`) on display sizes.
+  Large, confident, intentional. Tight tracking on display sizes (`letter-spacing: -0.02em`).
 
-- **Body (paragraphs, descriptions, forms, metadata, UI labels):**
+- **Body** (paragraphs, descriptions, forms, marketplace content, metadata):
   `font-family: 'Poppins', sans-serif`
   Weights: 400, 500, 600
-  High readability on dark surfaces. `line-height: 1.6`. Consistent spacing rhythm.
+  `line-height: 1.6`. High readability on both light and dark surfaces.
 
-- **Text colors on dark backgrounds:**
-  - Primary text: `#F5F5F5`
-  - Secondary text: `#A3A3A3`
-  - Muted/disabled text: `#737373`
+Minimal font-weight variation. Hierarchy through size and color.
 
-Minimal font-weight variation. Hierarchy through size and color, not weight changes.
+## 4. Color System
 
-## 4. Color Palette (Dark Grayscale)
+Auracles supports **both light and dark mode**. Every component must render correctly in both. Default to the user's system preference.
 
-Auracles theme is dark. All surfaces are dark grayscale. Color is used only for semantic states.
+### 4.1 Light Mode (default)
 
 | Token | Hex | Use |
 |-------|-----|-----|
-| Primary Background | `#0A0A0A` | Page/app background |
-| Secondary Background | `#111111` | Navigation, sidebars |
-| Surface Background | `#161616` | Elevated surfaces, modals |
-| Card Background | `#1A1A1A` | Cards, panels, inputs |
-| Primary Text | `#F5F5F5` | Body text, headings |
-| Secondary Text | `#A3A3A3` | Descriptions, labels |
-| Muted Text | `#737373` | Placeholders, disabled |
-| Default Border | `#2A2A2A` | Card borders, dividers |
-| Hover Background | `#262626` | Row/card hover state |
-| Active State | `#303030` | Active/selected background |
-| Hover Border | `#3A3A3A` | Card border on hover |
-| Selected Border | `#525252` | Focused/selected element border |
-| Success / Neutral Accent | `#D4D4D4` | Success badges, subtle highlights |
+| Background | `#FFFFFB` | Page/app background (warm off-white) |
+| Surface Level 1 | `#F8F6F2` | First elevation: navigation, sidebars |
+| Surface Level 2 | `#F1EDE6` | Second elevation: cards, modals |
+| Surface Level 3 | `#EAE5DC` | Third elevation: nested panels, raised inputs |
 
-**No bright colors. No gradients. Elevation through layered grayscale surfaces.**
+### 4.2 Dark Mode
 
-For status badges and tags, use dark-tinted variants:
-- Success: background `#1A2A1A`, text `#86EFAC`
-- Warning: background `#2A2010`, text `#FCD34D`
-- Error: background `#2A1010`, text `#FCA5A5`
-- Info: background `#101A2A`, text `#93C5FD`
+| Token | Hex | Use |
+|-------|-----|-----|
+| Background | `#000000` | Page/app background |
+| Surface Level 1 | `#0A0A0A` | First elevation: navigation, sidebars |
+| Surface Level 2 | `#111111` | Second elevation: cards, modals |
+| Surface Level 3 | `#1A1A1A` | Third elevation: nested panels, raised inputs |
+
+### 4.3 Primary Accent — Brand Blue
+
+| Token | Hex |
+|-------|-----|
+| Brand Blue | `#0025CC` |
+
+**Use Brand Blue for:**
+- Primary buttons
+- Call-to-action elements
+- Active navigation states
+- Links
+- Ratings
+- Marketplace actions
+- Selected states
+- Progress indicators
+
+Brand Blue is the only saturated color allowed for decoration or emphasis.
+
+### 4.4 Semantic Colors
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| Success | `#16A34A` | Confirmation badges, valid states |
+| Warning | `#F59E0B` | Caution states, pending actions |
+| Error | `#DC2626` | Destructive actions, failure states |
+| Information | `#2563EB` | Neutral notices, informational badges |
+
+Use these only for status semantics. Never as decorative accents.
 
 ## 5. Component Specifications
 
-### Layout
+### 5.1 Layout
 - **Mobile-first always.** Base classes target mobile, `sm:`/`md:`/`lg:` enhance up.
 - 12-column grid on `md:` and up. Single column on mobile.
 - Max-width `1440px` outer container, content width `1280px`.
@@ -87,65 +105,78 @@ For status badges and tags, use dark-tinted variants:
 - Touch targets minimum `44px × 44px` on all interactive elements.
 - Test every layout at 375px width (iPhone SE) before committing.
 
-### Cards (Framework Cards, List Items)
-- Background: `#1A1A1A`
-- Border: `1px solid #2A2A2A`
-- Border-radius: `8px` (architectural, not playful)
-- Hover: border shifts to `#3A3A3A`, background to `#1E1E1E`
-- No box-shadow. Hover elevation via background + border shift only.
-- Strong typography hierarchy inside card. Minimal metadata clutter.
+### 5.2 Cards
+- Background: Surface Level 2 (`#F1EDE6` light / `#111111` dark)
+- Border: `1px solid` Surface Level 3 (`#EAE5DC` light / `#1A1A1A` dark)
+- Border-radius: `8px`
+- Hover: border darkens one step; background bumps to Surface Level 3
+- No box-shadow. Elevation via background + border shift only.
 
-### Buttons
-- **Primary:** background `#F5F5F5`, text `#0A0A0A`, border-radius `6px`. Hover: `#E5E5E5`. No shadow.
-- **Secondary:** transparent background, border `1px solid #3A3A3A`, text `#F5F5F5`. Hover: background `#1A1A1A`.
-- **Destructive:** border `1px solid #FCA5A5`, text `#FCA5A5`, transparent background.
-- Active press: `transform: scale(0.98)`.
+### 5.3 Buttons
 
-### Inputs & Forms
-- Background: `#1A1A1A`
-- Border: `1px solid #2A2A2A`
-- Focus border: `1px solid #525252`
-- Text: `#F5F5F5`, placeholder: `#737373`
+**Primary** (Brand Blue):
+- Background: `#0025CC`
+- Text: `#FFFFFF`
+- Border-radius: `6px`
+- Hover: background `#0020B0` (10% darker)
+- Active: `transform: scale(0.98)`
+- No shadow
+
+**Secondary**:
+- Background: transparent
+- Border: `1px solid` (Surface Level 3)
+- Text: primary text color
+- Hover: background = Surface Level 1
+
+**Destructive**:
+- Background: transparent
+- Border: `1px solid #DC2626`
+- Text: `#DC2626`
+- Hover: background = `#DC2626` at 10% opacity
+
+### 5.4 Inputs & Forms
+- Background: Surface Level 2
+- Border: `1px solid` Surface Level 3
+- Focus border: `1px solid #0025CC` (Brand Blue ring)
 - Border-radius: `6px`
 
-### Tags & Status Badges
+### 5.5 Tags & Status Badges
 - Small (`text-xs`), uppercase, `letter-spacing: 0.05em`
-- Use dark-tinted status colors from Section 4
 - Border-radius: `4px` (not full pill)
+- Use semantic colors at low opacity for background, full opacity for text:
+  - Success badge: `bg-[#16A34A]/10`, `text-[#16A34A]`, `border-[#16A34A]/30`
+  - Warning badge: `bg-[#F59E0B]/10`, `text-[#F59E0B]`, `border-[#F59E0B]/30`
+  - Error badge: `bg-[#DC2626]/10`, `text-[#DC2626]`, `border-[#DC2626]/30`
+  - Info badge: `bg-[#2563EB]/10`, `text-[#2563EB]`, `border-[#2563EB]/30`
 
-### Dividers
-- `border-bottom: 1px solid #2A2A2A` — never use `<hr>` with default styling
+### 5.6 Dividers
+- `border-bottom: 1px solid` Surface Level 3 — never raw `<hr>` defaults
 
-### Split-View Workspace (Projects)
+### 5.7 Trust Signals (always visible per brand book)
+- Verification badges, reputation scores, attestation status, contributor credentials must be present without requiring extra navigation
+- Use Brand Blue or Success for positive trust signals; muted body text for neutral
+
+### 5.8 Split-View Workspace (Projects)
 - Resizable panels
-- `#161616` surface, `#2A2A2A` panel border
-- Minimal visual distraction — optimized for deep review workflows
+- Surface Level 1 background, Surface Level 3 panel border
+- Minimal visual distraction
 
-## 6. Iconography & Imagery Directives
+## 6. Voice & Tone
 
-- System Icons: Use "Phosphor Icons (Bold or Fill weights)" or "Radix UI Icons" for a technical, slightly thicker-stroke aesthetic. Standardize stroke width across all icons.
-- Illustrations: Monochromatic, rough continuous-line ink sketches on a white background, featuring a single offset geometric shape filled with a muted pastel color.
-- Photography: Use high-quality, desaturated images with a warm tone. Apply subtle overlays (`opacity: 0.04` warm grain) to blend photos into the monochrome palette. Never use oversaturated stock photos. Use reliable placeholders like `https://picsum.photos/seed/{context}/1200/800` when real assets are unavailable.
-- Hero & Section Backgrounds: Sections should not feel empty and flat. Use subtle full-width background imagery at very low opacity, soft radial light spots (`radial-gradient` with warm tones at `opacity: 0.03`), or minimal geometric line patterns to add depth without breaking the clean aesthetic.
+When writing UI copy:
+- **Clear**: communicate ideas simply and directly
+- **Concise**: deliver information efficiently
+- **Operational**: focus on practical implementation and real-world outcomes
+- **Professional**: credible while approachable
 
-## 7. Subtle Motion & Micro-Animations
+Examples:
+- ✓ "Frameworks are updated as industry requirements evolve."
+- ✗ "Dynamic synergy-driven documentation continuously optimizes operational excellence."
 
-Motion should feel invisible — present but never distracting. The goal is quiet sophistication, not spectacle.
+## 7. Mode Implementation Notes
 
-- Scroll Entry: Elements fade in gently as they enter the viewport. Use `translateY(12px)` + `opacity: 0` resolving over `600ms` with `cubic-bezier(0.16, 1, 0.3, 1)`. Use `IntersectionObserver`, never `window.addEventListener('scroll')`.
-- Hover States: Cards lift with an ultra-subtle shadow shift (`box-shadow` transitioning from `0 0 0` to `0 2px 8px rgba(0,0,0,0.04)` over `200ms`). Buttons respond with `scale(0.98)` on `:active`.
-- Staggered Reveals: Lists and grid items enter with a cascade delay (`animation-delay: calc(var(--index) * 80ms)`). Never mount everything at once.
-- Background Ambient Motion: Optional. A single, very slow-moving radial gradient blob (`animation-duration: 20s+`, `opacity: 0.02-0.04`) drifting behind hero sections. Must be applied to a `position: fixed; pointer-events: none` layer. Never on scrolling containers.
-- Performance: Animate exclusively via `transform` and `opacity`. No layout-triggering properties (`top`, `left`, `width`, `height`). Use `will-change: transform` sparingly and only on actively animating elements.
-
-## 8. Execution Protocol
-
-When tasked with writing frontend code (HTML, React, Tailwind, Vue) or designing a layout:
-
-1. Establish the macro-whitespace first. Use massive vertical padding between sections (e.g., `py-24` or `py-32` in Tailwind).
-2. Constrain the main typography content width to `max-w-4xl` or `max-w-5xl`.
-3. Apply the custom typographic hierarchy and monochromatic color variables immediately.
-4. Ensure every card, divider, and border adheres strictly to the `1px solid #EAEAEA` rule.
-5. Add scroll-entry animations to all major content blocks.
-6. Ensure sections have visual depth through imagery, ambient gradients, or subtle textures — no empty flat backgrounds.
-7. Provide code that reflects this high-end, uncluttered, editorial aesthetic natively without requiring manual adjustments.
+Light + dark mode wiring:
+- Tailwind `darkMode: 'class'` on the config
+- Apply `class="dark"` to `<html>` based on system preference + user override
+- All tokens exposed as CSS variables under `:root` and `.dark` so utility classes work in both modes
+- Components reference semantic class names (`bg-surface-1`, `text-foreground`) rather than literal hex
