@@ -189,6 +189,28 @@ Never put business logic in `router.py`. Never do DB queries in `router.py`.
 - Auth failures → `HTTPException(401)` or `HTTPException(403)`.
 - Not found → `HTTPException(404)`.
 - Never raise bare `Exception` — always typed HTTP exceptions.
+- Never swallow exceptions silently. If caught, log it, then either re-raise or return a typed error.
+- External service failures (Stripe, Paystack, S3, Resend) → catch specific SDK exceptions, log with full context, raise `HTTPException(502)`.
+- Always handle the unhappy path before the happy path — validate inputs, check preconditions, then execute.
+
+### Edge case handling
+
+Every feature must explicitly handle:
+
+| Edge case | Required handling |
+|-----------|------------------|
+| Unauthenticated request | 401 — logged at INFO |
+| Insufficient role | 403 — logged at WARNING with user_id + attempted action |
+| Resource not found | 404 — no logging needed (not an error) |
+| Duplicate action (idempotency) | 200/409 depending on context — never 500 |
+| Malformed input | 422 via Pydantic — automatic, no extra code |
+| External service timeout | Retry via Celery task, return 202 if async, 502 if sync |
+| Webhook invalid signature | 400 + audit log — never process payload |
+| File too large | 413 — validated before S3 upload attempt |
+| Concurrent write conflict | DB transaction rollback + 409 |
+| Escrow insufficient funds | 402 + explicit error message + audit log |
+
+Never assume the happy path. Every service method must consider: what if the record doesn't exist, what if a concurrent request already did this, what if the external call fails.
 
 ### Celery tasks
 
@@ -203,6 +225,125 @@ Never put business logic in `router.py`. Never do DB queries in `router.py`.
 - Migration filenames: `YYYY_MM_DD_description.py`.
 - All migrations backwards-compatible with the previous deployed version.
 - Test: `alembic upgrade head` and `alembic downgrade -1` must both succeed.
+
+---
+
+## Logging Standards (Non-Negotiable)
+
+### Library: `loguru` (backend)
+
+All backend logging uses `loguru`. Never use `print()`. Never use Python's stdlib `logging` directly in application code.
+
+```python
+from loguru import logger
+
+# Always bind context before logging in a request
+logger.bind(module="frameworks", action="publish", user_id=user.id, framework_id=fw.id)
+logger.info("Framework submitted for review")
+```
+
+### Format
+
+| Environment | Format | Sink |
+|-------------|--------|------|
+| Dev (local) | Colored, human-readable — `{time} | {level} | {module}.{action} | {message}` | stdout |
+| Staging/Prod | JSON structured | stdout → Render log drain |
+
+Controlled by `LOG_FORMAT=json` env var in production. Dev defaults to colored.
+
+### Mandatory context tags
+
+Every log entry must include:
+
+| Tag | When required |
+|-----|--------------|
+| `module` | Always — matches the module name (auth, frameworks, financials, etc.) |
+| `action` | Always — snake_case verb describing what's happening (`publish_framework`, `release_escrow`) |
+| `user_id` | Whenever a user is authenticated |
+| `request_id` | On every HTTP request — injected by middleware |
+| `framework_id` | On any framework operation |
+| `transaction_id` | On any financial operation |
+| `task_id` | On any Celery task |
+
+### Log levels — use precisely
+
+| Level | Use for |
+|-------|---------|
+| `DEBUG` | Internal state, query results, branching decisions — dev only |
+| `INFO` | Normal operations: login, purchase, publish, payout requested |
+| `WARNING` | Unexpected but handled: RBAC denial, webhook retry, rate limit hit |
+| `ERROR` | Failures that need investigation: external service down, DB write failed, task exhausted retries |
+| `CRITICAL` | Data integrity risk: Escrow inconsistency, payment mismatch, audit log write failure |
+
+### What always gets logged (non-negotiable)
+
+These events must be logged regardless of where they occur:
+
+```
+AUTH        INFO     login_success, login_failure, token_refresh, password_reset
+AUTH        WARNING  invalid_token, expired_token, 2fa_failed
+RBAC        WARNING  access_denied (user_id, role, attempted_action, resource)
+FRAMEWORKS  INFO     created, submitted, published, unpublished, version_bumped
+ARTIFACTS   INFO     uploaded, processing_started, processing_complete, download_requested
+ARTIFACTS   ERROR    virus_detected, pii_detected, processing_failed
+FINANCIALS  INFO     purchase_initiated, escrow_funded, payout_requested
+FINANCIALS  INFO     escrow_released, payout_completed, refund_issued
+FINANCIALS  CRITICAL escrow_mismatch, double_charge_detected
+WEBHOOKS    INFO     received, verified, processed (provider, event_type)
+WEBHOOKS    WARNING  signature_invalid, unknown_event_type
+ATTESTATION INFO     assigned, report_submitted, published, rejected
+ADMIN       INFO     user_suspended, content_flagged, commission_tier_changed
+```
+
+### FastAPI request middleware
+
+Every request gets a `request_id` (UUID) and structured log entry:
+
+```python
+# app/core/logging.py
+import uuid
+from loguru import logger
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        request_id = str(uuid.uuid4())
+        with logger.contextualize(request_id=request_id):
+            logger.info(
+                "request_started",
+                method=request.method,
+                path=request.url.path,
+            )
+            response = await call_next(request)
+            logger.info(
+                "request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+            )
+        return response
+```
+
+### Celery task logging
+
+```python
+@app.task(bind=True)
+def process_artifact(self, artifact_id: str):
+    log = logger.bind(module="artifacts", action="process_artifact", task_id=self.request.id, artifact_id=artifact_id)
+    log.info("task_started")
+    try:
+        # ... processing
+        log.info("task_completed")
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60)
+```
+
+### Never log secrets
+
+- No passwords, tokens, API keys, or webhook payloads in logs.
+- Mask card/account numbers: `****1234`.
+- Never log full S3 presigned URLs — log `artifact_id` only.
 
 ---
 
