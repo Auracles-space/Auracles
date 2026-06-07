@@ -141,13 +141,13 @@ export function RegisterForm() {
         </legend>
         {roleOptions.map((role) => (
           <label
-            className="flex min-h-11 cursor-pointer gap-3 rounded-card border border-border-strong bg-surface-3 p-3 transition hover:border-brand/40"
+            className="flex min-h-12 cursor-pointer gap-3 rounded-card border border-border-strong bg-surface-2 p-4 transition hover:border-accent/40 shadow-sm"
             htmlFor={`role-${role.value}`}
             key={role.value}
           >
             <input
               checked={roles.includes(role.value)}
-              className="mt-1 h-4 w-4 accent-brand"
+              className="mt-1 h-4 w-4 accent-accent"
               id={`role-${role.value}`}
               onChange={() => toggleRole(role.value)}
               type="checkbox"
@@ -164,9 +164,14 @@ export function RegisterForm() {
         ))}
       </fieldset>
 
-      <Button className="w-full" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Creating account" : "Create account"}
-      </Button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mt-4">
+        <a className="text-sm font-medium text-accent hover:underline" href="/login">
+          Already have an account? Log in
+        </a>
+        <Button className="w-full sm:w-auto" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "Creating account" : "Create account"}
+        </Button>
+      </div>
     </form>
   );
 }

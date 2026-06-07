@@ -99,7 +99,7 @@ export function TotpSetupPanel() {
 
       {setup ? (
         <div className="space-y-4">
-          <div className="rounded-card border border-border-strong bg-surface-3 p-4">
+          <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
             <Image
               alt="Authenticator QR code"
               className="mx-auto h-48 w-48"
@@ -113,7 +113,7 @@ export function TotpSetupPanel() {
             </p>
           </div>
           <TotpInput onChange={setCode} value={code} />
-          <div className="rounded-card border border-border-strong bg-surface-3 p-4">
+          <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
             <h3 className="font-heading text-sm font-semibold text-foreground">
               Backup codes
             </h3>

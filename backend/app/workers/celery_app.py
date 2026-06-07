@@ -25,6 +25,8 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.artifacts",
             "app.workers.tasks.notifications",
             "app.workers.tasks.payouts",
+            "app.workers.tasks.processing.extract",
+            "app.workers.tasks.processing.pii",
             "app.workers.tasks.reputation",
             "app.workers.tasks.scheduled",
         ],

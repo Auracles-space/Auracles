@@ -5,43 +5,37 @@
 /*
  * Auracles color tokens.
  *
- * Mirrors docs/auracles-brand-book.pdf §12 (Color System). Light mode is the
- * default; .dark on <html> swaps to dark mode tokens. All component classes
- * reference these CSS variables via Tailwind utilities (bg-surface-1, etc.)
- * so the same component renders correctly in both modes.
+ * Warm cream surfaces + signature peach-to-indigo gradient + charcoal type.
+ * Light mode default; .dark on <html> swaps to dark mode tokens.
+ * Components reference these tokens via Tailwind utilities.
  */
 
 :root {
   color-scheme: light;
 
-  --background: #fffffb;
-  --surface-1: #f8f6f2;
-  --surface-2: #f1ede6;
-  --surface-3: #eae5dc;
+  --background: #faf7f2;
+  --surface-1: #ffffff;
+  --surface-2: #fdf5ee;
+  --surface-3: #fbe7d8;
 
-  --foreground: #111111;
-  --foreground-muted: #555555;
+  --foreground: #0a0a0a;
+  --foreground-muted: #5b5b5b;
   --foreground-subtle: #8a8a8a;
 
-  --border-default: #eae5dc;
-  --border-strong: #d4cfc4;
+  --border-default: #efe7dc;
+  --border-strong: #e3d8c8;
+
+  /* Signature brand gradient stops */
+  --brand-peach: #C74634;
+  --brand-coral: #ff9a76;
+  --brand-magenta: #ffc2b4;
+  --brand-violet: #ffe9e2;
+  --brand-indigo: #fff7f4;
+
+  /* Solid accent shorthand for chips, focus rings */
+  --accent: #C74634;
 }
 
-.dark {
-  color-scheme: dark;
-
-  --background: #000000;
-  --surface-1: #0a0a0a;
-  --surface-2: #111111;
-  --surface-3: #1a1a1a;
-
-  --foreground: #f5f5f5;
-  --foreground-muted: #a3a3a3;
-  --foreground-subtle: #737373;
-
-  --border-default: #1a1a1a;
-  --border-strong: #2a2a2a;
-}
 
 * {
   box-sizing: border-box;
@@ -64,4 +58,41 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+/* Signature radial gradient — used in hero blob + CTA strip. */
+.brand-gradient {
+  background: radial-gradient(
+    120% 80% at 30% 20%,
+    var(--brand-peach) 0%,
+    var(--brand-coral) 28%,
+    var(--brand-magenta) 56%,
+    var(--brand-violet) 80%,
+    var(--brand-indigo) 100%
+  );
+}
+
+.brand-gradient-soft {
+  background: radial-gradient(
+    100% 70% at 50% 30%,
+    rgba(199, 70, 52, 0.25) 0%,
+    rgba(255, 154, 118, 0.20) 30%,
+    rgba(255, 194, 180, 0.15) 55%,
+    rgba(255, 233, 226, 0.10) 80%,
+    rgba(255, 247, 244, 0.05) 100%
+  );
+}
+
+/* Text gradient — for select headline accents. */
+.brand-text-gradient {
+  background: linear-gradient(
+    92deg,
+    var(--brand-peach) 0%,
+    var(--brand-coral) 45%,
+    var(--brand-magenta) 80%,
+    var(--brand-violet) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }

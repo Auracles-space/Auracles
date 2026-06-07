@@ -41,7 +41,7 @@ export function FoundationStatus({ health }: FoundationStatusProps) {
           </div>
         </aside>
 
-        <div className="rounded-card border border-border-strong bg-surface-2 p-5 md:p-8">
+        <div className="rounded-[32px] border border-border-strong bg-surface-1 p-5 shadow-bento md:p-10">
           <div className="flex flex-col gap-4 border-b border-border-strong pb-6 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.05em] text-foreground-subtle">
@@ -60,7 +60,7 @@ export function FoundationStatus({ health }: FoundationStatusProps) {
           <div className="mt-6 grid gap-3 md:grid-cols-3">
             {entries.map(([name, component]) => (
               <article
-                className="rounded-card border border-border-strong bg-surface-3 p-4"
+                className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm"
                 key={name}
               >
                 <div className="flex min-h-11 items-start justify-between gap-3">

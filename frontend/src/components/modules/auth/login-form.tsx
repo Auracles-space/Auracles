@@ -137,10 +137,16 @@ export function LoginForm({ onAuthenticated, onChallenge }: LoginFormProps) {
         value={password}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <a className="text-sm font-medium text-brand" href="/forgot-password">
-          Reset password
-        </a>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <a className="text-sm font-medium text-accent hover:underline" href="/forgot-password">
+            Reset password
+          </a>
+          <span className="text-sm text-foreground-subtle">•</span>
+          <a className="text-sm font-medium text-accent hover:underline" href="/register">
+            Sign up
+          </a>
+        </div>
         <Button disabled={isSubmitting} type="submit">
           {isSubmitting ? "Logging in" : "Log in"}
         </Button>

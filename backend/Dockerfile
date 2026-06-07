@@ -14,6 +14,7 @@ RUN apt-get update \
 
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev
+RUN python -m spacy download en_core_web_lg
 
 COPY . .
 

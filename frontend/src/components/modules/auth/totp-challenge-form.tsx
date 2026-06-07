@@ -104,7 +104,7 @@ export function TotpChallengeForm({
       <label className="flex min-h-11 items-center gap-3 text-sm text-foreground-muted">
         <input
           checked={useBackup}
-          className="h-4 w-4 accent-brand"
+          className="h-4 w-4 accent-accent"
           onChange={(event) => setUseBackup(event.target.checked)}
           type="checkbox"
         />

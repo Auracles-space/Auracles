@@ -321,7 +321,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (100% on touche
 - `frontend/src/components/modules/auth/*`: `RegisterForm`, `LoginForm`, `TotpInput`, `BackupCodeInput`, `KycUpload`
 - `frontend/middleware.ts`: reads + verifies `session_hint` cookie (from Slice 9), redirects per role on login (contributor → dashboard, operator → explore, attestor → assignments, admin → admin), gates `(auth)/*`. **Does not** trust the access token (lives in memory only, invisible to middleware — agent finding #6). Backend remains source of truth on every protected API call.
 - Inter Rounded + Poppins via `next/font/google`
-- Primary `Button` UI primitive (Brand Blue `#0025CC`) ships here — first consumer is auth forms
+- Primary `Button` UI primitive (Solid Black/White) ships here — first consumer is auth forms
 
 **Test:**
 - vitest component: form validation, TOTP input format, error states

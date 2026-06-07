@@ -23,7 +23,7 @@ export function FormField({ helper, id, label, ...props }: FormFieldProps) {
     <label className="block" htmlFor={inputId}>
       <span className="text-sm font-medium text-foreground">{label}</span>
       <input
-        className="mt-2 min-h-11 w-full rounded-control border border-border-strong bg-surface-3 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-foreground-subtle focus:border-brand focus:ring-2 focus:ring-brand/15"
+        className="mt-2 min-h-12 w-full rounded-control border border-border-strong bg-surface-2 px-4 py-2 text-sm text-foreground outline-none transition placeholder:text-foreground-subtle focus:border-accent focus:ring-2 focus:ring-accent/15"
         id={inputId}
         {...props}
       />

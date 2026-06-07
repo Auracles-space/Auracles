@@ -118,8 +118,8 @@ export function KycUpload() {
           Document type
         </span>
         <select
-          className="mt-2 min-h-11 w-full rounded-control border border-border-strong bg-surface-3 px-3 py-2 text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
-          id="doc-type"
+          className="mt-2 min-h-12 w-full rounded-control border border-border-strong bg-surface-2 px-4 py-2 text-sm text-foreground outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/15"
+          id="kyc-type"
           onChange={(event) => setDocType(event.target.value as KycDocType)}
           value={docType}
         >
@@ -131,12 +131,13 @@ export function KycUpload() {
         </select>
       </label>
 
-      <label className="block" htmlFor="kyc-file">
+      <label className="block" htmlFor="doc-upload">
         <span className="text-sm font-medium text-foreground">Document</span>
         <input
-          accept="application/pdf,image/jpeg,image/png"
-          className="mt-2 min-h-11 w-full rounded-control border border-border-strong bg-surface-3 px-3 py-2 text-sm text-foreground file:mr-3 file:rounded-control file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
-          id="kyc-file"
+          accept="image/jpeg,image/png,application/pdf"
+          className="mt-2 min-h-12 w-full rounded-control border border-border-strong bg-surface-2 px-4 py-2 text-sm text-foreground file:mr-3 file:rounded-control file:border-0 file:bg-foreground file:px-3 file:py-2 file:text-sm file:font-bold file:text-background"
+          id="doc-upload"
+          name="kyc_document"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           type="file"
         />

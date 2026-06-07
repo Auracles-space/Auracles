@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Auracles design system from Brand Book v1.0. Dual-mode (light + dark), Brand Blue primary, Inter Rounded + Poppins typography, borders not shadows.
+description: Auracles design system. Trillo-inspired light-mode only, warm orange accent, bento-box shadows, solid black/white buttons.
 ---
 
 # Protocol: Auracles UI Design System
@@ -18,7 +18,7 @@ Communicated through: Trust, Professionalism, Structure, Clarity, Intelligence, 
 
 - DO NOT use gradients or 3D glassmorphism.
 - DO NOT use heavy shadows (`shadow-md`, `shadow-lg`, `shadow-xl`). Use borders for separation; subtle shadows only.
-- DO NOT use saturated, non-brand colors as decorative accents (only Brand Blue and the four semantic colors are allowed).
+- DO NOT use saturated, non-brand colors as decorative accents (only the warm orange Accent and the four semantic colors are allowed).
 - DO NOT use `rounded-full` (pill shapes) for cards, containers, or primary buttons. Cards use `8px` radius.
 - DO NOT mix in additional typefaces. Inter Rounded and Poppins only.
 - DO NOT use emojis in code, markup, headings, or alt text. Use Phosphor Icons or Radix UI Icons.
@@ -65,13 +65,11 @@ Auracles supports **both light and dark mode**. Every component must render corr
 | Surface Level 2 | `#111111` | Second elevation: cards, modals |
 | Surface Level 3 | `#1A1A1A` | Third elevation: nested panels, raised inputs |
 
-### 4.3 Primary Accent — Brand Blue
+### 4.3 Primary Accent — Warm Orange
 
-| Token | Hex |
-|-------|-----|
-| Brand Blue | `#0025CC` |
+| Accent     | `#C74634` |
 
-**Use Brand Blue for:**
+**Use Accent for:**
 - Primary buttons
 - Call-to-action elements
 - Active navigation states
@@ -81,7 +79,7 @@ Auracles supports **both light and dark mode**. Every component must render corr
 - Selected states
 - Progress indicators
 
-Brand Blue is the only saturated color allowed for decoration or emphasis.
+Accent is the only saturated color allowed for decoration or emphasis.
 
 ### 4.4 Semantic Colors
 
@@ -114,7 +112,7 @@ Use these only for status semantics. Never as decorative accents.
 
 ### 5.3 Buttons
 
-**Primary** (Brand Blue):
+**Primary** (Solid Black/White):
 - Background: `#0025CC`
 - Text: `#FFFFFF`
 - Border-radius: `6px`
@@ -137,7 +135,7 @@ Use these only for status semantics. Never as decorative accents.
 ### 5.4 Inputs & Forms
 - Background: Surface Level 2
 - Border: `1px solid` Surface Level 3
-- Focus border: `1px solid #0025CC` (Brand Blue ring)
+- Focus border: `1px solid var(--accent)` (Accent ring)
 - Border-radius: `6px`
 
 ### 5.5 Tags & Status Badges
@@ -154,7 +152,7 @@ Use these only for status semantics. Never as decorative accents.
 
 ### 5.7 Trust Signals (always visible per brand book)
 - Verification badges, reputation scores, attestation status, contributor credentials must be present without requiring extra navigation
-- Use Brand Blue or Success for positive trust signals; muted body text for neutral
+- Use Accent or Success for positive trust signals; muted body text for neutral
 
 ### 5.8 Split-View Workspace (Projects)
 - Resizable panels

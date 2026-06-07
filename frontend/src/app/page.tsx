@@ -1,48 +1,31 @@
 /**
- * Foundation status page (SSR).
+ * Marketing landing page.
  *
- * Renders the Phase 0 readiness check by calling the backend `/v1/health`
- * endpoint via the generated client. Used during early development to
- * confirm that the FastAPI + Postgres + Redis stack is reachable.
+ * Composes the hero, role panels, trust grid, pricing, FAQ, and closing CTA.
+ * Server Component — fully static, no client JS required.
  *
- * Maps to: Phase 0 — Foundation (CLAUDE.md Build Sequence).
+ * Phase 0 foundation status surface lives at `/status`.
  */
-import { FoundationStatus } from "@/components/modules/foundation-status";
-import { getHealth, type HealthResponse } from "@/lib/generated/client";
+import { FaqList } from "@/components/modules/landing/faq-list";
+import { FooterCta } from "@/components/modules/landing/footer-cta";
+import { HowItWorks } from "@/components/modules/landing/how-it-works";
+import { LandingHero } from "@/components/modules/landing/landing-hero";
+import { MarketingNav } from "@/components/modules/landing/marketing-nav";
+import { PricingStrip } from "@/components/modules/landing/pricing-strip";
+import { RoleStrip } from "@/components/modules/landing/role-strip";
+import { TrustGrid } from "@/components/modules/landing/trust-grid";
 
-/**
- * Fetch the health snapshot from the backend, falling back to an
- * "unavailable" payload if the API cannot be reached.
- *
- * @returns Health response describing API, database, and Redis state.
- */
-async function loadHealth(): Promise<HealthResponse> {
-  try {
-    const result = await getHealth();
-    return result.data;
-  } catch {
-    return {
-      status: "unhealthy",
-      components: {
-        api: {
-          status: "unavailable",
-          detail: "FastAPI health endpoint is unreachable.",
-        },
-        database: {
-          status: "unavailable",
-          detail: "Postgres status cannot be confirmed.",
-        },
-        redis: {
-          status: "unavailable",
-          detail: "Redis status cannot be confirmed.",
-        },
-      },
-    };
-  }
-}
-
-export default async function Home() {
-  const health = await loadHealth();
-
-  return <FoundationStatus health={health} />;
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <MarketingNav />
+      <LandingHero />
+      <HowItWorks />
+      <RoleStrip />
+      <TrustGrid />
+      <PricingStrip />
+      <FaqList />
+      <FooterCta />
+    </div>
+  );
 }

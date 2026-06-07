@@ -66,6 +66,21 @@ class S3Storage:
             raise
         return True
 
+    def upload_bytes(
+        self,
+        bucket: str,
+        key: str,
+        body: bytes,
+        mime_type: str,
+    ) -> None:
+        """Upload bytes to a private S3 object."""
+        self._client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=body,
+            ContentType=mime_type,
+        )
+
     def download_file(self, bucket: str, key: str, destination: str) -> None:
         """Download a private S3 object to a local file path."""
         self._client.download_file(bucket, key, destination)

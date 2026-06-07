@@ -123,13 +123,13 @@ export function SessionList({
 
       <div className="space-y-3">
         {sessions.length === 0 ? (
-          <p className="rounded-card border border-border-strong bg-surface-3 p-4 text-sm text-foreground-muted">
+          <p className="rounded-[20px] border border-border-strong bg-surface-2 p-4 text-sm text-foreground-muted shadow-sm">
             No active sessions are loaded.
           </p>
         ) : (
           sessions.map((session) => (
             <article
-              className="rounded-card border border-border-strong bg-surface-3 p-4"
+              className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm"
               key={session.id}
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

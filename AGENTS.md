@@ -30,7 +30,7 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 | FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
 | TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
 | Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend |
-| Brand Book      | `docs/auracles-brand-book.pdf`                                | Brand Book v1.0 — visual identity, colors (light + dark), typography, voice. Source of truth for `frontend-design` skill. |
+| Brand Book      | `docs/auracles-brand-book.pdf`                                | Auracles design system. Trillo-inspired light-mode only, warm orange accent, bento-box shadows, solid black/white buttons. |
 
 ---
 

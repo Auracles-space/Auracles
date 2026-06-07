@@ -14,6 +14,9 @@ dependencies = [
   "email-validator>=2.3.0",
   "fastapi>=0.115.0",
   "loguru>=0.7.2",
+  "pdfplumber>=0.11.9",
+  "presidio-analyzer>=2.2.362",
+  "presidio-anonymizer>=2.2.362",
   "psycopg[binary]>=3.2.0",
   "pydantic>=2.10.0",
   "pydantic-settings>=2.7.0",
@@ -22,6 +25,7 @@ dependencies = [
   "qrcode[pil]>=8.2",
   "redis>=5.2.0",
   "resend>=2.30.1",
+  "spacy>=3.8.14",
   "sqlalchemy>=2.0.36",
   "uvicorn[standard]>=0.34.0",
 ]

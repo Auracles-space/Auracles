@@ -1,8 +1,7 @@
 """Artifact processing Celery tasks.
 
-Slice 3 introduces the virus-scan task. Later processing slices extend this
-module or delegate into pipeline-specific modules for extraction, PII, rarity,
-thumbnailing, and search indexing.
+This module owns the virus-scan entrypoint and the top-level processing
+entrypoint dispatched after a clean scan.
 """
 
 from __future__ import annotations
@@ -20,17 +19,21 @@ from app.core.database import async_session_factory
 from app.integrations import s3
 from app.modules.frameworks.models_artifact import Artifact
 from app.workers.celery_app import app
+from app.workers.tasks.processing.orchestrator import _process_artifact_impl
 
 
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def process_artifact(self: Any, artifact_id: str) -> None:
-    """Placeholder for the Slice 4+ processing orchestrator."""
-    logger.bind(
+    """Run Artifact processing steps after the virus scan is clean."""
+    log = logger.bind(
         module="artifacts",
         action="process_artifact",
         task_id=self.request.id,
         artifact_id=artifact_id,
-    ).info("task_placeholder")
+    )
+    log.info("task_started")
+    result = asyncio.run(_process_artifact_impl(artifact_id))
+    log.info("task_completed", result=result)
 
 
 def scan_file_with_clamav(path: str) -> str:

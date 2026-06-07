@@ -74,7 +74,7 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 
 | Decision | Value | Note |
 |----------|-------|------|
-| Text extraction | `unstructured` + `pdfplumber` (layout-aware PDF tables) | Apache 2.0; single Python pkg covers all 5 mime types in FR-FWK-002. |
+| Text extraction | `pdfplumber` for PDF + built-in Office Open XML text fallback; optional `unstructured` hook if installed in worker image | Avoids Python 3.13 `llvmlite`/CMake build instability from the full `unstructured` stack while keeping an upgrade path. |
 | PII detection | Microsoft Presidio (`presidio-analyzer` + `presidio-anonymizer`) + spaCy `en_core_web_lg` | Apache 2.0. Local, free, confidence scores per detection drive `pii_review_needed` threshold. Anonymizer produces `clean_file_key` redacted copy. |
 | Metadata vector | scikit-learn `TfidfVectorizer` + custom counters (char_count, word_count, n_headings, n_tables, n_images, top-20 tf-idf terms, language) | Stored as JSONB. Drives metadata uplift (small fraction of rarity blend) + recommendation tag overlap. |
 | Near-duplicate detection | MinHash + LSH via `datasketch` (MIT) | 128 permutations, 5-word shingles, sub-linear nearest-neighbor query. SimHash 64-bit pre-filter for speed. |
@@ -196,20 +196,22 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 
 ### Slice 4 — Pipeline step 1+2: extract + PII
 **Add:**
-- `app/workers/tasks/processing/extract.py`: `extract_text(artifact_id)` — `unstructured.partition.auto` for routing, `pdfplumber` for PDF tables; returns text + heading list + table count + word count; persists to `artifacts.metadata_vector` (partial).
-- `app/workers/tasks/processing/pii.py`: `detect_pii(artifact_id)` — Presidio analyze (`en_core_web_lg`) → list of `{entity_type, score, start, end}`. Confidence threshold: `score < 0.6` → `pii_review_needed=true`; `score ≥ 0.6` → `pii_detected=true` + run anonymizer → upload redacted copy to S3 as `clean_file_key`. Writes `artifact_pii_audit` row.
-- Orchestrator `process_artifact(artifact_id)` (`app/workers/tasks/processing/orchestrator.py`) — chained Celery `chain(extract.s(aid), pii.s(aid), metadata.s(aid), minhash.s(aid), rarity.s(aid), thumbnail.s(aid), index.s(aid))` w/ each step writing partial state; orchestrator updates `processing_status`.
+- `app/workers/tasks/processing/extract.py`: `extract_text(artifact_id)` — `pdfplumber` for PDF tables + built-in Office Open XML fallback, with optional `unstructured.partition.auto` hook when installed. ZIP artifacts are treated as containers: entries are path-validated, symlinks rejected, max file count / uncompressed-size limits enforced, and supported inner files (`PDF|DOCX|XLSX|PPTX|ZIP` up to depth 1) are extracted into one combined metadata payload. Returns text + heading list + table count + word count + archive counts; persists to `artifacts.metadata_vector` (partial).
+- `app/workers/tasks/processing/pii.py`: `detect_pii(artifact_id)` — Presidio analyze (`en_core_web_lg`) → list of `{entity_type, score, start, end}`. Confidence threshold: `score ≥ 0.6` → `pii_detected=true`; any finding → `pii_review_needed=true` and `processing_status='flagged_pii'` until a format-preserving redaction path exists. Writes `artifact_pii_audit` row.
+- Orchestrator `process_artifact(artifact_id)` delegates to `app/workers/tasks/processing/orchestrator.py`, which runs the currently implemented steps (`extract` then `pii`) in order. Later slices extend this orchestrator with metadata, MinHash, rarity, thumbnail, and search steps.
 
 **OpenAPI:** no new endpoints; processing status read by GET framework already in Slice 2.
 
 **Edge cases tested:**
 - Unsupported / corrupt PDF → step 1 sets `processing_status='failed'`, reason captured.
+- ZIP with supported inner files → supported files extracted, unsupported files counted, no unsafe paths written to disk.
+- ZIP path traversal / symlink / archive bomb risk → extraction fails and writes audit reason.
 - All-image PDF → text empty, `pii_detected=false` (defensible), metadata captures `n_images>0`.
-- High-confidence PII (NAME, EMAIL, PHONE) → anonymizer produces redacted copy, `clean_file_key` set.
-- Low-confidence detection → `pii_review_needed=true` flagged, blocks publish until Contributor accepts redacted version.
+- High-confidence PII (NAME, EMAIL, PHONE) → `pii_detected=true`, no `clean_file_key`, blocked for review.
+- Low-confidence detection → `pii_review_needed=true` flagged, blocks publish until Contributor resolves it.
 - Re-run of `extract` on an already-extracted artifact → idempotent (writes new metadata, doesn't duplicate).
 
-**Deps added:** `unstructured`, `pdfplumber`, `presidio-analyzer`, `presidio-anonymizer`, `spacy`, `en_core_web_lg` model (downloaded in worker Dockerfile).
+**Deps added:** `pdfplumber`, `presidio-analyzer`, `presidio-anonymizer`, `spacy`, `en_core_web_lg` model (downloaded in worker Dockerfile). `unstructured` remains an optional runtime hook; it was not added to the lockfile because its Python 3.13 dependency chain attempted to build `llvmlite` locally and required CMake.
 
 ---
 

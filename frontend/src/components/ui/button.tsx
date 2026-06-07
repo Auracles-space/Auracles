@@ -16,11 +16,11 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   destructive:
-    "border-error text-error hover:bg-error/10 focus-visible:outline-error",
+    "border-error bg-transparent text-error hover:bg-error/10 focus-visible:outline-error",
   primary:
-    "border-brand bg-brand text-white hover:bg-brand-hover focus-visible:outline-brand active:scale-[0.98]",
+    "border-transparent bg-foreground text-background hover:bg-foreground/90 shadow-md focus-visible:outline-foreground active:scale-[0.98]",
   secondary:
-    "border-border-strong bg-transparent text-foreground hover:bg-surface-1 focus-visible:outline-brand",
+    "border-2 border-foreground bg-transparent text-foreground hover:bg-foreground hover:text-background focus-visible:outline-foreground",
 };
 
 /**

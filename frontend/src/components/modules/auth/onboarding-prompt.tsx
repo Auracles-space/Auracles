@@ -35,7 +35,7 @@ export function OnboardingPrompt() {
       <div className="space-y-3">
         {steps.map((step) => (
           <article
-            className="rounded-card border border-border-strong bg-surface-3 p-4"
+            className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm"
             key={step.title}
           >
             <h3 className="font-heading text-sm font-semibold text-foreground">
@@ -50,13 +50,13 @@ export function OnboardingPrompt() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <a
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-brand bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-[0.98]"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-transparent bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground active:scale-[0.98] shadow-md"
           href="/settings/kyc"
         >
           Start KYC
         </a>
         <a
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border-strong bg-transparent px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-2 border-foreground bg-transparent px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-foreground hover:text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
           href="/explore"
         >
           Browse frameworks

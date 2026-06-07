@@ -3069,8 +3069,6 @@ The Auracles visual identity should communicate:
 | Surface Level 2 | \#F1EDE6 |
 | Surface Level 3 | \#EAE5DC |
 
----
-
 ## **Dark Mode**
 
 ### **Background**
@@ -3085,13 +3083,10 @@ The Auracles visual identity should communicate:
 | Surface Level 2 | \#111111 |
 | Surface Level 3 | \#1A1A1A |
 
----
+## **Primary Accent — Warm Orange**
 
-## **Primary Accent**
-
-### **Brand Blue**
-
-`#0025CC`
+- **Usage**: Primary buttons, call-to-actions, active navigation, focus rings.
+- **Value**: `#C74634`
 
 ### **Usage**
 
@@ -3104,9 +3099,9 @@ The Auracles visual identity should communicate:
 * Selected States  
 * Progress Indicators
 
----
-
 ## **Semantic Colors**
+
+Semantic colors convey meaning independent of the brand theme. Use consistently across the UI.
 
 ### **Success**
 
@@ -3140,10 +3135,7 @@ Inter Rounded
 * 700  
 * 800
 
-### **Usage**
-
-* Page Titles  
-* Section Headers  
+###- **Usage**: Text, layout borders, icons on white/light backgrounds. Headers  
 * Dashboard Metrics  
 * Marketplace Titles
 

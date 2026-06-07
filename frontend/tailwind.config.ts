@@ -10,42 +10,48 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Surfaces — driven by CSS variables so they swap with mode
         background: "var(--background)",
         "surface-1": "var(--surface-1)",
         "surface-2": "var(--surface-2)",
         "surface-3": "var(--surface-3)",
 
-        // Text
         foreground: "var(--foreground)",
         "foreground-muted": "var(--foreground-muted)",
         "foreground-subtle": "var(--foreground-subtle)",
 
-        // Borders
         "border-default": "var(--border-default)",
         "border-strong": "var(--border-strong)",
 
-        // Brand
+        // Gradient stops (also exposed via .brand-gradient utility class)
         brand: {
-          DEFAULT: "#0025CC",
-          hover: "#0020B0",
-          active: "#001A95",
+          peach: "var(--brand-peach)",
+          coral: "var(--brand-coral)",
+          magenta: "var(--brand-magenta)",
+          violet: "var(--brand-violet)",
+          indigo: "var(--brand-indigo)",
         },
 
-        // Semantic
-        success: "#16A34A",
-        warning: "#F59E0B",
-        error: "#DC2626",
-        info: "#2563EB",
+        accent: "var(--accent)",
+
+        success: "#16a34a",
+        warning: "#f59e0b",
+        error: "#dc2626",
+        info: "#2563eb",
       },
       fontFamily: {
         heading: ["var(--font-heading)", "Inter Rounded", "Inter", "sans-serif"],
         body: ["var(--font-body)", "Poppins", "sans-serif"],
       },
       borderRadius: {
-        card: "8px",
-        control: "6px",
-        badge: "4px",
+        badge: "999px",
+        control: "10px",
+        card: "20px",
+        hero: "32px",
+      },
+      boxShadow: {
+        card: "0 1px 2px rgba(10, 10, 10, 0.04), 0 8px 24px rgba(10, 10, 10, 0.06)",
+        hero: "0 12px 48px rgba(199, 70, 52, 0.15)",
+        bento: "0 8px 30px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02)",
       },
     },
   },
