@@ -347,6 +347,151 @@ def process_artifact(self, artifact_id: str):
 
 ---
 
+## Code Documentation Standards (Non-Negotiable)
+
+**Every file, every public function, every class is documented.** Code is read more than it is written. The next agent or human picking up the file should understand intent without reading the implementation.
+
+### Python (Backend) — Google-style docstrings
+
+**Module-level docstring** at top of every `.py` file:
+
+```python
+"""Framework service layer.
+
+Handles framework CRUD, versioning, publish/review workflow,
+and dispatches artifact processing tasks.
+
+Maps to: FR-FWK-001 through FR-FWK-024.
+"""
+```
+
+**Class docstring** on every class:
+
+```python
+class FrameworkService:
+    """Service layer for Framework operations.
+
+    Encapsulates business rules for framework lifecycle:
+    create, edit, version, submit, publish, unpublish.
+
+    Attributes:
+        db: Async SQLAlchemy session for DB operations.
+        celery: Celery app for dispatching background tasks.
+    """
+```
+
+**Function/method docstring** on every public function:
+
+```python
+async def publish_framework(self, framework_id: UUID, user_id: UUID) -> Framework:
+    """Publish a framework, making it visible in the marketplace.
+
+    Validates that the framework has passed review (BR-FWK-007) and the
+    requesting user is the owner (BR-FWK-002). Triggers reputation
+    recalculation and a notification to the contributor.
+
+    Args:
+        framework_id: UUID of the framework to publish.
+        user_id: UUID of the requesting user (must be owner).
+
+    Returns:
+        The published Framework instance with updated status.
+
+    Raises:
+        HTTPException(403): If user is not the framework owner.
+        HTTPException(422): If framework has not passed review.
+    """
+```
+
+**Inline comments** — only for non-obvious WHY, never for WHAT:
+
+```python
+# Use SELECT FOR UPDATE to prevent race conditions on concurrent purchases
+license = await db.execute(stmt.with_for_update())
+```
+
+Private helpers (`_method`) get a one-line docstring. No exceptions for "self-explanatory" code.
+
+### TypeScript (Frontend) — JSDoc / TSDoc
+
+**File-level comment** at top of every `.ts` / `.tsx` file:
+
+```typescript
+/**
+ * Framework detail page (SSR).
+ *
+ * Renders public framework metadata, attestations, contributor info,
+ * and purchase CTA. SEO-critical — must SSR fully.
+ *
+ * Maps to: FR-EXP-008, FR-FWK-014.
+ */
+```
+
+**Component JSDoc** on every exported component:
+
+```typescript
+/**
+ * Card displaying a single framework in the Explore feed.
+ *
+ * @param framework - Framework metadata to render.
+ * @param onSave - Callback when user clicks save button.
+ * @param compact - If true, renders a denser variant for sidebar use.
+ */
+export function FrameworkCard({ framework, onSave, compact = false }: FrameworkCardProps) {
+```
+
+**Function JSDoc** on every exported utility:
+
+```typescript
+/**
+ * Formats a price for display, respecting the user's locale and currency.
+ *
+ * @param amountMinor - Amount in minor units (cents/kobo).
+ * @param currency - ISO 4217 currency code (USD, NGN, etc.).
+ * @returns Formatted string with currency symbol.
+ */
+export function formatPrice(amountMinor: number, currency: string): string {
+```
+
+### Migration files (Alembic)
+
+Every migration starts with the WHY:
+
+```python
+"""Add artifact_fingerprints table for rarity scoring.
+
+Supports FR-FWK-019 (artifact processing pipeline) by storing
+sentence-transformer embeddings used for nearest-neighbor lookup
+via pgvector IVFFlat index.
+
+Revision ID: a3f2c9b1d4e5
+Revises: 7e8d3c1f9a02
+Create Date: 2026-06-15
+"""
+```
+
+### Test files
+
+Every test class and test function gets a docstring describing the behavior under test, not the implementation:
+
+```python
+async def test_publish_framework_blocks_unreviewed():
+    """Publishing a framework that has not passed review must raise 422.
+
+    Enforces BR-FWK-007.
+    """
+```
+
+### Rules
+
+- Never write a comment that restates what the code does. Comments answer WHY.
+- Never leave a placeholder docstring (`"""TODO"""`). Either write it properly or don't merge.
+- Every TODO/FIXME comment includes the author, date, and FR if applicable: `# TODO(william, 2026-06-15, FR-FIN-012): handle multi-currency rounding`
+- Public APIs (router endpoints) get OpenAPI summary + description in the FastAPI decorator AND a Python docstring.
+- Update docstrings when behavior changes. Stale docstrings are worse than no docstrings.
+
+---
+
 ## Frontend Code Standards (Next.js)
 
 ### Rendering strategy
