@@ -1,5 +1,5 @@
 ---
-name: auracles-ui
+name: frontend-design
 description: Auracles design system. Dark grayscale, institutional, no bright colors, no gradients. Inter Rounded headers, Poppins body, borders not shadows.
 ---
 
