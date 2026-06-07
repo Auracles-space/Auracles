@@ -7,7 +7,6 @@ same metadata instead of downloading the object again.
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import re
 import stat
@@ -26,6 +25,7 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.integrations import s3
 from app.modules.frameworks.models_artifact import Artifact
+from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 WORD_PATTERN = re.compile(r"\b[\w'-]+\b")
@@ -330,7 +330,7 @@ def extract_text(self: Any, artifact_id: str) -> dict[str, Any]:
     )
     log.info("task_started")
     try:
-        result = asyncio.run(_extract_text_impl(artifact_id))
+        result = run_async(_extract_text_impl(artifact_id))
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc

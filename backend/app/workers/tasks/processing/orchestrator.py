@@ -1,7 +1,7 @@
 """Artifact processing pipeline orchestration.
 
-Slice 4 wires extraction and PII detection after virus scanning. Later slices
-extend this orchestrator with metadata, MinHash, rarity, thumbnails, and search.
+Runs implemented processing steps after virus scanning. Later slices extend this
+with external rarity, thumbnails, and search indexing.
 """
 
 from __future__ import annotations
@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from app.workers.tasks.processing.extract import _extract_text_impl
+from app.workers.tasks.processing.metadata import _compute_metadata_impl
+from app.workers.tasks.processing.minhash import _compute_minhash_impl
 from app.workers.tasks.processing.pii import _detect_pii_impl
+from app.workers.tasks.processing.rarity_internal import _compute_internal_rarity_impl
 
 
 async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
@@ -23,8 +26,25 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
         }
 
     pii = await _detect_pii_impl(artifact_id)
-    return {
+    result = {
         "artifact_id": artifact_id,
         "status": pii["status"],
         "steps": {"extract": extraction, "pii": pii},
+    }
+    if pii["status"] != "clear":
+        return result
+
+    metadata = await _compute_metadata_impl(artifact_id)
+    minhash = await _compute_minhash_impl(artifact_id)
+    rarity_internal = await _compute_internal_rarity_impl(artifact_id)
+    return {
+        "artifact_id": artifact_id,
+        "status": rarity_internal["status"],
+        "steps": {
+            "extract": extraction,
+            "pii": pii,
+            "metadata": metadata,
+            "minhash": minhash,
+            "rarity_internal": rarity_internal,
+        },
     }

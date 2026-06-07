@@ -5,16 +5,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from zipfile import ZipFile
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
@@ -122,7 +123,7 @@ def create_processing_artifact(
     session_factory = sessionmaker(sync_engine)
     with session_factory() as session:
         user = User(
-            email="pipeline-artifact@auracles.space",
+            email=f"pipeline-artifact-{uuid4()}@auracles.space",
             password_hash=hash_password("CorrectHorse9"),
             display_name="pipeline-artifact",
             email_verified=True,
@@ -142,8 +143,8 @@ def create_processing_artifact(
             title="Pipeline Framework",
             description="Pipeline Framework description",
             category="Operations",
-            tags=[],
-            tags_text="",
+            tags=["risk", "governance"],
+            tags_text="risk governance",
             price="100.00",
             currency="USD",
             license_types=["single_user"],
@@ -165,6 +166,22 @@ def create_processing_artifact(
         session.commit()
     sync_engine.dispose()
     return artifact_id
+
+
+def mark_framework_published(artifact_id: UUID) -> None:
+    """Mark the owning Framework published so rarity can compare against it."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        framework = session.get(Framework, artifact.framework_id)
+        assert framework is not None
+        framework.status = "published"
+        artifact.processing_status = "processed"
+        session.commit()
+    sync_engine.dispose()
 
 
 def build_docx_bytes(text: str) -> bytes:
@@ -194,8 +211,13 @@ def build_zip_bytes(entries: dict[str, bytes]) -> bytes:
 
 def read_artifact_state(
     artifact_id: UUID,
-) -> tuple[Artifact | None, ArtifactPiiAudit | None, AuditLog | None]:
-    """Load the current Artifact, PII audit, and processing audit rows."""
+) -> tuple[
+    Artifact | None,
+    ArtifactPiiAudit | None,
+    ArtifactRarityAudit | None,
+    AuditLog | None,
+]:
+    """Load the current Artifact, processing audits, and PII audit rows."""
     settings = get_settings()
     sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     session_factory = sessionmaker(sync_engine)
@@ -207,8 +229,33 @@ def read_artifact_state(
         audit_log = session.scalar(
             select(AuditLog).where(AuditLog.action == "artifact_pii_flagged")
         )
+        rarity_audit = session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == artifact_id
+            )
+        )
     sync_engine.dispose()
-    return artifact, pii_audit, audit_log
+    return artifact, pii_audit, rarity_audit, audit_log
+
+
+def read_processing_audit_counts(artifact_id: UUID) -> tuple[int, int]:
+    """Count PII and rarity audit rows for one Artifact."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        pii_count = session.scalar(
+            select(func.count(ArtifactPiiAudit.id)).where(
+                ArtifactPiiAudit.artifact_id == artifact_id
+            )
+        )
+        rarity_count = session.scalar(
+            select(func.count(ArtifactRarityAudit.id)).where(
+                ArtifactRarityAudit.artifact_id == artifact_id
+            )
+        )
+    sync_engine.dispose()
+    return int(pii_count or 0), int(rarity_count or 0)
 
 
 def read_processing_failure(
@@ -261,7 +308,7 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
 
-    artifact, pii_audit, audit_log = read_artifact_state(artifact_id)
+    artifact, pii_audit, _, audit_log = read_artifact_state(artifact_id)
 
     assert artifact is not None
     assert artifact.metadata_vector is not None
@@ -311,7 +358,7 @@ def test_extract_text_can_rerun_without_duplicate_side_effects(
     extract.extract_text.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
 
-    artifact, pii_audit, _ = read_artifact_state(artifact_id)
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
 
     assert artifact is not None
     assert artifact.metadata_vector is not None
@@ -346,7 +393,7 @@ def test_extract_text_reads_supported_files_inside_zip(
     extract.extract_text.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
 
-    artifact, pii_audit, _ = read_artifact_state(artifact_id)
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
 
     assert artifact is not None
     assert artifact.metadata_vector is not None
@@ -385,6 +432,247 @@ def test_extract_text_rejects_zip_with_unsafe_path(
     assert audit_log.metadata_["step"] == "extract"
 
 
+def test_process_artifact_computes_metadata_fingerprint_and_internal_rarity(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """A first Artifact gets metadata, fingerprint, and rarity of 1.0."""
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact()
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text=(
+                "Risk control operating model with board governance, risk "
+                "register cadence, audit ownership, and control evidence."
+            ),
+            headings=["Risk Control Operating Model"],
+            table_count=1,
+            word_count=16,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["language"] == "en"
+    assert "risk" in artifact.metadata_vector["top_tfidf_terms"]
+    assert artifact.metadata_vector["tag_overlap_count"] == 2
+    assert artifact.metadata_vector["tag_overlap_tags"] == ["risk", "governance"]
+    assert artifact.metadata_vector["char_count"] > 0
+    assert artifact.minhash_signature is not None
+    assert len(artifact.minhash_signature) == 1024
+    assert artifact.simhash is not None
+    assert artifact.internal_rarity == Decimal("1.0000")
+    assert artifact.nearest_match_id is None
+    assert rarity_audit is not None
+    assert rarity_audit.internal_jaccard == Decimal("0.0000")
+    assert pii_audit is not None
+
+
+def test_process_artifact_scores_duplicate_against_published_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """A duplicate upload has low internal rarity against published content."""
+    from app.workers.tasks.processing import extract, pii
+
+    duplicate_text = (
+        "Vendor risk assessment workflow with due diligence checks, control "
+        "mapping, audit evidence, remediation tracking, and board reporting."
+    )
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text=duplicate_text,
+            headings=["Vendor Risk"],
+            table_count=0,
+            word_count=17,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    published_artifact_id = create_processing_artifact(name="published.pdf")
+    artifact_tasks.process_artifact.apply(args=[str(published_artifact_id)]).get()
+    mark_framework_published(published_artifact_id)
+
+    duplicate_artifact_id = create_processing_artifact(name="duplicate.pdf")
+    artifact_tasks.process_artifact.apply(args=[str(duplicate_artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(duplicate_artifact_id)
+
+    assert artifact is not None
+    assert artifact.internal_rarity == Decimal("0.0000")
+    assert artifact.nearest_match_id == published_artifact_id
+    assert rarity_audit is not None
+    assert rarity_audit.internal_jaccard == Decimal("1.0000")
+    assert rarity_audit.nearest_match_id == published_artifact_id
+
+
+def test_process_artifact_treats_empty_text_as_fully_rare(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """An empty extraction has no matchable shingles and rarity remains 1.0."""
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact(name="empty.pdf")
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="",
+            headings=[],
+            table_count=0,
+            word_count=0,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["language"] == "unknown"
+    assert artifact.metadata_vector["top_tfidf_terms"] == []
+    assert artifact.metadata_vector["char_count"] == 0
+    assert artifact.metadata_vector["minhash"]["shingle_count"] == 0
+    assert artifact.metadata_vector["minhash"]["low_confidence"] is True
+    assert artifact.internal_rarity == Decimal("1.0000")
+    assert rarity_audit is not None
+    assert rarity_audit.internal_jaccard == Decimal("0.0000")
+
+
+def test_process_artifact_does_not_match_empty_text_against_empty_published(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Empty artifacts have no comparable shingles, even against each other."""
+    from app.workers.tasks.processing import extract, pii
+
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="",
+            headings=[],
+            table_count=0,
+            word_count=0,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    published_artifact_id = create_processing_artifact(name="published-empty.pdf")
+    artifact_tasks.process_artifact.apply(args=[str(published_artifact_id)]).get()
+    mark_framework_published(published_artifact_id)
+
+    candidate_artifact_id = create_processing_artifact(name="candidate-empty.pdf")
+    artifact_tasks.process_artifact.apply(args=[str(candidate_artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(candidate_artifact_id)
+
+    assert artifact is not None
+    assert artifact.internal_rarity == Decimal("1.0000")
+    assert artifact.nearest_match_id is None
+    assert rarity_audit is not None
+    assert rarity_audit.internal_jaccard == Decimal("0.0000")
+
+
+def test_process_artifact_marks_tiny_docs_as_low_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """A tiny document produces one shingle and a low-confidence fingerprint."""
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact(name="tiny.pdf")
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="Risk",
+            headings=[],
+            table_count=0,
+            word_count=1,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, _, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["language"] == "unknown"
+    assert artifact.metadata_vector["minhash"]["shingle_count"] == 1
+    assert artifact.metadata_vector["minhash"]["low_confidence"] is True
+
+
+def test_process_artifact_rerun_keeps_processing_audits_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Rerunning processing refreshes audit rows instead of duplicating them."""
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact(name="rerun.pdf")
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text=(
+                "Control library with policy ownership, implementation "
+                "evidence, review cadence, and risk scoring."
+            ),
+            headings=["Control Library"],
+            table_count=0,
+            word_count=12,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, rarity_audit, _ = read_artifact_state(artifact_id)
+    pii_count, rarity_count = read_processing_audit_counts(artifact_id)
+
+    assert artifact is not None
+    assert artifact.internal_rarity == Decimal("1.0000")
+    assert pii_audit is not None
+    assert rarity_audit is not None
+    assert pii_count == 1
+    assert rarity_count == 1
+
+
 def test_process_artifact_flags_low_confidence_pii_for_review(
     monkeypatch: pytest.MonkeyPatch,
     migrated_database: None,
@@ -416,7 +704,7 @@ def test_process_artifact_flags_low_confidence_pii_for_review(
     artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
 
-    artifact, pii_audit, audit_log = read_artifact_state(artifact_id)
+    artifact, pii_audit, _, audit_log = read_artifact_state(artifact_id)
 
     assert artifact is not None
     assert artifact.pii_detected is False

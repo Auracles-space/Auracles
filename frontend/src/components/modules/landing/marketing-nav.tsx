@@ -7,6 +7,8 @@
  */
 import Link from "next/link";
 
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+
 const links = [
   { href: "#how-it-works", label: "How it works" },
   { href: "#roles", label: "For Contributors" },
@@ -19,7 +21,7 @@ const links = [
  */
 export function MarketingNav() {
   return (
-    <header className="sticky top-0 z-30 border-b border-border-default/60 bg-background/70 backdrop-blur-md">
+    <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 md:px-10">
         <Link
           className="font-heading text-lg font-semibold tracking-tight text-foreground"
@@ -39,6 +41,7 @@ export function MarketingNav() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Link
             className="hidden h-10 items-center rounded-control px-4 text-sm font-medium text-foreground-muted transition hover:text-foreground md:inline-flex"
             href="/login"

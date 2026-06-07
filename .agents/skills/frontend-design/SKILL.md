@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Auracles design system. Trillo-inspired light-mode only, warm orange accent, bento-box shadows, solid black/white buttons.
+description: Auracles design system. Trillo-inspired dual-mode (light/dark), warm orange accent, bento-box shadows, solid black/white buttons.
 ---
 
 # Protocol: Auracles UI Design System

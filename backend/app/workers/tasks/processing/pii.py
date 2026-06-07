@@ -6,7 +6,6 @@ row, and pauses processing when any PII is found.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -17,6 +16,7 @@ from sqlalchemy import delete
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
 from app.modules.frameworks.models_artifact import Artifact, ArtifactPiiAudit
+from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 PII_CONFIDENCE_THRESHOLD = 0.6
@@ -129,7 +129,7 @@ def detect_pii(self: Any, artifact_id: str) -> dict[str, Any]:
     )
     log.info("task_started")
     try:
-        result = asyncio.run(_detect_pii_impl(artifact_id))
+        result = run_async(_detect_pii_impl(artifact_id))
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc

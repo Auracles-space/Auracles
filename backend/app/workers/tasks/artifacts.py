@@ -6,7 +6,6 @@ entrypoint dispatched after a clean scan.
 
 from __future__ import annotations
 
-import asyncio
 import tempfile
 from typing import Any
 from uuid import UUID
@@ -18,6 +17,7 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.integrations import s3
 from app.modules.frameworks.models_artifact import Artifact
+from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 from app.workers.tasks.processing.orchestrator import _process_artifact_impl
 
@@ -32,7 +32,7 @@ def process_artifact(self: Any, artifact_id: str) -> None:
         artifact_id=artifact_id,
     )
     log.info("task_started")
-    result = asyncio.run(_process_artifact_impl(artifact_id))
+    result = run_async(_process_artifact_impl(artifact_id))
     log.info("task_completed", result=result)
 
 
@@ -129,11 +129,11 @@ def scan_artifact(self: Any, artifact_id: str) -> None:
     )
     log.info("task_started")
     try:
-        result = asyncio.run(_scan_artifact_impl(artifact_id))
+        result = run_async(_scan_artifact_impl(artifact_id))
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         if self.request.retries >= self.max_retries:
-            asyncio.run(
+            run_async(
                 _set_scan_result(
                     UUID(artifact_id),
                     scan_status="error",
