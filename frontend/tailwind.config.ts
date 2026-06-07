@@ -39,8 +39,8 @@ const config: Config = {
         info: "#2563EB",
       },
       fontFamily: {
-        heading: ["Inter Rounded", "Inter", "sans-serif"],
-        body: ["Poppins", "sans-serif"],
+        heading: ["var(--font-heading)", "Inter Rounded", "Inter", "sans-serif"],
+        body: ["var(--font-body)", "Poppins", "sans-serif"],
       },
       borderRadius: {
         card: "8px",
