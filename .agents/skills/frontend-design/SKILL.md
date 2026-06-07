@@ -79,9 +79,13 @@ For status badges and tags, use dark-tinted variants:
 ## 5. Component Specifications
 
 ### Layout
-- 12-column grid, max-width `1440px`, content width `1280px`
-- Generous whitespace — `py-16` to `py-24` between major sections
-- Persistent left sidebar navigation: compact icon + label, clear active states, documentation-style hierarchy
+- **Mobile-first always.** Base classes target mobile, `sm:`/`md:`/`lg:` enhance up.
+- 12-column grid on `md:` and up. Single column on mobile.
+- Max-width `1440px` outer container, content width `1280px`.
+- Section spacing: mobile `py-10`, scale to `md:py-16` and `lg:py-24` between major sections.
+- Navigation: bottom drawer / hamburger sheet on mobile, persistent left sidebar on `md:` and up.
+- Touch targets minimum `44px × 44px` on all interactive elements.
+- Test every layout at 375px width (iPhone SE) before committing.
 
 ### Cards (Framework Cards, List Items)
 - Background: `#1A1A1A`

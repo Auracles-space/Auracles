@@ -503,6 +503,36 @@ async def test_publish_framework_blocks_unreviewed():
 | `/dashboard/*`                     | Client Component       | Auth-gated, interactive |
 | `/projects/[id]` (Workspace)       | Client Component       | Real-time WebSocket     |
 
+### Mobile-First (Non-Negotiable)
+
+Every component, every page, every layout is built **mobile-first**. Design at the smallest screen first, then progressively enhance for larger breakpoints.
+
+**Rules:**
+
+- Base Tailwind styles target mobile (no breakpoint prefix). Use `sm:` / `md:` / `lg:` / `xl:` only to enhance for larger screens — never to shrink down.
+- Yes: `className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"`
+- No: `className="grid grid-cols-3 md:grid-cols-2 sm:grid-cols-1"` (desktop-first — banned)
+- Touch targets minimum `44px × 44px` (Apple HIG) on all interactive elements — buttons, links, inputs.
+- Tap-friendly spacing on mobile: `py-3` minimum on list items, `gap-4` minimum between actionable items.
+- No hover-only interactions — every hover state has an equivalent tap/focus alternative.
+- Navigation: bottom sheet / drawer on mobile, persistent sidebar on `md:` and up.
+- Tables: card-stack layout on mobile, true table on `md:` and up. Never horizontal-scroll a data table on mobile.
+- Modals: full-screen on mobile, centered overlay on `md:` and up.
+- Test every new component at 375px (iPhone SE) before committing.
+
+**Breakpoints (Tailwind defaults — do not customize):**
+
+| Prefix | Min width | Use case |
+|--------|-----------|----------|
+| (none) | 0px | Phones (portrait) |
+| `sm:` | 640px | Phones (landscape), small tablets |
+| `md:` | 768px | Tablets |
+| `lg:` | 1024px | Laptops |
+| `xl:` | 1280px | Desktops |
+| `2xl:` | 1536px | Large desktops |
+
+Max content width still respects the spec: `max-w-[1280px]` on the content container, regardless of viewport.
+
 ### API calls
 
 - All API calls via generated client from `contracts/openapi.yaml` (use `openapi-typescript-codegen` or `hey-api`).
