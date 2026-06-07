@@ -37,6 +37,39 @@ class FakeRedis:
     """Minimal Redis override for authenticated framework routes."""
 
 
+class FakeArtifactStorage:
+    """S3 storage test double for artifact upload URL and object checks."""
+
+    def __init__(self) -> None:
+        """Create empty fake S3 state."""
+        self.existing_keys: set[str] = set()
+        self.presigned_requests: list[tuple[str, str, str, int, int]] = []
+
+    def presigned_post(
+        self,
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return a deterministic fake artifact presigned POST policy."""
+        self.presigned_requests.append((bucket, key, mime_type, max_size, expires_in))
+        return {
+            "url": f"https://s3.test/{bucket}",
+            "fields": {
+                "key": key,
+                "Content-Type": mime_type,
+                "policy": "fake-policy",
+                "x-amz-signature": "fake-signature",
+            },
+        }
+
+    def object_exists(self, bucket: str, key: str) -> bool:
+        """Return whether the fake object was marked uploaded."""
+        return key in self.existing_keys
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure Phase 2 marketplace tables exist for endpoint tests."""
@@ -55,7 +88,10 @@ def migrated_database() -> Iterator[None]:
 @pytest.fixture
 async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
     """Reset framework/auth state and install lightweight dependency overrides."""
+    from app.integrations import s3
+    fake_storage = FakeArtifactStorage()
     await engine.dispose()
+
     async def cleanup() -> None:
         """Remove marketplace rows before deleting users in test isolation."""
         async with async_session_factory() as session:
@@ -75,9 +111,12 @@ async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
     await cleanup()
 
     app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    original_s3_storage = s3.storage
+    s3.storage = fake_storage
     try:
-        yield {}
+        yield {"storage": fake_storage}
     finally:
+        s3.storage = original_s3_storage
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
         await engine.dispose()
@@ -143,6 +182,20 @@ def valid_framework_payload() -> dict[str, Any]:
             "usage_restrictions": "No resale.",
         },
     }
+
+
+async def create_draft_framework(
+    client: AsyncClient,
+    contributor_id: UUID,
+) -> str:
+    """Create a valid draft Framework through the public API and return its id."""
+    response = await client.post(
+        "/v1/frameworks",
+        json=valid_framework_payload(),
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert response.status_code == 201
+    return str(response.json()["id"])
 
 
 async def test_verified_contributor_can_create_draft_framework(
@@ -301,6 +354,283 @@ async def test_contributor_can_view_list_update_and_delete_draft_framework(
     assert listed.json()[0]["id"] == framework_id
     assert deleted.status_code == 204
     assert after_delete.status_code == 404
+
+
+async def test_contributor_can_request_artifact_upload_url_for_draft_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Verified Contributors can create a pending Artifact upload target."""
+    contributor_id = await create_user_with_roles(
+        "artifact-owner@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "risk-playbook.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["artifact_id"]
+    assert body["upload_url"].startswith("https://s3.test/")
+    assert body["file_key"].startswith(f"frameworks/{framework_id}/")
+    assert body["fields"]["key"] == body["file_key"]
+    assert body["fields"]["Content-Type"] == "application/pdf"
+    assert body["fields"]["policy"] == "fake-policy"
+    assert body["max_size"] == 500 * 1024 * 1024
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == body["artifact_id"]
+    assert listed.json()[0]["scan_status"] == "pending"
+
+
+async def test_artifact_upload_url_rejects_wrong_mime_and_oversize_total(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Artifact upload targets enforce MIME allow-list and 500MB total size."""
+    contributor_id = await create_user_with_roles(
+        "artifact-limits@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    bad_mime = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "notes.txt",
+            "mime_type": "text/plain",
+            "file_size": 128,
+        },
+        headers=headers,
+    )
+    too_large = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "huge.zip",
+            "mime_type": "application/zip",
+            "file_size": (500 * 1024 * 1024) + 1,
+        },
+        headers=headers,
+    )
+
+    assert bad_mime.status_code == 415
+    assert too_large.status_code == 413
+
+
+async def test_artifact_upload_url_is_denied_for_non_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributors cannot create Artifact upload targets for others' drafts."""
+    owner_id = await create_user_with_roles(
+        "artifact-real-owner@auracles.space",
+        ["contributor"],
+    )
+    other_id = await create_user_with_roles(
+        "artifact-other@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, owner_id)
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "risk-playbook.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=auth_headers(other_id, ["contributor"]),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_confirm_artifact_upload_is_idempotent_and_dispatches_scan_once(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Confirming an uploaded Artifact starts virus scanning exactly once."""
+    dispatched: list[str] = []
+
+    class FakeScanTask:
+        """Celery task double that records dispatched Artifact ids."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a scan dispatch instead of touching Redis/Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        FakeScanTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "artifact-confirm@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "risk-playbook.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    framework_test_context["storage"].existing_keys.add(upload.json()["file_key"])
+
+    first = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/confirm",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    second = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/confirm",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert dispatched == [artifact_id]
+    assert listed.json()[0]["processing_status"] == "processing"
+
+
+async def test_confirm_artifact_upload_requires_uploaded_s3_object(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Confirm rejects records whose private S3 object is not present yet."""
+    contributor_id = await create_user_with_roles(
+        "artifact-not-uploaded@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "risk-playbook.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/confirm",
+        json={"artifact_id": upload.json()["artifact_id"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+
+async def test_contributor_can_set_preview_artifact_and_delete_draft_artifact(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributors can select and remove Artifacts while Framework is draft."""
+    contributor_id = await create_user_with_roles(
+        "artifact-preview@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "preview.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+
+    preview = await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    deleted = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}",
+        headers=headers,
+    )
+    fetched = await client.get(f"/v1/frameworks/{framework_id}", headers=headers)
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["preview_artifact_id"] == artifact_id
+    assert deleted.status_code == 204
+    assert fetched.json()["preview_artifact_id"] is None
+    assert listed.json() == []
+
+
+async def test_published_framework_artifact_delete_is_rejected(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Artifacts cannot be deleted directly once the Framework is published."""
+    contributor_id = await create_user_with_roles(
+        "artifact-published@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "locked.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{upload.json()['artifact_id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
 
 
 async def test_unauthenticated_create_returns_401_and_creates_no_draft(

@@ -88,7 +88,7 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 | Review state machine | `draft → submitted → processing → {pipeline_passed | pipeline_failed} → published → (Contributor) unpublished | (Admin) suspended` | Single `framework_status` column carries it. Pipeline result fields on `frameworks` row drive the publish button. |
 | Admin role | **Post-publish moderation only**: `suspend` published frameworks on abuse report or spot-check; existing licensees keep access. Plus enterprise license grant + admin-mediated invoice. | No admin-gated submission. |
 | Reviews | Schema in Slice 1, flow Phase 3 | BR-FWK-004 ties reviews to active licenses; licenses require purchase (Phase 3). |
-| Artifact upload | S3 presigned PUT, mime + max-size enforced via presigned conditions; per-framework 500MB total tracked in service | TDD §10 (artifact bucket private). |
+| Artifact upload | S3 presigned POST, mime + max-size enforced in the POST policy; per-framework 500MB total tracked in service | TDD §10 (artifact bucket private). |
 | Download | S3 presigned GET (15m TTL) issued only after RBAC + license check + Operator-KYC check; row written to `artifact_downloads` per BR-FWK-006 | Audit table powers Contributor download counts. |
 
 ---
@@ -174,7 +174,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 
 ### Slice 3 — Artifact upload + S3 + virus scan
 **Add:**
-- Service: `request_artifact_upload_url(framework_id, filename, mime, size)` returns presigned PUT URL w/ size + mime conditions; `confirm_artifact_upload(artifact_id)` writes row to `artifacts`, dispatches `scan_artifact` Celery task; `delete_artifact` (draft only).
+- Service: `request_artifact_upload_url(framework_id, filename, mime, size)` returns presigned POST target w/ size + mime conditions; `confirm_artifact_upload(artifact_id)` writes row to `artifacts`, dispatches `scan_artifact` Celery task; `delete_artifact` (draft only).
 - Validate: mime in `{application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/zip}`; total per-framework size ≤ 500MB (FR-FWK-002).
 - Router: `POST /v1/frameworks/{id}/artifacts/upload-url`, `POST /v1/frameworks/{id}/artifacts/confirm`, `GET /v1/frameworks/{id}/artifacts`, `DELETE /v1/frameworks/{id}/artifacts/{aid}`, `PATCH /v1/frameworks/{id}/preview-artifact` (FR-FWK-004).
 - `app/workers/tasks/artifacts.py`: `scan_artifact(artifact_id)` runs ClamAV (`clamdscan`) against S3 object → updates `scan_status`. On `clean`, dispatches `process_artifact`. On `infected`, sets `processing_status='failed'`, writes audit row, dispatches no further. On `error`, retries.

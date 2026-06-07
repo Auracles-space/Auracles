@@ -51,6 +51,29 @@ class S3Storage:
             ),
         )
 
+    def presigned_post(
+        self,
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Create a presigned POST policy with S3-enforced upload constraints."""
+        return cast(
+            dict[str, Any],
+            self._client.generate_presigned_post(
+                Bucket=bucket,
+                Key=key,
+                Fields={"Content-Type": mime_type},
+                Conditions=[
+                    {"Content-Type": mime_type},
+                    ["content-length-range", 1, max_size],
+                ],
+                ExpiresIn=expires_in,
+            ),
+        )
+
     def object_exists(self, bucket: str, key: str) -> bool:
         """Return whether a private S3 object exists."""
         try:
@@ -63,6 +86,10 @@ class S3Storage:
                 return False
             raise
         return True
+
+    def download_file(self, bucket: str, key: str, destination: str) -> None:
+        """Download a private S3 object to a local file path."""
+        self._client.download_file(bucket, key, destination)
 
 
 storage = S3Storage()

@@ -8,6 +8,10 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends clamav clamav-daemon \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev
 

@@ -591,6 +591,191 @@ paths:
           description: Framework not found.
         "409":
           description: Only draft Frameworks can be deleted.
+  /v1/frameworks/{framework_id}/artifacts/upload-url:
+    post:
+      tags:
+        - Frameworks
+      operationId: requestArtifactUploadUrl
+      summary: Request Artifact upload target
+      description: Creates a private S3 presigned POST target and pending Artifact row for an owned draft Framework.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactUploadUrlRequest"
+      responses:
+        "200":
+          description: Artifact upload target created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactUploadUrlResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only draft Frameworks can accept Artifact uploads.
+        "413":
+          description: Framework artifacts exceed the 500MB total size limit.
+        "415":
+          description: Unsupported Artifact MIME type.
+        "422":
+          description: Invalid upload request payload.
+  /v1/frameworks/{framework_id}/artifacts/confirm:
+    post:
+      tags:
+        - Frameworks
+      operationId: confirmArtifactUpload
+      summary: Confirm Artifact upload
+      description: Confirms the private S3 object exists and dispatches virus scanning idempotently.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactConfirmRequest"
+      responses:
+        "200":
+          description: Artifact upload confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework or Artifact not found.
+        "409":
+          description: Artifact object has not been uploaded or Framework is not draft.
+        "422":
+          description: Invalid confirmation payload.
+  /v1/frameworks/{framework_id}/artifacts:
+    get:
+      tags:
+        - Frameworks
+      operationId: listFrameworkArtifacts
+      summary: List Framework Artifacts
+      description: Returns Artifacts attached to an owned Framework.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Framework Artifacts returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtifactResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role required.
+        "404":
+          description: Framework not found.
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}:
+    delete:
+      tags:
+        - Frameworks
+      operationId: deleteDraftArtifact
+      summary: Delete draft Artifact
+      description: Deletes an Artifact from an owned draft Framework and clears preview selection when needed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Draft Artifact deleted.
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role required.
+        "404":
+          description: Framework or Artifact not found.
+        "409":
+          description: Only draft Framework Artifacts can be deleted.
+  /v1/frameworks/{framework_id}/preview-artifact:
+    patch:
+      tags:
+        - Frameworks
+      operationId: setPreviewArtifact
+      summary: Set preview Artifact
+      description: Designates one Artifact as the preview for an owned draft Framework.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreviewArtifactRequest"
+      responses:
+        "200":
+          description: Preview Artifact selected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework or Artifact not found.
+        "409":
+          description: Only draft Frameworks can change preview Artifact.
+        "422":
+          description: Invalid preview payload.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -1579,6 +1764,128 @@ components:
           type: string
           format: date-time
         updated_at:
+          type: string
+          format: date-time
+    ArtifactUploadUrlRequest:
+      type: object
+      required:
+        - filename
+        - mime_type
+        - file_size
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mime_type:
+          type: string
+          enum:
+            - application/pdf
+            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+            - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+            - application/vnd.openxmlformats-officedocument.presentationml.presentation
+            - application/zip
+        file_size:
+          type: integer
+          minimum: 1
+    ArtifactUploadUrlResponse:
+      type: object
+      required:
+        - artifact_id
+        - upload_url
+        - fields
+        - file_key
+        - max_size
+        - expires_in
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        upload_url:
+          type: string
+          description: S3 endpoint URL for the multipart/form-data POST upload.
+        fields:
+          type: object
+          description: Form fields that must be included with the uploaded file.
+          additionalProperties:
+            type: string
+        file_key:
+          type: string
+        max_size:
+          type: integer
+        expires_in:
+          type: integer
+    ArtifactConfirmRequest:
+      type: object
+      required:
+        - artifact_id
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+    PreviewArtifactRequest:
+      type: object
+      required:
+        - artifact_id
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+    ArtifactResponse:
+      type: object
+      required:
+        - id
+        - framework_id
+        - name
+        - file_key
+        - file_size
+        - mime_type
+        - scan_status
+        - processing_status
+        - pii_detected
+        - pii_review_needed
+        - rarity_score
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        file_key:
+          type: string
+        file_size:
+          type: integer
+        mime_type:
+          type: string
+        scan_status:
+          type: string
+          enum:
+            - pending
+            - clean
+            - infected
+            - error
+        processing_status:
+          type: string
+          enum:
+            - pending
+            - processing
+            - processed
+            - failed
+            - flagged_pii
+            - flagged_rarity
+        pii_detected:
+          type: boolean
+        pii_review_needed:
+          type: boolean
+        rarity_score:
+          type:
+            - string
+            - "null"
+        created_at:
           type: string
           format: date-time
     ComponentHealth:

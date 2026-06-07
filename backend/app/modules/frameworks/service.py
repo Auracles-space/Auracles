@@ -2,28 +2,71 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
+from app.integrations import s3
 from app.modules.auth.models import User
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models_artifact import Artifact
 from app.modules.frameworks.schemas import (
+    ArtifactConfirmRequest,
+    ArtifactResponse,
+    ArtifactUploadUrlRequest,
+    ArtifactUploadUrlResponse,
     FrameworkCreate,
     FrameworkListItem,
     FrameworkResponse,
     FrameworkUpdate,
+    PreviewArtifactRequest,
     PricingConfig,
 )
+from app.workers.tasks.artifacts import scan_artifact
+
+ALLOWED_ARTIFACT_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/zip",
+}
+ARTIFACT_MAX_TOTAL_SIZE = 500 * 1024 * 1024
+ARTIFACT_UPLOAD_URL_TTL_SECONDS = 900
 
 
 def _tags_text(tags: list[str]) -> str:
     """Join tags into the immutable text field used by the FTS index."""
     return " ".join(tags)
+
+
+def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
+    """Map an Artifact row to the contributor-facing status response."""
+    return ArtifactResponse(
+        id=artifact.id,
+        framework_id=artifact.framework_id,
+        name=artifact.name,
+        file_key=artifact.file_key,
+        file_size=artifact.file_size,
+        mime_type=artifact.mime_type,
+        scan_status=artifact.scan_status,
+        processing_status=artifact.processing_status,
+        pii_detected=artifact.pii_detected,
+        pii_review_needed=artifact.pii_review_needed,
+        rarity_score=artifact.rarity_score,
+        created_at=artifact.created_at,
+    )
+
+
+def _extension_for_filename(filename: str) -> str:
+    """Return a safe filename extension from the original upload name."""
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return "".join(character for character in suffix if character.isalnum()) or "bin"
 
 
 def framework_to_response(framework: Framework) -> FrameworkResponse:
@@ -267,3 +310,221 @@ async def delete_draft(
         user_id=contributor.id,
         framework_id=framework_id,
     ).info("framework_draft_deleted")
+
+
+async def request_artifact_upload_url(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: ArtifactUploadUrlRequest,
+) -> ArtifactUploadUrlResponse:
+    """Create a pending Artifact row and return a private S3 POST upload target."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_draft(framework)
+    if payload.mime_type not in ALLOWED_ARTIFACT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported artifact MIME type.",
+        )
+
+    existing_size = await db.scalar(
+        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(
+            Artifact.framework_id == framework.id
+        )
+    )
+    total_size = int(existing_size or 0) + payload.file_size
+    if total_size > ARTIFACT_MAX_TOTAL_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        )
+
+    artifact_id = uuid4()
+    file_key = (
+        f"frameworks/{framework.id}/artifacts/{artifact_id}."
+        f"{_extension_for_filename(payload.filename)}"
+    )
+    artifact = Artifact(
+        id=artifact_id,
+        framework_id=framework.id,
+        name=payload.filename.strip(),
+        file_key=file_key,
+        file_size=payload.file_size,
+        mime_type=payload.mime_type,
+    )
+    db.add(artifact)
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_uploaded",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={
+            "framework_id": str(framework.id),
+            "status": "upload_url_created",
+        },
+    )
+    settings = get_settings()
+    upload_target = s3.storage.presigned_post(
+        bucket=settings.s3_artifacts_bucket,
+        key=file_key,
+        mime_type=payload.mime_type,
+        max_size=ARTIFACT_MAX_TOTAL_SIZE,
+        expires_in=ARTIFACT_UPLOAD_URL_TTL_SECONDS,
+    )
+    await db.commit()
+    logger.bind(
+        module="frameworks",
+        action="request_artifact_upload_url",
+        user_id=contributor.id,
+        framework_id=framework.id,
+        artifact_id=artifact.id,
+    ).info("artifact_upload_url_created")
+    return ArtifactUploadUrlResponse(
+        artifact_id=artifact.id,
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(field_name): str(field_value)
+            for field_name, field_value in upload_target["fields"].items()
+        },
+        file_key=file_key,
+        max_size=ARTIFACT_MAX_TOTAL_SIZE,
+        expires_in=ARTIFACT_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def list_artifacts(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+) -> list[ArtifactResponse]:
+    """Return Artifacts attached to an owned Framework."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    artifacts = (
+        await db.execute(
+            select(Artifact)
+            .where(Artifact.framework_id == framework.id)
+            .order_by(Artifact.created_at)
+        )
+    ).scalars().all()
+    return [_artifact_to_response(artifact) for artifact in artifacts]
+
+
+async def _load_owned_artifact(
+    db: AsyncSession,
+    framework: Framework,
+    artifact_id: UUID,
+) -> Artifact:
+    """Load an Artifact attached to an owned Framework or raise 404."""
+    artifact = await db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.framework_id == framework.id,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artifact not found.",
+        )
+    return artifact
+
+
+async def confirm_artifact_upload(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: ArtifactConfirmRequest,
+) -> ArtifactResponse:
+    """Confirm an Artifact object exists in S3 and dispatch virus scanning."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_draft(framework)
+    artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
+
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_artifacts_bucket, artifact.file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Artifact object has not been uploaded.",
+        )
+
+    if artifact.processing_status == "pending":
+        artifact.processing_status = "processing"
+        await write_audit(
+            db=db,
+            actor_id=contributor.id,
+            action="artifact_uploaded",
+            target_type="artifact",
+            target_id=artifact.id,
+            metadata={"framework_id": str(framework.id)},
+        )
+        await db.commit()
+        scan_artifact.delay(str(artifact.id))
+        logger.bind(
+            module="frameworks",
+            action="confirm_artifact_upload",
+            user_id=contributor.id,
+            framework_id=framework.id,
+            artifact_id=artifact.id,
+        ).info("artifact_processing_started")
+    else:
+        await db.commit()
+
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
+
+
+async def set_preview_artifact(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: PreviewArtifactRequest,
+) -> FrameworkResponse:
+    """Designate one owned Artifact as the Framework preview artifact."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_draft(framework)
+    artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
+    framework.preview_artifact_id = artifact.id
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="framework_preview_artifact_set",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"artifact_id": str(artifact.id)},
+    )
+    await db.commit()
+    await db.refresh(framework)
+    return framework_to_response(framework)
+
+
+async def delete_artifact(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> None:
+    """Delete an Artifact from an owned draft Framework."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_draft(framework)
+    artifact = await _load_owned_artifact(db, framework, artifact_id)
+    if framework.preview_artifact_id == artifact.id:
+        framework.preview_artifact_id = None
+        await db.flush()
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_deleted",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={"framework_id": str(framework.id)},
+    )
+    await db.delete(artifact)
+    await db.commit()
+    logger.bind(
+        module="frameworks",
+        action="delete_artifact",
+        user_id=contributor.id,
+        framework_id=framework.id,
+        artifact_id=artifact.id,
+    ).info("artifact_deleted")

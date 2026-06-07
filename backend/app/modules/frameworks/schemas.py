@@ -148,3 +148,53 @@ class FrameworkListItem(BaseModel):
         if not SEMVER_PATTERN.fullmatch(value):
             raise ValueError("Framework version must use semantic version format.")
         return value
+
+
+class ArtifactUploadUrlRequest(BaseModel):
+    """Request body for creating a constrained Artifact upload target."""
+
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=150)
+    file_size: int = Field(gt=0)
+
+
+class ArtifactUploadUrlResponse(BaseModel):
+    """Response body for an S3 presigned POST Artifact upload target."""
+
+    artifact_id: UUID
+    upload_url: str
+    fields: dict[str, str]
+    file_key: str
+    max_size: int
+    expires_in: int
+
+
+class ArtifactConfirmRequest(BaseModel):
+    """Request body for confirming a browser-uploaded Artifact object."""
+
+    artifact_id: UUID
+
+
+class PreviewArtifactRequest(BaseModel):
+    """Request body for selecting a Framework preview Artifact."""
+
+    artifact_id: UUID
+
+
+class ArtifactResponse(BaseModel):
+    """Contributor-facing Artifact processing status."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    framework_id: UUID
+    name: str
+    file_key: str
+    file_size: int
+    mime_type: str
+    scan_status: str
+    processing_status: str
+    pii_detected: bool
+    pii_review_needed: bool
+    rarity_score: Decimal | None
+    created_at: datetime

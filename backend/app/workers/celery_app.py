@@ -22,6 +22,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         broker=resolved_settings.celery_broker_url,
         backend=resolved_settings.celery_result_backend,
         include=[
+            "app.workers.tasks.artifacts",
             "app.workers.tasks.notifications",
             "app.workers.tasks.payouts",
             "app.workers.tasks.reputation",
