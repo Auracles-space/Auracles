@@ -35,6 +35,10 @@ export type CurrentUserResponse = {
     deactivated_at: (string) | null;
 };
 
+export type ForgotPasswordRequest = {
+    email: string;
+};
+
 export type HealthResponse = {
     status: 'ok' | 'unhealthy';
     components: {
@@ -72,6 +76,11 @@ export type RegisterResponse = {
 
 export type ResendVerificationRequest = {
     email: string;
+};
+
+export type ResetPasswordRequest = {
+    token: string;
+    new_password: string;
 };
 
 export type RoleAssignmentResponse = {
@@ -204,6 +213,22 @@ export type ResendVerificationData = {
 export type ResendVerificationResponse = (RegisterResponse);
 
 export type ResendVerificationError = (unknown);
+
+export type ForgotPasswordData = {
+    body: ForgotPasswordRequest;
+};
+
+export type ForgotPasswordResponse = (RegisterResponse);
+
+export type ForgotPasswordError = (unknown);
+
+export type ResetPasswordData = {
+    body: ResetPasswordRequest;
+};
+
+export type ResetPasswordResponse = (RegisterResponse);
+
+export type ResetPasswordError = (unknown);
 
 export type GetHealthResponse = (HealthResponse);
 

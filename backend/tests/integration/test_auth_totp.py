@@ -235,6 +235,10 @@ async def test_totp_enabled_login_requires_challenge_before_session_tokens(
     )
     verified_body = verified.json()
     payload = decode_access_token(verified_body["access_token"])
+    async with async_session_factory() as session:
+        audit_log = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "new_device_login")
+        )
 
     assert login.status_code == 200
     assert challenge_body["requires_2fa"] is True
@@ -244,6 +248,7 @@ async def test_totp_enabled_login_requires_challenge_before_session_tokens(
     assert verified.cookies.get("refresh_token") is not None
     assert payload.sub == user_id
     assert payload.totp_verified is True
+    assert audit_log is not None
 
 
 async def test_backup_code_completes_login_once(

@@ -20,11 +20,13 @@ from app.modules.auth.models import User, UserRole
 from app.modules.auth.schemas import (
     AddRoleRequest,
     CurrentUserResponse,
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
     RegisterResponse,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     RoleAssignmentResponse,
     TotpCodeRequest,
     TotpLoginVerifyRequest,
@@ -89,6 +91,43 @@ async def resend_verification(
     """Resend an email verification link without revealing account existence."""
     await service.resend_verification(db=db, redis=redis, email=str(payload.email))
     return RegisterResponse()
+
+
+@router.post("/forgot-password", response_model=RegisterResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> RegisterResponse:
+    """Start password reset without revealing whether the account exists."""
+    await service.forgot_password(
+        db=db,
+        redis=redis,
+        email=str(payload.email),
+        ip=_client_ip(request),
+        ua=request.headers.get("user-agent"),
+    )
+    return RegisterResponse(message="If email is valid, reset link sent.")
+
+
+@router.post("/reset-password", response_model=RegisterResponse)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> RegisterResponse:
+    """Reset a password using a single-use token."""
+    await service.reset_password(
+        db=db,
+        redis=redis,
+        token=payload.token,
+        new_password=payload.new_password.get_secret_value(),
+        ip=_client_ip(request),
+        ua=request.headers.get("user-agent"),
+    )
+    return RegisterResponse(message="Password reset.")
 
 
 @router.post("/login", response_model=LoginResponse, response_model_exclude_none=True)

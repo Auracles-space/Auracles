@@ -16,6 +16,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 
 
 def _replace_database(url: str, database: int) -> str:
@@ -119,9 +120,17 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def production_totp_key_is_not_placeholder(self) -> Self:
         """Reject the dev TOTP encryption key outside local environments."""
+        raw_totp_key = self.totp_encryption_key.get_secret_value()
+        if (
+            self.environment == "local"
+            and raw_totp_key == PLACEHOLDER_TOTP_ENCRYPTION_KEY
+        ):
+            self.totp_encryption_key = SecretStr(DEV_TOTP_ENCRYPTION_KEY)
+            return self
         if (
             self.environment != "local"
-            and self.totp_encryption_key.get_secret_value() == DEV_TOTP_ENCRYPTION_KEY
+            and raw_totp_key
+            in {DEV_TOTP_ENCRYPTION_KEY, PLACEHOLDER_TOTP_ENCRYPTION_KEY}
         ):
             raise ValueError("TOTP_ENCRYPTION_KEY must be set outside local.")
         return self

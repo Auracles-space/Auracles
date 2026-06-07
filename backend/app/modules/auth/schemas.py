@@ -61,6 +61,26 @@ class LoginRequest(BaseModel):
     password: SecretStr
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Request body for starting password reset without enumeration."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request body for consuming a password reset token."""
+
+    token: str = Field(min_length=1)
+    new_password: SecretStr
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_meets_policy(cls, value: SecretStr) -> SecretStr:
+        """Apply the shared password policy to password reset."""
+        validate_password_strength(value.get_secret_value())
+        return value
+
+
 class LoginResponse(BaseModel):
     """Browser login response; refresh token travels via HttpOnly cookie."""
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import ipaddress
 import json
 from base64 import b64encode
 from collections.abc import Awaitable
@@ -33,19 +35,41 @@ from app.core.security import (
 )
 from app.modules.auth.models import User, UserBackupCode, UserRole
 from app.modules.auth.schemas import LoginResponse, RegisterRequest, TotpSetupResponse
-from app.workers.tasks.notifications import send_verification_email
+from app.workers.tasks.notifications import (
+    send_new_device_email,
+    send_password_reset_email,
+    send_verification_email,
+)
 
 VERIFY_EMAIL_PREFIX = "ev_"
 VERIFY_EMAIL_TTL_SECONDS = 86_400
+PASSWORD_RESET_PREFIX = "pr_"
+PASSWORD_RESET_TTL_SECONDS = 900
 RESEND_VERIFICATION_LIMITER = RateLimiter(
     namespace="resend_verification",
     limit=3,
     window=3_600,
 )
 LOGIN_IP_LIMITER = RateLimiter(namespace="login_ip", limit=20, window=60)
+FORGOT_PASSWORD_IP_LIMITER = RateLimiter(
+    namespace="forgot_password_ip",
+    limit=10,
+    window=3_600,
+)
+FORGOT_PASSWORD_EMAIL_LIMITER = RateLimiter(
+    namespace="forgot_password_email",
+    limit=3,
+    window=3_600,
+)
+RESET_PASSWORD_IP_LIMITER = RateLimiter(
+    namespace="reset_password_ip",
+    limit=10,
+    window=3_600,
+)
 LOGIN_FAILURE_LIMIT = 5
 LOGIN_FAILURE_WINDOW_SECONDS = 900
 REFRESH_TOKEN_TTL_SECONDS = 2_592_000
+KNOWN_DEVICE_TTL_SECONDS = 2_592_000
 TOTP_CHALLENGE_TTL_SECONDS = 300
 TOTP_FAILURE_LIMIT = 5
 TOTP_FAILURE_WINDOW_SECONDS = 300
@@ -62,6 +86,11 @@ def _verification_key(token: str) -> str:
     return f"email_verify:{hash_token(token)}"
 
 
+def _password_reset_key(token: str) -> str:
+    """Build the Redis lookup key for a password reset token."""
+    return f"password_reset:{hash_token(token)}"
+
+
 def _refresh_key(token: str) -> str:
     """Build the Redis lookup key for a refresh token."""
     return f"refresh:{hash_token(token)}"
@@ -75,6 +104,16 @@ def _used_refresh_key(token: str) -> str:
 def _family_key(family_id: str) -> str:
     """Build the Redis set key tracking a refresh-token family."""
     return f"refresh_family:{family_id}"
+
+
+def _user_refresh_key(user_id: UUID) -> str:
+    """Build the Redis set key tracking all refresh tokens for a user."""
+    return f"refresh_user:{user_id}"
+
+
+def _known_devices_key(user_id: UUID) -> str:
+    """Build the Redis set key tracking known device fingerprints."""
+    return f"known_devices:{user_id}"
 
 
 def _login_failure_key(email: str) -> str:
@@ -95,6 +134,26 @@ def _totp_failure_key(user_id: UUID) -> str:
 def _backup_code_hash(code: str) -> str:
     """Normalize and hash a backup code for lookup."""
     return hash_token(code.strip().lower())
+
+
+def _ip_device_prefix(ip: str | None) -> str:
+    """Return the IPv4 /24 prefix used for coarse device fingerprinting."""
+    if ip is None:
+        return "unknown"
+    try:
+        parsed = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(parsed, ipaddress.IPv4Address):
+        octets = ip.split(".")
+        return ".".join(octets[:3])
+    return parsed.exploded
+
+
+def _device_fingerprint(ip: str | None, ua: str | None) -> str:
+    """Hash coarse network and user-agent data into a device fingerprint."""
+    raw = f"{_ip_device_prefix(ip)}:{ua or 'unknown'}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _qr_png_base64(provisioning_uri: str) -> str:
@@ -166,6 +225,8 @@ async def _store_refresh_token(
     await redis.setex(key, REFRESH_TOKEN_TTL_SECONDS, json.dumps(record))
     await cast(Awaitable[int], redis.sadd(_family_key(family_id), key))
     await redis.expire(_family_key(family_id), REFRESH_TOKEN_TTL_SECONDS)
+    await cast(Awaitable[int], redis.sadd(_user_refresh_key(user_id), key))
+    await redis.expire(_user_refresh_key(user_id), REFRESH_TOKEN_TTL_SECONDS)
 
 
 async def _revoke_family(redis: Redis, family_id: str) -> None:
@@ -176,6 +237,51 @@ async def _revoke_family(redis: Redis, family_id: str) -> None:
     if keys:
         await redis.delete(*keys)
     await redis.delete(family_key)
+
+
+async def _revoke_user_sessions(redis: Redis, user_id: UUID) -> None:
+    """Delete every refresh token tracked for a user."""
+    user_key = _user_refresh_key(user_id)
+    members = await cast(Awaitable[set[Any]], redis.smembers(user_key))
+    keys = [str(member) for member in members]
+    for key in keys:
+        raw_record = await redis.get(key)
+        if raw_record is not None:
+            record = json.loads(raw_record)
+            await cast(
+                Awaitable[int],
+                redis.srem(_family_key(str(record["family_id"])), key),
+            )
+    if keys:
+        await redis.delete(*keys)
+    await redis.delete(user_key)
+
+
+async def _record_new_device_if_needed(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    ip: str | None,
+    ua: str | None,
+) -> None:
+    """Dispatch a notification when a login fingerprint is new for the user."""
+    key = _known_devices_key(user.id)
+    fingerprint = _device_fingerprint(ip, ua)
+    known = await cast(Awaitable[set[Any]], redis.smembers(key))
+    if fingerprint not in {str(member) for member in known}:
+        send_new_device_email.delay(user.email, ip, ua)
+        await write_audit(
+            db=db,
+            actor_id=user.id,
+            action="new_device_login",
+            target_type="user",
+            target_id=user.id,
+            metadata={"device_fingerprint": fingerprint},
+            ip=ip,
+            ua=ua,
+        )
+    await cast(Awaitable[int], redis.sadd(key, fingerprint))
+    await redis.expire(key, KNOWN_DEVICE_TTL_SECONDS)
 
 
 async def register_user(
@@ -299,6 +405,91 @@ async def resend_verification(
     send_verification_email.delay(normalized_email, token)
 
 
+async def forgot_password(
+    db: AsyncSession,
+    redis: Redis,
+    email: str,
+    ip: str | None = None,
+    ua: str | None = None,
+) -> None:
+    """Start a no-enumeration password reset flow."""
+    normalized_email = normalize_email(email)
+    await FORGOT_PASSWORD_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
+    await FORGOT_PASSWORD_EMAIL_LIMITER.check(
+        cast(RedisCounter, redis),
+        normalized_email,
+    )
+    user = await db.scalar(select(User).where(User.email == normalized_email))
+    if user is None or user.deactivated_at is not None:
+        return
+
+    token = f"{PASSWORD_RESET_PREFIX}{generate_opaque_token()}"
+    await redis.setex(
+        _password_reset_key(token),
+        PASSWORD_RESET_TTL_SECONDS,
+        str(user.id),
+    )
+    send_password_reset_email.delay(normalized_email, token)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="password_reset_requested",
+        target_type="user",
+        target_id=user.id,
+        ip=ip,
+        ua=ua,
+    )
+    await db.commit()
+
+
+async def reset_password(
+    db: AsyncSession,
+    redis: Redis,
+    token: str,
+    new_password: str,
+    ip: str | None = None,
+    ua: str | None = None,
+) -> None:
+    """Consume a password reset token and revoke the user's sessions."""
+    await RESET_PASSWORD_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
+    if not token.startswith(PASSWORD_RESET_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password reset token.",
+        )
+
+    key = _password_reset_key(token)
+    raw_user_id = await redis.get(key)
+    if raw_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Password reset token expired or already used.",
+        )
+
+    user_id = UUID(str(raw_user_id))
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None or user.deactivated_at is not None:
+        await redis.delete(key)
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Password reset token expired or already used.",
+        )
+
+    user.password_hash = hash_password(new_password)
+    await _revoke_user_sessions(redis, user.id)
+    await redis.delete(key)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="password_reset",
+        target_type="user",
+        target_id=user.id,
+        ip=ip,
+        ua=ua,
+    )
+    await db.commit()
+
+
 async def login(
     db: AsyncSession,
     redis: Redis,
@@ -354,6 +545,7 @@ async def login(
         )
 
     await redis.delete(failure_key)
+    await _record_new_device_if_needed(db, redis, user, ip, ua)
     if user.totp_enabled:
         challenge_token = generate_opaque_token()
         await redis.setex(
@@ -361,6 +553,7 @@ async def login(
             TOTP_CHALLENGE_TTL_SECONDS,
             str(user.id),
         )
+        await db.commit()
         return LoginResponse(
             requires_2fa=True,
             challenge_token=challenge_token,
@@ -424,6 +617,7 @@ async def refresh(
     new_refresh_token = generate_opaque_token()
     await redis.delete(key)
     await cast(Awaitable[int], redis.srem(_family_key(family_id), key))
+    await cast(Awaitable[int], redis.srem(_user_refresh_key(user.id), key))
     await redis.setex(_used_refresh_key(token), REFRESH_TOKEN_TTL_SECONDS, family_id)
     await _store_refresh_token(redis, new_refresh_token, user.id, family_id, ip, ua)
     await write_audit(
@@ -454,6 +648,10 @@ async def logout(
         await cast(
             Awaitable[int],
             redis.srem(_family_key(str(record["family_id"])), key),
+        )
+        await cast(
+            Awaitable[int],
+            redis.srem(_user_refresh_key(UUID(record["user_id"])), key),
         )
         await write_audit(
             db=db,

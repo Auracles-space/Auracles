@@ -59,3 +59,16 @@ def test_settings_rejects_placeholder_totp_key_outside_local() -> None:
         assert "TOTP_ENCRYPTION_KEY must be set outside local" in str(exc)
     else:
         raise AssertionError("Expected placeholder TOTP key validation to fail.")
+
+
+def test_settings_allows_local_totp_placeholder_as_dev_key() -> None:
+    """Local env can use the documented placeholder as a dev-only Fernet key."""
+    settings = Settings(
+        ENVIRONMENT="local",
+        TOTP_ENCRYPTION_KEY="replace-with-fernet-generate-key-output",
+    )
+
+    assert (
+        settings.totp_encryption_key.get_secret_value()
+        == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    )
