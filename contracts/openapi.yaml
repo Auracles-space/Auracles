@@ -9,7 +9,81 @@ servers:
 tags:
   - name: Health
     description: Platform readiness endpoints.
+  - name: Auth
+    description: Registration and identity verification endpoints.
 paths:
+  /v1/auth/register:
+    post:
+      tags:
+        - Auth
+      operationId: registerUser
+      summary: Register with email and password
+      description: Creates a pending user account and sends an email verification token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: Generic no-enumeration registration response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "422":
+          description: Invalid registration payload.
+  /v1/auth/verify-email:
+    post:
+      tags:
+        - Auth
+      operationId: verifyEmail
+      summary: Verify email address
+      description: Consumes a one-time verification token and marks the user's email verified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: Email verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Malformed or invalid verification token.
+        "410":
+          description: Verification token expired or already used.
+        "422":
+          description: Invalid verification payload.
+  /v1/auth/resend-verification:
+    post:
+      tags:
+        - Auth
+      operationId: resendVerification
+      summary: Resend verification email
+      description: Sends a new verification token when the email belongs to an unverified account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerificationRequest"
+      responses:
+        "200":
+          description: Generic no-enumeration resend response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "429":
+          description: Resend rate limit exceeded.
+        "422":
+          description: Invalid resend payload.
   /v1/health:
     get:
       tags:
@@ -32,6 +106,59 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
 components:
   schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - display_name
+        - roles
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - contributor
+              - operator
+              - attestor
+    RegisterResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+    VerifyEmailRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
     ComponentHealth:
       type: object
       required:

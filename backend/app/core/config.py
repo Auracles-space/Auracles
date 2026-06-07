@@ -41,7 +41,11 @@ def _to_sync_postgres_url(url: str) -> str:
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     environment: str = Field(default="local", alias="ENVIRONMENT")
     log_format: str = Field(default="text", alias="LOG_FORMAT")

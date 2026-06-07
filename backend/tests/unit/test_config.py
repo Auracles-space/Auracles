@@ -16,3 +16,10 @@ def test_settings_normalizes_database_urls_for_app_and_alembic() -> None:
 
     assert settings.async_database_url == "postgresql+asyncpg://user:pass@host/auracles"
     assert settings.sync_database_url == "postgresql+psycopg://user:pass@host/auracles"
+
+
+def test_settings_ignores_script_only_environment_keys() -> None:
+    """Script-only env vars should not break app settings loading."""
+    settings = Settings(ADMIN_EMAIL="admin@auracles.space", ADMIN_PASSWORD="secret")
+
+    assert settings.environment == "local"

@@ -16,6 +16,49 @@ export type HealthResponse = {
 
 export type status2 = 'ok' | 'unhealthy';
 
+export type RegisterRequest = {
+    email: string;
+    password: string;
+    display_name: string;
+    roles: Array<('contributor' | 'operator' | 'attestor')>;
+};
+
+export type RegisterResponse = {
+    message: string;
+};
+
+export type ResendVerificationRequest = {
+    email: string;
+};
+
+export type VerifyEmailRequest = {
+    token: string;
+};
+
+export type RegisterUserData = {
+    body: RegisterRequest;
+};
+
+export type RegisterUserResponse = (RegisterResponse);
+
+export type RegisterUserError = (unknown);
+
+export type VerifyEmailData = {
+    body: VerifyEmailRequest;
+};
+
+export type VerifyEmailResponse = (RegisterResponse);
+
+export type VerifyEmailError = (unknown);
+
+export type ResendVerificationData = {
+    body: ResendVerificationRequest;
+};
+
+export type ResendVerificationResponse = (RegisterResponse);
+
+export type ResendVerificationError = (unknown);
+
 export type GetHealthResponse = (HealthResponse);
 
 export type GetHealthError = (HealthResponse);
