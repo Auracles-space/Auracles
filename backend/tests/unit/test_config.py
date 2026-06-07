@@ -23,3 +23,27 @@ def test_settings_ignores_script_only_environment_keys() -> None:
     settings = Settings(ADMIN_EMAIL="admin@auracles.space", ADMIN_PASSWORD="secret")
 
     assert settings.environment == "local"
+
+
+def test_settings_parses_explicit_cors_origins() -> None:
+    """CORS origins are parsed from a comma-separated allowlist."""
+    settings = Settings(
+        CORS_ALLOWED_ORIGINS="http://localhost:3000,https://auracles.space"
+    )
+
+    assert settings.cors_origin_list == [
+        "http://localhost:3000",
+        "https://auracles.space",
+    ]
+
+
+def test_settings_rejects_wildcard_cors_origins() -> None:
+    """Wildcard CORS is forbidden because refresh cookies use credentials."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(CORS_ALLOWED_ORIGINS="*")
+    except ValidationError as exc:
+        assert "CORS_ALLOWED_ORIGINS cannot contain '*'" in str(exc)
+    else:
+        raise AssertionError("Expected wildcard CORS validation to fail.")

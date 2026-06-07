@@ -9,9 +9,10 @@ TDD Section 5 (configuration).
 """
 
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +56,14 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     secret_key: str = Field(default="dev-only-change-me", alias="SECRET_KEY")
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000",
+        alias="CORS_ALLOWED_ORIGINS",
+    )
+    cookie_samesite: Literal["strict", "none"] = Field(
+        default="strict",
+        alias="COOKIE_SAMESITE",
+    )
     aws_access_key_id: SecretStr | None = Field(
         default=None, alias="AWS_ACCESS_KEY_ID"
     )
@@ -91,6 +100,24 @@ class Settings(BaseSettings):
     platform_commission_rate: float = Field(
         default=0.15, alias="PLATFORM_COMMISSION_RATE"
     )
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def cors_origins_are_explicit(cls, value: str) -> str:
+        """Reject wildcard CORS because refresh cookies use credentials."""
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS cannot contain '*'.")
+        return value
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """Return configured CORS origins as a clean list."""
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def async_database_url(self) -> str:

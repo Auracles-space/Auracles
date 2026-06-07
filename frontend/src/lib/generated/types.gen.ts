@@ -7,6 +7,16 @@ export type ComponentHealth = {
 
 export type status = 'ok' | 'unavailable';
 
+export type CurrentUserResponse = {
+    id: string;
+    email: string;
+    display_name: string;
+    roles: Array<(string)>;
+    email_verified: boolean;
+    kyc_status: string;
+    deactivated_at: (string) | null;
+};
+
 export type HealthResponse = {
     status: 'ok' | 'unhealthy';
     components: {
@@ -15,6 +25,19 @@ export type HealthResponse = {
 };
 
 export type status2 = 'ok' | 'unhealthy';
+
+export type LoginRequest = {
+    email: string;
+    password: string;
+};
+
+export type LoginResponse = {
+    access_token: string;
+    token_type: 'bearer';
+    expires_in: number;
+};
+
+export type token_type = 'bearer';
 
 export type RegisterRequest = {
     email: string;
@@ -42,6 +65,26 @@ export type RegisterUserData = {
 export type RegisterUserResponse = (RegisterResponse);
 
 export type RegisterUserError = (unknown);
+
+export type LoginData = {
+    body: LoginRequest;
+};
+
+export type LoginResponse2 = (LoginResponse);
+
+export type LoginError = (unknown);
+
+export type RefreshTokenResponse = (LoginResponse);
+
+export type RefreshTokenError = (unknown);
+
+export type LogoutResponse = (RegisterResponse);
+
+export type LogoutError = unknown;
+
+export type GetCurrentUserResponse = (CurrentUserResponse);
+
+export type GetCurrentUserError = (unknown);
 
 export type VerifyEmailData = {
     body: VerifyEmailRequest;
