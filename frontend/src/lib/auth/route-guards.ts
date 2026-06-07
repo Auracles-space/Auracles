@@ -16,6 +16,7 @@ const publicAuthPaths = new Set([
   "/login",
   "/register",
   "/reset-password",
+  "/settings/onboarding",
   "/verify-email",
 ]);
 
@@ -62,7 +63,7 @@ export function resolveAuthRouteDecision(input: {
 }): AuthRouteDecision {
   const { hint, pathname } = input;
 
-  if (pathname === "/2fa-challenge") {
+  if (pathname === "/2fa-challenge" || pathname === "/settings/onboarding") {
     return { kind: "next" };
   }
 

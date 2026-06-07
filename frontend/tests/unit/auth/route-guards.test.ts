@@ -39,4 +39,10 @@ describe("auth route guards", () => {
       resolveAuthRouteDecision({ hint: null, pathname: "/2fa-challenge" }),
     ).toEqual({ kind: "next" });
   });
+
+  it("allows the onboarding prompt before privileged settings access", () => {
+    expect(
+      resolveAuthRouteDecision({ hint: null, pathname: "/settings/onboarding" }),
+    ).toEqual({ kind: "next" });
+  });
 });

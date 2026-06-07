@@ -14,12 +14,14 @@ import {
   authTokenStore,
   setAccessTokenFromJwt,
 } from "@/lib/auth/token-store";
+import { getOnboardingDestination } from "@/lib/auth/onboarding";
 import { getRoleLandingPath } from "@/lib/auth/route-guards";
-import { login } from "@/lib/generated/sdk.gen";
+import { getCurrentUser, login } from "@/lib/generated/sdk.gen";
 
 import {
   configureBrowserClient,
   describeGeneratedError,
+  getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
@@ -90,7 +92,17 @@ export function LoginForm({ onAuthenticated, onChallenge }: LoginFormProps) {
     }
 
     setAccessTokenFromJwt(result.data.access_token);
-    navigateTo(getRoleLandingPath(authTokenStore.getState().roles));
+    const roleLandingPath = getRoleLandingPath(authTokenStore.getState().roles);
+    const currentUser = await getCurrentUser({
+      headers: getAccessTokenHeaders(),
+    });
+
+    if (!currentUser.response.ok || !currentUser.data) {
+      navigateTo(roleLandingPath);
+      return;
+    }
+
+    navigateTo(getOnboardingDestination(currentUser.data, roleLandingPath));
   }
 
   return (

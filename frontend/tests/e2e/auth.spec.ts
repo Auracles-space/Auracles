@@ -89,6 +89,19 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
       return;
     }
 
+    if (path === "/v1/auth/me") {
+      await fulfillJson(route, {
+        deactivated_at: null,
+        display_name: "Ada Markets",
+        email: "ada@example.com",
+        email_verified: true,
+        id: "00000000-0000-4000-8000-000000000001",
+        kyc_status: "unverified",
+        roles: ["operator"],
+      });
+      return;
+    }
+
     if (path === "/v1/auth/forgot-password") {
       await fulfillJson(route, { message: "If email is valid, reset link sent." });
       return;
@@ -150,7 +163,8 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
   await page.getByLabel("Email").fill("ada@example.com");
   await page.getByLabel("Password").fill("StrongerPass123!");
   await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page).toHaveURL(/\/explore$/);
+  await expect(page).toHaveURL(/\/settings\/onboarding$/);
+  await expect(page.getByText(/browse and preview frameworks/i)).toBeVisible();
 });
 
 test("completes login through a 2FA challenge", async ({ page }) => {
