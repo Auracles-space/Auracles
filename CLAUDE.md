@@ -23,40 +23,59 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 
 ### Key Docs
 
-| Doc       | Path                                                | Purpose                                          |
-| --------- | --------------------------------------------------- | ------------------------------------------------ |
-| PRD       | `docs/auracles-prd.md`                              | Short PRD — start here for onboarding            |
-| Full Spec | `docs/auracles-full-spec.md`                        | PRD + full ontology + taxonomy (source of truth) |
-| FRD       | `docs/superpowers/specs/2026-06-06-auracles-frd.md` | Functional requirements (~76 FRs, ~24 BRs)       |
-| TDD       | `docs/superpowers/specs/2026-06-06-auracles-tdd.md` | Technical design: schema, API, infra, security   |
+| Doc             | Path                                                          | Purpose                                             |
+| --------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| PRD             | `docs/auracles-prd.md`                                        | Short PRD — start here for onboarding               |
+| Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)    |
+| FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
+| TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
+| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend |
 
 ---
 
 ## Tech Stack
 
-| Layer                  | Technology                                 |
-| ---------------------- | ------------------------------------------ |
-| Frontend               | Next.js 15 (App Router)                    |
-| Styling                | Tailwind CSS                               |
-| Frontend hosting       | Vercel                                     |
-| Backend                | FastAPI (Python 3.13)                      |
-| Backend hosting        | AWS ECS Fargate                            |
-| Async workers          | Celery + Redis broker                      |
-| Scheduler              | Celery Beat (ECS singleton task)           |
-| Database               | PostgreSQL 16 (AWS RDS)                    |
-| Cache + broker         | Redis (AWS ElastiCache)                    |
-| File storage           | AWS S3                                     |
-| File events            | AWS Lambda (S3 trigger → virus scan)       |
-| Payments (global)      | Stripe + Stripe Connect                    |
-| Payments (Nigeria)     | Paystack                                   |
-| Email                  | AWS SES                                    |
-| API contract           | OpenAPI spec (`contracts/openapi.yaml`)    |
-| Migrations             | Alembic                                    |
-| ORM                    | SQLAlchemy (async)                         |
-| Validation             | Pydantic v2                                |
-| Infrastructure as Code | Terraform                                  |
-| Terraform state        | AWS S3 + DynamoDB (remote state + locking) |
-| CI/CD                  | GitHub Actions → ECR → ECS rolling deploy  |
+Two-phase deployment. Code is identical in both phases — only env vars and deploy targets change.
+
+### Phase 1 — Pre-Scale (current)
+
+| Layer              | Technology                                  |
+| ------------------ | ------------------------------------------- |
+| Frontend           | Next.js 15 (App Router)                     |
+| Styling            | Tailwind CSS                                |
+| Frontend hosting   | Vercel                                      |
+| Backend            | FastAPI (Python 3.13)                       |
+| Backend hosting    | Render (Web Service)                        |
+| Async workers      | Celery + Redis — Render (Background Worker) |
+| Scheduler          | Celery Beat — Render (Background Worker)    |
+| Database           | PostgreSQL 16 (Neon — serverless)           |
+| Cache + broker     | Redis (Upstash — serverless)                |
+| File storage       | AWS S3                                      |
+| Virus scan         | Celery task (ClamAV in worker image)        |
+| Payments (global)  | Stripe + Stripe Connect                     |
+| Payments (Nigeria) | Paystack                                    |
+| Email              | Resend (`noreply@auracles.space`)           |
+| API contract       | OpenAPI spec (`contracts/openapi.yaml`)     |
+| Migrations         | Alembic                                     |
+| ORM                | SQLAlchemy (async)                          |
+| Validation         | Pydantic v2                                 |
+| CI/CD              | GitHub Actions → GHCR → Render deploy hooks |
+
+### Phase 2 — AWS (at scale)
+
+| Layer           | Technology                                 |
+| --------------- | ------------------------------------------ |
+| Backend hosting | AWS ECS Fargate                            |
+| Scheduler       | Celery Beat (ECS singleton task)           |
+| Database        | PostgreSQL 16 (AWS RDS)                    |
+| Cache + broker  | Redis (AWS ElastiCache)                    |
+| File events     | AWS Lambda (S3 trigger → virus scan)       |
+| Email           | AWS SES (or Resend — optional swap)        |
+| Infrastructure  | Terraform                                  |
+| Terraform state | AWS S3 + DynamoDB (remote state + locking) |
+| CI/CD           | GitHub Actions → ECR → ECS rolling deploy  |
+
+See `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` for migration steps.
 
 ---
 
