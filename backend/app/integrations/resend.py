@@ -51,6 +51,29 @@ def send_password_reset_email(email: str, token: str) -> None:
     )
 
 
+def send_email_change_verification(email: str, token: str) -> None:
+    """Send a new-email verification message through Resend when configured."""
+    settings = get_settings()
+    if settings.resend_api_key is None:
+        logger.bind(module="settings", action="send_email_change_verification").info(
+            "resend_not_configured",
+            email=email,
+        )
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key.get_secret_value()
+    resend.Emails.send(
+        {
+            "from": settings.resend_from_address,
+            "to": email,
+            "subject": "Confirm your new Auracles email",
+            "html": f"<p>Use this email-change token: <code>{token}</code></p>",
+        }
+    )
+
+
 def send_new_device_email(
     email: str,
     ip: str | None,

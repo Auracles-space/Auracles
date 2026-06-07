@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
+
+from app.core.security import validate_password_strength
 
 KycDocType = Literal[
     "passport",
@@ -58,3 +60,47 @@ class KycStatusResponse(BaseModel):
 
     kyc_status: str
     documents: list[KycDocumentResponse]
+
+
+class SessionResponse(BaseModel):
+    """Public metadata for one active refresh-token session."""
+
+    id: str
+    ip: str | None
+    user_agent: str | None
+    last_seen: datetime
+    created_at: datetime
+    current: bool
+
+
+class SessionsResponse(BaseModel):
+    """Response body for active browser sessions."""
+
+    sessions: list[SessionResponse]
+
+
+class EmailChangeRequest(BaseModel):
+    """Request body for starting a verified account email change."""
+
+    new_email: EmailStr
+    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
+
+
+class EmailChangeConfirmRequest(BaseModel):
+    """Request body for confirming a new account email address."""
+
+    token: str = Field(min_length=1)
+
+
+class AccountDeactivateRequest(BaseModel):
+    """Request body for deactivating the authenticated account."""
+
+    password: SecretStr
+    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
+
+    @field_validator("password")
+    @classmethod
+    def password_has_valid_shape(cls, value: SecretStr) -> SecretStr:
+        """Reject impossible passwords before Argon2 verification work."""
+        validate_password_strength(value.get_secret_value())
+        return value

@@ -524,6 +524,153 @@ paths:
                 $ref: "#/components/schemas/KycStatusResponse"
         "401":
           description: Missing or invalid access token.
+  /v1/settings/sessions:
+    get:
+      tags:
+        - Settings
+      operationId: listSessions
+      summary: List active sessions
+      description: Returns active refresh-token sessions for the authenticated user.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active sessions returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionsResponse"
+        "401":
+          description: Missing or invalid access token.
+    delete:
+      tags:
+        - Settings
+      operationId: revokeOtherSessions
+      summary: Revoke other sessions
+      description: Revokes every refresh-token session except the current browser session.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Other sessions revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "401":
+          description: Missing or invalid access token.
+  /v1/settings/sessions/{session_id}:
+    delete:
+      tags:
+        - Settings
+      operationId: revokeSession
+      summary: Revoke a session
+      description: Revokes one refresh-token session owned by the authenticated user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "401":
+          description: Missing or invalid access token.
+        "404":
+          description: Session not found.
+  /v1/settings/account/email-change:
+    post:
+      tags:
+        - Settings
+      operationId: requestEmailChange
+      summary: Request account email change
+      description: Sends a verification token to a new email after 2FA confirmation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailChangeRequest"
+      responses:
+        "200":
+          description: Email-change verification sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: 2FA confirmation is required.
+        "409":
+          description: Email is already in use.
+        "422":
+          description: Invalid 2FA code or payload.
+  /v1/settings/account/email-change/confirm:
+    post:
+      tags:
+        - Settings
+      operationId: confirmEmailChange
+      summary: Confirm account email change
+      description: Confirms the new email address and revokes active sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailChangeConfirmRequest"
+      responses:
+        "200":
+          description: Email changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Malformed email-change token.
+        "409":
+          description: Email is already in use.
+        "410":
+          description: Email-change token expired or already used.
+        "422":
+          description: Invalid confirmation payload.
+  /v1/settings/account/deactivate:
+    post:
+      tags:
+        - Settings
+      operationId: deactivateAccount
+      summary: Deactivate account
+      description: Deactivates the current account and revokes active sessions.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountDeactivateRequest"
+      responses:
+        "200":
+          description: Account deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "401":
+          description: Missing access token or incorrect password.
+        "403":
+          description: 2FA confirmation is required.
+        "422":
+          description: Invalid 2FA code or payload.
   /v1/health:
     get:
       tags:
@@ -908,6 +1055,81 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/KycDocumentResponse"
+    SessionResponse:
+      type: object
+      required:
+        - id
+        - ip
+        - user_agent
+        - last_seen
+        - created_at
+        - current
+      properties:
+        id:
+          type: string
+        ip:
+          type:
+            - string
+            - "null"
+        user_agent:
+          type:
+            - string
+            - "null"
+        last_seen:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+    SessionsResponse:
+      type: object
+      required:
+        - sessions
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionResponse"
+    EmailChangeRequest:
+      type: object
+      required:
+        - new_email
+      properties:
+        new_email:
+          type: string
+          format: email
+        totp_code:
+          type:
+            - string
+            - "null"
+          minLength: 6
+          maxLength: 16
+    EmailChangeConfirmRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+    AccountDeactivateRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+        totp_code:
+          type:
+            - string
+            - "null"
+          minLength: 6
+          maxLength: 16
     ComponentHealth:
       type: object
       required:

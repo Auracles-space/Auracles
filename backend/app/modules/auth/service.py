@@ -96,6 +96,16 @@ def _refresh_key(token: str) -> str:
     return f"refresh:{hash_token(token)}"
 
 
+def refresh_session_id(token: str) -> str:
+    """Return the stable public session id for a refresh token."""
+    return hash_token(token)
+
+
+def _refresh_key_from_session_id(session_id: str) -> str:
+    """Build the Redis refresh key from a public session id."""
+    return f"refresh:{session_id}"
+
+
 def _used_refresh_key(token: str) -> str:
     """Build the Redis replay-detection key for a used refresh token."""
     return f"refresh_used:{hash_token(token)}"
@@ -154,6 +164,18 @@ def _device_fingerprint(ip: str | None, ua: str | None) -> str:
     """Hash coarse network and user-agent data into a device fingerprint."""
     raw = f"{_ip_device_prefix(ip)}:{ua or 'unknown'}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _redis_text(value: Any) -> str:
+    """Normalize Redis bytes/strings to text for JSON parsing and key work."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def _session_id_from_refresh_key(key: str) -> str:
+    """Extract the public session id from a Redis refresh key."""
+    return key.split(":", 1)[1]
 
 
 def _qr_png_base64(provisioning_uri: str) -> str:
@@ -231,6 +253,82 @@ async def _store_refresh_token(
     await redis.expire(_user_refresh_key(user_id), REFRESH_TOKEN_TTL_SECONDS)
 
 
+async def list_refresh_sessions(
+    redis: Redis,
+    user: User,
+    current_token: str | None,
+) -> list[dict[str, Any]]:
+    """Return active refresh-token sessions for the authenticated user."""
+    user_key = _user_refresh_key(user.id)
+    current_id = refresh_session_id(current_token) if current_token else None
+    sessions: list[dict[str, Any]] = []
+    members = await cast(Awaitable[set[Any]], redis.smembers(user_key))
+
+    for member in members:
+        key = _redis_text(member)
+        raw_record = await redis.get(key)
+        if raw_record is None:
+            await cast(Awaitable[int], redis.srem(user_key, key))
+            continue
+        record = json.loads(_redis_text(raw_record))
+        if str(record.get("user_id")) != str(user.id):
+            continue
+        session_id = _session_id_from_refresh_key(key)
+        sessions.append(
+            {
+                "id": session_id,
+                "ip": record.get("ip"),
+                "user_agent": record.get("user_agent"),
+                "last_seen": record.get("last_seen"),
+                "created_at": record.get("issued_at"),
+                "current": session_id == current_id,
+            }
+        )
+
+    return sorted(sessions, key=lambda item: str(item["created_at"]), reverse=True)
+
+
+async def revoke_refresh_session(
+    redis: Redis,
+    user: User,
+    session_id: str,
+) -> bool:
+    """Revoke one refresh-token session owned by the authenticated user."""
+    key = _refresh_key_from_session_id(session_id)
+    raw_record = await redis.get(key)
+    if raw_record is None:
+        return False
+
+    record = json.loads(_redis_text(raw_record))
+    if str(record.get("user_id")) != str(user.id):
+        return False
+
+    await cast(Awaitable[int], redis.srem(_family_key(str(record["family_id"])), key))
+    await cast(Awaitable[int], redis.srem(_user_refresh_key(user.id), key))
+    await redis.delete(key)
+    return True
+
+
+async def revoke_other_refresh_sessions(
+    redis: Redis,
+    user: User,
+    current_token: str | None,
+) -> int:
+    """Revoke every user refresh session except the current browser session."""
+    current_id = refresh_session_id(current_token) if current_token else None
+    removed = 0
+    for session in await list_refresh_sessions(redis, user, current_token):
+        if session["id"] == current_id:
+            continue
+        removed += int(await revoke_refresh_session(redis, user, str(session["id"])))
+    return removed
+
+
+async def revoke_all_user_sessions(redis: Redis, user: User) -> None:
+    """Revoke every refresh-token session for a user."""
+    await _revoke_user_sessions(redis, user.id)
+
+
 async def _revoke_family(redis: Redis, family_id: str) -> None:
     """Delete every refresh token in a replay-suspect family."""
     family_key = _family_key(family_id)
@@ -249,7 +347,7 @@ async def _revoke_user_sessions(redis: Redis, user_id: UUID) -> None:
     for key in keys:
         raw_record = await redis.get(key)
         if raw_record is not None:
-            record = json.loads(raw_record)
+            record = json.loads(_redis_text(raw_record))
             await cast(
                 Awaitable[int],
                 redis.srem(_family_key(str(record["family_id"])), key),
@@ -576,7 +674,7 @@ async def login(
         family_id,
         ip,
         ua,
-        totp_verified=True,
+        totp_verified=False,
     )
     await write_audit(
         db=db,
@@ -616,7 +714,7 @@ async def refresh(
             detail="Invalid refresh token.",
         )
 
-    record = json.loads(raw_record)
+    record = json.loads(_redis_text(raw_record))
     user_id = UUID(record["user_id"])
     family_id = str(record["family_id"])
     user = await db.scalar(select(User).where(User.id == user_id))
@@ -627,7 +725,11 @@ async def refresh(
         )
 
     roles = await _load_active_roles(db, user.id)
-    access_token = create_access_token(user_id=user.id, roles=roles)
+    access_token = create_access_token(
+        user_id=user.id,
+        roles=roles,
+        totp_verified=bool(record.get("totp_verified", False)),
+    )
     new_refresh_token = generate_opaque_token()
     await redis.delete(key)
     await cast(Awaitable[int], redis.srem(_family_key(family_id), key))
@@ -666,7 +768,7 @@ async def logout(
     key = _refresh_key(token)
     raw_record = await redis.get(key)
     if raw_record is not None:
-        record = json.loads(raw_record)
+        record = json.loads(_redis_text(raw_record))
         await cast(
             Awaitable[int],
             redis.srem(_family_key(str(record["family_id"])), key),
@@ -825,6 +927,34 @@ async def _verify_totp_or_backup_code(
     return await _consume_backup_code(db, user, code)
 
 
+async def verify_totp_for_sensitive_action(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    code: str | None,
+) -> None:
+    """Require and verify TOTP or backup code for sensitive settings changes."""
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Enable two-factor authentication before this action.",
+        )
+    if code is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Confirm with your authenticator app before continuing.",
+        )
+
+    await _ensure_totp_not_locked(redis, user.id)
+    if not await _verify_totp_or_backup_code(db, user, code):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+    await _clear_totp_failures(redis, user.id)
+
+
 async def disable_totp(
     db: AsyncSession,
     redis: Redis,
@@ -899,7 +1029,15 @@ async def verify_totp_login(
     family_id = str(uuid4())
     await redis.delete(key)
     await _clear_totp_failures(redis, user.id)
-    await _store_refresh_token(redis, refresh_token, user.id, family_id, ip, ua)
+    await _store_refresh_token(
+        redis,
+        refresh_token,
+        user.id,
+        family_id,
+        ip,
+        ua,
+        totp_verified=True,
+    )
     await write_audit(
         db=db,
         actor_id=user.id,
