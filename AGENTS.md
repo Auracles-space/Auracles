@@ -522,14 +522,14 @@ Every component, every page, every layout is built **mobile-first**. Design at t
 
 **Breakpoints (Tailwind defaults — do not customize):**
 
-| Prefix | Min width | Use case |
-|--------|-----------|----------|
-| (none) | 0px | Phones (portrait) |
-| `sm:` | 640px | Phones (landscape), small tablets |
-| `md:` | 768px | Tablets |
-| `lg:` | 1024px | Laptops |
-| `xl:` | 1280px | Desktops |
-| `2xl:` | 1536px | Large desktops |
+| Prefix | Min width | Use case                          |
+| ------ | --------- | --------------------------------- |
+| (none) | 0px       | Phones (portrait)                 |
+| `sm:`  | 640px     | Phones (landscape), small tablets |
+| `md:`  | 768px     | Tablets                           |
+| `lg:`  | 1024px    | Laptops                           |
+| `xl:`  | 1280px    | Desktops                          |
+| `2xl:` | 1536px    | Large desktops                    |
 
 Max content width still respects the spec: `max-w-[1280px]` on the content container, regardless of viewport.
 
