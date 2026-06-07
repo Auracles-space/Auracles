@@ -1,3 +1,10 @@
+"""Health check service.
+
+Pings the database and Redis concurrently, returning per-component
+readiness without leaking connection strings or internal error detail.
+The API component is implicitly OK if this code is executing.
+"""
+
 import asyncio
 
 import redis.asyncio as redis

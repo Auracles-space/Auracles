@@ -17,7 +17,6 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(RequestLoggingMiddleware)
     application.include_router(health_router, prefix="/v1")
-    application.include_router(health_router, include_in_schema=False)
 
     return application
 

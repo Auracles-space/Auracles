@@ -1,3 +1,10 @@
+"""Pydantic schemas for the health module.
+
+Defines the public response shape returned by `GET /v1/health`. Mirrored
+in the OpenAPI contract and consumed by the frontend foundation status
+component via the generated client.
+"""
+
 from pydantic import BaseModel, ConfigDict
 
 

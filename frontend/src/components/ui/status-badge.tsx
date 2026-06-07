@@ -13,14 +13,14 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const isReady = status === "ok";
   const Icon = isReady ? CheckIcon : Cross2Icon;
 
+  const baseClasses =
+    "inline-flex h-7 items-center gap-1.5 rounded border px-2 text-xs font-medium uppercase tracking-[0.05em]";
+  const variantClasses = isReady
+    ? "border-status-success-border bg-status-success-bg text-status-success-text"
+    : "border-status-error-border bg-status-error-bg text-status-error-text";
+
   return (
-    <span
-      className={
-        isReady
-          ? "inline-flex h-7 items-center gap-1.5 rounded border border-[#2A3A2A] bg-[#1A2A1A] px-2 text-xs font-medium uppercase tracking-[0.05em] text-[#86EFAC]"
-          : "inline-flex h-7 items-center gap-1.5 rounded border border-[#3A2020] bg-[#2A1010] px-2 text-xs font-medium uppercase tracking-[0.05em] text-[#FCA5A5]"
-      }
-    >
+    <span className={`${baseClasses} ${variantClasses}`}>
       <Icon aria-hidden="true" className="h-3.5 w-3.5" />
       {isReady ? "Ready" : "Down"}
     </span>

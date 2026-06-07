@@ -1,3 +1,13 @@
+"""Logging configuration and HTTP request middleware.
+
+Configures Loguru with colored output for local development and JSON
+serialization for production (Render log drain / CloudWatch). Provides
+`RequestLoggingMiddleware`, which assigns a UUID `request_id` to each
+incoming request and emits structured start/completion logs.
+
+Maps to: CLAUDE.md "Logging Standards" section.
+"""
+
 import sys
 import time
 import uuid
@@ -32,6 +42,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        """Process a single HTTP request, emitting structured logs.
+
+        Generates a UUID `request_id`, contextualises all downstream logs
+        with it, logs `request_started` before handler dispatch, and
+        `request_completed` with status code and duration after.
+
+        Args:
+            request: Incoming Starlette request.
+            call_next: Coroutine that invokes the next middleware/handler.
+
+        Returns:
+            The downstream response, with `X-Request-ID` header attached.
+        """
         request_id = str(uuid.uuid4())
         started_at = time.perf_counter()
         with logger.contextualize(request_id=request_id):

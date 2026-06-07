@@ -1,3 +1,13 @@
+"""Celery application factory.
+
+Builds the singleton Celery app used by both the worker and the Beat
+scheduler. Broker and result backend point at Upstash Redis (db=0) via
+settings; the periodic schedule comes from `beat_schedule.py`.
+
+Maps to: TDD Section 7 (background tasks) and pre-scale infra design
+Section 3.1 (worker + beat services).
+"""
+
 from celery import Celery
 
 from app.core.config import Settings, get_settings

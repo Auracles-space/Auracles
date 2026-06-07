@@ -1,3 +1,12 @@
+/**
+ * Foundation status surface for Phase 0.
+ *
+ * Renders the platform readiness page that the SSR `Home` route consumes.
+ * Sidebar identifies the phase; primary panel shows per-component
+ * readiness cards driven by the backend health snapshot.
+ *
+ * Maps to: Phase 0 — Foundation (CLAUDE.md Build Sequence).
+ */
 import type { HealthResponse } from "@/lib/generated/client";
 import { StatusBadge } from "@/components/ui/status-badge";
 

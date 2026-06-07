@@ -1,3 +1,12 @@
+"""HTTP router for the health module.
+
+Exposes `GET /v1/health`, returning 200 when API, database, and Redis are
+all reachable and 503 otherwise. Used by Render, uptime monitors, and the
+foundation status page.
+
+Maps to: pre-scale infra design Section 3.1 (Render health probe).
+"""
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 

@@ -1,3 +1,13 @@
+"""Application configuration.
+
+Loads environment variables into a typed Pydantic settings object and
+normalises connection URLs (async Postgres dialect, Redis database
+indices). All other modules import settings via `get_settings()`.
+
+Maps to: pre-scale infra design Section 4 (secrets management) and
+TDD Section 5 (configuration).
+"""
+
 from functools import lru_cache
 from urllib.parse import urlsplit, urlunsplit
 

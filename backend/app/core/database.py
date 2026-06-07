@@ -1,3 +1,12 @@
+"""Async SQLAlchemy engine, session factory, and declarative base.
+
+Defines the singleton `engine` connected to `settings.async_database_url`,
+the `async_session_factory`, and `get_db()` — the FastAPI dependency that
+yields a per-request `AsyncSession`. All ORM models inherit from `Base`.
+
+Maps to: TDD Section 4 (database access layer).
+"""
+
 from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
