@@ -121,12 +121,13 @@ auracles/                          # Monorepo root
 │   │   │   ├── projects/
 │   │   │   ├── attestation/
 │   │   │   ├── financials/
-│   │   │   └── settings/
+│   │   │   ├── settings/
+│   │   │   └── developer/         # developer portal (JWT) + partner API (X-API-Key)
 │   │   ├── core/
 │   │   │   ├── config.py          # Settings (pydantic-settings)
 │   │   │   ├── database.py        # SQLAlchemy async engine + session
-│   │   │   ├── security.py        # JWT, password hashing, 2FA
-│   │   │   └── dependencies.py    # FastAPI dependency injectors
+│   │   │   ├── security.py        # JWT, password hashing, 2FA, API key auth
+│   │   │   └── dependencies.py    # FastAPI dependency injectors (JWT + API key)
 │   │   ├── shared/
 │   │   │   ├── models/            # SQLAlchemy base models
 │   │   │   └── schemas/           # Shared Pydantic schemas
@@ -569,6 +570,143 @@ CREATE TYPE scan_status_enum AS ENUM ('pending', 'clean', 'infected');
 CREATE TYPE processing_status_enum AS ENUM ('pending', 'processing', 'processed', 'failed', 'flagged_pii', 'flagged_rarity');
 ```
 
+#### `developer_applications`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id         UUID NOT NULL REFERENCES users(id)
+company_name    VARCHAR(255) NOT NULL
+website         TEXT NOT NULL
+use_case        TEXT NOT NULL
+status          VARCHAR(20) NOT NULL DEFAULT 'pending'   -- pending|approved|rejected
+reviewed_by     UUID REFERENCES users(id)
+feedback        TEXT
+reviewed_at     TIMESTAMPTZ
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `developer_accounts`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id         UUID NOT NULL REFERENCES users(id) UNIQUE
+application_id  UUID NOT NULL REFERENCES developer_applications(id)
+company_name    VARCHAR(255) NOT NULL
+commission_tier SMALLINT NOT NULL DEFAULT 1              -- 1|2|3
+status          VARCHAR(20) NOT NULL DEFAULT 'active'   -- active|suspended
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `api_keys`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+developer_id    UUID NOT NULL REFERENCES developer_accounts(id)
+name            VARCHAR(100) NOT NULL
+key_prefix      VARCHAR(12) NOT NULL                    -- ak_live_XXXX — display only
+key_hash        VARCHAR(64) NOT NULL UNIQUE             -- SHA-256 of full raw key
+scopes          TEXT[] NOT NULL                         -- catalog:read|preview:read|attestations:read|purchase:write
+rate_limit_rpm  INTEGER NOT NULL DEFAULT 60
+webhook_url     TEXT
+webhook_secret  VARCHAR(64)                             -- HMAC signing secret for this key's webhooks
+expires_at      TIMESTAMPTZ
+last_used_at    TIMESTAMPTZ
+status          VARCHAR(20) NOT NULL DEFAULT 'active'   -- active|revoked
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `api_key_usage`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+api_key_id      UUID NOT NULL REFERENCES api_keys(id)
+endpoint        VARCHAR(255) NOT NULL
+method          VARCHAR(10) NOT NULL
+status_code     SMALLINT NOT NULL
+response_ms     INTEGER
+ip_address      INET
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `partner_commissions`
+```sql
+id                  UUID PRIMARY KEY DEFAULT gen_random_uuid()
+developer_id        UUID NOT NULL REFERENCES developer_accounts(id)
+api_key_id          UUID NOT NULL REFERENCES api_keys(id)
+transaction_id      UUID NOT NULL REFERENCES transactions(id)
+framework_id        UUID NOT NULL REFERENCES frameworks(id)
+sale_amount         NUMERIC(12,2) NOT NULL
+commission_rate     NUMERIC(5,4) NOT NULL               -- e.g. 0.05 = 5%
+commission_amount   NUMERIC(12,2) NOT NULL
+currency            CHAR(3) NOT NULL DEFAULT 'USD'
+tier_at_sale        SMALLINT NOT NULL
+status              VARCHAR(20) NOT NULL DEFAULT 'pending' -- pending|cleared|paid
+cleared_at          TIMESTAMPTZ
+created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `partner_payouts`
+```sql
+id                  UUID PRIMARY KEY DEFAULT gen_random_uuid()
+developer_id        UUID NOT NULL REFERENCES developer_accounts(id)
+payout_account_id   UUID NOT NULL REFERENCES payout_accounts(id)
+amount              NUMERIC(12,2) NOT NULL
+currency            CHAR(3) NOT NULL DEFAULT 'USD'
+status              payout_status_enum NOT NULL DEFAULT 'pending'
+provider_ref        VARCHAR(255)
+initiated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+completed_at        TIMESTAMPTZ
+```
+
+#### `framework_collections`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+contributor_id  UUID NOT NULL REFERENCES users(id)
+title           VARCHAR(255) NOT NULL
+description     TEXT NOT NULL
+price           NUMERIC(12,2) NOT NULL
+currency        CHAR(3) NOT NULL DEFAULT 'USD'
+status          framework_status_enum NOT NULL DEFAULT 'draft'
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `collection_frameworks`
+```sql
+collection_id   UUID NOT NULL REFERENCES framework_collections(id) ON DELETE CASCADE
+framework_id    UUID NOT NULL REFERENCES frameworks(id)
+PRIMARY KEY (collection_id, framework_id)
+```
+
+#### `saved_searches`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+name            VARCHAR(100) NOT NULL
+filters         JSONB NOT NULL DEFAULT '{}'
+alert_enabled   BOOLEAN NOT NULL DEFAULT false
+last_alerted_at TIMESTAMPTZ
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+#### `gdpr_requests`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id         UUID NOT NULL REFERENCES users(id)
+type            VARCHAR(20) NOT NULL                    -- export|deletion
+status          VARCHAR(20) NOT NULL DEFAULT 'pending'  -- pending|processing|completed
+download_key    TEXT                                    -- S3 key of export archive
+expires_at      TIMESTAMPTZ                             -- download link expiry
+created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+completed_at    TIMESTAMPTZ
+```
+
+#### `consent_logs`
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id         UUID NOT NULL REFERENCES users(id)
+document_type   VARCHAR(50) NOT NULL                    -- terms_of_service|privacy_policy
+document_version VARCHAR(20) NOT NULL
+ip_address      INET
+accepted_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
 ### Key Indexes
 
 ```sql
@@ -594,6 +732,17 @@ CREATE INDEX idx_projects_operator ON projects(operator_id);
 
 -- Attestations
 CREATE INDEX idx_attestations_target ON attestations(target_type, target_id);
+
+-- API key lookup (hot path — every partner request)
+CREATE INDEX idx_api_keys_hash ON api_keys(key_hash) WHERE status = 'active';
+CREATE INDEX idx_api_key_usage_key_time ON api_key_usage(api_key_id, created_at DESC);
+
+-- Partner commissions
+CREATE INDEX idx_partner_commissions_dev ON partner_commissions(developer_id, status);
+CREATE INDEX idx_partner_commissions_tx ON partner_commissions(transaction_id);
+
+-- Saved searches with alerts
+CREATE INDEX idx_saved_searches_alerts ON saved_searches(user_id) WHERE alert_enabled = true;
 ```
 
 ---
@@ -629,6 +778,8 @@ app.include_router(financials_router,  prefix="/v1/financials",  tags=["financia
 app.include_router(settings_router,    prefix="/v1/settings",    tags=["settings"])
 app.include_router(admin_router,       prefix="/v1/admin",       tags=["admin"])
 app.include_router(webhooks_router,    prefix="/v1/webhooks",    tags=["webhooks"])
+app.include_router(developer_router,   prefix="/v1/developer",   tags=["developer"])  # JWT auth — account mgmt
+app.include_router(partner_router,     prefix="/v1/partner",     tags=["partner"])    # X-API-Key auth
 ```
 
 ### Endpoint Overview
@@ -758,15 +909,52 @@ GET    /users
 GET    /users/{id}
 PATCH  /users/{id}/roles
 PATCH  /users/{id}/kyc
+POST   /users/{id}/suspend
 GET    /frameworks/pending          # review queue
 POST   /frameworks/{id}/approve
 POST   /frameworks/{id}/reject
+GET    /frameworks/flagged          # rarity + PII flags
 GET    /attestors/applications
 POST   /attestors/{id}/approve
 POST   /attestors/{id}/reject
 GET    /disputes
 POST   /disputes/{id}/resolve
-PATCH  /config                      # commission rate, feature flags
+PATCH  /config                      # commission rate, feature flags, tier thresholds
+GET    /analytics                   # platform GMV, user growth, attestation activity
+GET    /developer/applications
+POST   /developer/applications/{id}/approve
+POST   /developer/applications/{id}/reject
+PATCH  /developer/accounts/{id}/tier
+```
+
+#### Developer (`/v1/developer`) — JWT auth, approved developer account required
+```
+POST   /apply                       # submit developer application
+GET    /account                     # account details + tier + progress
+GET    /api-keys
+POST   /api-keys                    # generate key — returns raw key ONCE
+DELETE /api-keys/{id}               # revoke key
+GET    /usage                       # API key usage analytics
+GET    /commissions                 # commission history + status
+GET    /earnings                    # cleared + pending totals
+POST   /payouts                     # request commission payout (requires 2FA)
+GET    /payouts                     # payout history
+GET    /webhooks                    # registered webhook URLs
+POST   /webhooks                    # register webhook endpoint
+DELETE /webhooks/{id}
+```
+
+#### Partner (`/v1/partner`) — X-API-Key auth only
+```
+GET    /frameworks                  # catalog:read — paginated, filterable
+GET    /frameworks/{id}             # catalog:read — framework detail
+GET    /frameworks/{id}/preview     # preview:read — preview artifact presigned URL
+GET    /frameworks/{id}/attestations # attestations:read
+POST   /frameworks/{id}/purchase    # purchase:write — initiate, returns payment intent
+POST   /frameworks/{id}/purchase/confirm  # purchase:write — confirm, creates license
+GET    /collections                 # catalog:read — bundle listings
+GET    /collections/{id}            # catalog:read — collection detail
+POST   /collections/{id}/purchase   # purchase:write
 ```
 
 ---
@@ -929,6 +1117,74 @@ async def approve_framework(
 ):
 ```
 
+### API Key Authentication
+
+```python
+# core/security.py
+import secrets, hashlib
+
+def generate_api_key(env: str = "live") -> tuple[str, str]:
+    """Returns (raw_key, key_hash). raw_key shown ONCE, key_hash stored in DB."""
+    raw = f"ak_{env}_" + secrets.token_urlsafe(32)
+    key_hash = hashlib.sha256(raw.encode()).hexdigest()
+    prefix = raw[:12]           # stored as key_prefix for display
+    return raw, key_hash
+
+# core/dependencies.py
+async def get_partner_account(
+    x_api_key: str = Header(..., alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+    request: Request = None,
+) -> DeveloperAccount:
+    key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+    api_key = await db.scalar(
+        select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.status == "active")
+    )
+    if not api_key:
+        raise HTTPException(401, "Invalid or revoked API key")
+    if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+        raise HTTPException(401, "API key expired")
+    # Log usage asynchronously — never block the request
+    background_tasks.add_task(log_api_usage, api_key.id, request)
+    await db.execute(
+        update(ApiKey).where(ApiKey.id == api_key.id).values(last_used_at=datetime.utcnow())
+    )
+    return api_key.developer_account
+
+def require_scope(scope: str):
+    """Dependency factory — checks API key has required scope."""
+    async def checker(account: DeveloperAccount = Depends(get_partner_account)):
+        if scope not in account.current_key.scopes:
+            raise HTTPException(403, f"This action requires the `{scope}` scope.")
+        return account
+    return checker
+```
+
+Rate limiting enforced at Redis layer per `api_key_id`:
+```python
+async def check_rate_limit(api_key_id: UUID, limit_rpm: int, redis: Redis):
+    key = f"ratelimit:{api_key_id}"
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, 60)
+    if count > limit_rpm:
+        raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": "60"})
+```
+
+### Webhook Signing (Partner Webhooks)
+
+```python
+import hmac, hashlib, json
+
+def sign_webhook_payload(payload: dict, secret: str) -> str:
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    return hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+# Partner verifies:
+# X-Auracles-Signature: sha256=<hex>
+# if not hmac.compare_digest(expected, received): reject
+```
+
 ### Artifact Access Control
 - Artifacts stored in private S3 bucket
 - Access via presigned URLs (15-minute expiry)
@@ -1003,6 +1259,13 @@ def select_provider(user_country: str, currency: str) -> str:
 | `generate_thumbnail` | artifacts | Chained after `compute_rarity_score` |
 | `index_artifact_content` | artifacts | Chained after `generate_thumbnail` |
 | `flag_low_rarity` | artifacts | Triggered if rarity_score < threshold → notify admin + contributor |
+| `clear_partner_commissions` | developer | Celery Beat — daily: mark commissions as `cleared` after 48h refund window |
+| `upgrade_partner_tiers` | developer | Celery Beat — monthly: recalculate tier based on last 30 days' attributed sales |
+| `deliver_partner_webhook` | developer | Triggered on purchase.confirmed, commission.cleared, framework.updated |
+| `retry_failed_webhooks` | developer | Celery Beat — hourly: retry failed webhook deliveries (max 5 attempts, exponential backoff) |
+| `dispatch_saved_search_alerts` | explore | Celery Beat — daily: check new published frameworks against saved searches with alerts enabled |
+| `process_gdpr_export` | settings | Triggered by GDPR data export request → compile JSON → upload to S3 → notify user |
+| `process_gdpr_deletion` | settings | Triggered by GDPR deletion request → hard-delete PII, anonymise transactions |
 
 ### S3 Presigned URLs
 ```python

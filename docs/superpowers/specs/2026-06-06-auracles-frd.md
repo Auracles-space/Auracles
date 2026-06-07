@@ -52,6 +52,16 @@ The following entities are referenced across all modules.
 | **Dispute** | id, project_id, raised_by, reason, status, resolution, admin_id, created_at, resolved_at | `status`: `open \| under_review \| resolved` |
 | **PayoutAccount** | id, user_id, type, provider, account_details_encrypted, is_default, verified_at | Contributor-linked bank or payment provider account |
 | **Payout** | id, contributor_id, payout_account_id, amount, currency, commission_deducted, net_amount, status, initiated_at, completed_at | `status`: `pending \| processing \| completed \| failed` |
+| **DeveloperApplication** | id, user_id, company_name, website, use_case, status, reviewed_by, reviewed_at | Application to join Partner API program; `status`: `pending \| approved \| rejected` |
+| **DeveloperAccount** | id, user_id, application_id, company_name, commission_tier, status | Approved partner account; tier auto-upgraded by monthly sales volume |
+| **ApiKey** | id, developer_id, name, key_prefix, key_hash, scopes[], rate_limit_rpm, expires_at, last_used_at, status | Raw key shown once at creation; only SHA-256 hash stored; `status`: `active \| revoked` |
+| **ApiKeyUsage** | id, api_key_id, endpoint, method, status_code, response_ms, ip_address, created_at | Audit log of all API key requests |
+| **PartnerCommission** | id, developer_id, api_key_id, transaction_id, framework_id, sale_amount, commission_rate, commission_amount, currency, tier_at_sale, status, cleared_at | Commission per sale attributed to partner; `status`: `pending \| cleared \| paid` |
+| **PartnerPayout** | id, developer_id, payout_account_id, amount, currency, status, provider_ref, initiated_at, completed_at | Payout of cleared partner commissions |
+| **ArtifactFingerprint** | id, artifact_id, framework_version, embedding (vector), text_hash, char_count, created_at | Semantic fingerprint for rarity comparison; pgvector |
+| **ArtifactPiiAudit** | id, artifact_id, pii_types_found[], auto_redacted, flagged_for_review, reviewed_by, reviewed_at | Audit trail of PII detection and redaction per artifact |
+| **FrameworkCollection** | id, contributor_id, title, description, price, currency, framework_ids[], status, created_at | Curated bundle of related frameworks sold as a unit |
+| **SavedSearch** | id, user_id, name, filters{}, alert_enabled, last_alerted_at, created_at | Operator saves a search query; receives alerts on new matches |
 
 ### 2.2 Lifecycle State Machines
 
@@ -432,9 +442,163 @@ User profile management, verification status, role configuration, security setti
 
 ---
 
-## 10. Appendices
+## 10. Developer Platform Module
 
-### 10.1 FR Traceability Matrix
+### Purpose
+Enables third-party platforms to integrate with Auracles via API keys — reading framework data, embedding content, and facilitating purchases on behalf of their users. Partners earn tiered commissions on sales they drive.
+
+### Actors
+- Third-party developer / partner (applies, manages keys, earns commissions)
+- Operator/Contributor (can also become a developer)
+- Admin (approves applications, manages tier overrides)
+
+### Functional Requirements — Application & Onboarding
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-001 | The system shall allow any authenticated user to submit a Developer Application with: company name, website, and use-case description. |
+| FR-DEV-002 | The system shall notify an Admin of new Developer Applications for review. |
+| FR-DEV-003 | The system shall allow an Admin to approve or reject a Developer Application with written feedback. |
+| FR-DEV-004 | The system shall create a DeveloperAccount and notify the applicant on approval. |
+
+### Functional Requirements — API Key Management
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-005 | The system shall allow an approved Developer to generate API keys with: name, scope selection, optional expiry date. |
+| FR-DEV-006 | The system shall display the raw API key exactly once on creation; subsequent views show only the key prefix. |
+| FR-DEV-007 | The system shall allow a Developer to list, label, and revoke their API keys. |
+| FR-DEV-008 | The system shall enforce per-key rate limits (default: 60 requests/minute). |
+| FR-DEV-009 | The system shall log all API key requests to an audit trail (endpoint, status code, response time, IP). |
+| FR-DEV-010 | The system shall notify a Developer when their API key approaches rate limit thresholds. |
+
+### Functional Requirements — Partner API (Data Access)
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-011 | The system shall authenticate Partner API requests via `X-API-Key` header. |
+| FR-DEV-012 | The system shall enforce scope-based access: `catalog:read`, `preview:read`, `attestations:read`, `purchase:write`. |
+| FR-DEV-013 | The system shall expose a Partner API catalog endpoint returning paginated, searchable, filterable frameworks (same taxonomy filters as Explore). |
+| FR-DEV-014 | The system shall expose a Partner API framework detail endpoint returning full metadata and attestation status. |
+| FR-DEV-015 | The system shall expose a Partner API preview endpoint returning the designated preview artifact for a framework. |
+| FR-DEV-016 | The system shall expose a Partner API attestations endpoint returning all attestations for a framework. |
+
+### Functional Requirements — Headless Purchase Flow
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-017 | The system shall allow a Partner to initiate a framework purchase via API, returning a Payment Intent for the partner to complete on their platform. |
+| FR-DEV-018 | The system shall allow a Partner to confirm a completed payment, triggering license creation for the buyer and commission attribution to the partner. |
+| FR-DEV-019 | The system shall attribute PartnerCommission to the API key used in the purchase transaction. |
+| FR-DEV-020 | The system shall apply the partner's current commission tier rate at the time of sale. |
+| FR-DEV-021 | The system shall mark commissions as `cleared` after the 48-hour refund window passes. |
+
+### Functional Requirements — Partner Webhooks
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-022 | The system shall allow a Developer to register a webhook URL to receive events. |
+| FR-DEV-023 | The system shall deliver webhook events to registered URLs for: `purchase.confirmed`, `commission.cleared`, `framework.updated` (for frameworks they have driven sales on). |
+| FR-DEV-024 | The system shall sign webhook payloads with HMAC-SHA256 using a per-partner secret. |
+| FR-DEV-025 | The system shall retry failed webhook deliveries with exponential backoff (max 5 attempts). |
+
+### Functional Requirements — Commissions & Payouts
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-026 | The system shall display a Developer earnings dashboard: total commissions, pending, cleared, paid, per-framework breakdown. |
+| FR-DEV-027 | The system shall display the Developer's current commission tier and progress toward the next tier. |
+| FR-DEV-028 | The system shall automatically recalculate and update commission tiers monthly based on the prior 30 days' attributed sales volume. |
+| FR-DEV-029 | The system shall allow a Developer to request a payout of cleared commissions to a linked payout account (requires 2FA). |
+| FR-DEV-030 | The system shall display Partner payout history with status per payout. |
+
+### Functional Requirements — Developer Analytics
+
+| ID | Requirement |
+|---|---|
+| FR-DEV-031 | The system shall display API key usage analytics: total requests, requests by endpoint, error rate, average response time. |
+| FR-DEV-032 | The system shall display sales analytics: frameworks sold, total GMV driven, conversion rate (purchases / catalog views). |
+
+### Business Rules
+
+| ID | Rule |
+|---|---|
+| BR-DEV-001 | Raw API key is shown exactly once — at creation. It cannot be retrieved again; only prefix visible after. |
+| BR-DEV-002 | API key authentication uses SHA-256 hash comparison only — raw key never stored in DB. |
+| BR-DEV-003 | Commission is deducted from the platform's margin, not the contributor's earnings. Contributor always receives their full configured rate. |
+| BR-DEV-004 | Commission tier thresholds: Tier 1 = 0–10 sales/month (5%); Tier 2 = 11–50 sales/month (8%); Tier 3 = 51+ sales/month (12%). Rates configurable by Admin. |
+| BR-DEV-005 | Commission on a sale is locked at the partner's tier rate at time of sale — not recalculated if tier changes. |
+| BR-DEV-006 | Commissions are `pending` until 48h refund window passes, then auto-cleared to `cleared` by Celery Beat. |
+| BR-DEV-007 | Partner payout requires 2FA confirmation. Minimum payout threshold: $50. |
+| BR-DEV-008 | Partner API requests to unlicensed artifact downloads return 403 — partners cannot bypass licensing. |
+| BR-DEV-009 | Revoked API keys return 401 immediately — no grace period. |
+| BR-DEV-010 | Partner webhook deliveries are signed; partners must verify the signature before processing. |
+
+### Error States
+
+| Trigger | Response |
+|---|---|
+| Missing or invalid `X-API-Key` | `401 Unauthorized` — "Invalid API key." |
+| Revoked or expired key | `401 Unauthorized` — "API key revoked or expired." |
+| Scope not permitted | `403 Forbidden` — "This action requires the `purchase:write` scope." |
+| Rate limit exceeded | `429 Too Many Requests` + `Retry-After` header |
+| Purchase on already-licensed framework | `409 Conflict` — "Buyer already holds a license for this framework." |
+
+---
+
+## 11. Additional Functional Requirements
+
+### 11.1 Framework Collections
+
+| ID | Requirement |
+|---|---|
+| FR-COL-001 | The system shall allow a Contributor to create a Collection: title, description, select member frameworks, set bundle price. |
+| FR-COL-002 | The system shall allow Operators to purchase a Collection license, granting access to all member frameworks at the bundle price. |
+| FR-COL-003 | The system shall display Collections in the Explore catalog alongside individual frameworks. |
+| FR-COL-004 | The system shall pro-rate contributor earnings across member frameworks by their individual prices when a Collection is purchased. |
+
+**Business Rules:**
+- `BR-COL-001` — A Collection must contain at least 2 frameworks.
+- `BR-COL-002` — All frameworks in a Collection must be published and owned by the same Contributor.
+- `BR-COL-003` — Bundle price must be less than the sum of individual framework prices.
+
+---
+
+### 11.2 Saved Searches & Alerts
+
+| ID | Requirement |
+|---|---|
+| FR-SRCH-001 | The system shall allow an Operator to save a search query (filters + keywords) with a name. |
+| FR-SRCH-002 | The system shall allow an Operator to enable email alerts on a saved search — notified when new frameworks matching the criteria are published. |
+| FR-SRCH-003 | The system shall allow an Operator to manage (edit, delete, toggle alerts) their saved searches from the Settings module. |
+
+---
+
+### 11.3 GDPR & Data Rights
+
+| ID | Requirement |
+|---|---|
+| FR-GDPR-001 | The system shall allow any user to request a full export of their personal data (profile, purchases, reviews, transactions) in JSON format. |
+| FR-GDPR-002 | The system shall fulfil data export requests within 30 days and deliver via secure download link. |
+| FR-GDPR-003 | The system shall allow any user to request account deletion; system hard-deletes PII while retaining anonymised transaction records for financial compliance. |
+| FR-GDPR-004 | The system shall maintain a consent log recording when users accepted the Terms of Service and Privacy Policy, and which version. |
+
+---
+
+### 11.4 Platform Admin Analytics
+
+| ID | Requirement |
+|---|---|
+| FR-ADMIN-001 | The system shall provide an Admin dashboard displaying: GMV (daily/weekly/monthly), active users, new registrations, frameworks published, attestations issued, disputes open. |
+| FR-ADMIN-002 | The system shall allow Admins to export platform analytics as CSV. |
+| FR-ADMIN-003 | The system shall display a content moderation queue: frameworks flagged for review, low rarity score flags, PII review flags. |
+| FR-ADMIN-004 | The system shall allow Admins to suspend a user account, retaining their data but blocking all platform activity. |
+
+---
+
+## 12. Appendices
+
+### 12.1 FR Traceability Matrix
 
 | FR ID | Module | PRD Section | Status |
 |---|---|---|---|
@@ -445,8 +609,13 @@ User profile management, verification status, role configuration, security setti
 | FR-ATT-001–011 | Attestation | §6, §10 Trust Layer | Draft |
 | FR-FIN-001–014 | Financials | §6, Economic Layer | Draft |
 | FR-SET-001–011 | Settings | §11 Access Control | Draft |
+| FR-DEV-001–032 | Developer Platform | New feature — Partner API | Draft |
+| FR-COL-001–004 | Collections | §6 Framework Collections | Draft |
+| FR-SRCH-001–003 | Saved Searches | §6 Explore module extension | Draft |
+| FR-GDPR-001–004 | GDPR & Data Rights | §12 Compliance | Draft |
+| FR-ADMIN-001–004 | Admin Analytics | §13 Analytics & Reporting | Draft |
 
-### 10.2 Taxonomy Reference
+### 12.2 Taxonomy Reference
 
 Framework classification fields follow the Auracles Taxonomy Framework (v1.0):
 
@@ -455,9 +624,9 @@ Framework classification fields follow the Auracles Taxonomy Framework (v1.0):
 - **Org Size:** Startup (1–20), Small Business (21–50), SME (51–250), Mid-Market (251–1,000), Enterprise (1,000+)
 - **Lifecycle Stage:** Formation, Early Operations, Growth, Maturity, Optimization, Digital Transformation, Institutionalization, Expansion, Transformation, Exit / Transition, Legacy & Continuity
 
-Full taxonomy defined in: `Auracles Product Specification (1).md`
+Full taxonomy defined in: `docs/auracles-full-spec.md`
 
-### 10.3 Error Code Registry
+### 12.3 Error Code Registry
 
 Standard HTTP error codes used across all modules:
 
@@ -476,16 +645,21 @@ Standard HTTP error codes used across all modules:
 | 429 | Too Many Requests | Rate limit exceeded |
 | 500 | Internal Server Error | Unhandled system error |
 
-### 10.4 Open Questions
+### 12.4 Open Questions
 
 | # | Question | Owner | Due |
 |---|---|---|---|
-| OQ-001 | Platform commission rate | Product | TBD |
-| OQ-002 | Supported payout providers (Stripe Connect, Paystack, etc.) | Engineering / Product | TBD |
+| ~~OQ-001~~ | ~~Platform commission rate~~ | Resolved: 15% platform default, Admin-configurable | Closed |
+| ~~OQ-002~~ | ~~Payout providers~~ | Resolved: Stripe Connect (global) + Paystack (Nigeria/NGN) | Closed |
 | OQ-003 | Attestation SLA durations per target type | Product | TBD |
 | OQ-004 | Free framework tier (future phase trigger) | Product | TBD |
 | OQ-005 | OAuth providers beyond Google and LinkedIn | Product | TBD |
+| OQ-006 | Partner API commission tier thresholds and rates (currently 0–10/5%, 11–50/8%, 51+/12%) | Product | TBD |
+| OQ-007 | Partner commission minimum payout threshold | Product | TBD |
+| OQ-008 | Collection pro-rata earnings formula when member framework prices differ | Product | TBD |
+| OQ-009 | GDPR data export format — JSON only or also CSV? | Product / Legal | TBD |
+| OQ-010 | User suspension policy — auto-lift after X days or manual only? | Product | TBD |
 
 ---
 
-*End of Auracles FRD v1.0*
+*End of Auracles FRD v1.1*

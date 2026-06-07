@@ -5,7 +5,7 @@
 **Human is architect. Agent is senior engineer.**
 
 - Check `docs/superpowers/specs/` before every task — FRD and TDD are the source of truth.
-- Before starting any feature: invoke `grill-me` skill to stress-test requirements.
+- Before starting any feature: invoke `grill-me` skill to stress-test requirements as developer questions and not just decide.
 - Before building anything visual: invoke `frontend-design` skill.
 - Before debugging: invoke `diagnose` skill.
 - Every feature is test-driven: write failing test first, then implementation. Invoke `tdd` skill before any feature work.

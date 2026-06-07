@@ -5,7 +5,7 @@
 **Human is architect. Agent is senior engineer.**
 
 - Check `docs/superpowers/specs/` before every task — FRD and TDD are the source of truth.
-- Before starting any feature: invoke `grill-me` skill to stress-test requirements.
+- Before starting any feature: invoke `grill-me` skill to stress-test requirements as developer questions and not just decide.
 - Before building anything visual: invoke `frontend-design` skill.
 - Before debugging: invoke `diagnose` skill.
 - Every feature is test-driven: write failing test first, then implementation. Invoke `tdd` skill before any feature work.
@@ -23,40 +23,40 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 
 ### Key Docs
 
-| Doc | Path | Purpose |
-|---|---|---|
-| PRD | `docs/auracles-prd.md` | Short PRD — start here for onboarding |
-| Full Spec | `docs/auracles-full-spec.md` | PRD + full ontology + taxonomy (source of truth) |
-| FRD | `docs/superpowers/specs/2026-06-06-auracles-frd.md` | Functional requirements (~76 FRs, ~24 BRs) |
-| TDD | `docs/superpowers/specs/2026-06-06-auracles-tdd.md` | Technical design: schema, API, infra, security |
+| Doc       | Path                                                | Purpose                                          |
+| --------- | --------------------------------------------------- | ------------------------------------------------ |
+| PRD       | `docs/auracles-prd.md`                              | Short PRD — start here for onboarding            |
+| Full Spec | `docs/auracles-full-spec.md`                        | PRD + full ontology + taxonomy (source of truth) |
+| FRD       | `docs/superpowers/specs/2026-06-06-auracles-frd.md` | Functional requirements (~76 FRs, ~24 BRs)       |
+| TDD       | `docs/superpowers/specs/2026-06-06-auracles-tdd.md` | Technical design: schema, API, infra, security   |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 15 (App Router) |
-| Styling | Tailwind CSS |
-| Frontend hosting | Vercel |
-| Backend | FastAPI (Python 3.13) |
-| Backend hosting | AWS ECS Fargate |
-| Async workers | Celery + Redis broker |
-| Scheduler | Celery Beat (ECS singleton task) |
-| Database | PostgreSQL 16 (AWS RDS) |
-| Cache + broker | Redis (AWS ElastiCache) |
-| File storage | AWS S3 |
-| File events | AWS Lambda (S3 trigger → virus scan) |
-| Payments (global) | Stripe + Stripe Connect |
-| Payments (Nigeria) | Paystack |
-| Email | AWS SES |
-| API contract | OpenAPI spec (`contracts/openapi.yaml`) |
-| Migrations | Alembic |
-| ORM | SQLAlchemy (async) |
-| Validation | Pydantic v2 |
-| Infrastructure as Code | Terraform |
-| Terraform state | AWS S3 + DynamoDB (remote state + locking) |
-| CI/CD | GitHub Actions → ECR → ECS rolling deploy |
+| Layer                  | Technology                                 |
+| ---------------------- | ------------------------------------------ |
+| Frontend               | Next.js 15 (App Router)                    |
+| Styling                | Tailwind CSS                               |
+| Frontend hosting       | Vercel                                     |
+| Backend                | FastAPI (Python 3.13)                      |
+| Backend hosting        | AWS ECS Fargate                            |
+| Async workers          | Celery + Redis broker                      |
+| Scheduler              | Celery Beat (ECS singleton task)           |
+| Database               | PostgreSQL 16 (AWS RDS)                    |
+| Cache + broker         | Redis (AWS ElastiCache)                    |
+| File storage           | AWS S3                                     |
+| File events            | AWS Lambda (S3 trigger → virus scan)       |
+| Payments (global)      | Stripe + Stripe Connect                    |
+| Payments (Nigeria)     | Paystack                                   |
+| Email                  | AWS SES                                    |
+| API contract           | OpenAPI spec (`contracts/openapi.yaml`)    |
+| Migrations             | Alembic                                    |
+| ORM                    | SQLAlchemy (async)                         |
+| Validation             | Pydantic v2                                |
+| Infrastructure as Code | Terraform                                  |
+| Terraform state        | AWS S3 + DynamoDB (remote state + locking) |
+| CI/CD                  | GitHub Actions → ECR → ECS rolling deploy  |
 
 ---
 
@@ -90,6 +90,7 @@ auracles/
 **Every implementation decision starts with security.** Not a checklist at the end — a design constraint from the beginning.
 
 Before writing any feature, ask:
+
 1. Who can call this endpoint? → RBAC dependency applied before service logic
 2. What data is exposed? → Response schema exposes minimum necessary fields
 3. Can this be abused? → Rate limiting, input validation, idempotency considered
@@ -98,18 +99,18 @@ Before writing any feature, ask:
 
 ### Mandatory security requirements on every feature
 
-| Concern | Rule |
-|---|---|
-| Input validation | Pydantic schema on every request body. No raw dict access. |
-| Auth | JWT verified via dependency before any handler runs. |
-| RBAC | Role checked via FastAPI dependency, never inside service or model. |
-| File access | S3 artifacts delivered via presigned URL only, never proxied. License checked before URL generated. |
-| Money + Escrow | All financial state changes inside DB transactions. Escrow never modified outside explicit service methods. |
-| Webhooks | Signature verified before payload parsed. Unverified = 400 + audit log. |
-| Secrets | Zero secrets in code or logs. AWS Secrets Manager in prod. `.env` local only, gitignored. |
-| PII | No sensitive user fields (KYC docs, payout account details) returned in list endpoints. |
-| Audit trail | Downloads, payouts, role changes, KYC updates, Escrow releases all written to audit log. |
-| Rate limiting | Auth endpoints (login, register, reset-password) rate-limited at ALB or Redis layer. |
+| Concern          | Rule                                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| Input validation | Pydantic schema on every request body. No raw dict access.                                                  |
+| Auth             | JWT verified via dependency before any handler runs.                                                        |
+| RBAC             | Role checked via FastAPI dependency, never inside service or model.                                         |
+| File access      | S3 artifacts delivered via presigned URL only, never proxied. License checked before URL generated.         |
+| Money + Escrow   | All financial state changes inside DB transactions. Escrow never modified outside explicit service methods. |
+| Webhooks         | Signature verified before payload parsed. Unverified = 400 + audit log.                                     |
+| Secrets          | Zero secrets in code or logs. AWS Secrets Manager in prod. `.env` local only, gitignored.                   |
+| PII              | No sensitive user fields (KYC docs, payout account details) returned in list endpoints.                     |
+| Audit trail      | Downloads, payouts, role changes, KYC updates, Escrow releases all written to audit log.                    |
+| Rate limiting    | Auth endpoints (login, register, reset-password) rate-limited at ALB or Redis layer.                        |
 
 When in doubt: **deny by default, log the denial, surface to human if ambiguous.**
 
@@ -119,19 +120,19 @@ When in doubt: **deny by default, log the denial, surface to human if ambiguous.
 
 These are decided. Do not re-open without explicit human instruction.
 
-| Decision | Choice | Reason |
-|---|---|---|
-| Repo structure | Monorepo (`frontend/` + `backend/` + `contracts/`) | Single CI/CD, shared OpenAPI contract |
-| Backend framework | FastAPI (not Express, not Django) | Python ML ecosystem, auto-generates OpenAPI, async |
-| Background jobs | Celery + Redis | Same Python codebase, Redis already in stack, Beat for cron |
-| File events | Lambda (S3 trigger only) | Stateless, event-driven, isolated from main API |
-| Payment routing | Stripe (global) + Paystack (Nigeria/NGN) | Coverage + local payout rails |
-| Auth | JWT (15m) + Redis refresh tokens (30d) | Stateless access, revocable refresh |
-| Artifact access | S3 presigned URLs (15m expiry) | Secure, no proxy required |
-| Frontend rendering | SSR for public pages, Client for dashboards | SEO on Explore + Framework detail |
-| Search (MVP) | Postgres full-text search (GIN index) | Zero extra infra, migrate to Typesense at scale |
-| Admin tooling | Custom admin module (`/v1/admin/*`) | Full control, consistent auth model |
-| Infrastructure as Code | Terraform (not CDK, not manual) | Portable, reproducible, staging/prod parity |
+| Decision               | Choice                                             | Reason                                                      |
+| ---------------------- | -------------------------------------------------- | ----------------------------------------------------------- |
+| Repo structure         | Monorepo (`frontend/` + `backend/` + `contracts/`) | Single CI/CD, shared OpenAPI contract                       |
+| Backend framework      | FastAPI (not Express, not Django)                  | Python ML ecosystem, auto-generates OpenAPI, async          |
+| Background jobs        | Celery + Redis                                     | Same Python codebase, Redis already in stack, Beat for cron |
+| File events            | Lambda (S3 trigger only)                           | Stateless, event-driven, isolated from main API             |
+| Payment routing        | Stripe (global) + Paystack (Nigeria/NGN)           | Coverage + local payout rails                               |
+| Auth                   | JWT (15m) + Redis refresh tokens (30d)             | Stateless access, revocable refresh                         |
+| Artifact access        | S3 presigned URLs (15m expiry)                     | Secure, no proxy required                                   |
+| Frontend rendering     | SSR for public pages, Client for dashboards        | SEO on Explore + Framework detail                           |
+| Search (MVP)           | Postgres full-text search (GIN index)              | Zero extra infra, migrate to Typesense at scale             |
+| Admin tooling          | Custom admin module (`/v1/admin/*`)                | Full control, consistent auth model                         |
+| Infrastructure as Code | Terraform (not CDK, not manual)                    | Portable, reproducible, staging/prod parity                 |
 
 ---
 
@@ -190,12 +191,12 @@ Never put business logic in `router.py`. Never do DB queries in `router.py`.
 
 ### Rendering strategy
 
-| Page | Strategy | Reason |
-|---|---|---|
-| `/explore` | SSR (Server Component) | SEO, fast TTFB |
-| `/explore/[id]` (Framework detail) | SSR | SEO-critical |
-| `/dashboard/*` | Client Component | Auth-gated, interactive |
-| `/projects/[id]` (Workspace) | Client Component | Real-time WebSocket |
+| Page                               | Strategy               | Reason                  |
+| ---------------------------------- | ---------------------- | ----------------------- |
+| `/explore`                         | SSR (Server Component) | SEO, fast TTFB          |
+| `/explore/[id]` (Framework detail) | SSR                    | SEO-critical            |
+| `/dashboard/*`                     | Client Component       | Auth-gated, interactive |
+| `/projects/[id]` (Workspace)       | Client Component       | Real-time WebSocket     |
 
 ### API calls
 
@@ -226,6 +227,7 @@ Both Stripe and Paystack are **always integrated**. This is not a choice between
 - **Paystack** — Nigerian operator charges, Nigerian contributor payouts (NGN rails)
 
 Routing rule (applied at transaction creation):
+
 ```python
 def select_provider(user_country: str, currency: str) -> str:
     if user_country == "NG" or currency == "NGN":
@@ -234,6 +236,7 @@ def select_provider(user_country: str, currency: str) -> str:
 ```
 
 Webhook handlers required for both:
+
 - `POST /v1/webhooks/stripe` — verify `Stripe-Signature` header before processing
 - `POST /v1/webhooks/paystack` — verify HMAC SHA-512 before processing
 
@@ -260,6 +263,7 @@ Never process a webhook without signature verification. Drop unverified payloads
 All AWS infrastructure is defined in `infra/`. **Never create or modify AWS resources manually in the console** — if you do, Terraform will overwrite it on next apply.
 
 ### Structure
+
 ```
 infra/
 ├── modules/
@@ -293,6 +297,7 @@ infra/
 - `terraform fmt` and `terraform validate` run in CI on every PR touching `infra/`.
 
 ### Environment parity rule
+
 Staging must mirror production architecture exactly — same services, same resource types, smaller instance sizes only. No services that exist in production but not staging.
 
 ---
@@ -316,14 +321,14 @@ Never write implementation before writing the test that proves it works.
 
 ### Backend test stack
 
-| Tool | Purpose |
-|---|---|
-| `pytest` | Test runner |
-| `pytest-asyncio` | Async test support |
-| `httpx` + `AsyncClient` | FastAPI endpoint integration tests |
-| `pytest-factoryboy` / `factory_boy` | Test data factories |
-| `pytest-cov` | Coverage reporting |
-| `freezegun` | Time-dependent test control (token expiry, Celery Beat) |
+| Tool                                | Purpose                                                 |
+| ----------------------------------- | ------------------------------------------------------- |
+| `pytest`                            | Test runner                                             |
+| `pytest-asyncio`                    | Async test support                                      |
+| `httpx` + `AsyncClient`             | FastAPI endpoint integration tests                      |
+| `pytest-factoryboy` / `factory_boy` | Test data factories                                     |
+| `pytest-cov`                        | Coverage reporting                                      |
+| `freezegun`                         | Time-dependent test control (token expiry, Celery Beat) |
 
 ### Backend test structure
 
@@ -355,19 +360,22 @@ backend/tests/
 ### What to test per layer
 
 **Unit tests (service layer):**
-- Every business rule (BR-*) has a dedicated test proving it's enforced
+
+- Every business rule (BR-\*) has a dedicated test proving it's enforced
 - Every state machine transition tested: valid transitions pass, invalid transitions raise
 - Escrow release only fires after correct conditions
 - Payment routing selects correct provider per country/currency
 - Reputation score calculation produces expected output per input combination
 
 **Integration tests (endpoint layer):**
+
 - Every endpoint tested: happy path + at least 2 error cases
 - Auth: unauthenticated → 401, wrong role → 403, correct role → 2xx
 - File upload: valid file passes, oversized file → 413, wrong type → 415
 - Webhook endpoints: valid signature → processed, invalid signature → 400
 
 **Celery tasks:**
+
 - All tasks tested with `task.apply()` (synchronous execution in tests)
 - Idempotency: calling a task twice produces same result as calling once
 
@@ -375,11 +383,11 @@ backend/tests/
 
 ### Frontend test stack
 
-| Tool | Purpose |
-|---|---|
-| `vitest` | Unit + component test runner |
-| `@testing-library/react` | Component tests |
-| `playwright` | End-to-end tests |
+| Tool                        | Purpose                        |
+| --------------------------- | ------------------------------ |
+| `vitest`                    | Unit + component test runner   |
+| `@testing-library/react`    | Component tests                |
+| `playwright`                | End-to-end tests               |
 | `msw` (Mock Service Worker) | API mocking in component tests |
 
 ### Frontend test structure
@@ -401,14 +409,14 @@ frontend/tests/
 
 These critical flows must have E2E tests before going to staging:
 
-| Flow | Test file |
-|---|---|
-| Register → verify email → select role | `auth.spec.ts` |
-| Contributor: create framework → upload artifact → submit → published | `framework-publish.spec.ts` |
-| Operator: search → purchase → download artifact | `purchase.spec.ts` |
-| Operator: create project → Contributor bids → accepted → milestone funded → deliverable approved → Escrow released | `project.spec.ts` |
-| Attestation: request → Attestor assigned → report submitted → published | `attestation.spec.ts` |
-| Contributor: request payout (with 2FA) | `financials.spec.ts` |
+| Flow                                                                                                               | Test file                   |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| Register → verify email → select role                                                                              | `auth.spec.ts`              |
+| Contributor: create framework → upload artifact → submit → published                                               | `framework-publish.spec.ts` |
+| Operator: search → purchase → download artifact                                                                    | `purchase.spec.ts`          |
+| Operator: create project → Contributor bids → accepted → milestone funded → deliverable approved → Escrow released | `project.spec.ts`           |
+| Attestation: request → Attestor assigned → report submitted → published                                            | `attestation.spec.ts`       |
+| Contributor: request payout (with 2FA)                                                                             | `financials.spec.ts`        |
 
 ---
 
@@ -449,35 +457,35 @@ E2E:       All flows in the table above must pass in staging before release
 
 When implementing, always look up the relevant FRs and BRs in the FRD first.
 
-| Module | FR prefix | BR prefix |
-|---|---|---|
-| Auth & Identity | FR-AUTH | BR-AUTH |
-| Explore | FR-EXP | BR-EXP |
-| Frameworks | FR-FWK | BR-FWK |
-| Projects | FR-PROJ | BR-PROJ |
-| Attestation | FR-ATT | BR-ATT |
-| Financials | FR-FIN | BR-FIN |
-| Settings | FR-SET | BR-SET |
+| Module          | FR prefix | BR prefix |
+| --------------- | --------- | --------- |
+| Auth & Identity | FR-AUTH   | BR-AUTH   |
+| Explore         | FR-EXP    | BR-EXP    |
+| Frameworks      | FR-FWK    | BR-FWK    |
+| Projects        | FR-PROJ   | BR-PROJ   |
+| Attestation     | FR-ATT    | BR-ATT    |
+| Financials      | FR-FIN    | BR-FIN    |
+| Settings        | FR-SET    | BR-SET    |
 
 ---
 
 ## Domain Language (use exactly)
 
-| Term | Meaning |
-|---|---|
-| **Framework** | Core marketplace asset — structured, licensable professional knowledge |
-| **Artifact** | File attached to a Framework (PDF, DOCX, XLSX, etc.) |
-| **License** | Right to access a Framework purchased by an Operator |
-| **Attestation** | Formal verification issued by an Attestor |
-| **Project** | Custom work request posted by an Operator |
-| **Proposal** | Contributor's bid on a Project |
-| **Milestone** | Checkpoint within a Project with associated Escrow |
-| **Deliverable** | Output submitted by Contributor per Milestone |
-| **Workspace** | Collaboration environment for an assigned Project |
-| **Escrow** | Held funds pending Deliverable approval |
-| **Contributor** | Supply-side user — creates and sells Frameworks |
-| **Operator** | Demand-side user — purchases and implements Frameworks |
-| **Attestor** | Trust-layer user — verifies Frameworks, contributors, credentials |
+| Term            | Meaning                                                                |
+| --------------- | ---------------------------------------------------------------------- |
+| **Framework**   | Core marketplace asset — structured, licensable professional knowledge |
+| **Artifact**    | File attached to a Framework (PDF, DOCX, XLSX, etc.)                   |
+| **License**     | Right to access a Framework purchased by an Operator                   |
+| **Attestation** | Formal verification issued by an Attestor                              |
+| **Project**     | Custom work request posted by an Operator                              |
+| **Proposal**    | Contributor's bid on a Project                                         |
+| **Milestone**   | Checkpoint within a Project with associated Escrow                     |
+| **Deliverable** | Output submitted by Contributor per Milestone                          |
+| **Workspace**   | Collaboration environment for an assigned Project                      |
+| **Escrow**      | Held funds pending Deliverable approval                                |
+| **Contributor** | Supply-side user — creates and sells Frameworks                        |
+| **Operator**    | Demand-side user — purchases and implements Frameworks                 |
+| **Attestor**    | Trust-layer user — verifies Frameworks, contributors, credentials      |
 
 Never abbreviate these. Never invent synonyms. Consistency = searchability.
 
