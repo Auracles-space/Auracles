@@ -85,6 +85,20 @@ class FakeRedis:
         return set(self.sets.get(key, set()))
 
 
+def set_cookie_headers(response: Any) -> list[str]:
+    """Return all Set-Cookie headers from an HTTPX response."""
+    return response.headers.get_list("set-cookie")
+
+
+def cookie_header(response: Any, cookie_name: str) -> str:
+    """Return the Set-Cookie header for a specific cookie."""
+    return next(
+        header
+        for header in set_cookie_headers(response)
+        if header.startswith(f"{cookie_name}=")
+    )
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure auth tables exist for session tests."""
@@ -163,7 +177,10 @@ async def test_login_sets_refresh_cookie_and_me_accepts_access_token(
     assert set(body) == {"access_token", "token_type", "expires_in"}
     assert body["token_type"] == "bearer"
     assert response.cookies.get("refresh_token") is not None
-    assert "HttpOnly" in response.headers["set-cookie"]
+    assert response.cookies.get("session_hint") is not None
+    assert "HttpOnly" in cookie_header(response, "refresh_token")
+    assert "HttpOnly" not in cookie_header(response, "session_hint")
+    assert len(response.cookies["session_hint"].split(".")) == 2
 
     me_response = await client.get(
         "/v1/auth/me",
@@ -231,10 +248,12 @@ async def test_refresh_rotates_cookie_and_logout_revokes_session(
         json={"email": "refresh@auracles.space", "password": "CorrectHorse9"},
     )
     old_refresh = login.cookies["refresh_token"]
+    old_hint = login.cookies["session_hint"]
 
     client.cookies.set("refresh_token", old_refresh)
     refreshed = await client.post("/v1/auth/refresh")
     new_refresh = refreshed.cookies["refresh_token"]
+    new_hint = refreshed.cookies["session_hint"]
     client.cookies.set("refresh_token", old_refresh)
     reused = await client.post("/v1/auth/refresh")
     client.cookies.set("refresh_token", new_refresh)
@@ -244,8 +263,10 @@ async def test_refresh_rotates_cookie_and_logout_revokes_session(
 
     assert refreshed.status_code == 200
     assert new_refresh != old_refresh
+    assert new_hint != old_hint
     assert reused.status_code == 401
     assert logout.status_code == 200
+    assert logout.cookies.get("session_hint") is None
     assert after_logout.status_code == 401
 
 

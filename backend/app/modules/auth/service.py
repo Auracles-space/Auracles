@@ -210,6 +210,7 @@ async def _store_refresh_token(
     family_id: str,
     ip: str | None,
     ua: str | None,
+    totp_verified: bool = False,
 ) -> None:
     """Store refresh-token metadata and index it by family."""
     now = datetime.now(UTC).isoformat()
@@ -221,6 +222,7 @@ async def _store_refresh_token(
         "last_seen": now,
         "ip": ip,
         "user_agent": ua,
+        "totp_verified": totp_verified,
     }
     await redis.setex(key, REFRESH_TOKEN_TTL_SECONDS, json.dumps(record))
     await cast(Awaitable[int], redis.sadd(_family_key(family_id), key))
@@ -560,10 +562,22 @@ async def login(
         ), ""
 
     roles = await _load_active_roles(db, user.id)
-    access_token = create_access_token(user_id=user.id, roles=roles)
+    access_token = create_access_token(
+        user_id=user.id,
+        roles=roles,
+        totp_verified=False,
+    )
     refresh_token = generate_opaque_token()
     family_id = str(uuid4())
-    await _store_refresh_token(redis, refresh_token, user.id, family_id, ip, ua)
+    await _store_refresh_token(
+        redis,
+        refresh_token,
+        user.id,
+        family_id,
+        ip,
+        ua,
+        totp_verified=True,
+    )
     await write_audit(
         db=db,
         actor_id=user.id,
@@ -619,7 +633,15 @@ async def refresh(
     await cast(Awaitable[int], redis.srem(_family_key(family_id), key))
     await cast(Awaitable[int], redis.srem(_user_refresh_key(user.id), key))
     await redis.setex(_used_refresh_key(token), REFRESH_TOKEN_TTL_SECONDS, family_id)
-    await _store_refresh_token(redis, new_refresh_token, user.id, family_id, ip, ua)
+    await _store_refresh_token(
+        redis,
+        new_refresh_token,
+        user.id,
+        family_id,
+        ip,
+        ua,
+        totp_verified=bool(record.get("totp_verified", False)),
+    )
     await write_audit(
         db=db,
         actor_id=user.id,

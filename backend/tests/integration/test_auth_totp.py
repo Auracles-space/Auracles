@@ -246,6 +246,7 @@ async def test_totp_enabled_login_requires_challenge_before_session_tokens(
     assert login.cookies.get("refresh_token") is None
     assert verified.status_code == 200
     assert verified.cookies.get("refresh_token") is not None
+    assert verified.cookies.get("session_hint") is not None
     assert payload.sub == user_id
     assert payload.totp_verified is True
     assert audit_log is not None

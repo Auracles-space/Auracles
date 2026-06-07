@@ -10,11 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_refresh_cookie,
+    clear_session_hint_cookie,
     set_refresh_cookie,
+    set_session_hint_cookie,
 )
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.redis import get_redis
+from app.core.security import decode_access_token
 from app.modules.auth import service
 from app.modules.auth.models import User, UserRole
 from app.modules.auth.schemas import (
@@ -44,6 +47,17 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 def _client_ip(request: Request) -> str | None:
     """Return the client IP address when available."""
     return request.client.host if request.client else None
+
+
+def _set_session_hint_from_access_token(response: Response, access_token: str) -> None:
+    """Set the readable route-hint cookie from freshly issued access claims."""
+    payload = decode_access_token(access_token)
+    set_session_hint_cookie(
+        response=response,
+        user_id=payload.sub,
+        roles=payload.roles,
+        totp_verified=payload.totp_verified,
+    )
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -149,6 +163,8 @@ async def login(
     )
     if refresh_token:
         set_refresh_cookie(response, refresh_token)
+        if login_response.access_token is not None:
+            _set_session_hint_from_access_token(response, login_response.access_token)
     return login_response
 
 
@@ -168,6 +184,8 @@ async def refresh(
         ua=request.headers.get("user-agent"),
     )
     set_refresh_cookie(response, refresh_token)
+    if login_response.access_token is not None:
+        _set_session_hint_from_access_token(response, login_response.access_token)
     return login_response
 
 
@@ -185,6 +203,7 @@ async def logout(
         token=request.cookies.get(REFRESH_COOKIE_NAME),
     )
     clear_refresh_cookie(response)
+    clear_session_hint_cookie(response)
     return RegisterResponse(message="Logged out.")
 
 
@@ -298,4 +317,6 @@ async def verify_totp_login(
         ua=request.headers.get("user-agent"),
     )
     set_refresh_cookie(response, refresh_token)
+    if login_response.access_token is not None:
+        _set_session_hint_from_access_token(response, login_response.access_token)
     return login_response

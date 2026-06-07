@@ -50,6 +50,7 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy app
+      - run: uv run openapi-spec-validator ../contracts/openapi.yaml
       - run: uv run pytest --cov=app.modules --cov=app.workers --cov-fail-under=80
       - run: uv run alembic upgrade head
       - run: uv run alembic downgrade -1
