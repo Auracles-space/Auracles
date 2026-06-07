@@ -5,6 +5,8 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.core.database import Base
+from app.modules.auth import models as _auth_models  # noqa: F401
+from app.shared.models import audit_log as _audit_log_models  # noqa: F401
 
 config = context.config
 
