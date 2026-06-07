@@ -97,7 +97,10 @@ def require_role(*allowed_roles: str) -> Callable[..., object]:
             await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions.",
+                detail={
+                    "error_code": "role_required",
+                    "onboarding_url": "/settings/onboarding",
+                },
             )
         return user
 
@@ -111,6 +114,24 @@ async def require_kyc_verified(
     if user.kyc_status != "verified":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="KYC verification is required.",
+            detail={
+                "error_code": "kyc_required",
+                "onboarding_url": "/settings/onboarding",
+            },
+        )
+    return user
+
+
+async def require_profile_complete(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Require the authenticated user to have completed basic profile fields."""
+    if not user.display_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "profile_required",
+                "onboarding_url": "/settings/onboarding",
+            },
         )
     return user
