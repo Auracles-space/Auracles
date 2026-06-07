@@ -15,6 +15,9 @@ from pydantic import BaseModel, ValidationError, field_validator
 from app.core.security import (
     create_access_token,
     decode_access_token,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_backup_codes,
     generate_opaque_token,
     hash_password,
     hash_token,
@@ -72,6 +75,18 @@ def test_opaque_tokens_are_urlsafe_and_hashed_for_storage() -> None:
     assert hash_token(token) == hash_token(token)
     assert hash_token(token) != token
     assert hash_token(token) != hash_token(generate_opaque_token())
+
+
+def test_totp_secrets_encrypt_and_backup_codes_are_one_time_material() -> None:
+    """TOTP helpers avoid plaintext storage and generate recovery codes."""
+    encrypted_secret = encrypt_totp_secret("JBSWY3DPEHPK3PXP")
+    backup_codes = generate_backup_codes()
+
+    assert encrypted_secret != "JBSWY3DPEHPK3PXP"
+    assert decrypt_totp_secret(encrypted_secret) == "JBSWY3DPEHPK3PXP"
+    assert len(backup_codes) == 10
+    assert len(set(backup_codes)) == 10
+    assert all(len(code) == 9 and code[4] == "-" for code in backup_codes)
 
 
 def test_password_strength_validator_rejects_weak_passwords() -> None:

@@ -64,9 +64,11 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     """Browser login response; refresh token travels via HttpOnly cookie."""
 
-    access_token: str
+    access_token: str | None = None
     token_type: Literal["bearer"] = "bearer"
     expires_in: int = 900
+    requires_2fa: bool | None = None
+    challenge_token: str | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -97,3 +99,30 @@ class RoleAssignmentResponse(BaseModel):
     user_id: UUID
     role: str
     approved: bool
+
+
+class TotpSetupResponse(BaseModel):
+    """One-time TOTP enrollment response with recovery material."""
+
+    provisioning_uri: str
+    qr_png_base64: str
+    backup_codes: list[str]
+
+
+class TotpCodeRequest(BaseModel):
+    """Request body containing a current TOTP code."""
+
+    code: str = Field(min_length=6, max_length=16)
+
+
+class TotpStatusResponse(BaseModel):
+    """Response body describing TOTP account state."""
+
+    totp_enabled: bool
+
+
+class TotpLoginVerifyRequest(BaseModel):
+    """Request body for completing a 2FA login challenge."""
+
+    challenge_token: str = Field(min_length=1)
+    code: str = Field(min_length=6, max_length=16)

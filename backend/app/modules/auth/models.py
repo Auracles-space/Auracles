@@ -91,6 +91,10 @@ class User(UpdatedAtMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    backup_codes: Mapped[list[UserBackupCode]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class UserRole(CreatedAtMixin, Base):
@@ -154,3 +158,30 @@ class OAuthAccount(CreatedAtMixin, Base):
     provider_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     user: Mapped[User] = relationship(back_populates="oauth_accounts")
+
+
+class UserBackupCode(CreatedAtMixin, Base):
+    """Hashed single-use recovery code for TOTP-enabled accounts."""
+
+    __tablename__ = "user_backup_codes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code_hash", name="uq_backup_codes_user_hash"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    user: Mapped[User] = relationship(back_populates="backup_codes")

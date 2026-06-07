@@ -158,6 +158,117 @@ paths:
           description: Role already assigned.
         "422":
           description: Invalid role payload.
+  /v1/auth/2fa/setup:
+    post:
+      tags:
+        - Auth
+      operationId: setupTotp
+      summary: Start TOTP setup
+      description: Returns a provisioning URI, QR PNG, and one-time backup codes.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: TOTP setup material generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpSetupResponse"
+        "401":
+          description: Missing or invalid access token.
+        "409":
+          description: TOTP is already enabled.
+  /v1/auth/2fa/verify:
+    post:
+      tags:
+        - Auth
+      operationId: verifyTotp
+      summary: Enable TOTP
+      description: Verifies the current TOTP code and enables 2FA.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpCodeRequest"
+      responses:
+        "200":
+          description: TOTP enabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpStatusResponse"
+        "401":
+          description: Missing or invalid access token.
+        "409":
+          description: TOTP setup has not been started.
+        "422":
+          description: Invalid TOTP code.
+        "429":
+          description: TOTP verification rate limit exceeded.
+  /v1/auth/2fa/disable:
+    post:
+      tags:
+        - Auth
+      operationId: disableTotp
+      summary: Disable TOTP
+      description: Disables 2FA after validating a current code or backup code.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpCodeRequest"
+      responses:
+        "200":
+          description: TOTP disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpStatusResponse"
+        "401":
+          description: Missing or invalid access token.
+        "409":
+          description: TOTP is not enabled.
+        "422":
+          description: Invalid TOTP code.
+        "429":
+          description: TOTP verification rate limit exceeded.
+  /v1/auth/2fa/verify-login:
+    post:
+      tags:
+        - Auth
+      operationId: verifyTotpLogin
+      summary: Complete TOTP login challenge
+      description: Trades a valid 2FA challenge and code for browser session tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpLoginVerifyRequest"
+      responses:
+        "200":
+          description: 2FA login completed.
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh-token cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "410":
+          description: Challenge expired or already used.
+        "422":
+          description: Invalid TOTP or backup code.
+        "429":
+          description: TOTP verification rate limit exceeded.
   /v1/admin/users/{user_id}/roles:
     patch:
       tags:
@@ -340,11 +451,14 @@ components:
     LoginResponse:
       type: object
       required:
-        - access_token
         - token_type
         - expires_in
       properties:
         access_token:
+          type: string
+        requires_2fa:
+          type: boolean
+        challenge_token:
           type: string
         token_type:
           type: string
@@ -410,6 +524,53 @@ components:
           type: string
         approved:
           type: boolean
+    TotpSetupResponse:
+      type: object
+      required:
+        - provisioning_uri
+        - qr_png_base64
+        - backup_codes
+      properties:
+        provisioning_uri:
+          type: string
+        qr_png_base64:
+          type: string
+          contentEncoding: base64
+        backup_codes:
+          type: array
+          items:
+            type: string
+          minItems: 10
+          maxItems: 10
+    TotpCodeRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 16
+    TotpStatusResponse:
+      type: object
+      required:
+        - totp_enabled
+      properties:
+        totp_enabled:
+          type: boolean
+    TotpLoginVerifyRequest:
+      type: object
+      required:
+        - challenge_token
+        - code
+      properties:
+        challenge_token:
+          type: string
+          minLength: 1
+        code:
+          type: string
+          minLength: 6
+          maxLength: 16
     AdminRoleAssignmentRequest:
       type: object
       required:

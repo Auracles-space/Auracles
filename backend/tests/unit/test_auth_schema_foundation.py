@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 
 from app.core.config import get_settings
-from app.modules.auth.models import OAuthAccount, User, UserRole
+from app.modules.auth.models import OAuthAccount, User, UserBackupCode, UserRole
 from app.shared.models.audit_log import AuditLog
 
 
@@ -48,6 +48,7 @@ def test_auth_foundation_migration_creates_required_tables(
         "user_roles",
         "oauth_accounts",
         "audit_logs",
+        "user_backup_codes",
     }.issubset(set(inspector.get_table_names()))
 
 
@@ -82,7 +83,7 @@ def test_auth_foundation_migration_downgrade_removes_slice_one_schema() -> None:
     alembic_config = Config("alembic.ini")
 
     command.upgrade(alembic_config, "head")
-    command.downgrade(alembic_config, "-1")
+    command.downgrade(alembic_config, "2026_06_07_0001")
     try:
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
@@ -100,6 +101,7 @@ def test_auth_foundation_migration_downgrade_removes_slice_one_schema() -> None:
             "user_roles",
             "oauth_accounts",
             "audit_logs",
+            "user_backup_codes",
         }.isdisjoint(table_names)
         assert {"role_enum", "kyc_status_enum"}.isdisjoint(enum_names)
     finally:
@@ -112,4 +114,5 @@ def test_auth_models_expose_phase_one_tables() -> None:
     assert User.__tablename__ == "users"
     assert UserRole.__tablename__ == "user_roles"
     assert OAuthAccount.__tablename__ == "oauth_accounts"
+    assert UserBackupCode.__tablename__ == "user_backup_codes"
     assert AuditLog.__tablename__ == "audit_logs"

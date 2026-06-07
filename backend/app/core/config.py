@@ -9,11 +9,13 @@ TDD Section 5 (configuration).
 """
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 
 def _replace_database(url: str, database: int) -> str:
@@ -56,6 +58,10 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     secret_key: str = Field(default="dev-only-change-me", alias="SECRET_KEY")
+    totp_encryption_key: SecretStr = Field(
+        default=SecretStr(DEV_TOTP_ENCRYPTION_KEY),
+        alias="TOTP_ENCRYPTION_KEY",
+    )
     cors_allowed_origins: str = Field(
         default="http://localhost:3000",
         alias="CORS_ALLOWED_ORIGINS",
@@ -109,6 +115,16 @@ class Settings(BaseSettings):
         if "*" in origins:
             raise ValueError("CORS_ALLOWED_ORIGINS cannot contain '*'.")
         return value
+
+    @model_validator(mode="after")
+    def production_totp_key_is_not_placeholder(self) -> Self:
+        """Reject the dev TOTP encryption key outside local environments."""
+        if (
+            self.environment != "local"
+            and self.totp_encryption_key.get_secret_value() == DEV_TOTP_ENCRYPTION_KEY
+        ):
+            raise ValueError("TOTP_ENCRYPTION_KEY must be set outside local.")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

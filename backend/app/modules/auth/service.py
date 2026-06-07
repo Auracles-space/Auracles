@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
+from base64 import b64encode
 from collections.abc import Awaitable
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import pyotp
+import qrcode
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,13 +23,16 @@ from app.core.audit import write_audit
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import (
     create_access_token,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_backup_codes,
     generate_opaque_token,
     hash_password,
     hash_token,
     verify_password,
 )
-from app.modules.auth.models import User, UserRole
-from app.modules.auth.schemas import LoginResponse, RegisterRequest
+from app.modules.auth.models import User, UserBackupCode, UserRole
+from app.modules.auth.schemas import LoginResponse, RegisterRequest, TotpSetupResponse
 from app.workers.tasks.notifications import send_verification_email
 
 VERIFY_EMAIL_PREFIX = "ev_"
@@ -39,6 +46,10 @@ LOGIN_IP_LIMITER = RateLimiter(namespace="login_ip", limit=20, window=60)
 LOGIN_FAILURE_LIMIT = 5
 LOGIN_FAILURE_WINDOW_SECONDS = 900
 REFRESH_TOKEN_TTL_SECONDS = 2_592_000
+TOTP_CHALLENGE_TTL_SECONDS = 300
+TOTP_FAILURE_LIMIT = 5
+TOTP_FAILURE_WINDOW_SECONDS = 300
+TOTP_ISSUER_NAME = "Auracles"
 
 
 def normalize_email(email: str) -> str:
@@ -69,6 +80,52 @@ def _family_key(family_id: str) -> str:
 def _login_failure_key(email: str) -> str:
     """Build the Redis failed-login counter key."""
     return f"login_failure:{email}"
+
+
+def _totp_challenge_key(token: str) -> str:
+    """Build the Redis key for a pending 2FA login challenge."""
+    return f"2fa_challenge:{hash_token(token)}"
+
+
+def _totp_failure_key(user_id: UUID) -> str:
+    """Build the Redis failed-2FA counter key."""
+    return f"2fa_failure:{user_id}"
+
+
+def _backup_code_hash(code: str) -> str:
+    """Normalize and hash a backup code for lookup."""
+    return hash_token(code.strip().lower())
+
+
+def _qr_png_base64(provisioning_uri: str) -> str:
+    """Render an otpauth provisioning URI as a base64 PNG."""
+    image = qrcode.make(provisioning_uri)
+    buffer = BytesIO()
+    image.save(buffer)
+    return b64encode(buffer.getvalue()).decode("ascii")
+
+
+async def _ensure_totp_not_locked(redis: Redis, user_id: UUID) -> None:
+    """Reject verification when recent wrong-code attempts exceeded the limit."""
+    attempts = int(await redis.get(_totp_failure_key(user_id)) or "0")
+    if attempts >= TOTP_FAILURE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many 2FA attempts.",
+        )
+
+
+async def _record_totp_failure(redis: Redis, user_id: UUID) -> None:
+    """Increment the wrong-code counter for a user."""
+    key = _totp_failure_key(user_id)
+    attempts = await redis.incr(key)
+    if attempts == 1 or await redis.ttl(key) < 0:
+        await redis.expire(key, TOTP_FAILURE_WINDOW_SECONDS)
+
+
+async def _clear_totp_failures(redis: Redis, user_id: UUID) -> None:
+    """Clear the wrong-code counter after successful verification."""
+    await redis.delete(_totp_failure_key(user_id))
 
 
 async def _load_active_roles(db: AsyncSession, user_id: UUID) -> list[str]:
@@ -296,12 +353,24 @@ async def login(
             detail="Account is deactivated.",
         )
 
+    await redis.delete(failure_key)
+    if user.totp_enabled:
+        challenge_token = generate_opaque_token()
+        await redis.setex(
+            _totp_challenge_key(challenge_token),
+            TOTP_CHALLENGE_TTL_SECONDS,
+            str(user.id),
+        )
+        return LoginResponse(
+            requires_2fa=True,
+            challenge_token=challenge_token,
+        ), ""
+
     roles = await _load_active_roles(db, user.id)
     access_token = create_access_token(user_id=user.id, roles=roles)
     refresh_token = generate_opaque_token()
     family_id = str(uuid4())
     await _store_refresh_token(redis, refresh_token, user.id, family_id, ip, ua)
-    await redis.delete(failure_key)
     await write_audit(
         db=db,
         actor_id=user.id,
@@ -410,7 +479,7 @@ async def add_self_role(
         )
     if role not in {"contributor", "operator"}:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unsupported role.",
         )
 
@@ -439,3 +508,187 @@ async def add_self_role(
     )
     await db.commit()
     return assigned_role
+
+
+async def setup_totp(db: AsyncSession, user: User) -> TotpSetupResponse:
+    """Start TOTP enrollment and return one-time recovery material."""
+    if user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="2FA is already enabled.",
+        )
+
+    secret = pyotp.random_base32()
+    provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
+        name=user.email,
+        issuer_name=TOTP_ISSUER_NAME,
+    )
+    backup_codes = generate_backup_codes()
+    user.totp_secret = encrypt_totp_secret(secret)
+
+    # Regenerating setup material replaces any previous unverified backup codes.
+    await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user.id))
+    for code in backup_codes:
+        db.add(UserBackupCode(user_id=user.id, code_hash=_backup_code_hash(code)))
+
+    await db.commit()
+    return TotpSetupResponse(
+        provisioning_uri=provisioning_uri,
+        qr_png_base64=_qr_png_base64(provisioning_uri),
+        backup_codes=backup_codes,
+    )
+
+
+async def verify_totp_enable(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    code: str,
+) -> bool:
+    """Enable TOTP after the user proves possession of the current code."""
+    if user.totp_secret is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="2FA setup has not been started.",
+        )
+    await _ensure_totp_not_locked(redis, user.id)
+    secret = decrypt_totp_secret(user.totp_secret)
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+
+    user.totp_enabled = True
+    await _clear_totp_failures(redis, user.id)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="2fa_enabled",
+        target_type="user",
+        target_id=user.id,
+    )
+    await db.commit()
+    return True
+
+
+async def _consume_backup_code(
+    db: AsyncSession,
+    user: User,
+    code: str,
+) -> bool:
+    """Mark a matching backup code as used when available."""
+    backup_code = await db.scalar(
+        select(UserBackupCode).where(
+            UserBackupCode.user_id == user.id,
+            UserBackupCode.code_hash == _backup_code_hash(code),
+            UserBackupCode.used_at.is_(None),
+        )
+    )
+    if backup_code is None:
+        return False
+    backup_code.used_at = datetime.now(UTC)
+    return True
+
+
+async def _verify_totp_or_backup_code(
+    db: AsyncSession,
+    user: User,
+    code: str,
+) -> bool:
+    """Accept either a current TOTP code or an unused backup code."""
+    if user.totp_secret is not None:
+        secret = decrypt_totp_secret(user.totp_secret)
+        if pyotp.TOTP(secret).verify(code, valid_window=1):
+            return True
+    return await _consume_backup_code(db, user, code)
+
+
+async def disable_totp(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    code: str,
+) -> bool:
+    """Disable TOTP after verifying the current code or a backup code."""
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="2FA is not enabled.",
+        )
+    await _ensure_totp_not_locked(redis, user.id)
+    if not await _verify_totp_or_backup_code(db, user, code):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+
+    user.totp_enabled = False
+    user.totp_secret = None
+    await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user.id))
+    await _clear_totp_failures(redis, user.id)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="2fa_disabled",
+        target_type="user",
+        target_id=user.id,
+    )
+    await db.commit()
+    return False
+
+
+async def verify_totp_login(
+    db: AsyncSession,
+    redis: Redis,
+    challenge_token: str,
+    code: str,
+    ip: str | None = None,
+    ua: str | None = None,
+) -> tuple[LoginResponse, str]:
+    """Complete a 2FA login challenge and issue browser session tokens."""
+    key = _totp_challenge_key(challenge_token)
+    raw_user_id = await redis.get(key)
+    if raw_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="2FA challenge expired or already used.",
+        )
+
+    user_id = UUID(str(raw_user_id))
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None or user.deactivated_at is not None or not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid 2FA challenge.",
+        )
+
+    await _ensure_totp_not_locked(redis, user.id)
+    if not await _verify_totp_or_backup_code(db, user, code):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+
+    roles = await _load_active_roles(db, user.id)
+    access_token = create_access_token(user_id=user.id, roles=roles, totp_verified=True)
+    refresh_token = generate_opaque_token()
+    family_id = str(uuid4())
+    await redis.delete(key)
+    await _clear_totp_failures(redis, user.id)
+    await _store_refresh_token(redis, refresh_token, user.id, family_id, ip, ua)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="login_success",
+        target_type="user",
+        target_id=user.id,
+        metadata={"totp_verified": True},
+        ip=ip,
+        ua=ua,
+    )
+    await db.commit()
+    return LoginResponse(access_token=access_token), refresh_token

@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from cryptography.fernet import Fernet
 from jose import jwt  # type: ignore[import-untyped]
 
 from app.core.config import get_settings
@@ -24,6 +25,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 15
 JWT_ALGORITHM = "HS256"
 MAX_PASSWORD_LENGTH = 128
 MIN_PASSWORD_LENGTH = 12
+BACKUP_CODE_BYTES = 4
 
 _password_hasher = PasswordHasher()
 
@@ -81,6 +83,33 @@ def generate_opaque_token() -> str:
 def hash_token(token: str) -> str:
     """Hash an opaque token before storing or looking it up in Redis."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _totp_cipher() -> Fernet:
+    """Build the Fernet cipher used for encrypted TOTP secrets."""
+    key = get_settings().totp_encryption_key.get_secret_value().encode("utf-8")
+    return Fernet(key)
+
+
+def encrypt_totp_secret(secret: str) -> str:
+    """Encrypt a TOTP shared secret before database persistence."""
+    return _totp_cipher().encrypt(secret.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_totp_secret(encrypted_secret: str) -> str:
+    """Decrypt a stored TOTP shared secret for verification."""
+    return _totp_cipher().decrypt(encrypted_secret.encode("utf-8")).decode("utf-8")
+
+
+def generate_backup_codes(n: int = 10) -> list[str]:
+    """Generate one-time backup codes in `xxxx-xxxx` format."""
+    codes: list[str] = []
+    while len(codes) < n:
+        raw = secrets.token_hex(BACKUP_CODE_BYTES)
+        code = f"{raw[:4]}-{raw[4:]}"
+        if code not in codes:
+            codes.append(code)
+    return codes
 
 
 def validate_password_strength(password: str) -> str:

@@ -47,3 +47,15 @@ def test_settings_rejects_wildcard_cors_origins() -> None:
         assert "CORS_ALLOWED_ORIGINS cannot contain '*'" in str(exc)
     else:
         raise AssertionError("Expected wildcard CORS validation to fail.")
+
+
+def test_settings_rejects_placeholder_totp_key_outside_local() -> None:
+    """Staging and production must configure a real TOTP encryption key."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(ENVIRONMENT="production")
+    except ValidationError as exc:
+        assert "TOTP_ENCRYPTION_KEY must be set outside local" in str(exc)
+    else:
+        raise AssertionError("Expected placeholder TOTP key validation to fail.")

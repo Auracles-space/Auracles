@@ -50,7 +50,9 @@ export type LoginRequest = {
 };
 
 export type LoginResponse = {
-    access_token: string;
+    access_token?: string;
+    requires_2fa?: boolean;
+    challenge_token?: string;
     token_type: 'bearer';
     expires_in: number;
 };
@@ -76,6 +78,36 @@ export type RoleAssignmentResponse = {
     user_id: string;
     role: string;
     approved: boolean;
+};
+
+export type TotpCodeRequest = {
+    code: string;
+};
+
+export type TotpLoginVerifyRequest = {
+    challenge_token: string;
+    code: string;
+};
+
+export type TotpSetupResponse = {
+    provisioning_uri: string;
+    qr_png_base64: string;
+    backup_codes: [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string
+    ];
+};
+
+export type TotpStatusResponse = {
+    totp_enabled: boolean;
 };
 
 export type VerifyEmailRequest = {
@@ -117,6 +149,34 @@ export type AddRoleData = {
 export type AddRoleResponse = (RoleAssignmentResponse);
 
 export type AddRoleError = (unknown);
+
+export type SetupTotpResponse = (TotpSetupResponse);
+
+export type SetupTotpError = (unknown);
+
+export type VerifyTotpData = {
+    body: TotpCodeRequest;
+};
+
+export type VerifyTotpResponse = (TotpStatusResponse);
+
+export type VerifyTotpError = (unknown);
+
+export type DisableTotpData = {
+    body: TotpCodeRequest;
+};
+
+export type DisableTotpResponse = (TotpStatusResponse);
+
+export type DisableTotpError = (unknown);
+
+export type VerifyTotpLoginData = {
+    body: TotpLoginVerifyRequest;
+};
+
+export type VerifyTotpLoginResponse = (LoginResponse);
+
+export type VerifyTotpLoginError = (unknown);
 
 export type AssignUserRoleData = {
     body: AdminRoleAssignmentRequest;

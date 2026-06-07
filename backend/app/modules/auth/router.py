@@ -26,6 +26,10 @@ from app.modules.auth.schemas import (
     RegisterResponse,
     ResendVerificationRequest,
     RoleAssignmentResponse,
+    TotpCodeRequest,
+    TotpLoginVerifyRequest,
+    TotpSetupResponse,
+    TotpStatusResponse,
     VerifyEmailRequest,
 )
 
@@ -87,7 +91,7 @@ async def resend_verification(
     return RegisterResponse()
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, response_model_exclude_none=True)
 async def login(
     payload: LoginRequest,
     request: Request,
@@ -104,11 +108,12 @@ async def login(
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
     )
-    set_refresh_cookie(response, refresh_token)
+    if refresh_token:
+        set_refresh_cookie(response, refresh_token)
     return login_response
 
 
-@router.post("/refresh", response_model=LoginResponse)
+@router.post("/refresh", response_model=LoginResponse, response_model_exclude_none=True)
 async def refresh(
     request: Request,
     response: Response,
@@ -187,3 +192,71 @@ async def add_role(
         role=assigned_role.role,
         approved=assigned_role.approved_at is not None,
     )
+
+
+@router.post("/2fa/setup", response_model=TotpSetupResponse)
+async def setup_totp(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> TotpSetupResponse:
+    """Start TOTP setup for the authenticated user."""
+    return await service.setup_totp(db=db, user=current_user)
+
+
+@router.post("/2fa/verify", response_model=TotpStatusResponse)
+async def verify_totp(
+    payload: TotpCodeRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> TotpStatusResponse:
+    """Enable TOTP after validating the current code."""
+    enabled = await service.verify_totp_enable(
+        db=db,
+        redis=redis,
+        user=current_user,
+        code=payload.code,
+    )
+    return TotpStatusResponse(totp_enabled=enabled)
+
+
+@router.post("/2fa/disable", response_model=TotpStatusResponse)
+async def disable_totp(
+    payload: TotpCodeRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> TotpStatusResponse:
+    """Disable TOTP after validating a current code or backup code."""
+    enabled = await service.disable_totp(
+        db=db,
+        redis=redis,
+        user=current_user,
+        code=payload.code,
+    )
+    return TotpStatusResponse(totp_enabled=enabled)
+
+
+@router.post(
+    "/2fa/verify-login",
+    response_model=LoginResponse,
+    response_model_exclude_none=True,
+)
+async def verify_totp_login(
+    payload: TotpLoginVerifyRequest,
+    request: Request,
+    response: Response,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> LoginResponse:
+    """Trade a valid 2FA login challenge for browser session tokens."""
+    login_response, refresh_token = await service.verify_totp_login(
+        db=db,
+        redis=redis,
+        challenge_token=payload.challenge_token,
+        code=payload.code,
+        ip=_client_ip(request),
+        ua=request.headers.get("user-agent"),
+    )
+    set_refresh_cookie(response, refresh_token)
+    return login_response
