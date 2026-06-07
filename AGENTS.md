@@ -23,13 +23,13 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 
 ### Key Docs
 
-| Doc             | Path                                                          | Purpose                                            |
-| --------------- | ------------------------------------------------------------- | -------------------------------------------------- |
-| PRD             | `docs/auracles-prd.md`                                        | Short PRD — start here for onboarding              |
-| Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)   |
-| FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)         |
-| TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security     |
-| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend|
+| Doc             | Path                                                          | Purpose                                             |
+| --------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| PRD             | `docs/auracles-prd.md`                                        | Short PRD — start here for onboarding               |
+| Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)    |
+| FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
+| TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
+| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend |
 
 ---
 
@@ -39,41 +39,41 @@ Two-phase deployment. Code is identical in both phases — only env vars and dep
 
 ### Phase 1 — Pre-Scale (current)
 
-| Layer              | Technology                                   |
-| ------------------ | -------------------------------------------- |
-| Frontend           | Next.js 15 (App Router)                      |
-| Styling            | Tailwind CSS                                 |
-| Frontend hosting   | Vercel                                       |
-| Backend            | FastAPI (Python 3.13)                        |
-| Backend hosting    | Render (Web Service)                         |
-| Async workers      | Celery + Redis — Render (Background Worker)  |
-| Scheduler          | Celery Beat — Render (Background Worker)     |
-| Database           | PostgreSQL 16 (Neon — serverless)            |
-| Cache + broker     | Redis (Upstash — serverless)                 |
-| File storage       | AWS S3                                       |
-| Virus scan         | Celery task (ClamAV in worker image)         |
-| Payments (global)  | Stripe + Stripe Connect                      |
-| Payments (Nigeria) | Paystack                                     |
-| Email              | Resend (`noreply@auracles.space`)            |
-| API contract       | OpenAPI spec (`contracts/openapi.yaml`)      |
-| Migrations         | Alembic                                      |
-| ORM                | SQLAlchemy (async)                           |
-| Validation         | Pydantic v2                                  |
+| Layer              | Technology                                  |
+| ------------------ | ------------------------------------------- |
+| Frontend           | Next.js 15 (App Router)                     |
+| Styling            | Tailwind CSS                                |
+| Frontend hosting   | Vercel                                      |
+| Backend            | FastAPI (Python 3.13)                       |
+| Backend hosting    | Render (Web Service)                        |
+| Async workers      | Celery + Redis — Render (Background Worker) |
+| Scheduler          | Celery Beat — Render (Background Worker)    |
+| Database           | PostgreSQL 16 (Neon — serverless)           |
+| Cache + broker     | Redis (Upstash — serverless)                |
+| File storage       | AWS S3                                      |
+| Virus scan         | Celery task (ClamAV in worker image)        |
+| Payments (global)  | Stripe + Stripe Connect                     |
+| Payments (Nigeria) | Paystack                                    |
+| Email              | Resend (`noreply@auracles.space`)           |
+| API contract       | OpenAPI spec (`contracts/openapi.yaml`)     |
+| Migrations         | Alembic                                     |
+| ORM                | SQLAlchemy (async)                          |
+| Validation         | Pydantic v2                                 |
 | CI/CD              | GitHub Actions → GHCR → Render deploy hooks |
 
 ### Phase 2 — AWS (at scale)
 
-| Layer              | Technology                                     |
-| ------------------ | ---------------------------------------------- |
-| Backend hosting    | AWS ECS Fargate                                |
-| Scheduler          | Celery Beat (ECS singleton task)               |
-| Database           | PostgreSQL 16 (AWS RDS)                        |
-| Cache + broker     | Redis (AWS ElastiCache)                        |
-| File events        | AWS Lambda (S3 trigger → virus scan)           |
-| Email              | AWS SES (or Resend — optional swap)            |
-| Infrastructure     | Terraform                                      |
-| Terraform state    | AWS S3 + DynamoDB (remote state + locking)     |
-| CI/CD              | GitHub Actions → ECR → ECS rolling deploy      |
+| Layer           | Technology                                 |
+| --------------- | ------------------------------------------ |
+| Backend hosting | AWS ECS Fargate                            |
+| Scheduler       | Celery Beat (ECS singleton task)           |
+| Database        | PostgreSQL 16 (AWS RDS)                    |
+| Cache + broker  | Redis (AWS ElastiCache)                    |
+| File events     | AWS Lambda (S3 trigger → virus scan)       |
+| Email           | AWS SES (or Resend — optional swap)        |
+| Infrastructure  | Terraform                                  |
+| Terraform state | AWS S3 + DynamoDB (remote state + locking) |
+| CI/CD           | GitHub Actions → ECR → ECS rolling deploy  |
 
 See `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` for migration steps.
 
@@ -197,18 +197,18 @@ Never put business logic in `router.py`. Never do DB queries in `router.py`.
 
 Every feature must explicitly handle:
 
-| Edge case | Required handling |
-|-----------|------------------|
-| Unauthenticated request | 401 — logged at INFO |
-| Insufficient role | 403 — logged at WARNING with user_id + attempted action |
-| Resource not found | 404 — no logging needed (not an error) |
-| Duplicate action (idempotency) | 200/409 depending on context — never 500 |
-| Malformed input | 422 via Pydantic — automatic, no extra code |
-| External service timeout | Retry via Celery task, return 202 if async, 502 if sync |
-| Webhook invalid signature | 400 + audit log — never process payload |
-| File too large | 413 — validated before S3 upload attempt |
-| Concurrent write conflict | DB transaction rollback + 409 |
-| Escrow insufficient funds | 402 + explicit error message + audit log |
+| Edge case                      | Required handling                                       |
+| ------------------------------ | ------------------------------------------------------- |
+| Unauthenticated request        | 401 — logged at INFO                                    |
+| Insufficient role              | 403 — logged at WARNING with user_id + attempted action |
+| Resource not found             | 404 — no logging needed (not an error)                  |
+| Duplicate action (idempotency) | 200/409 depending on context — never 500                |
+| Malformed input                | 422 via Pydantic — automatic, no extra code             |
+| External service timeout       | Retry via Celery task, return 202 if async, 502 if sync |
+| Webhook invalid signature      | 400 + audit log — never process payload                 |
+| File too large                 | 413 — validated before S3 upload attempt                |
+| Concurrent write conflict      | DB transaction rollback + 409                           |
+| Escrow insufficient funds      | 402 + explicit error message + audit log                |
 
 Never assume the happy path. Every service method must consider: what if the record doesn't exist, what if a concurrent request already did this, what if the external call fails.
 
@@ -244,10 +244,10 @@ logger.info("Framework submitted for review")
 
 ### Format
 
-| Environment | Format | Sink |
-|-------------|--------|------|
-| Dev (local) | Colored, human-readable — `{time} | {level} | {module}.{action} | {message}` | stdout |
-| Staging/Prod | JSON structured | stdout → Render log drain |
+| Environment  | Format                            | Sink                      |
+| ------------ | --------------------------------- | ------------------------- | ----------------- | ---------- | ------ |
+| Dev (local)  | Colored, human-readable — `{time} | {level}                   | {module}.{action} | {message}` | stdout |
+| Staging/Prod | JSON structured                   | stdout → Render log drain |
 
 Controlled by `LOG_FORMAT=json` env var in production. Dev defaults to colored.
 
@@ -255,25 +255,25 @@ Controlled by `LOG_FORMAT=json` env var in production. Dev defaults to colored.
 
 Every log entry must include:
 
-| Tag | When required |
-|-----|--------------|
-| `module` | Always — matches the module name (auth, frameworks, financials, etc.) |
-| `action` | Always — snake_case verb describing what's happening (`publish_framework`, `release_escrow`) |
-| `user_id` | Whenever a user is authenticated |
-| `request_id` | On every HTTP request — injected by middleware |
-| `framework_id` | On any framework operation |
-| `transaction_id` | On any financial operation |
-| `task_id` | On any Celery task |
+| Tag              | When required                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `module`         | Always — matches the module name (auth, frameworks, financials, etc.)                        |
+| `action`         | Always — snake_case verb describing what's happening (`publish_framework`, `release_escrow`) |
+| `user_id`        | Whenever a user is authenticated                                                             |
+| `request_id`     | On every HTTP request — injected by middleware                                               |
+| `framework_id`   | On any framework operation                                                                   |
+| `transaction_id` | On any financial operation                                                                   |
+| `task_id`        | On any Celery task                                                                           |
 
 ### Log levels — use precisely
 
-| Level | Use for |
-|-------|---------|
-| `DEBUG` | Internal state, query results, branching decisions — dev only |
-| `INFO` | Normal operations: login, purchase, publish, payout requested |
-| `WARNING` | Unexpected but handled: RBAC denial, webhook retry, rate limit hit |
-| `ERROR` | Failures that need investigation: external service down, DB write failed, task exhausted retries |
-| `CRITICAL` | Data integrity risk: Escrow inconsistency, payment mismatch, audit log write failure |
+| Level      | Use for                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| `DEBUG`    | Internal state, query results, branching decisions — dev only                                    |
+| `INFO`     | Normal operations: login, purchase, publish, payout requested                                    |
+| `WARNING`  | Unexpected but handled: RBAC denial, webhook retry, rate limit hit                               |
+| `ERROR`    | Failures that need investigation: external service down, DB write failed, task exhausted retries |
+| `CRITICAL` | Data integrity risk: Escrow inconsistency, payment mismatch, audit log write failure             |
 
 ### What always gets logged (non-negotiable)
 
@@ -609,6 +609,7 @@ Never start a phase until the previous phase's tests are green.
 ### Phase 0 — Foundation
 
 **Backend**
+
 - Docker Compose local dev stack (Postgres + Redis + API + Celery + Beat)
 - FastAPI project scaffold — module structure, `app/core/`, `app/shared/`
 - `loguru` logging setup — colored dev, JSON prod, `RequestLoggingMiddleware`
@@ -617,6 +618,7 @@ Never start a phase until the previous phase's tests are green.
 - `contracts/openapi.yaml` stub with health endpoint
 
 **Frontend**
+
 - Next.js 15 scaffold — App Router, Tailwind, folder structure
 - `hey-api` codegen wired to `contracts/openapi.yaml`
 - Component structure: `components/ui/`, `components/modules/`
@@ -626,7 +628,8 @@ Never start a phase until the previous phase's tests are green.
 
 ### Phase 1 — Auth & Identity
 
-**Backend** (FR-AUTH-*)
+**Backend** (FR-AUTH-\*)
+
 - User registration + email verification (Resend)
 - Login — JWT (15m) + Redis refresh tokens (30d)
 - Token refresh + logout (revoke refresh token)
@@ -635,6 +638,7 @@ Never start a phase until the previous phase's tests are green.
 - Role assignment endpoint
 
 **Frontend**
+
 - Register / login / email verify pages
 - 2FA setup + prompt flow
 - Token management: access token in memory, refresh in HttpOnly cookie
@@ -645,7 +649,8 @@ Never start a phase until the previous phase's tests are green.
 
 ### Phase 2 — Core Marketplace
 
-**Backend** (FR-EXP-*, FR-FWK-*)
+**Backend** (FR-EXP-_, FR-FWK-_)
+
 - Explore: search, filters, pagination (GIN full-text index)
 - Framework CRUD + versioning
 - Artifact upload → S3 → `process_artifact` Celery task (virus scan → extract → PII → fingerprint → rarity → thumbnail → index)
@@ -653,6 +658,7 @@ Never start a phase until the previous phase's tests are green.
 - Framework publish/review workflow
 
 **Frontend**
+
 - `/explore` SSR page — search, filters, framework cards
 - `/explore/[id]` SSR — framework detail, preview, pricing
 - Contributor dashboard — create/edit framework, upload artifacts, publish
@@ -662,7 +668,8 @@ Never start a phase until the previous phase's tests are green.
 
 ### Phase 3 — Transactions & Financials
 
-**Backend** (FR-FIN-*)
+**Backend** (FR-FIN-\*)
+
 - Stripe + Paystack integration, provider routing
 - Purchase flow — license creation, Escrow funding
 - Stripe Connect + Paystack onboarding for contributors
@@ -671,6 +678,7 @@ Never start a phase until the previous phase's tests are green.
 - Contributor earnings + payout history
 
 **Frontend**
+
 - Purchase flow — checkout, payment method, confirmation
 - Operator library — purchased frameworks + download (presigned URL)
 - Contributor financials — earnings dashboard, payout request with 2FA
@@ -679,13 +687,15 @@ Never start a phase until the previous phase's tests are green.
 
 ### Phase 4 — Projects + Attestation
 
-**Backend** (FR-PROJ-*, FR-ATT-*)
+**Backend** (FR-PROJ-_, FR-ATT-_)
+
 - Project posting, proposal submission, acceptance
 - Workspace, Milestones, Deliverable submission + approval
 - Escrow fund → release flow
 - Attestation request, Attestor assignment, report submission + publish
 
 **Frontend**
+
 - Operator: project creation, proposal review, milestone approval
 - Contributor: proposal submission, workspace, deliverable upload
 - Attestor: assignment dashboard, report submission
@@ -695,7 +705,8 @@ Never start a phase until the previous phase's tests are green.
 
 ### Phase 5 — Developer Platform + Admin + Polish
 
-**Backend** (FR-DEV-*, FR-COL-*, FR-SRCH-*, FR-GDPR-*, FR-ADMIN-*)
+**Backend** (FR-DEV-_, FR-COL-_, FR-SRCH-_, FR-GDPR-_, FR-ADMIN-\*)
+
 - API key generation + management, Partner API endpoints
 - Partner webhook delivery + retry
 - Collections, Saved searches + email alerts
@@ -705,6 +716,7 @@ Never start a phase until the previous phase's tests are green.
 - Notification system
 
 **Frontend**
+
 - Developer portal — apply, API keys, usage, commissions
 - Settings — profile, security, notifications, GDPR
 - Admin UI — user list, content queue, analytics
