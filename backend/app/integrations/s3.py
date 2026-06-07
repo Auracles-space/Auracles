@@ -30,27 +30,6 @@ class S3Storage:
             kwargs["endpoint_url"] = settings.aws_endpoint_url
         self._client = boto3.client("s3", **kwargs)
 
-    def presigned_put_url(
-        self,
-        bucket: str,
-        key: str,
-        mime_type: str,
-        expires_in: int,
-    ) -> str:
-        """Create a presigned PUT URL for a private S3 object."""
-        return cast(
-            str,
-            self._client.generate_presigned_url(
-                "put_object",
-                Params={
-                    "Bucket": bucket,
-                    "Key": key,
-                    "ContentType": mime_type,
-                },
-                ExpiresIn=expires_in,
-            ),
-        )
-
     def presigned_post(
         self,
         bucket: str,

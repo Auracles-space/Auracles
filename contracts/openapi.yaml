@@ -781,8 +781,8 @@ paths:
       tags:
         - Settings
       operationId: requestKycUploadUrl
-      summary: Request KYC upload URL
-      description: Creates a private S3 upload target for a KYC document.
+      summary: Request KYC upload target
+      description: Creates a private S3 presigned POST target for a KYC document.
       security:
         - bearerAuth: []
       requestBody:
@@ -793,7 +793,7 @@ paths:
               $ref: "#/components/schemas/KycUploadUrlRequest"
       responses:
         "200":
-          description: Presigned upload URL created.
+          description: Presigned POST upload target created.
           content:
             application/json:
               schema:
@@ -1314,12 +1314,19 @@ components:
       type: object
       required:
         - upload_url
+        - fields
         - s3_key
         - max_size
         - expires_in
       properties:
         upload_url:
           type: string
+          description: S3 endpoint URL for the multipart/form-data POST upload.
+        fields:
+          type: object
+          description: Form fields that must be included with the uploaded file.
+          additionalProperties:
+            type: string
         s3_key:
           type: string
         max_size:

@@ -33,16 +33,27 @@ class FakeKycStorage:
     def __init__(self) -> None:
         """Create empty fake S3 state."""
         self.existing_keys: set[str] = set()
+        self.presigned_requests: list[tuple[str, str, str, int, int]] = []
 
-    def presigned_put_url(
+    def presigned_post(
         self,
         bucket: str,
         key: str,
         mime_type: str,
+        max_size: int,
         expires_in: int,
-    ) -> str:
-        """Return a deterministic fake upload URL."""
-        return f"https://s3.test/{bucket}/{key}?content-type={mime_type}"
+    ) -> dict[str, Any]:
+        """Return a deterministic fake KYC presigned POST policy."""
+        self.presigned_requests.append((bucket, key, mime_type, max_size, expires_in))
+        return {
+            "url": f"https://s3.test/{bucket}",
+            "fields": {
+                "key": key,
+                "Content-Type": mime_type,
+                "policy": "fake-policy",
+                "x-amz-signature": "fake-signature",
+            },
+        }
 
     def object_exists(self, bucket: str, key: str) -> bool:
         """Return whether the fake object was marked uploaded."""
@@ -121,7 +132,7 @@ async def test_user_can_request_kyc_upload_url_and_view_pending_status(
     migrated_database: None,
     kyc_test_context: dict[str, Any],
 ) -> None:
-    """Authenticated users can request a constrained KYC upload URL."""
+    """Authenticated users can request a constrained KYC upload target."""
     user_id = await create_user_with_roles("kyc@auracles.space", ["operator"])
 
     response = await client.post(
@@ -141,6 +152,9 @@ async def test_user_can_request_kyc_upload_url_and_view_pending_status(
     assert response.status_code == 200
     assert response.json()["upload_url"].startswith(("http://", "https://"))
     assert response.json()["s3_key"].startswith(f"kyc/{user_id}/")
+    assert response.json()["fields"]["key"] == response.json()["s3_key"]
+    assert response.json()["fields"]["Content-Type"] == "application/pdf"
+    assert response.json()["fields"]["policy"] == "fake-policy"
     assert status_response.status_code == 200
     assert status_response.json()["kyc_status"] == "unverified"
     assert len(status_response.json()["documents"]) == 1

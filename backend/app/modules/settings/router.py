@@ -40,7 +40,7 @@ async def request_kyc_upload_url(
     current_user: CurrentUser,
     db: DatabaseSession,
 ) -> KycUploadUrlResponse:
-    """Create a presigned KYC upload URL for the authenticated user."""
+    """Create a presigned KYC upload target for the authenticated user."""
     return await service.request_kyc_upload_url(
         db=db,
         user=current_user,

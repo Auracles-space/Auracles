@@ -278,7 +278,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (100% on touche
 ### Slice 8 — KYC submission (Contributor: gates upload + publish + payout; Operator: gates artifact download)
 **Add:**
 - Migration: `kyc_documents` table (`id`, `user_id`, `doc_type` (enum: `passport|drivers_license|national_id|proof_of_address`), `s3_key`, `mime_type`, `file_size`, `status` (enum: `pending|verified|rejected`), `reviewed_by`, `reviewed_at`, `notes`)
-- `app/modules/auth/service.py`: `request_kyc_upload_url(...)` (returns presigned PUT URL + max size 10MB; mime whitelist `image/jpeg|image/png|application/pdf`), `confirm_kyc_upload(...)` (called after FE finishes PUT), `get_kyc_status(...)`
+- `app/modules/auth/service.py`: `request_kyc_upload_url(...)` (returns presigned POST target + max size 10MB; mime whitelist `image/jpeg|image/png|application/pdf`), `confirm_kyc_upload(...)` (called after FE finishes POST), `get_kyc_status(...)`
 - `POST /v1/settings/kyc/upload-url`, `POST /v1/settings/kyc/submit`, `GET /v1/settings/kyc`
 - `PATCH /v1/admin/users/{id}/kyc` — admin verify/reject (`status` update); audit `kyc_status_change`
 - `app/core/dependencies.py`: `require_kyc_verified()` dep — Phase 2 Contributor paths (framework + artifact upload/publish), Phase 2 Operator path (purchased artifact download), Phase 3 financials (payout). Same dep, different consumers.

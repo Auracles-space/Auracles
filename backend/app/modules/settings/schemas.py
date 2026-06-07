@@ -17,7 +17,7 @@ KycDocType = Literal[
 
 
 class KycUploadUrlRequest(BaseModel):
-    """Request body for creating a constrained KYC upload URL."""
+    """Request body for creating a constrained KYC upload target."""
 
     doc_type: KycDocType
     mime_type: str
@@ -25,9 +25,10 @@ class KycUploadUrlRequest(BaseModel):
 
 
 class KycUploadUrlResponse(BaseModel):
-    """Response body for a presigned KYC upload URL."""
+    """Response body for an S3 presigned POST KYC upload target."""
 
     upload_url: str
+    fields: dict[str, str]
     s3_key: str
     max_size: int
     expires_in: int

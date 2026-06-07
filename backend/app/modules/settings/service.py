@@ -61,7 +61,7 @@ async def request_kyc_upload_url(
     mime_type: str,
     file_size: int,
 ) -> KycUploadUrlResponse:
-    """Create a KYC document record and presigned upload URL."""
+    """Create a KYC document record and presigned POST upload target."""
     if mime_type not in ALLOWED_KYC_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -83,15 +83,20 @@ async def request_kyc_upload_url(
         file_size=file_size,
     )
     db.add(document)
-    upload_url = s3.storage.presigned_put_url(
+    upload_target = s3.storage.presigned_post(
         bucket=settings.s3_artifacts_bucket,
         key=key,
         mime_type=mime_type,
+        max_size=KYC_MAX_FILE_SIZE,
         expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
     )
     await db.commit()
     return KycUploadUrlResponse(
-        upload_url=upload_url,
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(field_name): str(field_value)
+            for field_name, field_value in upload_target["fields"].items()
+        },
         s3_key=key,
         max_size=KYC_MAX_FILE_SIZE,
         expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
