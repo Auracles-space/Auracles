@@ -1,19 +1,23 @@
 """Artifact processing pipeline orchestration.
 
-Runs implemented processing steps after virus scanning. Later slices extend this
-with external rarity, thumbnails, and search indexing.
+Runs implemented processing steps after virus scanning. Each step persists its
+own database state so a failed task can be retried without repeating unrelated
+request-path work.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.workers.tasks.processing.blend import _compute_final_rarity_impl
 from app.workers.tasks.processing.extract import _extract_text_impl
 from app.workers.tasks.processing.metadata import _compute_metadata_impl
 from app.workers.tasks.processing.minhash import _compute_minhash_impl
 from app.workers.tasks.processing.pii import _detect_pii_impl
 from app.workers.tasks.processing.rarity_external import _compute_external_rarity_impl
 from app.workers.tasks.processing.rarity_internal import _compute_internal_rarity_impl
+from app.workers.tasks.processing.search_index import _refresh_framework_tsvector_impl
+from app.workers.tasks.processing.thumbnail import _make_thumbnail_impl
 
 
 async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
@@ -39,9 +43,21 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
     minhash = await _compute_minhash_impl(artifact_id)
     rarity_internal = await _compute_internal_rarity_impl(artifact_id)
     rarity_external = await _compute_external_rarity_impl(artifact_id)
+    final_rarity = await _compute_final_rarity_impl(artifact_id)
+    framework_id = final_rarity.get("framework_id")
+    thumbnail = (
+        await _make_thumbnail_impl(str(framework_id))
+        if isinstance(framework_id, str)
+        else {"status": "skipped", "reason": "missing_framework"}
+    )
+    search_index = (
+        await _refresh_framework_tsvector_impl(str(framework_id))
+        if isinstance(framework_id, str)
+        else {"status": "skipped", "reason": "missing_framework"}
+    )
     return {
         "artifact_id": artifact_id,
-        "status": rarity_external["status"],
+        "status": search_index["status"],
         "steps": {
             "extract": extraction,
             "pii": pii,
@@ -49,5 +65,8 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
             "minhash": minhash,
             "rarity_internal": rarity_internal,
             "rarity_external": rarity_external,
+            "final_rarity": final_rarity,
+            "thumbnail": thumbnail,
+            "search_index": search_index,
         },
     }

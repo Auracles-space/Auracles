@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     s3_reports_bucket: str = Field(
         default="auracles-reports-dev", alias="S3_REPORTS_BUCKET"
     )
+    s3_thumbnails_bucket: str = Field(
+        default="auracles-thumbnails-dev", alias="S3_THUMBNAILS_BUCKET"
+    )
     resend_from_address: str = Field(
         default="noreply@auracles.space", alias="RESEND_FROM_ADDRESS"
     )

@@ -162,6 +162,7 @@ class Framework(UpdatedAtMixin, Base):
         ForeignKey("artifacts.id"),
         nullable=True,
     )
+    thumbnail_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     change_type: Mapped[str | None] = mapped_column(CHANGE_TYPE_ENUM, nullable=True)
     last_pipeline_run_at: Mapped[datetime | None] = mapped_column(

@@ -1,8 +1,8 @@
 """Migration tests for the Phase 2 marketplace schema foundation.
 
-Slice 1 is intentionally schema-only: it proves that Alembic can create and
-remove the marketplace tables, enums, and indexes before any marketplace
-service or router code starts depending on them.
+These tests prove Alembic can create the marketplace tables, additive follow-up
+columns, enums, and indexes, and can still roll the marketplace schema back to
+the pre-Phase-2 auth/KYC database shape.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ MARKETPLACE_ENUMS = {
     "change_type_enum",
     "version_action_enum",
 }
+PRE_MARKETPLACE_REVISION = "2026_06_07_0004"
 
 
 @pytest.fixture
@@ -58,8 +59,8 @@ def migrated_engine() -> Iterator[Engine]:
     try:
         yield engine
     finally:
-        # Exercise the Slice 1 rollback and then restore the developer DB.
-        command.downgrade(alembic_config, "-1")
+        # Exercise the full marketplace rollback and then restore the DB.
+        command.downgrade(alembic_config, PRE_MARKETPLACE_REVISION)
         command.upgrade(alembic_config, "head")
         engine.dispose()
 
@@ -114,6 +115,18 @@ def test_marketplace_migration_creates_query_indexes(
     assert "idx_artifact_downloads_license" in download_indexes
 
 
+def test_marketplace_migration_creates_thumbnail_storage_column(
+    migrated_engine: Engine,
+) -> None:
+    """Framework rows store the generated marketplace thumbnail object key."""
+    inspector = inspect(migrated_engine)
+    framework_columns = {
+        column["name"] for column in inspector.get_columns("frameworks")
+    }
+
+    assert "thumbnail_key" in framework_columns
+
+
 def test_marketplace_migration_omits_pgvector(
     migrated_engine: Engine,
 ) -> None:
@@ -146,7 +159,7 @@ def test_marketplace_migration_downgrade_removes_slice_one_schema() -> None:
     alembic_config = Config("alembic.ini")
 
     command.upgrade(alembic_config, "head")
-    command.downgrade(alembic_config, "-1")
+    command.downgrade(alembic_config, PRE_MARKETPLACE_REVISION)
     try:
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
@@ -177,6 +190,7 @@ def test_marketplace_orm_models_bind_to_phase_two_tables() -> None:
     configure_mappers()
 
     assert Framework.__tablename__ == "frameworks"
+    assert "thumbnail_key" in Framework.__table__.columns
     assert FrameworkVersion.__tablename__ == "framework_versions"
     assert Artifact.__tablename__ == "artifacts"
     assert ArtifactPiiAudit.__tablename__ == "artifact_pii_audit"

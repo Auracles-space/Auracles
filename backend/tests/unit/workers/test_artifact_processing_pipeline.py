@@ -15,7 +15,7 @@ from zipfile import ZipFile
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
@@ -105,6 +105,7 @@ def processing_context(
     def cleanup() -> None:
         """Delete marketplace rows before users to satisfy foreign keys."""
         with session_factory() as session:
+            session.query(Framework).update({Framework.preview_artifact_id: None})
             session.execute(delete(AuditLog))
             session.execute(delete(Review))
             session.execute(delete(ArtifactDownload))
@@ -199,6 +200,23 @@ def mark_framework_published(artifact_id: UUID) -> None:
         artifact.processing_status = "processed"
         session.commit()
     sync_engine.dispose()
+
+
+def set_preview_artifact(artifact_id: UUID) -> UUID:
+    """Set an Artifact as its Framework's designated preview artifact."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        framework = session.get(Framework, artifact.framework_id)
+        assert framework is not None
+        framework.preview_artifact_id = artifact.id
+        framework_id = framework.id
+        session.commit()
+    sync_engine.dispose()
+    return framework_id
 
 
 def build_docx_bytes(text: str) -> bytes:
@@ -331,6 +349,75 @@ def set_external_rarity_context(
         }
         session.commit()
     sync_engine.dispose()
+
+
+def set_blend_context(
+    artifact_id: UUID,
+    *,
+    internal_rarity: Decimal,
+    external_rarity: Decimal | None,
+) -> None:
+    """Seed Artifact scores needed by the final rarity blend step."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        artifact.internal_rarity = internal_rarity
+        artifact.external_rarity = external_rarity
+        session.add(
+            ArtifactRarityAudit(
+                artifact_id=artifact_id,
+                internal_jaccard=Decimal("1.0000") - internal_rarity,
+                external_phrases_queried=["vendor risk workflow"],
+                external_hit_counts=[1],
+            )
+        )
+        session.commit()
+    sync_engine.dispose()
+
+
+def set_framework_tags_text(artifact_id: UUID, tags_text: str) -> UUID:
+    """Overwrite tags_text to verify search-index refresh behavior."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        framework = session.get(Framework, artifact.framework_id)
+        assert framework is not None
+        framework.tags_text = tags_text
+        framework_id = framework.id
+        session.commit()
+    sync_engine.dispose()
+    return framework_id
+
+
+def framework_matches_search(framework_id: UUID, query: str) -> bool:
+    """Return whether the Framework matches the expression-index search shape."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    with sync_engine.connect() as connection:
+        matched = connection.scalar(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM frameworks
+                    WHERE id = :framework_id
+                    AND to_tsvector(
+                        'english',
+                        title || ' ' || description || ' ' || tags_text
+                    ) @@ plainto_tsquery('english', :query)
+                )
+                """
+            ),
+            {"framework_id": framework_id, "query": query},
+        )
+    sync_engine.dispose()
+    return bool(matched)
 
 
 def test_process_artifact_flags_high_confidence_pii_for_review(
@@ -532,6 +619,129 @@ def test_external_rarity_gracefully_degrades_when_brave_unavailable(
     assert artifact.external_rarity is None
     assert framework is not None
     assert framework.pipeline_failure_reasons["external_check"] == "unavailable"
+
+
+def test_final_rarity_blend_persists_score_and_audit(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Final rarity blends internal, external, and metadata uplift scores."""
+    from app.workers.tasks.processing import blend
+
+    artifact_id = create_processing_artifact(name="blend.pdf")
+    set_blend_context(
+        artifact_id,
+        internal_rarity=Decimal("0.8000"),
+        external_rarity=Decimal("0.6000"),
+    )
+
+    blend.compute_final_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.rarity_score == Decimal("0.6400")
+    assert artifact.processing_status == "processed"
+    assert rarity_audit is not None
+    assert rarity_audit.metadata_uplift == Decimal("0.0000")
+    assert rarity_audit.blended_score == Decimal("0.6400")
+
+
+def test_final_rarity_blend_reweights_when_external_rarity_missing(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """A missing external check uses neutral external rarity in the blend."""
+    from app.workers.tasks.processing import blend
+
+    artifact_id = create_processing_artifact(name="blend-null-external.pdf")
+    set_blend_context(
+        artifact_id,
+        internal_rarity=Decimal("0.8000"),
+        external_rarity=None,
+    )
+
+    blend.compute_final_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.rarity_score == Decimal("0.6250")
+    assert rarity_audit is not None
+    assert rarity_audit.blended_score == Decimal("0.6250")
+
+
+def test_thumbnail_generation_uses_preview_artifact_and_stores_framework_key(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Thumbnail task uploads a PNG for the preview artifact and stores its key."""
+    from app.workers.tasks.processing import thumbnail
+
+    artifact_id = create_processing_artifact(name="preview.pdf")
+    framework_id = set_preview_artifact(artifact_id)
+    monkeypatch.setattr(
+        thumbnail,
+        "render_pdf_thumbnail",
+        lambda *_: b"PNG-BYTES",
+    )
+
+    thumbnail.make_thumbnail.apply(args=[str(framework_id)]).get()
+    asyncio.run(engine.dispose())
+
+    _, framework = read_artifact_framework(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert framework is not None
+    assert framework.thumbnail_key == f"frameworks/{framework_id}/thumbnail.png"
+    assert uploads[framework.thumbnail_key] == b"PNG-BYTES"
+
+
+def test_thumbnail_generation_uses_generic_png_without_renderable_artifact(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Non-renderable artifacts get a generic thumbnail instead of failing."""
+    from app.workers.tasks.processing import thumbnail
+
+    artifact_id = create_processing_artifact(
+        name="playbook.docx",
+        mime_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    )
+    framework_id = set_preview_artifact(artifact_id)
+
+    thumbnail.make_thumbnail.apply(args=[str(framework_id)]).get()
+    asyncio.run(engine.dispose())
+
+    _, framework = read_artifact_framework(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert framework is not None
+    assert framework.thumbnail_key == f"frameworks/{framework_id}/thumbnail.png"
+    assert uploads[framework.thumbnail_key].startswith(b"\x89PNG")
+
+
+def test_search_index_refresh_syncs_tags_text_for_fts(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Search refresh makes tag text searchable through the FTS expression."""
+    from app.workers.tasks.processing import search_index
+
+    artifact_id = create_processing_artifact(name="search.pdf")
+    framework_id = set_framework_tags_text(artifact_id, tags_text="")
+
+    assert framework_matches_search(framework_id, "governance") is False
+
+    search_index.refresh_framework_tsvector.apply(args=[str(framework_id)]).get()
+    asyncio.run(engine.dispose())
+
+    assert framework_matches_search(framework_id, "governance") is True
 
 
 def test_extract_text_can_rerun_without_duplicate_side_effects(
