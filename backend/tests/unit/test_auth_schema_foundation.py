@@ -16,7 +16,13 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 
 from app.core.config import get_settings
-from app.modules.auth.models import OAuthAccount, User, UserBackupCode, UserRole
+from app.modules.auth.models import (
+    KycDocument,
+    OAuthAccount,
+    User,
+    UserBackupCode,
+    UserRole,
+)
 from app.shared.models.audit_log import AuditLog
 
 
@@ -49,6 +55,7 @@ def test_auth_foundation_migration_creates_required_tables(
         "oauth_accounts",
         "audit_logs",
         "user_backup_codes",
+        "kyc_documents",
     }.issubset(set(inspector.get_table_names()))
 
 
@@ -69,7 +76,12 @@ def test_auth_foundation_migration_creates_enums_and_indexes(
             )
         }
 
-    assert {"role_enum", "kyc_status_enum"}.issubset(enum_names)
+    assert {
+        "role_enum",
+        "kyc_status_enum",
+        "kyc_doc_type_enum",
+        "kyc_document_status_enum",
+    }.issubset(enum_names)
     assert {
         "ix_audit_logs_actor_id_created_at",
         "ix_audit_logs_action_created_at",
@@ -102,8 +114,14 @@ def test_auth_foundation_migration_downgrade_removes_slice_one_schema() -> None:
             "oauth_accounts",
             "audit_logs",
             "user_backup_codes",
+            "kyc_documents",
         }.isdisjoint(table_names)
-        assert {"role_enum", "kyc_status_enum"}.isdisjoint(enum_names)
+        assert {
+            "role_enum",
+            "kyc_status_enum",
+            "kyc_doc_type_enum",
+            "kyc_document_status_enum",
+        }.isdisjoint(enum_names)
     finally:
         command.upgrade(alembic_config, "head")
         engine.dispose()
@@ -115,4 +133,5 @@ def test_auth_models_expose_phase_one_tables() -> None:
     assert UserRole.__tablename__ == "user_roles"
     assert OAuthAccount.__tablename__ == "oauth_accounts"
     assert UserBackupCode.__tablename__ == "user_backup_codes"
+    assert KycDocument.__tablename__ == "kyc_documents"
     assert AuditLog.__tablename__ == "audit_logs"

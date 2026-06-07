@@ -6,6 +6,19 @@ export type AddRoleRequest = {
 
 export type role = 'contributor' | 'operator' | 'attestor';
 
+export type AdminKycReviewRequest = {
+    status: 'verified' | 'rejected';
+    notes?: (string) | null;
+};
+
+export type status = 'verified' | 'rejected';
+
+export type AdminKycReviewResponse = {
+    user_id: string;
+    kyc_status: string;
+    document_status: string;
+};
+
 export type AdminRoleAssignmentRequest = {
     role: 'contributor' | 'operator' | 'attestor' | 'admin';
 };
@@ -23,7 +36,7 @@ export type ComponentHealth = {
     detail?: (string) | null;
 };
 
-export type status = 'ok' | 'unavailable';
+export type status2 = 'ok' | 'unavailable';
 
 export type CurrentUserResponse = {
     id: string;
@@ -46,7 +59,43 @@ export type HealthResponse = {
     };
 };
 
-export type status2 = 'ok' | 'unhealthy';
+export type status3 = 'ok' | 'unhealthy';
+
+export type KycDocumentResponse = {
+    id: string;
+    doc_type: string;
+    s3_key: string;
+    mime_type: string;
+    file_size: number;
+    status: string;
+    reviewed_at: (string) | null;
+    notes: (string) | null;
+    created_at: string;
+};
+
+export type KycStatusResponse = {
+    kyc_status: string;
+    documents: Array<KycDocumentResponse>;
+};
+
+export type KycSubmitRequest = {
+    s3_key: string;
+};
+
+export type KycUploadUrlRequest = {
+    doc_type: 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
+    mime_type: string;
+    file_size: number;
+};
+
+export type doc_type = 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
+
+export type KycUploadUrlResponse = {
+    upload_url: string;
+    s3_key: string;
+    max_size: number;
+    expires_in: number;
+};
 
 export type LoginRequest = {
     email: string;
@@ -198,6 +247,17 @@ export type AssignUserRoleResponse = (AdminRoleAssignmentResponse);
 
 export type AssignUserRoleError = (unknown);
 
+export type ReviewUserKycData = {
+    body: AdminKycReviewRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type ReviewUserKycResponse = (AdminKycReviewResponse);
+
+export type ReviewUserKycError = (unknown);
+
 export type VerifyEmailData = {
     body: VerifyEmailRequest;
 };
@@ -229,6 +289,26 @@ export type ResetPasswordData = {
 export type ResetPasswordResponse = (RegisterResponse);
 
 export type ResetPasswordError = (unknown);
+
+export type RequestKycUploadUrlData = {
+    body: KycUploadUrlRequest;
+};
+
+export type RequestKycUploadUrlResponse = (KycUploadUrlResponse);
+
+export type RequestKycUploadUrlError = (unknown);
+
+export type SubmitKycUploadData = {
+    body: KycSubmitRequest;
+};
+
+export type SubmitKycUploadResponse = (KycStatusResponse);
+
+export type SubmitKycUploadError = (unknown);
+
+export type GetKycStatusResponse = (KycStatusResponse);
+
+export type GetKycStatusError = (unknown);
 
 export type GetHealthResponse = (HealthResponse);
 

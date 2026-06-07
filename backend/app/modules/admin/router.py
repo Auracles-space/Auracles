@@ -10,6 +10,8 @@ from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminKycReviewRequest,
+    AdminKycReviewResponse,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
 )
@@ -38,4 +40,26 @@ async def assign_role(
         user_id=user_id,
         role=assigned_role.role,
         approved=assigned_role.approved_at is not None,
+    )
+
+
+@router.patch("/users/{user_id}/kyc", response_model=AdminKycReviewResponse)
+async def review_kyc(
+    user_id: UUID,
+    payload: AdminKycReviewRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminKycReviewResponse:
+    """Review a user's latest KYC document."""
+    document = await service.review_user_kyc(
+        db=db,
+        admin=admin,
+        target_user_id=user_id,
+        review_status=payload.status,
+        notes=payload.notes,
+    )
+    return AdminKycReviewResponse(
+        user_id=user_id,
+        kyc_status=document.status,
+        document_status=document.status,
     )

@@ -102,3 +102,15 @@ def require_role(*allowed_roles: str) -> Callable[..., object]:
         return user
 
     return checker
+
+
+async def require_kyc_verified(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Require the authenticated user to have verified KYC status."""
+    if user.kyc_status != "verified":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="KYC verification is required.",
+        )
+    return user

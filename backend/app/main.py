@@ -6,6 +6,7 @@ from app.core.logging import RequestLoggingMiddleware, configure_logging
 from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.health.router import router as health_router
+from app.modules.settings.router import router as settings_router
 
 
 def create_app() -> FastAPI:
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     application.state.settings = settings
     application.include_router(admin_router, prefix="/v1")
     application.include_router(auth_router, prefix="/v1")
+    application.include_router(settings_router, prefix="/v1")
     application.include_router(health_router, prefix="/v1")
 
     return application

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -40,6 +41,21 @@ KYC_STATUS_ENUM = ENUM(
     "verified",
     "rejected",
     name="kyc_status_enum",
+    create_type=False,
+)
+KYC_DOC_TYPE_ENUM = ENUM(
+    "passport",
+    "drivers_license",
+    "national_id",
+    "proof_of_address",
+    name="kyc_doc_type_enum",
+    create_type=False,
+)
+KYC_DOCUMENT_STATUS_ENUM = ENUM(
+    "pending",
+    "verified",
+    "rejected",
+    name="kyc_document_status_enum",
     create_type=False,
 )
 
@@ -94,6 +110,11 @@ class User(UpdatedAtMixin, Base):
     backup_codes: Mapped[list[UserBackupCode]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    kyc_documents: Mapped[list[KycDocument]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="KycDocument.user_id",
     )
 
 
@@ -185,3 +206,44 @@ class UserBackupCode(CreatedAtMixin, Base):
     )
 
     user: Mapped[User] = relationship(back_populates="backup_codes")
+
+
+class KycDocument(CreatedAtMixin, Base):
+    """Identity document uploaded by a user for KYC review."""
+
+    __tablename__ = "kyc_documents"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    doc_type: Mapped[str] = mapped_column(KYC_DOC_TYPE_ENUM, nullable=False)
+    s3_key: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        KYC_DOCUMENT_STATUS_ENUM,
+        nullable=False,
+        server_default="pending",
+    )
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    user: Mapped[User] = relationship(
+        back_populates="kyc_documents",
+        foreign_keys=[user_id],
+    )

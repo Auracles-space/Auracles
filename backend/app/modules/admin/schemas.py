@@ -18,3 +18,18 @@ class AdminRoleAssignmentResponse(BaseModel):
     user_id: UUID
     role: str
     approved: bool
+
+
+class AdminKycReviewRequest(BaseModel):
+    """Request body for admin KYC review decisions."""
+
+    status: Literal["verified", "rejected"]
+    notes: str | None = None
+
+
+class AdminKycReviewResponse(BaseModel):
+    """Response body for admin KYC review."""
+
+    user_id: UUID
+    kyc_status: str
+    document_status: str

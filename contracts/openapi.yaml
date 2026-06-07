@@ -13,6 +13,8 @@ tags:
     description: Registration and identity verification endpoints.
   - name: Admin
     description: Administrative platform endpoints.
+  - name: Settings
+    description: Authenticated account settings endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -306,6 +308,43 @@ paths:
           description: User not found.
         "422":
           description: Invalid role payload.
+  /v1/admin/users/{user_id}/kyc:
+    patch:
+      tags:
+        - Admin
+      operationId: reviewUserKyc
+      summary: Review user KYC
+      description: Admin-only endpoint for approving or rejecting a user's latest KYC document.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminKycReviewRequest"
+      responses:
+        "200":
+          description: KYC review completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminKycReviewResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role required.
+        "404":
+          description: User or KYC document not found.
+        "422":
+          description: Invalid review payload.
   /v1/auth/verify-email:
     post:
       tags:
@@ -408,6 +447,83 @@ paths:
           description: Invalid reset payload or weak password.
         "429":
           description: Password reset rate limit exceeded.
+  /v1/settings/kyc/upload-url:
+    post:
+      tags:
+        - Settings
+      operationId: requestKycUploadUrl
+      summary: Request KYC upload URL
+      description: Creates a private S3 upload target for a KYC document.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycUploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycUploadUrlResponse"
+        "401":
+          description: Missing or invalid access token.
+        "413":
+          description: KYC document exceeds max size.
+        "415":
+          description: Unsupported KYC document MIME type.
+        "422":
+          description: Invalid upload request payload.
+  /v1/settings/kyc/submit:
+    post:
+      tags:
+        - Settings
+      operationId: submitKycUpload
+      summary: Submit KYC document
+      description: Confirms the uploaded object exists and submits it for review.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycSubmitRequest"
+      responses:
+        "200":
+          description: KYC document submitted for review.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "401":
+          description: Missing or invalid access token.
+        "404":
+          description: KYC document not found.
+        "409":
+          description: KYC object has not been uploaded.
+        "422":
+          description: Invalid submit payload.
+  /v1/settings/kyc:
+    get:
+      tags:
+        - Settings
+      operationId: getKycStatus
+      summary: Get KYC status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user's KYC status and documents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "401":
+          description: Missing or invalid access token.
   /v1/health:
     get:
       tags:
@@ -671,6 +787,127 @@ components:
           type: string
         approved:
           type: boolean
+    AdminKycReviewRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - verified
+            - rejected
+        notes:
+          type:
+            - string
+            - "null"
+    AdminKycReviewResponse:
+      type: object
+      required:
+        - user_id
+        - kyc_status
+        - document_status
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        kyc_status:
+          type: string
+        document_status:
+          type: string
+    KycUploadUrlRequest:
+      type: object
+      required:
+        - doc_type
+        - mime_type
+        - file_size
+      properties:
+        doc_type:
+          type: string
+          enum:
+            - passport
+            - drivers_license
+            - national_id
+            - proof_of_address
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+          minimum: 1
+    KycUploadUrlResponse:
+      type: object
+      required:
+        - upload_url
+        - s3_key
+        - max_size
+        - expires_in
+      properties:
+        upload_url:
+          type: string
+        s3_key:
+          type: string
+        max_size:
+          type: integer
+        expires_in:
+          type: integer
+    KycSubmitRequest:
+      type: object
+      required:
+        - s3_key
+      properties:
+        s3_key:
+          type: string
+          minLength: 1
+    KycDocumentResponse:
+      type: object
+      required:
+        - id
+        - doc_type
+        - s3_key
+        - mime_type
+        - file_size
+        - status
+        - reviewed_at
+        - notes
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        doc_type:
+          type: string
+        s3_key:
+          type: string
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+        status:
+          type: string
+        reviewed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        notes:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+    KycStatusResponse:
+      type: object
+      required:
+        - kyc_status
+        - documents
+      properties:
+        kyc_status:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/KycDocumentResponse"
     ComponentHealth:
       type: object
       required:
