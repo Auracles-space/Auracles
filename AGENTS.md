@@ -598,6 +598,131 @@ E2E:       All flows in the table above must pass in staging before release
 
 ---
 
+## Build Sequence — Phase by Phase
+
+**Rule:** Backend endpoints always precede frontend for the same feature. Within each phase: implement backend → update `contracts/openapi.yaml` → regenerate frontend client → build frontend UI.
+
+Never start a phase until the previous phase's tests are green.
+
+---
+
+### Phase 0 — Foundation
+
+**Backend**
+- Docker Compose local dev stack (Postgres + Redis + API + Celery + Beat)
+- FastAPI project scaffold — module structure, `app/core/`, `app/shared/`
+- `loguru` logging setup — colored dev, JSON prod, `RequestLoggingMiddleware`
+- Alembic init — base migration, `DATABASE_URL` from env
+- Health endpoint `GET /health` — DB ping + Redis ping
+- `contracts/openapi.yaml` stub with health endpoint
+
+**Frontend**
+- Next.js 15 scaffold — App Router, Tailwind, folder structure
+- `hey-api` codegen wired to `contracts/openapi.yaml`
+- Component structure: `components/ui/`, `components/modules/`
+- Environment config (`NEXT_PUBLIC_API_URL`)
+
+---
+
+### Phase 1 — Auth & Identity
+
+**Backend** (FR-AUTH-*)
+- User registration + email verification (Resend)
+- Login — JWT (15m) + Redis refresh tokens (30d)
+- Token refresh + logout (revoke refresh token)
+- TOTP 2FA setup + verification
+- RBAC dependency (`require_role`)
+- Role assignment endpoint
+
+**Frontend**
+- Register / login / email verify pages
+- 2FA setup + prompt flow
+- Token management: access token in memory, refresh in HttpOnly cookie
+- Next.js middleware auth guard
+- Role-based redirect on login
+
+---
+
+### Phase 2 — Core Marketplace
+
+**Backend** (FR-EXP-*, FR-FWK-*)
+- Explore: search, filters, pagination (GIN full-text index)
+- Framework CRUD + versioning
+- Artifact upload → S3 → `process_artifact` Celery task (virus scan → extract → PII → fingerprint → rarity → thumbnail → index)
+- License model
+- Framework publish/review workflow
+
+**Frontend**
+- `/explore` SSR page — search, filters, framework cards
+- `/explore/[id]` SSR — framework detail, preview, pricing
+- Contributor dashboard — create/edit framework, upload artifacts, publish
+- Artifact upload UI with processing status polling
+
+---
+
+### Phase 3 — Transactions & Financials
+
+**Backend** (FR-FIN-*)
+- Stripe + Paystack integration, provider routing
+- Purchase flow — license creation, Escrow funding
+- Stripe Connect + Paystack onboarding for contributors
+- Webhook handlers (both providers, signature verified)
+- Payout request (KYC check + 2FA gate)
+- Contributor earnings + payout history
+
+**Frontend**
+- Purchase flow — checkout, payment method, confirmation
+- Operator library — purchased frameworks + download (presigned URL)
+- Contributor financials — earnings dashboard, payout request with 2FA
+
+---
+
+### Phase 4 — Projects + Attestation
+
+**Backend** (FR-PROJ-*, FR-ATT-*)
+- Project posting, proposal submission, acceptance
+- Workspace, Milestones, Deliverable submission + approval
+- Escrow fund → release flow
+- Attestation request, Attestor assignment, report submission + publish
+
+**Frontend**
+- Operator: project creation, proposal review, milestone approval
+- Contributor: proposal submission, workspace, deliverable upload
+- Attestor: assignment dashboard, report submission
+- Workspace — real-time activity (WebSocket)
+
+---
+
+### Phase 5 — Developer Platform + Admin + Polish
+
+**Backend** (FR-DEV-*, FR-COL-*, FR-SRCH-*, FR-GDPR-*, FR-ADMIN-*)
+- API key generation + management, Partner API endpoints
+- Partner webhook delivery + retry
+- Collections, Saved searches + email alerts
+- GDPR export + deletion requests
+- Admin module — user management, content moderation, analytics
+- Reputation scoring (Celery Beat tasks)
+- Notification system
+
+**Frontend**
+- Developer portal — apply, API keys, usage, commissions
+- Settings — profile, security, notifications, GDPR
+- Admin UI — user list, content queue, analytics
+- Collections + saved search UI
+
+---
+
+### Phase 6 — Pre-Launch
+
+- All E2E tests passing (6 critical flows in `frontend/tests/e2e/`)
+- Backend coverage ≥ 80%, frontend coverage ≥ 70%
+- CI/CD fully live on Render (all deploy hooks wired)
+- Security review: RBAC, Escrow logic, webhook verification, presigned URLs
+- Performance: sub-3s page loads on `/explore` and `/explore/[id]`
+- Render + Neon + Upstash + Resend all production-configured
+
+---
+
 ## Workflow Rules
 
 1. **Read the FRD first.** Every feature maps to an FR. Know which one before writing code.
