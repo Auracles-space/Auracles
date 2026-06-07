@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging
+from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.health.router import router as health_router
 
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(RequestLoggingMiddleware)
     application.state.settings = settings
+    application.include_router(admin_router, prefix="/v1")
     application.include_router(auth_router, prefix="/v1")
     application.include_router(health_router, prefix="/v1")
 

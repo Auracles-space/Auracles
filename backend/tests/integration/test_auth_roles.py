@@ -1,0 +1,213 @@
+"""Integration tests for RBAC and role assignment."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from httpx import AsyncClient
+from sqlalchemy import create_engine, delete, select
+
+from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
+from app.core.security import create_access_token, hash_password
+from app.main import app
+from app.modules.auth.models import User, UserRole
+from app.shared.models.audit_log import AuditLog
+
+
+class FakeRedis:
+    """Minimal Redis override for routes that do not touch Redis."""
+
+
+@pytest.fixture
+def migrated_database() -> Iterator[None]:
+    """Ensure auth tables exist for RBAC tests."""
+    sync_engine = create_engine(
+        app.state.settings.sync_database_url,
+        pool_pre_ping=True,
+    )
+    command.upgrade(Config("alembic.ini"), "head")
+    try:
+        yield
+    finally:
+        command.upgrade(Config("alembic.ini"), "head")
+        sync_engine.dispose()
+
+
+@pytest.fixture
+async def role_test_context() -> AsyncIterator[dict[str, Any]]:
+    """Reset auth tables and install a Redis override."""
+    await engine.dispose()
+    async with async_session_factory() as session:
+        await session.execute(delete(AuditLog))
+        await session.execute(delete(UserRole))
+        await session.execute(delete(User))
+        await session.commit()
+
+    app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    try:
+        yield {}
+    finally:
+        app.dependency_overrides.pop(get_redis, None)
+        await engine.dispose()
+
+
+async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
+    """Create a verified user with approved non-attestor roles."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash=hash_password("CorrectHorse9"),
+                display_name=email.split("@")[0],
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            for role in roles:
+                session.add(
+                    UserRole(
+                        user_id=user.id,
+                        role=role,
+                        approved_at=datetime.now(UTC),
+                    )
+                )
+        return user.id
+
+
+def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
+    """Create bearer auth headers for a test user."""
+    token = create_access_token(user_id=user_id, roles=roles)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_user_can_self_add_contributor_or_operator_role(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """Authenticated users can self-add Contributor or Operator roles."""
+    user_id = await create_user_with_roles("operator@auracles.space", ["operator"])
+
+    response = await client.post(
+        "/v1/auth/roles",
+        json={"role": "contributor"},
+        headers=auth_headers(user_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        roles = (
+            await session.execute(
+                select(UserRole.role).where(UserRole.user_id == user_id)
+            )
+        ).scalars().all()
+
+    assert response.status_code == 200
+    assert set(roles) == {"operator", "contributor"}
+
+
+async def test_user_cannot_self_add_attestor_and_duplicate_returns_409(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """Attestor self-add is forbidden and duplicate roles are conflicts."""
+    user_id = await create_user_with_roles(
+        "contributor@auracles.space",
+        ["contributor"],
+    )
+
+    attestor = await client.post(
+        "/v1/auth/roles",
+        json={"role": "attestor"},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    duplicate = await client.post(
+        "/v1/auth/roles",
+        json={"role": "contributor"},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert attestor.status_code == 403
+    assert duplicate.status_code == 409
+
+
+async def test_admin_can_approve_attestor_role(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """Admins can assign and approve the Attestor role for another user."""
+    admin_id = await create_user_with_roles("admin@auracles.space", ["admin"])
+    target_id = await create_user_with_roles("target@auracles.space", ["operator"])
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        json={"role": "attestor"},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == target_id,
+                UserRole.role == "attestor",
+            )
+        )
+        audit_log = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "attestor_approved")
+        )
+
+    assert response.status_code == 200
+    assert role is not None
+    assert role.approved_at is not None
+    assert role.approved_by == admin_id
+    assert audit_log is not None
+
+
+async def test_non_admin_admin_role_assignment_is_denied_and_audited(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """RBAC dependency denies non-admin calls and writes access_denied audit."""
+    user_id = await create_user_with_roles("operator2@auracles.space", ["operator"])
+    target_id = await create_user_with_roles("target2@auracles.space", ["operator"])
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        json={"role": "attestor"},
+        headers=auth_headers(user_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        audit_log = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "access_denied")
+        )
+
+    assert response.status_code == 403
+    assert audit_log is not None
+
+
+async def test_admin_role_assignment_requires_token_role_claim(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """A user with DB admin role but no token admin claim is denied."""
+    admin_id = await create_user_with_roles("claimless@auracles.space", ["admin"])
+    target_id = await create_user_with_roles("target3@auracles.space", ["operator"])
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        json={"role": "attestor"},
+        headers=auth_headers(admin_id, []),
+    )
+
+    assert response.status_code == 403

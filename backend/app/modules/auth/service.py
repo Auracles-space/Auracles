@@ -395,3 +395,47 @@ async def logout(
         )
         await db.commit()
     await redis.delete(key)
+
+
+async def add_self_role(
+    db: AsyncSession,
+    user: User,
+    role: str,
+) -> UserRole:
+    """Let a user add Contributor or Operator role to their account."""
+    if role == "attestor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Attestor role requires admin approval.",
+        )
+    if role not in {"contributor", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported role.",
+        )
+
+    existing = await db.scalar(
+        select(UserRole).where(UserRole.user_id == user.id, UserRole.role == role)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Role already assigned.",
+        )
+
+    assigned_role = UserRole(
+        user_id=user.id,
+        role=role,
+        approved_at=datetime.now(UTC),
+    )
+    db.add(assigned_role)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="role_assigned",
+        target_type="user",
+        target_id=user.id,
+        metadata={"role": role, "self_assigned": True},
+    )
+    await db.commit()
+    return assigned_role

@@ -18,12 +18,14 @@ from app.core.redis import get_redis
 from app.modules.auth import service
 from app.modules.auth.models import User, UserRole
 from app.modules.auth.schemas import (
+    AddRoleRequest,
     CurrentUserResponse,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
     RegisterResponse,
     ResendVerificationRequest,
+    RoleAssignmentResponse,
     VerifyEmailRequest,
 )
 
@@ -165,4 +167,23 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         email_verified=current_user.email_verified,
         kyc_status=current_user.kyc_status,
         deactivated_at=current_user.deactivated_at,
+    )
+
+
+@router.post("/roles", response_model=RoleAssignmentResponse)
+async def add_role(
+    payload: AddRoleRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> RoleAssignmentResponse:
+    """Self-add a non-privileged role."""
+    assigned_role = await service.add_self_role(
+        db=db,
+        user=current_user,
+        role=payload.role,
+    )
+    return RoleAssignmentResponse(
+        user_id=current_user.id,
+        role=assigned_role.role,
+        approved=assigned_role.approved_at is not None,
     )

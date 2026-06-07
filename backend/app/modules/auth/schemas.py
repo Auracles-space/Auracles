@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field, SecretStr, field_validator
 from app.core.security import validate_password_strength
 
 AssignableRole = Literal["contributor", "operator", "attestor"]
+SelfAssignableRole = Literal["contributor", "operator"]
 
 
 class RegisterRequest(BaseModel):
@@ -82,3 +83,17 @@ class CurrentUserResponse(BaseModel):
     email_verified: bool
     kyc_status: str
     deactivated_at: datetime | None
+
+
+class AddRoleRequest(BaseModel):
+    """Request body for self-adding a non-privileged role."""
+
+    role: AssignableRole
+
+
+class RoleAssignmentResponse(BaseModel):
+    """Response body for role assignment endpoints."""
+
+    user_id: UUID
+    role: str
+    approved: bool

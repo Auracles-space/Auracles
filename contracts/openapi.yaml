@@ -11,6 +11,8 @@ tags:
     description: Platform readiness endpoints.
   - name: Auth
     description: Registration and identity verification endpoints.
+  - name: Admin
+    description: Administrative platform endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -126,6 +128,73 @@ paths:
           description: Missing or invalid access token.
         "403":
           description: Account is deactivated.
+  /v1/auth/roles:
+    post:
+      tags:
+        - Auth
+      operationId: addRole
+      summary: Self-add a role
+      description: Allows authenticated users to self-add Contributor or Operator roles.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddRoleRequest"
+      responses:
+        "200":
+          description: Role assigned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleAssignmentResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Attestor role requires admin approval.
+        "409":
+          description: Role already assigned.
+        "422":
+          description: Invalid role payload.
+  /v1/admin/users/{user_id}/roles:
+    patch:
+      tags:
+        - Admin
+      operationId: assignUserRole
+      summary: Assign or approve a user role
+      description: Admin-only endpoint for assigning roles and approving Attestors.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminRoleAssignmentRequest"
+      responses:
+        "200":
+          description: Role assigned or approved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminRoleAssignmentResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role required.
+        "404":
+          description: User not found.
+        "422":
+          description: Invalid role payload.
   /v1/auth/verify-email:
     post:
       tags:
@@ -316,6 +385,57 @@ components:
             - string
             - "null"
           format: date-time
+    AddRoleRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum:
+            - contributor
+            - operator
+            - attestor
+    RoleAssignmentResponse:
+      type: object
+      required:
+        - user_id
+        - role
+        - approved
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        approved:
+          type: boolean
+    AdminRoleAssignmentRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum:
+            - contributor
+            - operator
+            - attestor
+            - admin
+    AdminRoleAssignmentResponse:
+      type: object
+      required:
+        - user_id
+        - role
+        - approved
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        approved:
+          type: boolean
     ComponentHealth:
       type: object
       required:
