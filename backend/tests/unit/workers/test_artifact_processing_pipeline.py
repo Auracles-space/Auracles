@@ -59,6 +59,23 @@ class FakePipelineStorage:
         self.uploads[key] = body
 
 
+class FakePhraseCache:
+    """Redis-like test double for external-rarity phrase cache behavior."""
+
+    def __init__(self, cached: dict[str, str] | None = None) -> None:
+        """Create an in-memory cache with optional preloaded values."""
+        self.cached = cached or {}
+        self.writes: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a cached phrase result."""
+        return self.cached.get(key)
+
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        """Record cache writes without touching Redis."""
+        self.writes[key] = value
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure marketplace tables exist for pipeline tests."""
@@ -258,6 +275,22 @@ def read_processing_audit_counts(artifact_id: UUID) -> tuple[int, int]:
     return int(pii_count or 0), int(rarity_count or 0)
 
 
+def read_artifact_framework(
+    artifact_id: UUID,
+) -> tuple[Artifact | None, Framework | None]:
+    """Load an Artifact and its owning Framework."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        framework = None
+        if artifact is not None:
+            framework = session.get(Framework, artifact.framework_id)
+    sync_engine.dispose()
+    return artifact, framework
+
+
 def read_processing_failure(
     artifact_id: UUID,
 ) -> tuple[Artifact | None, AuditLog | None]:
@@ -275,6 +308,29 @@ def read_processing_failure(
         )
     sync_engine.dispose()
     return artifact, audit_log
+
+
+def set_external_rarity_context(
+    artifact_id: UUID,
+    *,
+    internal_rarity: Decimal,
+    text: str,
+    top_terms: list[str],
+) -> None:
+    """Seed Artifact metadata needed by the external rarity step."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        artifact.internal_rarity = internal_rarity
+        artifact.metadata_vector = {
+            "extraction": {"text": text},
+            "top_tfidf_terms": top_terms,
+        }
+        session.commit()
+    sync_engine.dispose()
 
 
 def test_process_artifact_flags_high_confidence_pii_for_review(
@@ -323,6 +379,159 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     assert pii_audit.auto_redacted is False
     assert pii_audit.flagged_for_review is True
     assert audit_log is not None
+
+
+def test_external_rarity_skips_internally_duplicate_artifact(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """External search is skipped when internal rarity is already too low."""
+    from app.workers.tasks.processing import rarity_external
+
+    artifact_id = create_processing_artifact(name="internal-duplicate.pdf")
+    set_external_rarity_context(
+        artifact_id,
+        internal_rarity=Decimal("0.5000"),
+        text="Vendor risk workflow with due diligence controls.",
+        top_terms=["vendor", "risk", "workflow", "controls"],
+    )
+
+    rarity_external.compute_external_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.external_rarity is None
+    assert rarity_audit is not None
+    assert rarity_audit.external_phrases_queried == []
+    assert rarity_audit.external_hit_counts == []
+
+
+def test_external_rarity_scores_public_web_hits(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """External rarity stores queried phrases and hit counts from web search."""
+    from app.workers.tasks.processing import rarity_external
+
+    artifact_id = create_processing_artifact(name="externally-rare.pdf")
+    set_external_rarity_context(
+        artifact_id,
+        internal_rarity=Decimal("0.9000"),
+        text=(
+            "Vendor risk assessment workflow maps due diligence controls into "
+            "board reporting cadence. Vendor risk evidence tracker links "
+            "remediation owners to audit-ready governance checkpoints."
+        ),
+        top_terms=[
+            "vendor",
+            "risk",
+            "assessment",
+            "workflow",
+            "controls",
+            "governance",
+            "evidence",
+            "remediation",
+        ],
+    )
+    queried: list[str] = []
+
+    async def fake_search_phrase(phrase: str) -> int:
+        """Return deterministic web hit counts without touching Brave."""
+        queried.append(phrase)
+        return 2 if "vendor risk" in phrase else 0
+
+    monkeypatch.setattr(rarity_external, "search_external_phrase", fake_search_phrase)
+
+    rarity_external.compute_external_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.external_rarity is not None
+    assert Decimal("0.0000") <= artifact.external_rarity <= Decimal("1.0000")
+    assert rarity_audit is not None
+    assert rarity_audit.external_phrases_queried == queried
+    assert rarity_audit.external_hit_counts == [
+        2 if "vendor risk" in phrase else 0 for phrase in queried
+    ]
+
+
+@pytest.mark.asyncio
+async def test_external_rarity_phrase_cache_avoids_brave_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cached phrase hit count avoids a paid Brave Search request."""
+    from app.workers.tasks.processing import rarity_external
+
+    phrase = "vendor risk assessment workflow"
+    cache_key = rarity_external._cache_key(phrase)
+    fake_cache = FakePhraseCache({cache_key: '{"total_hits": 7}'})
+    called = False
+
+    async def fail_if_called(_: str) -> object:
+        """Fail the test if the live provider is called on cache hit."""
+        nonlocal called
+        called = True
+        raise AssertionError("Brave Search should not be called.")
+
+    monkeypatch.setattr(rarity_external, "get_redis", lambda: fake_cache)
+    monkeypatch.setattr(rarity_external, "search_web", fail_if_called)
+
+    hit_count = await rarity_external.search_external_phrase(phrase)
+
+    assert hit_count == 7
+    assert called is False
+    assert fake_cache.writes == {}
+
+
+def test_external_rarity_gracefully_degrades_when_brave_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Provider failures mark external check unavailable without hard-failing."""
+    from app.integrations.brave_search import BraveSearchError
+    from app.workers.tasks.processing import rarity_external
+
+    artifact_id = create_processing_artifact(name="brave-unavailable.pdf")
+    set_external_rarity_context(
+        artifact_id,
+        internal_rarity=Decimal("0.9500"),
+        text=(
+            "Audit governance evidence workflow maps risk controls into "
+            "remediation reporting and board oversight cadence."
+        ),
+        top_terms=[
+            "audit",
+            "governance",
+            "evidence",
+            "workflow",
+            "risk",
+            "controls",
+            "remediation",
+            "reporting",
+        ],
+    )
+
+    async def fail_search(_: str) -> int:
+        """Simulate an exhausted Brave retry sequence."""
+        raise BraveSearchError("Brave Search returned 429.")
+
+    monkeypatch.setattr(rarity_external, "search_external_phrase", fail_search)
+
+    rarity_external.compute_external_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, framework = read_artifact_framework(artifact_id)
+
+    assert artifact is not None
+    assert artifact.external_rarity is None
+    assert framework is not None
+    assert framework.pipeline_failure_reasons["external_check"] == "unavailable"
 
 
 def test_extract_text_can_rerun_without_duplicate_side_effects(

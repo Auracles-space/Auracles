@@ -232,7 +232,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 - Catalog empty → `internal_rarity = 1.0` for first ever upload.
 - Re-run of pipeline → idempotent: signature recomputed, audit row replaces prior on same `artifact_id`.
 
-**Deps added:** `datasketch`, `scikit-learn`, `langdetect`, `joblib`.
+**Deps added:** `datasketch`, `scikit-learn`, `langdetect`.
 
 ---
 

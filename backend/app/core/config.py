@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     paystack_webhook_secret: SecretStr | None = Field(
         default=None, alias="PAYSTACK_WEBHOOK_SECRET"
     )
+    brave_search_api_key: SecretStr | None = Field(
+        default=None, alias="BRAVE_SEARCH_API_KEY"
+    )
+    brave_search_base_url: str = Field(
+        default="https://api.search.brave.com/res/v1/web/search",
+        alias="BRAVE_SEARCH_BASE_URL",
+    )
     platform_commission_rate: float = Field(
         default=0.15, alias="PLATFORM_COMMISSION_RATE"
     )

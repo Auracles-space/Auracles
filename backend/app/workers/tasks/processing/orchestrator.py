@@ -12,6 +12,7 @@ from app.workers.tasks.processing.extract import _extract_text_impl
 from app.workers.tasks.processing.metadata import _compute_metadata_impl
 from app.workers.tasks.processing.minhash import _compute_minhash_impl
 from app.workers.tasks.processing.pii import _detect_pii_impl
+from app.workers.tasks.processing.rarity_external import _compute_external_rarity_impl
 from app.workers.tasks.processing.rarity_internal import _compute_internal_rarity_impl
 
 
@@ -37,14 +38,16 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
     metadata = await _compute_metadata_impl(artifact_id)
     minhash = await _compute_minhash_impl(artifact_id)
     rarity_internal = await _compute_internal_rarity_impl(artifact_id)
+    rarity_external = await _compute_external_rarity_impl(artifact_id)
     return {
         "artifact_id": artifact_id,
-        "status": rarity_internal["status"],
+        "status": rarity_external["status"],
         "steps": {
             "extract": extraction,
             "pii": pii,
             "metadata": metadata,
             "minhash": minhash,
             "rarity_internal": rarity_internal,
+            "rarity_external": rarity_external,
         },
     }
