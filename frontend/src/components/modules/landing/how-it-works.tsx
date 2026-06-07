@@ -69,9 +69,6 @@ export function HowItWorks() {
                     {step.body}
                   </p>
                 </div>
-                
-                {/* Visual Placeholder for Bento */}
-                <div className="mt-8 h-32 w-full rounded-2xl bg-surface-1/40 backdrop-blur-sm border border-border-default" />
               </div>
             </article>
           ))}

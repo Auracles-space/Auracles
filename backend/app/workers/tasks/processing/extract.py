@@ -33,6 +33,7 @@ OFFICE_XML_PREFIXES = ("word/", "ppt/slides/", "xl/sharedStrings.xml", "xl/works
 ZIP_MAX_FILES = 100
 ZIP_MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024
 ZIP_MAX_NESTED_DEPTH = 1
+TINY_TEXT_WORD_THRESHOLD = 5
 SUPPORTED_MIME_BY_SUFFIX = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -251,6 +252,22 @@ def extract_text_from_file(
 
 def _extraction_metadata(result: ExtractionResult) -> dict[str, Any]:
     """Serialize extraction output into JSONB-safe metadata."""
+    empty_text = result.word_count == 0
+    tiny_text = 0 < result.word_count < TINY_TEXT_WORD_THRESHOLD
+    image_heavy = (
+        result.image_count > 0 and result.word_count < TINY_TEXT_WORD_THRESHOLD
+    )
+    needs_ocr = empty_text and image_heavy
+    reason_codes: list[str] = []
+    if empty_text:
+        reason_codes.append("empty_extraction")
+    if tiny_text:
+        reason_codes.append("tiny_extraction")
+    if image_heavy:
+        reason_codes.append("image_heavy_extraction")
+    if needs_ocr:
+        reason_codes.append("needs_ocr")
+
     return {
         "text": result.text,
         "headings": result.headings,
@@ -260,6 +277,14 @@ def _extraction_metadata(result: ExtractionResult) -> dict[str, Any]:
         "archive_file_count": result.archive_file_count,
         "archive_supported_file_count": result.archive_supported_file_count,
         "archive_unsupported_file_count": result.archive_unsupported_file_count,
+        "quality": {
+            "empty_text": empty_text,
+            "tiny_text": tiny_text,
+            "image_heavy": image_heavy,
+            "needs_ocr": needs_ocr,
+            "low_confidence": empty_text or tiny_text or image_heavy,
+            "reason_codes": reason_codes,
+        },
     }
 
 

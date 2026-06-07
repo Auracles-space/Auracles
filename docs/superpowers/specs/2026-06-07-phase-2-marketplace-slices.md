@@ -75,7 +75,8 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 | Decision | Value | Note |
 |----------|-------|------|
 | Text extraction | `pdfplumber` for PDF + built-in Office Open XML text fallback; optional `unstructured` hook if installed in worker image | Avoids Python 3.13 `llvmlite`/CMake build instability from the full `unstructured` stack while keeping an upgrade path. |
-| PII detection | Microsoft Presidio (`presidio-analyzer` + `presidio-anonymizer`) + spaCy `en_core_web_lg` | Apache 2.0. Local, free, confidence scores per detection drive `pii_review_needed` threshold. Anonymizer produces `clean_file_key` redacted copy. |
+| PII detection | Microsoft Presidio (`presidio-analyzer` + `presidio-anonymizer`) + spaCy `en_core_web_lg` | Apache 2.0. Local, free, confidence scores per detection drive `pii_review_needed` threshold. Core MVP blocks PII for review/replacement; `clean_file_key` redacted copies wait for Slice 14 format-preserving redaction. |
+| Extraction quality | `metadata_vector.extraction.quality` reason codes | Slice 5 hardening. Stores `empty_text`, `tiny_text`, `image_heavy`, `needs_ocr`, `low_confidence`, and stable `reason_codes` so Slice 9/12 can surface honest pipeline status before OCR exists. |
 | Metadata vector | scikit-learn `TfidfVectorizer` + custom counters (char_count, word_count, n_headings, n_tables, n_images, top-20 tf-idf terms, language, tag overlap count) | Stored as JSONB. Drives metadata uplift (small fraction of rarity blend) + recommendation tag overlap. |
 | Near-duplicate detection | MinHash via `datasketch` (MIT), with Redis LSH indexing deferred to Slice 9 publish/unpublish wiring | 128 permutations, 5-word shingles, deterministic signature. SimHash 64-bit pre-filter stored for the future LSH/query speed path. |
 | Internal rarity | `1 - max_jaccard_to_any_existing_published_artifact` | Slice 5 computes against DB-backed published artifact signatures. Slice 9 inserts/removes published artifacts into a Redis-backed LSH index for sub-linear lookup once publish/unpublish state transitions exist. |
@@ -90,6 +91,9 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 | Reviews | Schema in Slice 1, flow Phase 3 | BR-FWK-004 ties reviews to active licenses; licenses require purchase (Phase 3). |
 | Artifact upload | S3 presigned POST, mime + max-size enforced in the POST policy; per-framework 500MB total tracked in service | TDD §10 (artifact bucket private). |
 | Download | S3 presigned GET (15m TTL) issued only after RBAC + license check + Operator-KYC check; row written to `artifact_downloads` per BR-FWK-006 | Audit table powers Contributor download counts. |
+| OCR | Follow-on Slice 13, not Core Marketplace MVP | Current pipeline detects `needs_ocr`; OCR implementation waits for explicit cost/infra approval. Options: local Tesseract (cheaper, slower, weaker tables) or AWS Textract (stronger, paid, external data-processing review). |
+| Format-preserving redaction | Follow-on Slice 14 | Current pipeline blocks PII for review/replacement. It does not generate user-facing redacted PDFs/DOCX files until format-preserving redaction is implemented and tested. |
+| Semantic / visual similarity | Follow-on Slice 15 / Phase 5 | MinHash catches near-copy text. Paraphrase, diagrams, screenshots, and semantic idea theft require embeddings/vision models and stronger cost/privacy review. |
 
 ---
 
@@ -196,7 +200,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 
 ### Slice 4 — Pipeline step 1+2: extract + PII
 **Add:**
-- `app/workers/tasks/processing/extract.py`: `extract_text(artifact_id)` — `pdfplumber` for PDF tables + built-in Office Open XML fallback, with optional `unstructured.partition.auto` hook when installed. ZIP artifacts are treated as containers: entries are path-validated, symlinks rejected, max file count / uncompressed-size limits enforced, and supported inner files (`PDF|DOCX|XLSX|PPTX|ZIP` up to depth 1) are extracted into one combined metadata payload. Returns text + heading list + table count + word count + archive counts; persists to `artifacts.metadata_vector` (partial).
+- `app/workers/tasks/processing/extract.py`: `extract_text(artifact_id)` — `pdfplumber` for PDF tables + built-in Office Open XML fallback, with optional `unstructured.partition.auto` hook when installed. ZIP artifacts are treated as containers: entries are path-validated, symlinks rejected, max file count / uncompressed-size limits enforced, and supported inner files (`PDF|DOCX|XLSX|PPTX|ZIP` up to depth 1) are extracted into one combined metadata payload. Returns text + heading list + table count + word count + archive counts; persists to `artifacts.metadata_vector` (partial). Extraction payload includes quality flags: `empty_text`, `tiny_text`, `image_heavy`, `needs_ocr`, `low_confidence`, and `reason_codes`.
 - `app/workers/tasks/processing/pii.py`: `detect_pii(artifact_id)` — Presidio analyze (`en_core_web_lg`) → list of `{entity_type, score, start, end}`. Confidence threshold: `score ≥ 0.6` → `pii_detected=true`; any finding → `pii_review_needed=true` and `processing_status='flagged_pii'` until a format-preserving redaction path exists. Writes `artifact_pii_audit` row.
 - Orchestrator `process_artifact(artifact_id)` delegates to `app/workers/tasks/processing/orchestrator.py`, which runs the currently implemented steps (`extract` then `pii`) in order. Later slices extend this orchestrator with metadata, MinHash, rarity, thumbnail, and search steps.
 
@@ -207,6 +211,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 - ZIP with supported inner files → supported files extracted, unsupported files counted, no unsafe paths written to disk.
 - ZIP path traversal / symlink / archive bomb risk → extraction fails and writes audit reason.
 - All-image PDF → text empty, `pii_detected=false` (defensible), metadata captures `n_images>0`.
+- All-image / scanned PDF → extraction quality marks `needs_ocr=true`; publish UI can explain that rarity and PII checks are low-confidence until OCR lands.
 - High-confidence PII (NAME, EMAIL, PHONE) → `pii_detected=true`, no `clean_file_key`, blocked for review.
 - Low-confidence detection → `pii_review_needed=true` flagged, blocks publish until Contributor resolves it.
 - Re-run of `extract` on an already-extracted artifact → idempotent (writes new metadata, doesn't duplicate).
@@ -287,10 +292,10 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 **Add:**
 - Service: `submit_framework(framework_id)` (FR-FWK-006): validates BR-FWK-001 (≥1 artifact), KYC verified (BR-AUTH-002), price > 0 (BR-FWK-002). Sets `status=submitted`. Dispatches `process_artifact` chain for each unprocessed artifact. As each artifact completes, last-one-in triggers framework-level decision: if every artifact's `processing_status` ∈ {`processed`} AND none has `pii_review_needed=true` (unaccepted) AND `internal_rarity ≥ 0.3` → `status=pipeline_passed`. Else → `status=pipeline_failed` w/ aggregated `pipeline_failure_reasons`.
 - Service: `acknowledge_soft_fail(framework_id)` → Contributor confirms "original work" for external-rarity soft-fail. Writes `artifact_rarity_audit.soft_fail_acknowledged=true` + IP + timestamp. Does **not** publish.
-- Service: `accept_redacted_artifact(artifact_id)` → Contributor accepts the Presidio-redacted `clean_file_key` as the canonical artifact (drops the original from S3). Clears `pii_review_needed`. Re-runs pipeline downstream from PII step.
+- Service: `resolve_pii_review(artifact_id)` → Contributor replaces the artifact with a clean upload after PII review; clears prior processing outputs and re-runs the pipeline. **No format-preserving redaction acceptance in Core Marketplace MVP** — that is Slice 14.
 - Service: `publish_framework(framework_id)` (FR-FWK-007 deviation): asserts `status=pipeline_passed`. Inserts artifacts into MinHash LSH index (so future uploads see this in the corpus). Writes `framework_versions` row w/ current semver + change_type + change_log. Sets `frameworks.status=published`, `published_at=now()`. Refreshes tsvector. Dispatches `notify_licensees_of_new_version` Celery task.
 - Service: `suspend_framework(framework_id, admin_id, reason)` (admin-only, post-publish). Sets `status=suspended`. Removes from LSH index. Audit row.
-- Router: `POST /v1/frameworks/{id}/submit`, `POST /v1/frameworks/{id}/acknowledge-soft-fail`, `POST /v1/frameworks/{id}/artifacts/{aid}/accept-redaction`, `POST /v1/frameworks/{id}/publish`, `POST /v1/admin/frameworks/{id}/suspend`.
+- Router: `POST /v1/frameworks/{id}/submit`, `POST /v1/frameworks/{id}/acknowledge-soft-fail`, `POST /v1/frameworks/{id}/artifacts/{aid}/resolve-pii-review`, `POST /v1/frameworks/{id}/publish`, `POST /v1/admin/frameworks/{id}/suspend`.
 
 **Edge cases tested:**
 - Submit w/ 0 artifacts → 422 (BR-FWK-001).
@@ -378,7 +383,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
   - `frontend/src/app/(auth)/dashboard/frameworks/[id]/page.tsx` — Edit framework, artifact upload, pipeline status panel, version radios, Publish button.
   - `frontend/src/app/(auth)/dashboard/frameworks/[id]/analytics/page.tsx` — FR-FWK-010 (views; purchases + revenue + avg-review shimmed `0` until Phase 3).
   - `frontend/src/app/(auth)/library/page.tsx` — Operator library + download links.
-- `frontend/src/components/modules/frameworks/*`: `FrameworkForm`, `ArtifactUploader` (drag-drop + progress + scan/processing/PII/rarity badges), `PipelineStatusPanel` (per-check green/red w/ explanation tooltip), `PublishButton` (enabled only when all green or soft-fail acknowledged), `VersionRadios` w/ prior-version display, `SoftFailAcknowledgement` modal, `RedactionAcceptance` modal.
+- `frontend/src/components/modules/frameworks/*`: `FrameworkForm`, `ArtifactUploader` (drag-drop + progress + scan/processing/PII/rarity badges), `PipelineStatusPanel` (per-check green/red w/ explanation tooltip), `PublishButton` (enabled only when all green or soft-fail acknowledged), `VersionRadios` w/ prior-version display, `SoftFailAcknowledgement` modal, `PiiReviewResolution` modal.
 - Token store + middleware from Phase 1 Slice 9 + 10 already in place; routing redirects respected.
 - **Incomplete-user handling.** API client wrapper intercepts 403 responses carrying `error_code` ∈ {`kyc_required`, `profile_required`, `role_required`} → routes browser to `/settings/onboarding` (Phase 1) preserving original intent via `?next=<encoded URL>` query param. Read endpoints continue to work — only action attempts trigger the redirect. Catalog + detail + preview render identically for incomplete users; the only UI difference: action buttons (Publish, Upload, Download, Create Framework) become an "Complete onboarding to continue" CTA that links to `/settings/onboarding`. Email-unverified visitors stay in the login/verify-email path before any authenticated marketplace action is attempted.
 
@@ -387,6 +392,61 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 - playwright e2e `framework-publish.spec.ts`: Contributor → KYC-verified → create draft → upload PDF → pipeline runs → all green → Publish → catalog shows it → log out → unauth user views it → log in as Operator (test-license-seeded) → download → audit row exists.
 - **playwright e2e `incomplete-user.spec.ts`** (new): register Contributor → email-verify → log in → can browse `/explore` + view detail + see preview → click "Create Framework" → routed to `/settings/onboarding?next=/dashboard/frameworks/new` → submit KYC docs → status `pending` → still routed to onboarding for create attempt → admin verifies → KYC `verified` → create succeeds. Same flow as Operator → KYC pending → download attempt → onboarding redirect.
 - playwright e2e `explore.spec.ts`: unauth browse → search → filter → click detail → preview visible → click download → login prompt.
+
+---
+
+## Follow-on Pipeline Slices
+
+These slices cover known limitations that are intentionally not pulled into the Core Marketplace MVP. They are listed here so the gaps are explicit and reviewable instead of hidden in caveats.
+
+### Slice 13 — OCR for scanned and image-heavy Artifacts
+**Add:**
+- `app/workers/tasks/processing/ocr.py`: runs only when `metadata_vector.extraction.quality.needs_ocr=true` or the Contributor explicitly requests OCR retry.
+- Default implementation path: local Tesseract in the worker image for MVP OCR. Alternate architecture, if human approves cost/compliance: AWS Textract for better table/form extraction.
+- OCR result merges into `metadata_vector.extraction.text` with `ocr_applied=true`, `ocr_engine`, `ocr_confidence`, and page-level confidence summary.
+- Re-runs downstream pipeline from PII → metadata → MinHash → rarity after OCR text is added.
+
+**Edge cases tested:**
+- Image-only PDF with OCR text → no longer `empty_text`; PII detector sees OCR text.
+- OCR timeout / unsupported file → `ocr_failed` reason code, no publish hard-fail by itself unless Slice 9 gate chooses to block low-confidence artifacts.
+- OCR output with high-confidence PII → `pii_review_needed=true`.
+- OCR retry idempotent: replaces prior OCR extraction block, does not append duplicate text.
+
+**Deps / infra:** Tesseract + language data in worker image, or AWS Textract client + IAM if human chooses cloud OCR.
+
+---
+
+### Slice 14 — Format-preserving redaction
+**Add:**
+- `app/workers/tasks/processing/redaction.py`: creates reviewable redacted artifacts that preserve file format where practical.
+- PDF path: locate text spans and apply real redaction annotations, then save a redacted PDF.
+- DOCX/PPTX/XLSX path: rewrite Office XML text nodes while preserving document package structure.
+- Stores `clean_file_key` only after redacted artifact is generated and virus-scanned.
+- Contributor review endpoint: `POST /v1/frameworks/{id}/artifacts/{aid}/accept-redaction` accepts the redacted artifact as canonical and re-runs downstream pipeline from extraction.
+
+**Edge cases tested:**
+- Redacted PDF does not contain original PII bytes in text extraction.
+- Redacted Office document opens and keeps non-PII text.
+- Redaction failure keeps original private, leaves `pii_review_needed=true`, and never publishes.
+- Accept-redaction is owner-only, KYC-gated, audited, and idempotent.
+
+**Deps / infra:** PyMuPDF or equivalent for PDF; Office Open XML rewrite helpers for DOCX/PPTX/XLSX.
+
+---
+
+### Slice 15 — Semantic and visual similarity upgrade
+**Add:**
+- Semantic paraphrase detection for text-heavy artifacts using embeddings only after cost/privacy approval.
+- Visual/diagram similarity for image-heavy frameworks using a vision embedding model only after data-processing approval.
+- Blends semantic/visual similarity into `artifact_rarity_audit` separately from MinHash so MinHash remains explainable and deterministic.
+
+**Edge cases tested:**
+- Paraphrased copied framework is flagged even when MinHash similarity is low.
+- Diagram-heavy artifact with similar visual layout is flagged as low visual rarity.
+- Model/API unavailable → graceful degrade; MinHash and external rarity still run.
+- No raw artifacts are sent to external model providers unless approved by human and documented in privacy/security notes.
+
+**Deps / infra:** TBD after architecture decision. Options: local embedding model, OpenAI embeddings/vision, or AWS Bedrock/Textract-style stack.
 
 ---
 

@@ -554,6 +554,14 @@ def test_process_artifact_treats_empty_text_as_fully_rare(
     assert artifact.metadata_vector["language"] == "unknown"
     assert artifact.metadata_vector["top_tfidf_terms"] == []
     assert artifact.metadata_vector["char_count"] == 0
+    assert artifact.metadata_vector["extraction"]["quality"] == {
+        "empty_text": True,
+        "tiny_text": False,
+        "image_heavy": False,
+        "needs_ocr": False,
+        "low_confidence": True,
+        "reason_codes": ["empty_extraction"],
+    }
     assert artifact.metadata_vector["minhash"]["shingle_count"] == 0
     assert artifact.metadata_vector["minhash"]["low_confidence"] is True
     assert artifact.internal_rarity == Decimal("1.0000")
@@ -629,8 +637,55 @@ def test_process_artifact_marks_tiny_docs_as_low_confidence(
     assert artifact is not None
     assert artifact.metadata_vector is not None
     assert artifact.metadata_vector["language"] == "unknown"
+    assert artifact.metadata_vector["extraction"]["quality"] == {
+        "empty_text": False,
+        "tiny_text": True,
+        "image_heavy": False,
+        "needs_ocr": False,
+        "low_confidence": True,
+        "reason_codes": ["tiny_extraction"],
+    }
     assert artifact.metadata_vector["minhash"]["shingle_count"] == 1
     assert artifact.metadata_vector["minhash"]["low_confidence"] is True
+
+
+def test_process_artifact_marks_image_heavy_empty_text_as_needing_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Image-heavy extraction with no text is explicitly marked for OCR."""
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact(name="scanned.pdf")
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="",
+            headings=[],
+            table_count=0,
+            word_count=0,
+            image_count=4,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, _, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["extraction"]["quality"] == {
+        "empty_text": True,
+        "tiny_text": False,
+        "image_heavy": True,
+        "needs_ocr": True,
+        "low_confidence": True,
+        "reason_codes": ["empty_extraction", "image_heavy_extraction", "needs_ocr"],
+    }
 
 
 def test_process_artifact_rerun_keeps_processing_audits_idempotent(

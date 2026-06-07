@@ -6,6 +6,7 @@ rarity, recommendation, and search slices.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 from uuid import UUID
 
@@ -15,9 +16,6 @@ from langdetect import (  # type: ignore[import-untyped]
     detect,
 )
 from loguru import logger
-from sklearn.feature_extraction.text import (
-    TfidfVectorizer,  # type: ignore[import-untyped]
-)
 
 from app.core.database import async_session_factory
 from app.modules.frameworks.models import Framework
@@ -43,7 +41,8 @@ def _top_tfidf_terms(text: str) -> list[str]:
     """Return the highest-scoring single-word TF-IDF terms for one artifact."""
     if not text.strip():
         return []
-    vectorizer = TfidfVectorizer(
+    sklearn_text = importlib.import_module("sklearn.feature_extraction.text")
+    vectorizer = sklearn_text.TfidfVectorizer(
         stop_words="english",
         lowercase=True,
         ngram_range=(1, 1),
@@ -76,7 +75,7 @@ def _metadata_payload(
     metadata: dict[str, Any],
     framework_tags: list[str],
 ) -> dict[str, Any]:
-    """Build the Slice 5 metadata additions from existing extraction output."""
+    """Build the  metadata additions from existing extraction output."""
     extraction = metadata.get("extraction", {})
     text = str(extraction.get("text", ""))
     headings = extraction.get("headings", [])
