@@ -4,7 +4,7 @@
 
 **Human is architect. Agent is senior engineer.**
 
-- Check `docs/superpowers/specs/` before every task — FRD and TDD are the source of truth.
+- Check `docs/superpowers/specs/` before every task. Doc hierarchy: FRD (what to build) → TDD (how to build: schema, API, security, Celery) → Pre-scale infra design (where to deploy, overrides TDD infra section only for Phase 1).
 - Before starting any feature: invoke `grill-me` skill to stress-test requirements as developer questions and not just decide.
 - Before building anything visual: invoke `frontend-design` skill.
 - Before debugging: invoke `diagnose` skill.
