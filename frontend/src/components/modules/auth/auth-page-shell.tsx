@@ -30,7 +30,7 @@ export function AuthPageShell({
   title,
 }: AuthPageShellProps) {
   return (
-    <main className="min-h-screen bg-background px-5 py-8 text-foreground md:px-10 md:py-14 lg:py-20">
+    <main className="flex min-h-screen flex-col justify-center bg-background px-5 py-8 text-foreground md:px-10 md:py-14">
       <section className="mx-auto grid w-full max-w-[1180px] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)] md:items-stretch md:gap-8">
         <aside className="brand-gradient-soft relative flex flex-col justify-between overflow-hidden rounded-hero border border-border-default p-6 md:p-10">
           <div className="flex items-center gap-2">

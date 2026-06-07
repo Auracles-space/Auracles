@@ -44,6 +44,7 @@ const roleOptions: Array<{ description: string; label: string; value: Assignable
  * Render the account creation form and submit valid payloads to the API.
  */
 export function RegisterForm() {
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +71,11 @@ export function RegisterForm() {
 
     if (roles.length === 0) {
       setError("Select at least one role.");
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms of Service and Privacy Policy.");
       return;
     }
 
@@ -163,6 +169,27 @@ export function RegisterForm() {
           </label>
         ))}
       </fieldset>
+
+      <div className="flex items-start gap-3 py-2">
+        <input
+          checked={agreedToTerms}
+          className="mt-0.5 h-4 w-4 accent-accent"
+          id="terms-agreement"
+          onChange={(e) => setAgreedToTerms(e.target.checked)}
+          type="checkbox"
+        />
+        <label className="text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
+          I agree to the{" "}
+          <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a className="font-medium text-accent hover:underline" href="/privacy" target="_blank" rel="noreferrer">
+            Privacy Policy
+          </a>
+          .
+        </label>
+      </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mt-4">
         <a className="text-sm font-medium text-accent hover:underline" href="/login">
