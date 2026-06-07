@@ -270,6 +270,112 @@ async def test_refresh_rotates_cookie_and_logout_revokes_session(
     assert after_logout.status_code == 401
 
 
+async def test_refresh_token_reuse_writes_audit_row(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """Replaying a rotated refresh token must persist a critical audit row.
+
+    Phase 1 Slice 4: `refresh_token_reuse_detected` is the token-theft signal.
+    Family revocation is not enough — the security event has to land in
+    `audit_logs` for SIEM + compliance + forensic investigation.
+    """
+    from sqlalchemy import select
+
+    user_id = await create_user("reuse-audit@auracles.space", "CorrectHorse9")
+
+    login = await client.post(
+        "/v1/auth/login",
+        json={"email": "reuse-audit@auracles.space", "password": "CorrectHorse9"},
+    )
+    old_refresh = login.cookies["refresh_token"]
+
+    client.cookies.set("refresh_token", old_refresh)
+    rotated = await client.post("/v1/auth/refresh")
+    assert rotated.status_code == 200
+
+    client.cookies.set("refresh_token", old_refresh)
+    reused = await client.post("/v1/auth/refresh")
+
+    assert reused.status_code == 401
+
+    async with async_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "refresh_token_reuse_detected"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(rows) == 1
+    audit_row = rows[0]
+    assert audit_row.actor_id == user_id
+    assert audit_row.target_type == "user"
+    metadata = audit_row.metadata_
+    assert metadata.get("family_revoked") is True
+    assert "family_id" in metadata
+    assert "token_key_suffix" in metadata
+
+
+async def test_refresh_token_reuse_after_full_revoke_writes_system_audit(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """When no family member survives, audit row falls back to NULL actor.
+
+    Replay after the entire family has already been revoked is still a
+    security event — it must be logged, even if the user cannot be resolved
+    from Redis state. Verifies the NULL-actor fallback path.
+    """
+    from sqlalchemy import select
+
+    await create_user("orphan-audit@auracles.space", "CorrectHorse9")
+
+    login = await client.post(
+        "/v1/auth/login",
+        json={"email": "orphan-audit@auracles.space", "password": "CorrectHorse9"},
+    )
+    old_refresh = login.cookies["refresh_token"]
+
+    client.cookies.set("refresh_token", old_refresh)
+    rotated = await client.post("/v1/auth/refresh")
+    assert rotated.status_code == 200
+    new_refresh = rotated.cookies["refresh_token"]
+
+    client.cookies.set("refresh_token", new_refresh)
+    logout = await client.post("/v1/auth/logout")
+    assert logout.status_code == 200
+
+    client.cookies.set("refresh_token", old_refresh)
+    reused = await client.post("/v1/auth/refresh")
+    assert reused.status_code == 401
+
+    async with async_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "refresh_token_reuse_detected"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(rows) == 1
+    audit_row = rows[0]
+    assert audit_row.target_type == "system"
+    assert audit_row.metadata_.get("family_revoked") is True
+
+
 async def test_cors_allows_configured_origin(client: AsyncClient) -> None:
     """CORS preflight succeeds for configured frontend origins."""
     response = await client.options(

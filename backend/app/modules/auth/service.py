@@ -708,7 +708,43 @@ async def refresh(
     if raw_record is None:
         used_family_id = await redis.get(_used_refresh_key(token))
         if used_family_id is not None:
-            await _revoke_family(redis, str(used_family_id))
+            family_id_str = str(used_family_id)
+            # Resolve user from any remaining family member before revocation so
+            # the audit row carries actor_id when possible; the family is then
+            # revoked and a CRITICAL-level security event is persisted (spec
+            # Phase 1 Slice 4: refresh_token_reuse_detected).
+            actor_id: UUID | None = None
+            token_suffix = _refresh_key(token)[-12:]
+            family_members = await cast(
+                Awaitable[set[Any]],
+                redis.smembers(_family_key(family_id_str)),
+            )
+            for member in family_members:
+                member_key = str(member)
+                member_record = await redis.get(member_key)
+                if member_record is None:
+                    continue
+                try:
+                    actor_id = UUID(json.loads(_redis_text(member_record))["user_id"])
+                    break
+                except (KeyError, ValueError):
+                    continue
+            await _revoke_family(redis, family_id_str)
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="refresh_token_reuse_detected",
+                target_type="user" if actor_id else "system",
+                target_id=actor_id,
+                metadata={
+                    "family_id": family_id_str,
+                    "token_key_suffix": token_suffix,
+                    "family_revoked": True,
+                },
+                ip=ip,
+                ua=ua,
+            )
+            await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token.",

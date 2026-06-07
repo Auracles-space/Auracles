@@ -17,6 +17,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
+DEV_SECRET_KEY = "dev-only-change-me"
+PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
 
 
 def _replace_database(url: str, database: int) -> str:
@@ -133,6 +135,21 @@ class Settings(BaseSettings):
             in {DEV_TOTP_ENCRYPTION_KEY, PLACEHOLDER_TOTP_ENCRYPTION_KEY}
         ):
             raise ValueError("TOTP_ENCRYPTION_KEY must be set outside local.")
+        return self
+
+    @model_validator(mode="after")
+    def production_secret_key_is_not_placeholder(self) -> Self:
+        """Reject the dev SECRET_KEY outside local environments.
+
+        SECRET_KEY signs JWT access tokens and the session_hint cookie used by
+        the frontend middleware for routing. Shipping the dev value to staging
+        or production lets any attacker forge tokens and hints.
+        """
+        if (
+            self.environment != "local"
+            and self.secret_key in {DEV_SECRET_KEY, PLACEHOLDER_SECRET_KEY}
+        ):
+            raise ValueError("SECRET_KEY must be set outside local.")
         return self
 
     @property

@@ -100,23 +100,37 @@ def set_session_hint_cookie(
     )
 
 
-def clear_refresh_cookie(response: Response) -> None:
-    """Clear the browser refresh-token cookie."""
+def clear_refresh_cookie(response: Response, settings: Settings | None = None) -> None:
+    """Clear the browser refresh-token cookie.
+
+    Must use the same SameSite attribute as the original Set-Cookie call;
+    browsers ignore deletion when SameSite mismatches, leaving stale tokens
+    behind under cross-site (SameSite=None) deployments.
+    """
+    resolved_settings = settings or get_settings()
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
         path=REFRESH_COOKIE_PATH,
         secure=True,
         httponly=True,
-        samesite="strict",
+        samesite=resolved_settings.cookie_samesite,
     )
 
 
-def clear_session_hint_cookie(response: Response) -> None:
-    """Clear the browser session-hint cookie."""
+def clear_session_hint_cookie(
+    response: Response,
+    settings: Settings | None = None,
+) -> None:
+    """Clear the browser session-hint cookie.
+
+    Must use the same SameSite attribute as the original Set-Cookie call;
+    browsers ignore deletion when SameSite mismatches.
+    """
+    resolved_settings = settings or get_settings()
     response.delete_cookie(
         key=SESSION_HINT_COOKIE_NAME,
         path=SESSION_HINT_COOKIE_PATH,
         secure=True,
         httponly=False,
-        samesite="strict",
+        samesite=resolved_settings.cookie_samesite,
     )
