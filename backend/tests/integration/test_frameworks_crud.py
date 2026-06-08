@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -220,6 +221,69 @@ async def create_draft_framework(
     )
     assert response.status_code == 201
     return str(response.json()["id"])
+
+
+async def create_artifact_for_framework(
+    client: AsyncClient,
+    contributor_id: UUID,
+    framework_id: str,
+    *,
+    filename: str = "pipeline.pdf",
+) -> str:
+    """Create one Artifact row through the public upload-url endpoint."""
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": filename,
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert response.status_code == 200
+    return str(response.json()["artifact_id"])
+
+
+async def mark_artifact_pipeline_state(
+    framework_id: str,
+    artifact_id: str,
+    *,
+    scan_status: str = "clean",
+    processing_status: str = "processed",
+    pii_detected: bool = False,
+    pii_review_needed: bool = False,
+    internal_rarity: Decimal | None = Decimal("1.0000"),
+    external_rarity: Decimal | None = Decimal("1.0000"),
+) -> None:
+    """Persist pipeline fields that normally come from Celery workers."""
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        artifact.scan_status = scan_status
+        artifact.processing_status = processing_status
+        artifact.pii_detected = pii_detected
+        artifact.pii_review_needed = pii_review_needed
+        artifact.internal_rarity = internal_rarity
+        artifact.external_rarity = external_rarity
+        artifact.rarity_score = internal_rarity
+        await session.execute(
+            delete(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        session.add(
+            ArtifactRarityAudit(
+                artifact_id=UUID(artifact_id),
+                internal_jaccard=Decimal("0.0000"),
+                external_phrases_queried=[],
+                external_hit_counts=[],
+                blended_score=internal_rarity,
+            )
+        )
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.pipeline_failure_reasons = {}
+        await session.commit()
 
 
 async def test_verified_contributor_can_create_draft_framework(
@@ -928,6 +992,307 @@ async def test_deleting_inherited_version_artifact_keeps_historical_snapshot(
             FrameworkVersionArtifact,
             (snapshot.id, UUID(artifact_id)),
         )
+
+
+async def test_submit_framework_with_processed_artifacts_passes_pipeline_gate(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Submitting a clean processed Framework enables Contributor publish."""
+    contributor_id = await create_user_with_roles(
+        "submit-pass@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pipeline_passed"
+
+
+async def test_submit_framework_without_artifacts_is_rejected(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A Framework must have at least one Artifact before submission."""
+    contributor_id = await create_user_with_roles(
+        "submit-empty@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "At least one Artifact is required."
+
+
+@pytest.mark.parametrize("action", ["submit", "publish"])
+async def test_kyc_pending_contributor_cannot_submit_or_publish_framework(
+    action: str,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """KYC pending is not verified for marketplace publish-gate actions."""
+    contributor_id = await create_user_with_roles(
+        f"kyc-pending-{action}@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        user = await session.get(User, contributor_id)
+        framework = await session.get(Framework, UUID(framework_id))
+        assert user is not None
+        assert framework is not None
+        user.kyc_status = "pending"
+        if action == "publish":
+            framework.status = "pipeline_passed"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/{action}",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == {
+        "error_code": "kyc_required",
+        "onboarding_url": "/settings/onboarding",
+    }
+
+
+async def test_publish_requires_pipeline_pass_and_snapshots_current_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Publish is only allowed after the pipeline gate has passed."""
+    indexed_frameworks: list[str] = []
+    notified_versions: list[tuple[str, str]] = []
+
+    class FakeNotifyTask:
+        """Celery task double that records new-version notifications."""
+
+        def delay(self, framework_id: str, new_version: str) -> None:
+            """Record notification dispatches instead of touching Celery."""
+            notified_versions.append((framework_id, new_version))
+
+    async def fake_index_framework_artifacts(framework_id: UUID) -> None:
+        """Record MinHash LSH indexing instead of touching Redis."""
+        indexed_frameworks.append(str(framework_id))
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.index_framework_artifacts",
+        fake_index_framework_artifacts,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.notify_licensees_of_new_version",
+        FakeNotifyTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "publish-pass@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    premature = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=headers,
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=headers,
+    )
+
+    published = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=headers,
+    )
+
+    assert premature.status_code == 409
+    assert submitted.status_code == 200
+    assert published.status_code == 200
+    assert published.json()["status"] == "published"
+    assert published.json()["published_at"] is not None
+    assert indexed_frameworks == [framework_id]
+    assert notified_versions == []
+
+    async with async_session_factory() as session:
+        snapshot = await session.scalar(
+            select(FrameworkVersion).where(
+                FrameworkVersion.framework_id == UUID(framework_id),
+                FrameworkVersion.version == "1.0.0",
+            )
+        )
+        assert snapshot is not None
+        assert await session.get(
+            FrameworkVersionArtifact,
+            (snapshot.id, UUID(artifact_id)),
+        )
+
+
+async def test_external_rarity_soft_fail_requires_acknowledgement_before_publish(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Low external rarity blocks publish until Contributor acknowledgement."""
+    contributor_id = await create_user_with_roles(
+        "soft-fail@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        external_rarity=Decimal("0.2000"),
+    )
+
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=headers,
+    )
+    publish_before_ack = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=headers,
+    )
+    acknowledged = await client.post(
+        f"/v1/frameworks/{framework_id}/acknowledge-soft-fail",
+        headers=headers,
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_failed"
+    assert publish_before_ack.status_code == 409
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["status"] == "pipeline_passed"
+
+
+async def test_resolve_pii_review_resets_artifact_and_reruns_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributor can ask the pipeline to re-check a replaced PII Artifact."""
+    dispatched: list[str] = []
+
+    class FakeScanTask:
+        """Celery task double that records scan dispatches."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a scan dispatch instead of touching Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        FakeScanTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "pii-resolve@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        processing_status="flagged_pii",
+        pii_detected=True,
+        pii_review_needed=True,
+    )
+    await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}/resolve-pii-review",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processing_status"] == "processing"
+    assert response.json()["pii_detected"] is False
+    assert response.json()["pii_review_needed"] is False
+    assert dispatched == [artifact_id]
+
+
+async def test_admin_can_suspend_published_framework(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Admins can remove a published Framework from marketplace discovery."""
+    removed_frameworks: list[str] = []
+
+    async def fake_remove_framework_artifacts(framework_id: UUID) -> None:
+        """Record MinHash LSH eviction instead of touching Redis."""
+        removed_frameworks.append(str(framework_id))
+
+    monkeypatch.setattr(
+        "app.modules.admin.service.remove_framework_artifacts_from_index",
+        fake_remove_framework_artifacts,
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "suspend-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles("suspend-admin@auracles.space", ["admin"])
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/suspend",
+        json={"reason": "Post-publish moderation hit."},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "suspended"
+    assert removed_frameworks == [framework_id]
 
 
 async def test_unauthenticated_create_returns_401_and_creates_no_draft(

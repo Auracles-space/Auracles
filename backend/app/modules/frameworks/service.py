@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -18,7 +19,8 @@ from app.modules.frameworks.models import (
     FrameworkVersion,
     FrameworkVersionArtifact,
 )
-from app.modules.frameworks.models_artifact import Artifact
+from app.modules.frameworks.models_artifact import Artifact, ArtifactRarityAudit
+from app.modules.frameworks.pipeline_gate import evaluate_framework_pipeline
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
     ArtifactResponse,
@@ -33,6 +35,12 @@ from app.modules.frameworks.schemas import (
     PricingConfig,
 )
 from app.workers.tasks.artifacts import scan_artifact
+from app.workers.tasks.notifications import notify_licensees_of_new_version
+from app.workers.tasks.processing.minhash_index import (
+    index_framework_artifacts,
+    remove_framework_artifacts_from_index,
+)
+from app.workers.tasks.processing.search_index import tags_to_search_text
 
 ALLOWED_ARTIFACT_MIME_TYPES = {
     "application/pdf",
@@ -357,6 +365,15 @@ async def unpublish_framework(
         metadata={"version": framework.version},
     )
     await db.commit()
+    try:
+        await remove_framework_artifacts_from_index(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="frameworks",
+            action="remove_framework_from_lsh",
+            user_id=contributor.id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_remove_failed", error=str(exc))
     await db.refresh(framework)
     logger.bind(
         module="frameworks",
@@ -364,6 +381,67 @@ async def unpublish_framework(
         user_id=contributor.id,
         framework_id=framework.id,
     ).info("framework_unpublished")
+    return framework_to_response(framework)
+
+
+async def submit_framework(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Submit an owned draft Framework into the processing gate."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status not in {"draft", "pipeline_failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or failed Frameworks can be submitted.",
+        )
+
+    artifacts = (
+        await db.execute(
+            select(Artifact)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
+            .order_by(Artifact.created_at)
+        )
+    ).scalars().all()
+    if not artifacts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one Artifact is required.",
+        )
+
+    framework.status = "submitted"
+    framework.pipeline_failure_reasons = {}
+    framework.last_pipeline_run_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="framework_submitted",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"artifact_count": len(artifacts)},
+    )
+    dispatched_artifact_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.processing_status in {"pending", "processing"}:
+            artifact.processing_status = "processing"
+            dispatched_artifact_ids.append(str(artifact.id))
+
+    await evaluate_framework_pipeline(db, framework, force=True)
+    await db.commit()
+    for artifact_id in dispatched_artifact_ids:
+        scan_artifact.delay(artifact_id)
+
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="submit_framework",
+        user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_submitted")
     return framework_to_response(framework)
 
 
@@ -631,6 +709,202 @@ async def _snapshot_current_version(
                 )
             )
     return snapshot
+
+
+async def _ensure_published_version_snapshot(
+    db: AsyncSession,
+    framework: Framework,
+    current_artifacts: list[Artifact],
+) -> FrameworkVersion:
+    """Create or complete the immutable snapshot for the current version."""
+    snapshot = await db.scalar(
+        select(FrameworkVersion).where(
+            FrameworkVersion.framework_id == framework.id,
+            FrameworkVersion.version == framework.version,
+        )
+    )
+    if snapshot is None:
+        snapshot = FrameworkVersion(
+            framework_id=framework.id,
+            version=framework.version,
+            change_type=framework.change_type or "major",
+            change_log=(
+                "Initial publish."
+                if framework.version == "1.0.0"
+                else "Published version."
+            ),
+        )
+        db.add(snapshot)
+        await db.flush()
+
+    for artifact in current_artifacts:
+        existing = await db.get(FrameworkVersionArtifact, (snapshot.id, artifact.id))
+        if existing is None:
+            db.add(
+                FrameworkVersionArtifact(
+                    framework_version_id=snapshot.id,
+                    artifact_id=artifact.id,
+                    is_preview=framework.preview_artifact_id == artifact.id,
+                )
+            )
+    return snapshot
+
+
+async def acknowledge_soft_fail(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    ip_address: str | None,
+) -> FrameworkResponse:
+    """Record Contributor acknowledgement for external rarity soft failures."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status != "pipeline_failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only failed pipeline checks can be acknowledged.",
+        )
+
+    artifacts = (
+        await db.execute(
+            select(Artifact).where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
+        )
+    ).scalars().all()
+    for artifact in artifacts:
+        audit = await db.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == artifact.id
+            )
+        )
+        if audit is None:
+            audit = ArtifactRarityAudit(artifact_id=artifact.id)
+            db.add(audit)
+        audit.soft_fail_acknowledged = True
+        audit.acknowledged_at = datetime.now(UTC)
+        audit.acknowledged_ip = ip_address
+
+    failure_reasons = dict(framework.pipeline_failure_reasons or {})
+    failure_reasons.pop("external_check", None)
+    framework.pipeline_failure_reasons = failure_reasons
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="soft_fail_acknowledged",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"ip_address": ip_address},
+    )
+    await evaluate_framework_pipeline(db, framework, force=True)
+    await db.commit()
+    await db.refresh(framework)
+    return framework_to_response(framework)
+
+
+async def resolve_pii_review(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Reset a replaced PII Artifact and dispatch a fresh scan."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status not in {"draft", "pipeline_failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or failed Frameworks can resolve PII review.",
+        )
+    artifact = await _load_owned_artifact(db, framework, artifact_id)
+    artifact.scan_status = "pending"
+    artifact.processing_status = "processing"
+    artifact.pii_detected = False
+    artifact.pii_review_needed = False
+    artifact.clean_file_key = None
+    artifact.minhash_signature = None
+    artifact.simhash = None
+    artifact.metadata_vector = None
+    artifact.internal_rarity = None
+    artifact.external_rarity = None
+    artifact.rarity_score = None
+    artifact.nearest_match_id = None
+    framework.status = "processing"
+    framework.pipeline_failure_reasons = {}
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_pii_review_resolved",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={"framework_id": str(framework.id)},
+    )
+    await db.commit()
+    scan_artifact.delay(str(artifact.id))
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
+
+
+async def publish_framework(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Publish an owned Framework after every pipeline gate has passed."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status != "pipeline_passed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Framework must pass pipeline checks before publish.",
+        )
+    current_artifacts = (
+        await db.execute(
+            select(Artifact)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
+            .order_by(Artifact.created_at)
+        )
+    ).scalars().all()
+    if not current_artifacts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one Artifact is required.",
+        )
+
+    await _ensure_published_version_snapshot(db, framework, list(current_artifacts))
+    framework.status = "published"
+    framework.published_at = datetime.now(UTC)
+    framework.tags_text = tags_to_search_text(framework.tags)
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="framework_published",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"version": framework.version},
+    )
+    await db.commit()
+    try:
+        await index_framework_artifacts(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="frameworks",
+            action="index_framework_artifacts",
+            user_id=contributor.id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_index_failed", error=str(exc))
+    if framework.version != "1.0.0":
+        notify_licensees_of_new_version.delay(str(framework.id), framework.version)
+
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="publish_framework",
+        user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_published")
+    return framework_to_response(framework)
 
 
 async def create_new_version(

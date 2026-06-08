@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.modules.frameworks.pipeline_gate import (
+    evaluate_framework_pipeline_for_artifact,
+)
 from app.workers.tasks.processing.blend import _compute_final_rarity_impl
 from app.workers.tasks.processing.extract import _extract_text_impl
 from app.workers.tasks.processing.metadata import _compute_metadata_impl
@@ -24,10 +27,11 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
     """Run the currently implemented Artifact pipeline steps in order."""
     extraction = await _extract_text_impl(artifact_id)
     if extraction["status"] in {"missing", "failed"}:
+        framework_gate = await evaluate_framework_pipeline_for_artifact(artifact_id)
         return {
             "artifact_id": artifact_id,
             "status": extraction["status"],
-            "steps": {"extract": extraction},
+            "steps": {"extract": extraction, "framework_gate": framework_gate},
         }
 
     pii = await _detect_pii_impl(artifact_id)
@@ -37,6 +41,9 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
         "steps": {"extract": extraction, "pii": pii},
     }
     if pii["status"] != "clear":
+        result["steps"]["framework_gate"] = (
+            await evaluate_framework_pipeline_for_artifact(artifact_id)
+        )
         return result
 
     metadata = await _compute_metadata_impl(artifact_id)
@@ -55,9 +62,10 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
         if isinstance(framework_id, str)
         else {"status": "skipped", "reason": "missing_framework"}
     )
+    framework_gate = await evaluate_framework_pipeline_for_artifact(artifact_id)
     return {
         "artifact_id": artifact_id,
-        "status": search_index["status"],
+        "status": framework_gate["framework_status"],
         "steps": {
             "extract": extraction,
             "pii": pii,
@@ -68,5 +76,6 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
             "final_rarity": final_rarity,
             "thumbnail": thumbnail,
             "search_index": search_index,
+            "framework_gate": framework_gate,
         },
     }

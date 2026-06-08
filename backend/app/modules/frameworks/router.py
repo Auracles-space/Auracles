@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -144,6 +144,56 @@ async def create_new_version(
     )
 
 
+@router.post("/{framework_id}/submit", response_model=FrameworkResponse)
+async def submit_framework(
+    framework_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Submit an owned Framework to the processing gate."""
+    return await service.submit_framework(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
+@router.post("/{framework_id}/acknowledge-soft-fail", response_model=FrameworkResponse)
+async def acknowledge_soft_fail(
+    framework_id: UUID,
+    request: Request,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Acknowledge an external-rarity soft fail without publishing."""
+    return await service.acknowledge_soft_fail(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/{framework_id}/publish", response_model=FrameworkResponse)
+async def publish_framework(
+    framework_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Publish an owned Framework after pipeline checks pass."""
+    return await service.publish_framework(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
 @router.post(
     "/{framework_id}/artifacts/upload-url",
     response_model=ArtifactUploadUrlResponse,
@@ -233,3 +283,24 @@ async def delete_artifact(
         artifact_id=artifact_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{framework_id}/artifacts/{artifact_id}/resolve-pii-review",
+    response_model=ArtifactResponse,
+)
+async def resolve_pii_review(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Re-run processing after a Contributor replaces a PII-flagged Artifact."""
+    return await service.resolve_pii_review(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )

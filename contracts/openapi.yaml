@@ -347,6 +347,45 @@ paths:
           description: User or KYC document not found.
         "422":
           description: Invalid review payload.
+  /v1/admin/frameworks/{framework_id}/suspend:
+    post:
+      tags:
+        - Admin
+      operationId: suspendFramework
+      summary: Suspend a published Framework
+      description: Admin-only post-publish moderation endpoint that removes a Framework from marketplace discovery.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminFrameworkSuspendRequest"
+      responses:
+        "200":
+          description: Framework suspended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminFrameworkStatusResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only published Frameworks can be suspended.
+        "422":
+          description: Invalid suspend payload.
   /v1/auth/verify-email:
     post:
       tags:
@@ -661,6 +700,103 @@ paths:
           description: Only published or unpublished Frameworks can be versioned.
         "422":
           description: Invalid version request or Artifact inheritance map.
+  /v1/frameworks/{framework_id}/submit:
+    post:
+      tags:
+        - Frameworks
+      operationId: submitFramework
+      summary: Submit Framework to pipeline gate
+      description: Sends an owned draft or failed Framework through pipeline gate evaluation. Requires Contributor role, complete profile, and verified KYC.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Framework submitted or pipeline status evaluated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only draft or failed Frameworks can be submitted.
+        "422":
+          description: At least one Artifact is required.
+  /v1/frameworks/{framework_id}/acknowledge-soft-fail:
+    post:
+      tags:
+        - Frameworks
+      operationId: acknowledgeFrameworkSoftFail
+      summary: Acknowledge external-rarity soft fail
+      description: Records Contributor acknowledgement for external-rarity soft failures without publishing the Framework.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Soft fail acknowledged and pipeline gate re-evaluated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only failed pipeline checks can be acknowledged.
+  /v1/frameworks/{framework_id}/publish:
+    post:
+      tags:
+        - Frameworks
+      operationId: publishFramework
+      summary: Publish a pipeline-passed Framework
+      description: Publishes an owned Framework after every pipeline gate has passed and snapshots current Artifacts into version history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Framework published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Framework must pass pipeline checks before publish.
+        "422":
+          description: At least one Artifact is required.
   /v1/frameworks/{framework_id}/artifacts/upload-url:
     post:
       tags:
@@ -807,6 +943,43 @@ paths:
           description: Framework or Artifact not found.
         "409":
           description: Only draft Framework Artifacts can be deleted.
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/resolve-pii-review:
+    post:
+      tags:
+        - Frameworks
+      operationId: resolveArtifactPiiReview
+      summary: Resolve Artifact PII review
+      description: Re-runs scanning and processing after a Contributor replaces a PII-flagged Artifact object.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Artifact reset and processing restarted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework or Artifact not found.
+        "409":
+          description: Only draft or failed Frameworks can resolve PII review.
   /v1/frameworks/{framework_id}/preview-artifact:
     patch:
       tags:
@@ -1361,6 +1534,29 @@ components:
           type: string
         document_status:
           type: string
+    AdminFrameworkSuspendRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+    AdminFrameworkStatusResponse:
+      type: object
+      required:
+        - framework_id
+        - status
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        reason:
+          type:
+            - string
+            - "null"
     KycUploadUrlRequest:
       type: object
       required:

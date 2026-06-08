@@ -11,6 +11,16 @@ export type AddRoleRequest = {
 
 export type role = 'contributor' | 'operator' | 'attestor';
 
+export type AdminFrameworkStatusResponse = {
+    framework_id: string;
+    status: string;
+    reason?: (string) | null;
+};
+
+export type AdminFrameworkSuspendRequest = {
+    reason: string;
+};
+
 export type AdminKycReviewRequest = {
     status: 'verified' | 'rejected';
     notes?: (string) | null;
@@ -433,6 +443,17 @@ export type ReviewUserKycResponse = (AdminKycReviewResponse);
 
 export type ReviewUserKycError = (unknown);
 
+export type SuspendFrameworkData = {
+    body: AdminFrameworkSuspendRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type SuspendFrameworkResponse = (AdminFrameworkStatusResponse);
+
+export type SuspendFrameworkError = (unknown);
+
 export type VerifyEmailData = {
     body: VerifyEmailRequest;
 };
@@ -529,6 +550,36 @@ export type CreateFrameworkVersionResponse = (FrameworkResponse);
 
 export type CreateFrameworkVersionError = (unknown);
 
+export type SubmitFrameworkData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type SubmitFrameworkResponse = (FrameworkResponse);
+
+export type SubmitFrameworkError = (unknown);
+
+export type AcknowledgeFrameworkSoftFailData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AcknowledgeFrameworkSoftFailResponse = (FrameworkResponse);
+
+export type AcknowledgeFrameworkSoftFailError = (unknown);
+
+export type PublishFrameworkData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type PublishFrameworkResponse = (FrameworkResponse);
+
+export type PublishFrameworkError = (unknown);
+
 export type RequestArtifactUploadUrlData = {
     body: ArtifactUploadUrlRequest;
     path: {
@@ -571,6 +622,17 @@ export type DeleteDraftArtifactData = {
 export type DeleteDraftArtifactResponse = (void);
 
 export type DeleteDraftArtifactError = (unknown);
+
+export type ResolveArtifactPiiReviewData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type ResolveArtifactPiiReviewResponse = (ArtifactResponse);
+
+export type ResolveArtifactPiiReviewError = (unknown);
 
 export type SetPreviewArtifactData = {
     body: PreviewArtifactRequest;

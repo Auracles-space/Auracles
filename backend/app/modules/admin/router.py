@@ -10,6 +10,8 @@ from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminFrameworkStatusResponse,
+    AdminFrameworkSuspendRequest,
     AdminKycReviewRequest,
     AdminKycReviewResponse,
     AdminRoleAssignmentRequest,
@@ -62,4 +64,28 @@ async def review_kyc(
         user_id=user_id,
         kyc_status=document.status,
         document_status=document.status,
+    )
+
+
+@router.post(
+    "/frameworks/{framework_id}/suspend",
+    response_model=AdminFrameworkStatusResponse,
+)
+async def suspend_framework(
+    framework_id: UUID,
+    payload: AdminFrameworkSuspendRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminFrameworkStatusResponse:
+    """Suspend a published Framework from marketplace discovery."""
+    framework = await service.suspend_framework(
+        db=db,
+        admin=admin,
+        framework_id=framework_id,
+        reason=payload.reason,
+    )
+    return AdminFrameworkStatusResponse(
+        framework_id=framework.id,
+        status=framework.status,
+        reason=framework.rejection_reason,
     )
