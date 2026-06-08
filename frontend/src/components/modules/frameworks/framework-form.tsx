@@ -74,19 +74,23 @@ export function FrameworkForm({
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit}>
+    <form className="grid gap-6" onSubmit={handleSubmit}>
       <FormTextInput
-        label="Title"
+        label="Framework Title"
+        placeholder="e.g. Enterprise React Architecture Template"
         onChange={(value) => setForm((current) => ({ ...current, title: value }))}
         required
         value={form.title}
+        helperText="A clear, specific title helps operators find exactly what they need."
       />
+      
       <label className="block">
-        <span className="mb-2 block text-sm font-semibold text-foreground">
+        <span className="mb-1.5 block text-sm font-semibold text-foreground">
           Description
         </span>
         <textarea
-          className="min-h-32 w-full rounded-[6px] border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+          placeholder="Describe what your framework includes, the problem it solves, and who it's for..."
+          className="min-h-32 w-full rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50 resize-y"
           onChange={(event) =>
             setForm((current) => ({
               ...current,
@@ -97,37 +101,93 @@ export function FrameworkForm({
           value={form.description}
         />
       </label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormTextInput
-          label="Category"
-          onChange={(value) =>
-            setForm((current) => ({ ...current, category: value }))
-          }
-          required
-          value={form.category}
-        />
-        <FormTextInput
-          label="Price"
-          onChange={(value) =>
-            setForm((current) => ({ ...current, price: value }))
-          }
-          required
-          value={form.price}
-        />
+
+      <div className="grid gap-6 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+            Category
+          </span>
+          <div className="relative">
+            <select
+              className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10"
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+              required
+              value={form.category}
+            >
+              <option value="operations">Operations & Playbooks</option>
+              <option value="engineering">Engineering & Architecture</option>
+              <option value="design">Design Systems</option>
+              <option value="compliance">Compliance & Security</option>
+              <option value="finance">Finance & Modeling</option>
+              <option value="hr">People & HR</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-foreground-muted">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </label>
+        
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+            Base Price
+          </span>
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+              <span className="text-sm font-medium">$</span>
+            </div>
+            <input
+              type="text"
+              placeholder="250"
+              className="h-11 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50"
+              onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
+              required
+              value={form.price}
+            />
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+              <span className="text-xs uppercase">USD</span>
+            </div>
+          </div>
+        </label>
       </div>
+
       <FormTextInput
         label="Tags"
+        placeholder="e.g. python, standard-operating-procedure, aws (comma separated)"
         onChange={(value) => setForm((current) => ({ ...current, tags: value }))}
         value={form.tags}
+        helperText="Add up to 5 tags to help index your framework in the marketplace."
       />
-      {error ? <p className="text-sm text-error">{error}</p> : null}
-      <button
-        className="inline-flex min-h-11 items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:opacity-60"
-        disabled={saving}
-        type="submit"
-      >
-        {saving ? "Saving" : submitLabel}
-      </button>
+
+      {error ? (
+        <div className="rounded-lg bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
+        </div>
+      ) : null}
+      
+      <div className="mt-4 pt-6 border-t border-border-default flex items-center justify-end">
+        <button
+          className="inline-flex h-11 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90 disabled:opacity-60 disabled:cursor-not-allowed"
+          disabled={saving}
+          type="submit"
+        >
+          {saving ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-background" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Creating draft...
+            </>
+          ) : (
+            submitLabel
+          )}
+        </button>
+      </div>
     </form>
   );
 }
@@ -137,30 +197,41 @@ type FormTextInputProps = {
   onChange: (value: string) => void;
   required?: boolean;
   value: string;
+  placeholder?: string;
+  helperText?: string;
 };
 
 /**
  * Render one Brand Book text input.
  *
- * @param props - Label, value, and change handler.
+ * @param props - Label, value, change handler, placeholder, and helper text.
  */
 function FormTextInput({
   label,
   onChange,
   required = false,
   value,
+  placeholder,
+  helperText,
 }: FormTextInputProps) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-semibold text-foreground">
+      <span className="mb-1.5 block text-sm font-semibold text-foreground">
         {label}
+        {required && <span className="ml-1 text-accent">*</span>}
       </span>
       <input
-        className="min-h-11 w-full rounded-[6px] border border-border-default bg-surface-2 px-3 text-sm text-foreground outline-none focus:border-accent"
+        className="h-11 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50"
         onChange={(event) => onChange(event.target.value)}
         required={required}
         value={value}
+        placeholder={placeholder}
       />
+      {helperText && (
+        <span className="mt-1.5 block text-xs text-foreground-muted">
+          {helperText}
+        </span>
+      )}
     </label>
   );
 }
