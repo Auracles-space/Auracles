@@ -17,6 +17,8 @@ tags:
     description: Authenticated account settings endpoints.
   - name: Frameworks
     description: Contributor Framework draft management endpoints.
+  - name: Explore
+    description: Public marketplace catalog endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -1019,6 +1021,181 @@ paths:
           description: Only draft Frameworks can change preview Artifact.
         "422":
           description: Invalid preview payload.
+  /v1/explore/frameworks:
+    get:
+      tags:
+        - Explore
+      operationId: listExploreFrameworks
+      summary: List public Framework catalog
+      description: Returns published Frameworks with search, filters, pagination, and temporary sort shims.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+            minLength: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          schema:
+            $ref: "#/components/schemas/ExploreSort"
+        - name: sector
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: industry
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: function
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: category
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: license_type
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: complexity
+          in: query
+          schema:
+            type:
+              - integer
+              - "null"
+            minimum: 1
+            maximum: 5
+        - name: org_size
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: lifecycle_stage
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: jurisdiction
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+        - name: price_min
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+            pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        - name: price_max
+          in: query
+          schema:
+            type:
+              - string
+              - "null"
+            pattern: ^[0-9]+(\.[0-9]{1,2})?$
+      responses:
+        "200":
+          description: Public Framework catalog returned.
+          headers:
+            X-Sort-Shim:
+              description: true when top-rated or most-purchased sort uses newest fallback until Phase 3 data exists.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExploreFrameworkListResponse"
+        "422":
+          description: Invalid filter or pagination parameters.
+  /v1/explore/frameworks/{framework_id}:
+    get:
+      tags:
+        - Explore
+      operationId: getExploreFrameworkDetail
+      summary: Get public Framework detail
+      description: Returns public detail for a published Framework, including a short-lived preview URL only for the designated preview Artifact.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Public Framework detail returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExploreFrameworkDetail"
+        "404":
+          description: Published Framework not found.
+        "429":
+          description: Preview URL rate limit exceeded.
+  /v1/explore/frameworks/{framework_id}/related:
+    get:
+      tags:
+        - Explore
+      operationId: getRelatedExploreFrameworks
+      summary: Get related public Frameworks
+      description: Returns up to six published Frameworks related by tag, category, sector, and industry overlap.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Related Frameworks returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExploreFrameworkCard"
+        "404":
+          description: Published Framework not found.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -1763,6 +1940,177 @@ components:
           type:
             - string
             - "null"
+    ExploreSort:
+      type: string
+      enum:
+        - newest
+        - top-rated
+        - most-purchased
+        - price_asc
+        - price_desc
+      default: newest
+    ExploreFrameworkCard:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - version
+        - category
+        - sector
+        - industry
+        - function
+        - tags
+        - jurisdiction
+        - complexity
+        - org_size
+        - lifecycle_stage
+        - price
+        - currency
+        - license_types
+        - thumbnail_key
+        - rarity_score
+        - owned
+        - published_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        category:
+          type: string
+        sector:
+          type:
+            - string
+            - "null"
+        industry:
+          type:
+            - string
+            - "null"
+        function:
+          type:
+            - string
+            - "null"
+        tags:
+          type: array
+          items:
+            type: string
+        jurisdiction:
+          type:
+            - string
+            - "null"
+        complexity:
+          type:
+            - integer
+            - "null"
+        org_size:
+          type:
+            - string
+            - "null"
+        lifecycle_stage:
+          type:
+            - string
+            - "null"
+        price:
+          type: string
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        currency:
+          type: string
+        license_types:
+          type: array
+          items:
+            type: string
+        thumbnail_key:
+          type:
+            - string
+            - "null"
+        rarity_score:
+          type:
+            - string
+            - "null"
+          pattern: ^[0-9]+(\.[0-9]{1,4})?$
+        owned:
+          type: boolean
+        published_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+    ExploreFrameworkListResponse:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+        - sort
+        - sort_shim
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExploreFrameworkCard"
+        total:
+          type: integer
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        sort:
+          $ref: "#/components/schemas/ExploreSort"
+        sort_shim:
+          type: boolean
+    ExploreArtifactSummary:
+      type: object
+      required:
+        - id
+        - name
+        - file_size
+        - mime_type
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        file_size:
+          type: integer
+        mime_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ExploreFrameworkDetail:
+      allOf:
+        - $ref: "#/components/schemas/ExploreFrameworkCard"
+        - type: object
+          required:
+            - preview_artifact_id
+            - preview_url
+            - artifacts
+          properties:
+            preview_artifact_id:
+              type:
+                - string
+                - "null"
+              format: uuid
+            preview_url:
+              type:
+                - string
+                - "null"
+            artifacts:
+              type: array
+              items:
+                $ref: "#/components/schemas/ExploreArtifactSummary"
     FrameworkCreate:
       type: object
       required:

@@ -120,6 +120,54 @@ export type EmailChangeRequest = {
     totp_code?: (string) | null;
 };
 
+export type ExploreArtifactSummary = {
+    id: string;
+    name: string;
+    file_size: number;
+    mime_type: string;
+    created_at: string;
+};
+
+export type ExploreFrameworkCard = {
+    id: string;
+    title: string;
+    description: string;
+    version: string;
+    category: string;
+    sector: (string) | null;
+    industry: (string) | null;
+    function: (string) | null;
+    tags: Array<(string)>;
+    jurisdiction: (string) | null;
+    complexity: (number) | null;
+    org_size: (string) | null;
+    lifecycle_stage: (string) | null;
+    price: string;
+    currency: string;
+    license_types: Array<(string)>;
+    thumbnail_key: (string) | null;
+    rarity_score: (string) | null;
+    owned: boolean;
+    published_at: (string) | null;
+};
+
+export type ExploreFrameworkDetail = ExploreFrameworkCard & {
+    preview_artifact_id: (string) | null;
+    preview_url: (string) | null;
+    artifacts: Array<ExploreArtifactSummary>;
+};
+
+export type ExploreFrameworkListResponse = {
+    items: Array<ExploreFrameworkCard>;
+    total: number;
+    page: number;
+    page_size: number;
+    sort: ExploreSort;
+    sort_shim: boolean;
+};
+
+export type ExploreSort = 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+
 export type ForgotPasswordRequest = {
     email: string;
 };
@@ -644,6 +692,50 @@ export type SetPreviewArtifactData = {
 export type SetPreviewArtifactResponse = (FrameworkResponse);
 
 export type SetPreviewArtifactError = (unknown);
+
+export type ListExploreFrameworksData = {
+    query?: {
+        category?: (string) | null;
+        complexity?: (number) | null;
+        function?: (string) | null;
+        industry?: (string) | null;
+        jurisdiction?: (string) | null;
+        license_type?: (string) | null;
+        lifecycle_stage?: (string) | null;
+        org_size?: (string) | null;
+        page?: number;
+        page_size?: number;
+        price_max?: (string) | null;
+        price_min?: (string) | null;
+        q?: (string) | null;
+        sector?: (string) | null;
+        sort?: ExploreSort;
+    };
+};
+
+export type ListExploreFrameworksResponse = (ExploreFrameworkListResponse);
+
+export type ListExploreFrameworksError = (unknown);
+
+export type GetExploreFrameworkDetailData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetExploreFrameworkDetailResponse = (ExploreFrameworkDetail);
+
+export type GetExploreFrameworkDetailError = (unknown);
+
+export type GetRelatedExploreFrameworksData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetRelatedExploreFrameworksResponse = (Array<ExploreFrameworkCard>);
+
+export type GetRelatedExploreFrameworksError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;
