@@ -8,6 +8,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.explore.router import router as explore_router
 from app.modules.frameworks.router import router as frameworks_router
 from app.modules.health.router import router as health_router
+from app.modules.library.router import router as library_router
 from app.modules.settings.router import router as settings_router
 
 
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router, prefix="/v1")
     application.include_router(explore_router, prefix="/v1")
     application.include_router(frameworks_router, prefix="/v1")
+    application.include_router(library_router, prefix="/v1")
     application.include_router(settings_router, prefix="/v1")
     application.include_router(health_router, prefix="/v1")
 

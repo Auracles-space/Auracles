@@ -324,6 +324,8 @@ class License(CreatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    seats_used: Mapped[int] = mapped_column(nullable=False, server_default="1")
+    seats_total: Mapped[int | None] = mapped_column(nullable=True)
 
     framework: Mapped[Framework] = relationship(back_populates="licenses")
     reviews: Mapped[list[Review]] = relationship(back_populates="license")

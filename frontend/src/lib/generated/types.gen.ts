@@ -34,6 +34,28 @@ export type AdminKycReviewResponse = {
     document_status: string;
 };
 
+export type AdminLicenseGrantRequest = {
+    framework_id: string;
+    operator_id: string;
+    type: 'single_user' | 'team' | 'enterprise';
+    expires_at?: (string) | null;
+    seats_total?: (number) | null;
+};
+
+export type type = 'single_user' | 'team' | 'enterprise';
+
+export type AdminLicenseGrantResponse = {
+    license_id: string;
+    framework_id: string;
+    operator_id: string;
+    type: string;
+    status: string;
+    version_at_grant: string;
+    seats_used: number;
+    seats_total: (number) | null;
+    expires_at: (string) | null;
+};
+
 export type AdminRoleAssignmentRequest = {
     role: 'contributor' | 'operator' | 'attestor' | 'admin';
 };
@@ -48,6 +70,14 @@ export type AdminRoleAssignmentResponse = {
 
 export type ArtifactConfirmRequest = {
     artifact_id: string;
+};
+
+export type ArtifactDownloadResponse = {
+    artifact_id: string;
+    framework_id: string;
+    license_id: string;
+    download_url: string;
+    expires_in: number;
 };
 
 export type ArtifactResponse = {
@@ -305,6 +335,30 @@ export type KycUploadUrlResponse = {
     expires_in: number;
 };
 
+export type LibraryItem = {
+    license_id: string;
+    framework_id: string;
+    title: string;
+    version_at_grant: string;
+    current_version: string;
+    license_type: string;
+    status: string;
+    seats_used: number;
+    seats_total: (number) | null;
+    price: string;
+    currency: string;
+    thumbnail_key: (string) | null;
+    granted_at: string;
+    expires_at: (string) | null;
+};
+
+export type LibraryResponse = {
+    items: Array<LibraryItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
 export type LoginRequest = {
     email: string;
     password: string;
@@ -502,6 +556,14 @@ export type SuspendFrameworkResponse = (AdminFrameworkStatusResponse);
 
 export type SuspendFrameworkError = (unknown);
 
+export type GrantLicenseData = {
+    body: AdminLicenseGrantRequest;
+};
+
+export type GrantLicenseResponse = (AdminLicenseGrantResponse);
+
+export type GrantLicenseError = (unknown);
+
 export type VerifyEmailData = {
     body: VerifyEmailRequest;
 };
@@ -671,6 +733,17 @@ export type DeleteDraftArtifactResponse = (void);
 
 export type DeleteDraftArtifactError = (unknown);
 
+export type DownloadLicensedArtifactData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type DownloadLicensedArtifactResponse = (ArtifactDownloadResponse);
+
+export type DownloadLicensedArtifactError = (unknown);
+
 export type ResolveArtifactPiiReviewData = {
     path: {
         artifact_id: string;
@@ -736,6 +809,17 @@ export type GetRelatedExploreFrameworksData = {
 export type GetRelatedExploreFrameworksResponse = (Array<ExploreFrameworkCard>);
 
 export type GetRelatedExploreFrameworksError = (unknown);
+
+export type ListOperatorLibraryData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type ListOperatorLibraryResponse = (LibraryResponse);
+
+export type ListOperatorLibraryError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;

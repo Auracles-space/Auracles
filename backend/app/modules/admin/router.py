@@ -14,6 +14,8 @@ from app.modules.admin.schemas import (
     AdminFrameworkSuspendRequest,
     AdminKycReviewRequest,
     AdminKycReviewResponse,
+    AdminLicenseGrantRequest,
+    AdminLicenseGrantResponse,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
 )
@@ -88,4 +90,37 @@ async def suspend_framework(
         framework_id=framework.id,
         status=framework.status,
         reason=framework.rejection_reason,
+    )
+
+
+@router.post(
+    "/licenses",
+    response_model=AdminLicenseGrantResponse,
+    status_code=201,
+)
+async def grant_license(
+    payload: AdminLicenseGrantRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminLicenseGrantResponse:
+    """Grant a Framework license to an Operator during Phase 2."""
+    license_row = await service.grant_license(
+        db=db,
+        admin=admin,
+        framework_id=payload.framework_id,
+        operator_id=payload.operator_id,
+        license_type=payload.type,
+        expires_at=payload.expires_at,
+        seats_total=payload.seats_total,
+    )
+    return AdminLicenseGrantResponse(
+        license_id=license_row.id,
+        framework_id=license_row.framework_id,
+        operator_id=license_row.operator_id,
+        type=license_row.license_type,
+        status=license_row.status,
+        version_at_grant=license_row.version_at_grant,
+        seats_used=license_row.seats_used,
+        seats_total=license_row.seats_total,
+        expires_at=license_row.expires_at,
     )

@@ -19,6 +19,8 @@ tags:
     description: Contributor Framework draft management endpoints.
   - name: Explore
     description: Public marketplace catalog endpoints.
+  - name: Library
+    description: Operator library and licensed download endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -388,6 +390,38 @@ paths:
           description: Only published Frameworks can be suspended.
         "422":
           description: Invalid suspend payload.
+  /v1/admin/licenses:
+    post:
+      tags:
+        - Admin
+      operationId: grantLicense
+      summary: Grant a Framework license
+      description: Admin-only Phase 2 endpoint for granting an Operator access to the current Framework version.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLicenseGrantRequest"
+      responses:
+        "201":
+          description: License granted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLicenseGrantResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role required.
+        "404":
+          description: Framework or Operator not found.
+        "409":
+          description: Operator already has a license for this Framework.
+        "422":
+          description: Invalid license grant payload.
   /v1/auth/verify-email:
     post:
       tags:
@@ -945,6 +979,41 @@ paths:
           description: Framework or Artifact not found.
         "409":
           description: Only draft Framework Artifacts can be deleted.
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/download:
+    get:
+      tags:
+        - Library
+      operationId: downloadLicensedArtifact
+      summary: Download licensed Artifact
+      description: Returns a short-lived S3 GET URL after Operator role, verified KYC, active license, and version coverage checks pass.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Licensed Artifact download URL returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDownloadResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role, verified KYC, active license, or licensed version required.
+        "404":
+          description: Artifact not found.
   /v1/frameworks/{framework_id}/artifacts/{artifact_id}/resolve-pii-review:
     post:
       tags:
@@ -1196,6 +1265,40 @@ paths:
                   $ref: "#/components/schemas/ExploreFrameworkCard"
         "404":
           description: Published Framework not found.
+  /v1/library:
+    get:
+      tags:
+        - Library
+      operationId: listOperatorLibrary
+      summary: List Operator library
+      description: Returns Framework licenses held by the authenticated Operator.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Operator library returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -1734,6 +1837,74 @@ components:
           type:
             - string
             - "null"
+    AdminLicenseGrantRequest:
+      type: object
+      required:
+        - framework_id
+        - operator_id
+        - type
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+        operator_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - single_user
+            - team
+            - enterprise
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        seats_total:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+    AdminLicenseGrantResponse:
+      type: object
+      required:
+        - license_id
+        - framework_id
+        - operator_id
+        - type
+        - status
+        - version_at_grant
+        - seats_used
+        - seats_total
+        - expires_at
+      properties:
+        license_id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        operator_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          type: string
+        version_at_grant:
+          type: string
+        seats_used:
+          type: integer
+        seats_total:
+          type:
+            - integer
+            - "null"
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
     KycUploadUrlRequest:
       type: object
       required:
@@ -2111,6 +2282,106 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ExploreArtifactSummary"
+    LibraryItem:
+      type: object
+      required:
+        - license_id
+        - framework_id
+        - title
+        - version_at_grant
+        - current_version
+        - license_type
+        - status
+        - seats_used
+        - seats_total
+        - price
+        - currency
+        - thumbnail_key
+        - granted_at
+        - expires_at
+      properties:
+        license_id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        version_at_grant:
+          type: string
+        current_version:
+          type: string
+        license_type:
+          type: string
+        status:
+          type: string
+        seats_used:
+          type: integer
+        seats_total:
+          type:
+            - integer
+            - "null"
+        price:
+          type: string
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        currency:
+          type: string
+        thumbnail_key:
+          type:
+            - string
+            - "null"
+        granted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+    LibraryResponse:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LibraryItem"
+        total:
+          type: integer
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+    ArtifactDownloadResponse:
+      type: object
+      required:
+        - artifact_id
+        - framework_id
+        - license_id
+        - download_url
+        - expires_in
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        license_id:
+          type: string
+          format: uuid
+        download_url:
+          type: string
+        expires_in:
+          type: integer
     FrameworkCreate:
       type: object
       required:

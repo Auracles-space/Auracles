@@ -1,5 +1,6 @@
 """Pydantic schemas for admin endpoints."""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -47,3 +48,27 @@ class AdminFrameworkStatusResponse(BaseModel):
     framework_id: UUID
     status: str
     reason: str | None = None
+
+
+class AdminLicenseGrantRequest(BaseModel):
+    """Request body for admin-mediated license grants."""
+
+    framework_id: UUID
+    operator_id: UUID
+    type: Literal["single_user", "team", "enterprise"]
+    expires_at: datetime | None = None
+    seats_total: int | None = Field(default=None, ge=1)
+
+
+class AdminLicenseGrantResponse(BaseModel):
+    """Response body for an admin-created license."""
+
+    license_id: UUID
+    framework_id: UUID
+    operator_id: UUID
+    type: str
+    status: str
+    version_at_grant: str
+    seats_used: int
+    seats_total: int | None
+    expires_at: datetime | None

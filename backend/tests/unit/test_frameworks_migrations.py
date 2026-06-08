@@ -169,6 +169,18 @@ def test_marketplace_migration_marks_current_framework_artifacts(
     assert "idx_artifacts_current_framework" in artifact_indexes
 
 
+def test_marketplace_migration_adds_license_seat_tracking(
+    migrated_engine: Engine,
+) -> None:
+    """License rows persist seat counts for team and enterprise grants."""
+    inspector = inspect(migrated_engine)
+    license_columns = {
+        column["name"] for column in inspector.get_columns("licenses")
+    }
+
+    assert {"seats_used", "seats_total"}.issubset(license_columns)
+
+
 def test_marketplace_migration_omits_pgvector(
     migrated_engine: Engine,
 ) -> None:
@@ -240,5 +252,7 @@ def test_marketplace_orm_models_bind_to_phase_two_tables() -> None:
     assert ArtifactPiiAudit.__tablename__ == "artifact_pii_audit"
     assert ArtifactRarityAudit.__tablename__ == "artifact_rarity_audit"
     assert License.__tablename__ == "licenses"
+    assert "seats_used" in License.__table__.columns
+    assert "seats_total" in License.__table__.columns
     assert ArtifactDownload.__tablename__ == "artifact_downloads"
     assert Review.__tablename__ == "reviews"
