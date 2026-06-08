@@ -35,7 +35,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
   const pathname = usePathname() ?? "";
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="min-h-screen bg-accent text-white flex">
       {/* Sidebar */}
       <aside className="hidden bg-accent md:fixed md:inset-y-0 md:left-0 md:flex md:w-[260px] md:flex-col z-10">
         <div className="flex h-[72px] items-center px-6">
@@ -81,24 +81,26 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex w-full flex-col md:ml-[260px] min-h-screen">
+      <div className="flex w-full flex-col md:ml-[260px] min-h-screen text-foreground">
         {/* Desktop Header Container (sits above the bento card) */}
-        <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between bg-background px-8 md:flex">
+        <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between bg-accent px-8 md:flex">
           <div className="flex-1" />
           
           <div className="flex items-center gap-3">
             <div className="relative w-64 xl:w-80 mr-2">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input 
                 type="text" 
                 placeholder="Search..." 
-                className="h-9 w-full rounded-xl border border-border-default bg-surface-1 pl-9 pr-4 text-sm text-foreground shadow-sm placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+                className="h-9 w-full rounded-xl border border-white/10 bg-white/10 pl-9 pr-4 text-sm text-white shadow-sm placeholder:text-white/60 focus:border-white/30 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors"
               />
             </div>
-            <ThemeToggle />
-            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted hover:bg-surface-2 transition-colors">
+            <div className="text-white">
+              <ThemeToggle />
+            </div>
+            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/10 shadow-sm text-white/80 hover:bg-white/20 transition-colors">
               <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
@@ -107,28 +109,33 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
         </header>
 
         {/* Mobile Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border-default bg-background/95 px-4 backdrop-blur-md md:hidden">
-          <BrandLogo className="h-7 w-28" />
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-white/10 bg-accent px-4 backdrop-blur-md md:hidden">
+          <BrandLogo className="h-7 w-28" variant="dark" />
           <nav
             aria-label="Mobile application navigation"
             className="flex flex-1 items-center gap-2 overflow-x-auto px-4"
           >
-            {appLinks.map((link) => (
-              <Link
-                className={[
-                  "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore")
-                    ? "bg-surface-2 text-foreground"
-                    : "text-foreground-muted",
-                ].join(" ")}
-                href={link.href}
-                key={link.href}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {appLinks.map((link) => {
+              const isActive = pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore");
+              return (
+                <Link
+                  className={[
+                    "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-white/20 text-white"
+                      : "text-white/70 hover:bg-white/10 hover:text-white",
+                  ].join(" ")}
+                  href={link.href}
+                  key={link.href}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </nav>
-          <ThemeToggle />
+          <div className="text-white">
+            <ThemeToggle />
+          </div>
         </header>
 
         {/* Page Content Container - The Bento Box */}
