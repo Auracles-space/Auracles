@@ -29,6 +29,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.processing.extract",
             "app.workers.tasks.processing.metadata",
             "app.workers.tasks.processing.minhash",
+            "app.workers.tasks.processing.ocr",
             "app.workers.tasks.processing.pii",
             "app.workers.tasks.processing.rarity_external",
             "app.workers.tasks.processing.rarity_internal",

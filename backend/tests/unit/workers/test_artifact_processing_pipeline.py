@@ -100,7 +100,7 @@ def processing_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[dict[str, Any]]:
     """Reset marketplace rows and install pipeline test doubles."""
-    from app.workers.tasks.processing import extract
+    from app.workers.tasks.processing import extract, ocr
 
     fake_storage = FakePipelineStorage()
     settings = get_settings()
@@ -129,6 +129,7 @@ def processing_context(
     cleanup()
     monkeypatch.setattr(artifact_tasks.s3, "storage", fake_storage)
     monkeypatch.setattr(extract.s3, "storage", fake_storage)
+    monkeypatch.setattr(ocr.s3, "storage", fake_storage)
     try:
         yield {"storage": fake_storage}
     finally:
@@ -1182,13 +1183,13 @@ def test_process_artifact_marks_tiny_docs_as_low_confidence(
     assert artifact.metadata_vector["minhash"]["low_confidence"] is True
 
 
-def test_process_artifact_marks_image_heavy_empty_text_as_needing_ocr(
+def test_extract_text_marks_image_heavy_empty_text_as_needing_ocr(
     monkeypatch: pytest.MonkeyPatch,
     migrated_database: None,
     processing_context: dict[str, Any],
 ) -> None:
     """Image-heavy extraction with no text is explicitly marked for OCR."""
-    from app.workers.tasks.processing import extract, pii
+    from app.workers.tasks.processing import extract
 
     artifact_id = create_processing_artifact(name="scanned.pdf")
     monkeypatch.setattr(
@@ -1202,9 +1203,7 @@ def test_process_artifact_marks_image_heavy_empty_text_as_needing_ocr(
             image_count=4,
         ),
     )
-    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
-
-    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    extract.extract_text.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
 
     artifact, _, _, _ = read_artifact_state(artifact_id)
@@ -1219,6 +1218,198 @@ def test_process_artifact_marks_image_heavy_empty_text_as_needing_ocr(
         "low_confidence": True,
         "reason_codes": ["empty_extraction", "image_heavy_extraction", "needs_ocr"],
     }
+
+
+def test_process_artifact_runs_ocr_before_pii_for_scanned_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """OCR text is merged before PII detection sees scanned Artifact content."""
+    from app.workers.tasks.processing import extract, ocr, pii
+
+    artifact_id = create_processing_artifact(name="scanned.pdf")
+    pii_inputs: list[str] = []
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="",
+            headings=[],
+            table_count=0,
+            word_count=0,
+            image_count=4,
+        ),
+    )
+    monkeypatch.setattr(
+        ocr,
+        "extract_ocr_text_from_file",
+        lambda *_: ocr.OcrResult(
+            text="Scanned owner contact ada@example.com",
+            engine="tesseract",
+            confidence=0.91,
+            pages=[
+                ocr.OcrPageResult(
+                    page_number=1,
+                    text="Scanned owner contact ada@example.com",
+                    confidence=0.91,
+                )
+            ],
+        ),
+    )
+
+    def fake_detect_pii(text: str) -> list[pii.PiiFinding]:
+        """Capture the analyzed text and return a high-confidence finding."""
+        pii_inputs.append(text)
+        return [
+            pii.PiiFinding(
+                entity_type="EMAIL_ADDRESS",
+                score=0.98,
+                start=22,
+                end=37,
+            )
+        ]
+
+    monkeypatch.setattr(pii, "detect_pii_from_text", fake_detect_pii)
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
+
+    assert pii_inputs == ["Scanned owner contact ada@example.com"]
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    extraction = artifact.metadata_vector["extraction"]
+    assert extraction["text"] == "Scanned owner contact ada@example.com"
+    assert extraction["word_count"] == 6
+    assert extraction["ocr_applied"] is True
+    assert extraction["ocr_engine"] == "tesseract"
+    assert extraction["ocr_confidence"] == 0.91
+    assert extraction["quality"] == {
+        "empty_text": False,
+        "tiny_text": False,
+        "image_heavy": False,
+        "needs_ocr": False,
+        "low_confidence": False,
+        "reason_codes": ["ocr_applied"],
+    }
+    assert artifact.processing_status == "flagged_pii"
+    assert artifact.pii_review_needed is True
+    assert pii_audit is not None
+    assert pii_audit.pii_types_found == ["EMAIL_ADDRESS"]
+
+
+def test_process_artifact_records_ocr_failure_without_hard_failing(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """OCR adapter failures are recorded without crashing downstream checks."""
+    from app.workers.tasks.processing import extract, ocr, pii
+
+    artifact_id = create_processing_artifact(name="scanned-timeout.pdf")
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="",
+            headings=[],
+            table_count=0,
+            word_count=0,
+            image_count=2,
+        ),
+    )
+
+    def fail_ocr(*_: object) -> ocr.OcrResult:
+        """Simulate a local Tesseract timeout."""
+        raise ocr.OcrError("Tesseract OCR timed out.")
+
+    monkeypatch.setattr(ocr, "extract_ocr_text_from_file", fail_ocr)
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [])
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, rarity_audit, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    extraction = artifact.metadata_vector["extraction"]
+    assert extraction["ocr_applied"] is False
+    assert extraction["ocr_failed"] is True
+    assert extraction["ocr_failure_reason"] == "Tesseract OCR timed out."
+    assert extraction["quality"]["needs_ocr"] is False
+    assert extraction["quality"]["low_confidence"] is True
+    assert extraction["quality"]["reason_codes"] == [
+        "empty_extraction",
+        "image_heavy_extraction",
+        "ocr_failed",
+    ]
+    assert artifact.processing_status != "failed"
+    assert rarity_audit is not None
+
+
+def test_ocr_retry_replaces_prior_ocr_text() -> None:
+    """OCR retry refreshes the OCR block without duplicating old OCR text."""
+    from app.workers.tasks.processing import ocr
+
+    metadata: dict[str, Any] = {
+        "extraction": {
+            "text": "",
+            "word_count": 0,
+            "image_count": 1,
+            "quality": {
+                "empty_text": True,
+                "tiny_text": False,
+                "image_heavy": True,
+                "needs_ocr": True,
+                "low_confidence": True,
+                "reason_codes": [
+                    "empty_extraction",
+                    "image_heavy_extraction",
+                    "needs_ocr",
+                ],
+            },
+        }
+    }
+
+    first = ocr.merge_ocr_result(
+        metadata,
+        ocr.OcrResult(
+            text="First scanned text",
+            engine="tesseract",
+            confidence=0.80,
+            pages=[
+                ocr.OcrPageResult(
+                    page_number=1,
+                    text="First scanned text",
+                    confidence=0.80,
+                )
+            ],
+        ),
+    )
+    second = ocr.merge_ocr_result(
+        first,
+        ocr.OcrResult(
+            text="Second scanned text",
+            engine="tesseract",
+            confidence=0.85,
+            pages=[
+                ocr.OcrPageResult(
+                    page_number=1,
+                    text="Second scanned text",
+                    confidence=0.85,
+                )
+            ],
+        ),
+    )
+
+    extraction = second["extraction"]
+    assert extraction["text"] == "Second scanned text"
+    assert extraction["ocr_text"] == "Second scanned text"
+    assert "First scanned text" not in extraction["text"]
+    assert extraction["ocr_confidence"] == 0.85
 
 
 def test_process_artifact_rerun_keeps_processing_audits_idempotent(

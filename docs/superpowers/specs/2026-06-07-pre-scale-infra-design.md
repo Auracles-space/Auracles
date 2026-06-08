@@ -295,6 +295,20 @@ Deploy `backend/lambda/virus_scan.py` to Lambda.
 Wire S3 event trigger on `auracles-artifacts` bucket.
 Remove ClamAV from Celery worker Dockerfile.
 
+### Step 9 — Optional OCR upgrade: Tesseract → AWS Textract
+Keep local Tesseract as the default OCR engine during pre-scale and initial AWS
+migration. Move OCR to AWS Textract only after a human explicitly approves:
+
+- Cost: Textract is usage-based per page, unlike local Tesseract.
+- Compliance: uploaded Artifacts are processed by an external AWS managed
+  service, so data-processing terms and retention controls must be reviewed.
+- Quality need: upgrade only if production evidence shows local Tesseract is
+  too weak for scanned PDFs, tables, or form-heavy Artifacts.
+
+If approved, add a Textract OCR adapter behind the existing OCR worker
+interface, provision IAM permissions in Terraform, and select the engine via an
+environment variable. Do not make Textract part of the baseline AWS migration.
+
 ---
 
 ## 7. Cost Estimates

@@ -91,7 +91,7 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 | Reviews | Schema in Slice 1, flow Phase 3 | BR-FWK-004 ties reviews to active licenses; licenses require purchase (Phase 3). |
 | Artifact upload | S3 presigned POST, mime + max-size enforced in the POST policy; per-framework 500MB total tracked in service | TDD §10 (artifact bucket private). |
 | Download | S3 presigned GET (15m TTL) issued only after RBAC + license check + Operator-KYC check; row written to `artifact_downloads` per BR-FWK-006 | Audit table powers Contributor download counts. |
-| OCR | Follow-on Slice 13, not Core Marketplace MVP | Current pipeline detects `needs_ocr`; OCR implementation waits for explicit cost/infra approval. Options: local Tesseract (cheaper, slower, weaker tables) or AWS Textract (stronger, paid, external data-processing review). |
+| OCR | Follow-on Slice 13, not Core Marketplace MVP | Current pipeline detects `needs_ocr`. Human-approved Slice 13 path: local Tesseract in the worker image. AWS Textract remains deferred to AWS-scale migration only after explicit cost and external data-processing approval. |
 | Format-preserving redaction | Follow-on Slice 14 | Current pipeline blocks PII for review/replacement. It does not generate user-facing redacted PDFs/DOCX files until format-preserving redaction is implemented and tested. |
 | Semantic / visual similarity | Follow-on Slice 15 / Phase 5 | MinHash catches near-copy text. Paraphrase, diagrams, screenshots, and semantic idea theft require embeddings/vision models and stronger cost/privacy review. |
 
@@ -403,7 +403,7 @@ These slices cover known limitations that are intentionally not pulled into the 
 ### Slice 13 — OCR for scanned and image-heavy Artifacts
 **Add:**
 - `app/workers/tasks/processing/ocr.py`: runs only when `metadata_vector.extraction.quality.needs_ocr=true` or the Contributor explicitly requests OCR retry.
-- Default implementation path: local Tesseract in the worker image for MVP OCR. Alternate architecture, if human approves cost/compliance: AWS Textract for better table/form extraction.
+- Default implementation path: local Tesseract in the worker image for MVP OCR. Human decision, 2026-06-08: keep Textract out of MVP; document it in the AWS migration plan as a later upgrade for better table/form extraction after cost/compliance approval.
 - OCR result merges into `metadata_vector.extraction.text` with `ocr_applied=true`, `ocr_engine`, `ocr_confidence`, and page-level confidence summary.
 - Re-runs downstream pipeline from PII → metadata → MinHash → rarity after OCR text is added.
 
@@ -413,7 +413,7 @@ These slices cover known limitations that are intentionally not pulled into the 
 - OCR output with high-confidence PII → `pii_review_needed=true`.
 - OCR retry idempotent: replaces prior OCR extraction block, does not append duplicate text.
 
-**Deps / infra:** Tesseract + language data in worker image, or AWS Textract client + IAM if human chooses cloud OCR.
+**Deps / infra:** Tesseract + language data in worker image. AWS Textract client + IAM is deferred to the AWS migration plan, not installed in Slice 13.
 
 ---
 

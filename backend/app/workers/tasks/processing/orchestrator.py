@@ -16,6 +16,7 @@ from app.workers.tasks.processing.blend import _compute_final_rarity_impl
 from app.workers.tasks.processing.extract import _extract_text_impl
 from app.workers.tasks.processing.metadata import _compute_metadata_impl
 from app.workers.tasks.processing.minhash import _compute_minhash_impl
+from app.workers.tasks.processing.ocr import _run_ocr_if_needed_impl
 from app.workers.tasks.processing.pii import _detect_pii_impl
 from app.workers.tasks.processing.rarity_external import _compute_external_rarity_impl
 from app.workers.tasks.processing.rarity_internal import _compute_internal_rarity_impl
@@ -34,11 +35,12 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
             "steps": {"extract": extraction, "framework_gate": framework_gate},
         }
 
+    ocr = await _run_ocr_if_needed_impl(artifact_id)
     pii = await _detect_pii_impl(artifact_id)
     result = {
         "artifact_id": artifact_id,
         "status": pii["status"],
-        "steps": {"extract": extraction, "pii": pii},
+        "steps": {"extract": extraction, "ocr": ocr, "pii": pii},
     }
     if pii["status"] != "clear":
         result["steps"]["framework_gate"] = (
@@ -68,6 +70,7 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
         "status": framework_gate["framework_status"],
         "steps": {
             "extract": extraction,
+            "ocr": ocr,
             "pii": pii,
             "metadata": metadata,
             "minhash": minhash,

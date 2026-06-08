@@ -116,6 +116,16 @@ class Settings(BaseSettings):
         default="https://api.search.brave.com/res/v1/web/search",
         alias="BRAVE_SEARCH_BASE_URL",
     )
+    ocr_tesseract_command: str = Field(
+        default="tesseract",
+        alias="OCR_TESSERACT_COMMAND",
+    )
+    ocr_timeout_seconds: int = Field(default=60, alias="OCR_TIMEOUT_SECONDS")
+    ocr_pdf_dpi: int = Field(default=200, alias="OCR_PDF_DPI")
+    ocr_tesseract_page_segmentation_mode: str = Field(
+        default="6",
+        alias="OCR_TESSERACT_PAGE_SEGMENTATION_MODE",
+    )
     platform_commission_rate: float = Field(
         default=0.15, alias="PLATFORM_COMMISSION_RATE"
     )

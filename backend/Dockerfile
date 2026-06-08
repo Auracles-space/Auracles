@@ -14,6 +14,8 @@ RUN apt-get update \
         clamav-daemon \
         libreoffice \
         poppler-utils \
+        tesseract-ocr \
+        tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock* ./
