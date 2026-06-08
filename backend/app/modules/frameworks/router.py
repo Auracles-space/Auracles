@@ -304,3 +304,24 @@ async def resolve_pii_review(
         framework_id=framework_id,
         artifact_id=artifact_id,
     )
+
+
+@router.post(
+    "/{framework_id}/artifacts/{artifact_id}/accept-redaction",
+    response_model=ArtifactResponse,
+)
+async def accept_redaction(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Accept a generated redacted Artifact copy and re-run processing."""
+    return await service.accept_redaction(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )

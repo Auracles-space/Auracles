@@ -20,6 +20,7 @@ from app.workers.tasks.processing.ocr import _run_ocr_if_needed_impl
 from app.workers.tasks.processing.pii import _detect_pii_impl
 from app.workers.tasks.processing.rarity_external import _compute_external_rarity_impl
 from app.workers.tasks.processing.rarity_internal import _compute_internal_rarity_impl
+from app.workers.tasks.processing.redaction import _redact_artifact_impl
 from app.workers.tasks.processing.search_index import _refresh_framework_tsvector_impl
 from app.workers.tasks.processing.thumbnail import _make_thumbnail_impl
 
@@ -43,6 +44,8 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
         "steps": {"extract": extraction, "ocr": ocr, "pii": pii},
     }
     if pii["status"] != "clear":
+        redaction = await _redact_artifact_impl(artifact_id)
+        result["steps"]["redaction"] = redaction
         result["steps"]["framework_gate"] = (
             await evaluate_framework_pipeline_for_artifact(artifact_id)
         )

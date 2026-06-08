@@ -33,6 +33,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.processing.pii",
             "app.workers.tasks.processing.rarity_external",
             "app.workers.tasks.processing.rarity_internal",
+            "app.workers.tasks.processing.redaction",
             "app.workers.tasks.processing.search_index",
             "app.workers.tasks.processing.thumbnail",
             "app.workers.tasks.reputation",

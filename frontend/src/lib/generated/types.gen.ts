@@ -755,6 +755,17 @@ export type ResolveArtifactPiiReviewResponse = (ArtifactResponse);
 
 export type ResolveArtifactPiiReviewError = (unknown);
 
+export type AcceptArtifactRedactionData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type AcceptArtifactRedactionResponse = (ArtifactResponse);
+
+export type AcceptArtifactRedactionError = (unknown);
+
 export type SetPreviewArtifactData = {
     body: PreviewArtifactRequest;
     path: {

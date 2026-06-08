@@ -25,6 +25,7 @@ dependencies = [
   "psycopg[binary]>=3.2.0",
   "pydantic>=2.10.0",
   "pydantic-settings>=2.7.0",
+  "pymupdf>=1.26.0",
   "pyotp>=2.9.0",
   "python-jose[cryptography]>=3.5.0",
   "qrcode[pil]>=8.2",
@@ -65,6 +66,10 @@ packages = ["app"]
 
 [[tool.mypy.overrides]]
 module = ["celery", "celery.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fitz"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

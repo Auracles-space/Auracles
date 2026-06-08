@@ -19,7 +19,11 @@ from app.modules.frameworks.models import (
     FrameworkVersion,
     FrameworkVersionArtifact,
 )
-from app.modules.frameworks.models_artifact import Artifact, ArtifactRarityAudit
+from app.modules.frameworks.models_artifact import (
+    Artifact,
+    ArtifactPiiAudit,
+    ArtifactRarityAudit,
+)
 from app.modules.frameworks.pipeline_gate import evaluate_framework_pipeline
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
@@ -34,7 +38,7 @@ from app.modules.frameworks.schemas import (
     PreviewArtifactRequest,
     PricingConfig,
 )
-from app.workers.tasks.artifacts import scan_artifact
+from app.workers.tasks.artifacts import process_artifact, scan_artifact
 from app.workers.tasks.notifications import notify_licensees_of_new_version
 from app.workers.tasks.processing.minhash_index import (
     index_framework_artifacts,
@@ -840,6 +844,83 @@ async def resolve_pii_review(
     )
     await db.commit()
     scan_artifact.delay(str(artifact.id))
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
+
+
+async def accept_redaction(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Accept a generated redacted Artifact copy and re-run processing."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    artifact = await _load_owned_artifact(db, framework, artifact_id)
+    metadata = dict(artifact.metadata_vector or {})
+    redaction = dict(metadata.get("redaction") or {})
+    already_accepted = bool(redaction.get("accepted"))
+
+    if already_accepted:
+        await db.commit()
+        await db.refresh(artifact)
+        return _artifact_to_response(artifact)
+
+    if not artifact.clean_file_key:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No generated redacted artifact is available to accept.",
+        )
+
+    original_file_key = redaction.get("original_file_key") or artifact.file_key
+    redaction.update(
+        {
+            "status": "accepted",
+            "accepted": True,
+            "accepted_at": datetime.now(UTC).isoformat(),
+            "accepted_by": str(contributor.id),
+            "original_file_key": original_file_key,
+            "clean_file_key": artifact.clean_file_key,
+        }
+    )
+    metadata = {"redaction": redaction}
+    artifact.file_key = artifact.clean_file_key
+    artifact.scan_status = "clean"
+    artifact.processing_status = "processing"
+    artifact.pii_detected = False
+    artifact.pii_review_needed = False
+    artifact.minhash_signature = None
+    artifact.simhash = None
+    artifact.metadata_vector = metadata
+    artifact.internal_rarity = None
+    artifact.external_rarity = None
+    artifact.rarity_score = None
+    artifact.nearest_match_id = None
+    framework.status = "processing"
+    framework.pipeline_failure_reasons = {}
+    audit = await db.scalar(
+        select(ArtifactPiiAudit).where(ArtifactPiiAudit.artifact_id == artifact.id)
+    )
+    if audit is None:
+        audit = ArtifactPiiAudit(artifact_id=artifact.id)
+        db.add(audit)
+    audit.flagged_for_review = False
+    audit.reviewed_by = contributor.id
+    audit.reviewed_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_redaction_accepted",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={
+            "framework_id": str(framework.id),
+            "original_file_key_preserved": True,
+        },
+    )
+    await db.commit()
+    process_artifact.delay(str(artifact.id))
+
     await db.refresh(artifact)
     return _artifact_to_response(artifact)
 

@@ -1051,6 +1051,43 @@ paths:
           description: Framework or Artifact not found.
         "409":
           description: Only draft or failed Frameworks can resolve PII review.
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/accept-redaction:
+    post:
+      tags:
+        - Frameworks
+      operationId: acceptArtifactRedaction
+      summary: Accept generated Artifact redaction
+      description: Promotes a generated redacted Artifact copy as canonical, preserves the original key for audit, and restarts processing from extraction.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Redaction accepted and processing restarted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework or Artifact not found.
+        "409":
+          description: No generated redacted artifact is available to accept.
   /v1/frameworks/{framework_id}/preview-artifact:
     patch:
       tags:

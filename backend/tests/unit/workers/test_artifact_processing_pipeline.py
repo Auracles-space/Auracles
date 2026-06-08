@@ -100,7 +100,7 @@ def processing_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[dict[str, Any]]:
     """Reset marketplace rows and install pipeline test doubles."""
-    from app.workers.tasks.processing import extract, ocr
+    from app.workers.tasks.processing import extract, ocr, redaction
 
     fake_storage = FakePipelineStorage()
     settings = get_settings()
@@ -130,6 +130,7 @@ def processing_context(
     monkeypatch.setattr(artifact_tasks.s3, "storage", fake_storage)
     monkeypatch.setattr(extract.s3, "storage", fake_storage)
     monkeypatch.setattr(ocr.s3, "storage", fake_storage)
+    monkeypatch.setattr(redaction.s3, "storage", fake_storage)
     try:
         yield {"storage": fake_storage}
     finally:
@@ -259,6 +260,16 @@ def build_png_bytes(color: tuple[int, int, int] = (220, 24, 24)) -> bytes:
     buffer = BytesIO()
     Image.new("RGB", (80, 80), color=color).save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def build_pdf_bytes(text: str) -> bytes:
+    """Build a small text PDF for redaction behavior tests."""
+    import fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text)
+    return bytes(document.tobytes())
 
 
 def read_artifact_state(
@@ -395,6 +406,30 @@ def set_blend_context(
     sync_engine.dispose()
 
 
+def set_redaction_context(artifact_id: UUID, text: str) -> None:
+    """Seed an Artifact as PII-flagged with extracted text for redaction."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        artifact.metadata_vector = {"extraction": {"text": text}}
+        artifact.processing_status = "flagged_pii"
+        artifact.pii_detected = True
+        artifact.pii_review_needed = True
+        session.add(
+            ArtifactPiiAudit(
+                artifact_id=artifact_id,
+                pii_types_found=["EMAIL_ADDRESS"],
+                auto_redacted=False,
+                flagged_for_review=True,
+            )
+        )
+        session.commit()
+    sync_engine.dispose()
+
+
 def set_framework_tags_text(artifact_id: UUID, tags_text: str) -> UUID:
     """Overwrite tags_text to verify search-index refresh behavior."""
     settings = get_settings()
@@ -443,9 +478,15 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     processing_context: dict[str, Any],
 ) -> None:
     """High-confidence PII blocks processing until safe redaction is available."""
-    from app.workers.tasks.processing import extract, pii
+    from app.workers.tasks.processing import extract, pii, redaction
 
     artifact_id = create_processing_artifact()
+    finding = pii.PiiFinding(
+        entity_type="EMAIL_ADDRESS",
+        score=0.97,
+        start=23,
+        end=38,
+    )
     monkeypatch.setattr(
         extract,
         "extract_text_from_file",
@@ -460,10 +501,9 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     monkeypatch.setattr(
         pii,
         "detect_pii_from_text",
-        lambda _: [
-            pii.PiiFinding(entity_type="EMAIL_ADDRESS", score=0.97, start=23, end=38)
-        ],
+        lambda _: [finding],
     )
+    monkeypatch.setattr(redaction, "detect_pii_from_text", lambda _: [finding])
 
     artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
@@ -483,6 +523,202 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     assert pii_audit.auto_redacted is False
     assert pii_audit.flagged_for_review is True
     assert audit_log is not None
+
+
+def test_redact_artifact_creates_office_clean_copy_for_review(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Office redaction removes PII bytes while preserving package structure."""
+    from app.workers.tasks.processing import redaction
+
+    text = "Contact owner at ada@example.com for the board pack."
+    artifact_id = create_processing_artifact(
+        name="board-pack.docx",
+        mime_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    )
+    set_redaction_context(artifact_id, text)
+    processing_context["storage"].download_body = build_docx_bytes(text)
+    monkeypatch.setattr(
+        redaction,
+        "detect_pii_from_text",
+        lambda _: [
+            redaction.PiiFinding(
+                entity_type="EMAIL_ADDRESS",
+                score=0.97,
+                start=text.index("ada@example.com"),
+                end=text.index("ada@example.com") + len("ada@example.com"),
+            )
+        ],
+    )
+    monkeypatch.setattr(redaction, "scan_file_for_virus", lambda _: "clean")
+
+    redaction.redact_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert artifact is not None
+    assert artifact.clean_file_key is not None
+    assert artifact.clean_file_key in uploads
+    assert artifact.file_key != artifact.clean_file_key
+    redacted_bytes = uploads[artifact.clean_file_key]
+    assert b"ada@example.com" not in redacted_bytes
+    assert b"[REDACTED]" in redacted_bytes
+    with ZipFile(BytesIO(redacted_bytes)) as archive:
+        assert "word/document.xml" in archive.namelist()
+    assert artifact.pii_review_needed is True
+    assert artifact.processing_status == "flagged_pii"
+    assert pii_audit is not None
+    assert pii_audit.auto_redacted is True
+    assert pii_audit.flagged_for_review is True
+
+
+def test_redact_artifact_creates_pdf_clean_copy_without_pii_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """PDF redaction applies real annotations and removes original PII bytes."""
+    from app.workers.tasks.processing import redaction
+
+    text = "Contact owner at ada@example.com for the board pack."
+    artifact_id = create_processing_artifact(name="board-pack.pdf")
+    set_redaction_context(artifact_id, text)
+    processing_context["storage"].download_body = build_pdf_bytes(text)
+    monkeypatch.setattr(
+        redaction,
+        "detect_pii_from_text",
+        lambda _: [
+            redaction.PiiFinding(
+                entity_type="EMAIL_ADDRESS",
+                score=0.97,
+                start=text.index("ada@example.com"),
+                end=text.index("ada@example.com") + len("ada@example.com"),
+            )
+        ],
+    )
+    monkeypatch.setattr(redaction, "scan_file_for_virus", lambda _: "clean")
+
+    redaction.redact_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert artifact is not None
+    assert artifact.clean_file_key is not None
+    redacted_bytes = uploads[artifact.clean_file_key]
+    assert b"ada@example.com" not in redacted_bytes
+    import fitz
+
+    redacted_pdf = fitz.open(stream=redacted_bytes, filetype="pdf")
+    redacted_text = "\n".join(page.get_text() for page in redacted_pdf)
+    redacted_pdf.close()
+    assert "ada@example.com" not in redacted_text
+    assert "[REDACTED]" in redacted_text
+    assert artifact.pii_review_needed is True
+    assert pii_audit is not None
+    assert pii_audit.auto_redacted is True
+
+
+def test_redact_artifact_failure_keeps_original_private_and_pii_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Redaction failures do not create clean copies or clear PII review."""
+    from app.workers.tasks.processing import redaction
+
+    text = "Contact owner at ada@example.com."
+    artifact_id = create_processing_artifact(
+        name="plain.txt",
+        mime_type="text/plain",
+    )
+    set_redaction_context(artifact_id, text)
+    monkeypatch.setattr(
+        redaction,
+        "detect_pii_from_text",
+        lambda _: [
+            redaction.PiiFinding(
+                entity_type="EMAIL_ADDRESS",
+                score=0.97,
+                start=text.index("ada@example.com"),
+                end=text.index("ada@example.com") + len("ada@example.com"),
+            )
+        ],
+    )
+
+    redaction.redact_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, _, _ = read_artifact_state(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert artifact is not None
+    assert artifact.clean_file_key is None
+    assert uploads == {}
+    assert artifact.pii_review_needed is True
+    assert artifact.processing_status == "flagged_pii"
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["redaction"]["status"] == "failed"
+
+
+def test_process_artifact_generates_redacted_copy_when_pii_is_detected(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """The processing pipeline creates a reviewable redacted copy on PII flag."""
+    from app.workers.tasks.processing import extract, pii, redaction
+
+    text = "Contact owner at ada@example.com for the board pack."
+    artifact_id = create_processing_artifact(
+        name="board-pack.docx",
+        mime_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    )
+    processing_context["storage"].download_body = build_docx_bytes(text)
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text=text,
+            headings=[],
+            table_count=0,
+            word_count=8,
+            image_count=0,
+        ),
+    )
+    finding = pii.PiiFinding(
+        entity_type="EMAIL_ADDRESS",
+        score=0.97,
+        start=text.index("ada@example.com"),
+        end=text.index("ada@example.com") + len("ada@example.com"),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: [finding])
+    monkeypatch.setattr(redaction, "detect_pii_from_text", lambda _: [finding])
+    monkeypatch.setattr(redaction, "scan_file_for_virus", lambda _: "clean")
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, _, _ = read_artifact_state(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert artifact is not None
+    assert artifact.processing_status == "flagged_pii"
+    assert artifact.clean_file_key is not None
+    assert artifact.clean_file_key in uploads
+    assert b"ada@example.com" not in uploads[artifact.clean_file_key]
+    assert pii_audit is not None
+    assert pii_audit.auto_redacted is True
+    assert pii_audit.flagged_for_review is True
 
 
 def test_external_rarity_skips_internally_duplicate_artifact(
@@ -1226,10 +1462,16 @@ def test_process_artifact_runs_ocr_before_pii_for_scanned_artifact(
     processing_context: dict[str, Any],
 ) -> None:
     """OCR text is merged before PII detection sees scanned Artifact content."""
-    from app.workers.tasks.processing import extract, ocr, pii
+    from app.workers.tasks.processing import extract, ocr, pii, redaction
 
     artifact_id = create_processing_artifact(name="scanned.pdf")
     pii_inputs: list[str] = []
+    finding = pii.PiiFinding(
+        entity_type="EMAIL_ADDRESS",
+        score=0.98,
+        start=22,
+        end=37,
+    )
     monkeypatch.setattr(
         extract,
         "extract_text_from_file",
@@ -1261,16 +1503,10 @@ def test_process_artifact_runs_ocr_before_pii_for_scanned_artifact(
     def fake_detect_pii(text: str) -> list[pii.PiiFinding]:
         """Capture the analyzed text and return a high-confidence finding."""
         pii_inputs.append(text)
-        return [
-            pii.PiiFinding(
-                entity_type="EMAIL_ADDRESS",
-                score=0.98,
-                start=22,
-                end=37,
-            )
-        ]
+        return [finding]
 
     monkeypatch.setattr(pii, "detect_pii_from_text", fake_detect_pii)
+    monkeypatch.setattr(redaction, "detect_pii_from_text", lambda _: [finding])
 
     artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())
@@ -1458,9 +1694,15 @@ def test_process_artifact_flags_low_confidence_pii_for_review(
     processing_context: dict[str, Any],
 ) -> None:
     """Low-confidence PII pauses the pipeline for Contributor review."""
-    from app.workers.tasks.processing import extract, pii
+    from app.workers.tasks.processing import extract, pii, redaction
 
     artifact_id = create_processing_artifact()
+    finding = pii.PiiFinding(
+        entity_type="PHONE_NUMBER",
+        score=0.45,
+        start=23,
+        end=31,
+    )
     monkeypatch.setattr(
         extract,
         "extract_text_from_file",
@@ -1475,10 +1717,9 @@ def test_process_artifact_flags_low_confidence_pii_for_review(
     monkeypatch.setattr(
         pii,
         "detect_pii_from_text",
-        lambda _: [
-            pii.PiiFinding(entity_type="PHONE_NUMBER", score=0.45, start=23, end=31)
-        ],
+        lambda _: [finding],
     )
+    monkeypatch.setattr(redaction, "detect_pii_from_text", lambda _: [finding])
 
     artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
     asyncio.run(engine.dispose())

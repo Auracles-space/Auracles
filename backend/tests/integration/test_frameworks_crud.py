@@ -1254,6 +1254,105 @@ async def test_resolve_pii_review_resets_artifact_and_reruns_scan(
     assert dispatched == [artifact_id]
 
 
+async def test_accept_redaction_promotes_clean_artifact_and_reruns_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributor can accept a generated redacted copy as canonical."""
+    dispatched: list[str] = []
+
+    class FakeProcessTask:
+        """Celery task double that records processing dispatches."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a process dispatch instead of touching Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.process_artifact",
+        FakeProcessTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "redaction-accept@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    clean_file_key = f"frameworks/{framework_id}/artifacts/{artifact_id}/redacted/a.pdf"
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        processing_status="flagged_pii",
+        pii_detected=True,
+        pii_review_needed=True,
+    )
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        original_file_key = artifact.file_key
+        artifact.clean_file_key = clean_file_key
+        artifact.metadata_vector = {
+            "redaction": {
+                "status": "generated",
+                "clean_file_key": clean_file_key,
+            }
+        }
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        framework.pipeline_failure_reasons = {"pii": [artifact_id]}
+        session.add(
+            ArtifactPiiAudit(
+                artifact_id=UUID(artifact_id),
+                pii_types_found=["EMAIL_ADDRESS"],
+                auto_redacted=True,
+                flagged_for_review=True,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}/accept-redaction",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    second_response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}/accept-redaction",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processing_status"] == "processing"
+    assert response.json()["pii_detected"] is False
+    assert response.json()["pii_review_needed"] is False
+    assert second_response.status_code == 200
+    assert dispatched == [artifact_id]
+
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        assert artifact.file_key == clean_file_key
+        assert artifact.clean_file_key == clean_file_key
+        assert artifact.metadata_vector["redaction"]["accepted"] is True
+        assert artifact.metadata_vector["redaction"]["original_file_key"] == (
+            original_file_key
+        )
+        audit = await session.scalar(
+            select(ArtifactPiiAudit).where(
+                ArtifactPiiAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        assert audit is not None
+        assert audit.reviewed_by == contributor_id
+        assert audit.flagged_for_review is False
+
+
 async def test_admin_can_suspend_published_framework(
     monkeypatch: pytest.MonkeyPatch,
     client: AsyncClient,

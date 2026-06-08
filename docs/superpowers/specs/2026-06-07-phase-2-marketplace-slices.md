@@ -431,6 +431,9 @@ These slices cover known limitations that are intentionally not pulled into the 
 - Redaction failure keeps original private, leaves `pii_review_needed=true`, and never publishes.
 - Accept-redaction is owner-only, KYC-gated, audited, and idempotent.
 
+**Known limitation / future slice:**
+- Image-embedded PII is not fully redacted by Slice 14. This includes screenshots inside PDFs, embedded images in DOCX/PPTX/XLSX, chart images, scanned pages where OCR text is not backed by selectable PDF text, and visual IDs/logos containing personal data. Future visual redaction should combine OCR bounding boxes plus image/PDF region redaction, then verify the output with extraction/OCR before it can become `clean_file_key`.
+
 **Deps / infra:** PyMuPDF or equivalent for PDF; Office Open XML rewrite helpers for DOCX/PPTX/XLSX.
 
 ---
