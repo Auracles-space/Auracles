@@ -28,17 +28,22 @@ export function FrameworkList() {
 
   useEffect(() => {
     async function loadFrameworks() {
-      configureBrowserClient();
-      const result = await listContributorFrameworks({
-        headers: getAccessTokenHeaders(),
-      });
-      if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
+      try {
+        configureBrowserClient();
+        const result = await listContributorFrameworks({
+          headers: getAccessTokenHeaders(),
+        });
+        if (!result.response.ok || !result.data) {
+          setError(describeGeneratedError(result.error));
+          setLoading(false);
+          return;
+        }
+        setFrameworks(result.data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Network error or API unavailable.");
+      } finally {
         setLoading(false);
-        return;
       }
-      setFrameworks(result.data);
-      setLoading(false);
     }
 
     void loadFrameworks();

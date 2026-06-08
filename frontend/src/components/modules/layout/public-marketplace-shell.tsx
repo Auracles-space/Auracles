@@ -17,9 +17,6 @@ type PublicMarketplaceShellProps = {
 
 const topLinks = [
   { href: "/explore", label: "Frameworks" },
-  { href: "/projects", label: "Projects" },
-  { href: "/contributors", label: "Contributors" },
-  { href: "/collections", label: "Collections" },
 ];
 
 /**
@@ -78,9 +75,45 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                 Sign up
               </Link>
             </div>
-            {/* Mobile menu could go here */}
+            {/* Mobile menu (Hamburger details/summary) */}
+            <div className="flex items-center gap-2 md:hidden">
+              <ThemeToggle />
+              <details className="group relative">
+                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
+                  <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
+                  </svg>
+                </summary>
+                <div className="absolute right-0 top-12 w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
+                  <nav className="flex flex-col space-y-2">
+                    {topLinks.map((link) => (
+                      <Link
+                        className="rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                        href={link.href}
+                        key={link.label}
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                    <div className="my-2 h-px bg-border-default" />
+                    <Link
+                      className="rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                      href="/login"
+                    >
+                      Log in
+                    </Link>
+                    <Link
+                      className="rounded-lg px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
+                      href="/register"
+                    >
+                      Sign up
+                    </Link>
+                  </nav>
+                </div>
+              </details>
+            </div>
           </div>
-        </div>
       </header>
       <div className="flex-1">
         {children}

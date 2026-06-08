@@ -20,9 +20,6 @@ type AuthenticatedAppShellProps = {
 const appLinks = [
   { href: "/explore", label: "Explore" },
   { href: "/dashboard/frameworks", label: "Frameworks" },
-  { href: "/projects", label: "Projects" },
-  { href: "/attest", label: "Attest" },
-  { href: "/financials", label: "Financials" },
   { href: "/settings/account", label: "Settings" },
 ];
 
@@ -106,29 +103,45 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
           </div>
         </header>
 
-        {/* Mobile Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border-default bg-background/95 px-4 backdrop-blur-md md:hidden">
-          <BrandLogo className="h-7 w-28" />
-          <nav
-            aria-label="Mobile application navigation"
-            className="flex flex-1 items-center gap-2 overflow-x-auto px-4"
-          >
-            {appLinks.map((link) => (
-              <Link
-                className={[
-                  "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore")
-                    ? "bg-surface-2 text-foreground"
-                    : "text-foreground-muted",
-                ].join(" ")}
-                href={link.href}
-                key={link.href}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-          <ThemeToggle />
+        {/* Mobile Header & Drawer */}
+        <header className="sticky top-0 z-30 flex flex-col border-b border-border-default bg-background/95 px-4 backdrop-blur-md md:hidden">
+          <div className="flex h-16 items-center justify-between">
+            <BrandLogo className="h-7 w-28" />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              {/* Native HTML details/summary for simple zero-JS mobile menu */}
+              <details className="group relative">
+                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
+                  <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
+                  </svg>
+                </summary>
+                <div className="absolute right-0 top-12 w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
+                  <nav className="flex flex-col space-y-2">
+                    {appLinks.map((link) => (
+                      <Link
+                        className={[
+                          "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore")
+                            ? "bg-surface-2 text-foreground"
+                            : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
+                        ].join(" ")}
+                        href={link.href}
+                        key={link.href}
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                    <div className="my-2 h-px bg-border-default" />
+                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted hover:bg-surface-2 hover:text-foreground text-left">
+                      Sign out
+                    </button>
+                  </nav>
+                </div>
+              </details>
+            </div>
+          </div>
         </header>
 
         {/* Page Content Container - The Bento Box */}

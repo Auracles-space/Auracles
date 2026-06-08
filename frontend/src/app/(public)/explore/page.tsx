@@ -4,11 +4,8 @@
  * Server-rendered for SEO and fast public browsing. Authenticated action gates
  * are handled only when users attempt write/download actions.
  */
-import Link from "next/link";
-
 import { FilterSidebar } from "@/components/modules/explore/filter-sidebar";
 import { FrameworkCard } from "@/components/modules/explore/framework-card";
-import { SearchPanel } from "@/components/modules/explore/search-panel";
 import type {
   ExploreFrameworkCard,
   ExploreSort,
