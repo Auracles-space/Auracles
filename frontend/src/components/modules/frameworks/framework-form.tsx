@@ -132,7 +132,7 @@ export function FrameworkForm({
         </span>
         <textarea
           placeholder="Describe what your framework includes, the problem it solves, and who it's for..."
-          className="min-h-32 w-full rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50 resize-y"
+          className="min-h-32 w-full rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 resize-y"
           onChange={(event) =>
             setForm((current) => ({
               ...current,
@@ -198,7 +198,7 @@ export function FrameworkForm({
             <input
               type="text"
               placeholder="250"
-              className="h-11 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50"
+              className="h-11 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
               onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
               required
               value={form.price}
@@ -287,7 +287,7 @@ function FormSelectInput<TValue extends string>({
       </label>
       <div className="relative">
         <select
-          className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10"
+          className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0"
           id={inputId}
           onChange={(event) => onChange(event.target.value as TValue)}
           required={required}
@@ -342,7 +342,7 @@ function FormTextInput({
         )}
       </span>
       <input
-        className="h-11 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50"
+        className="h-11 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
         onChange={(event) => onChange(event.target.value)}
         required={required}
         value={value}
