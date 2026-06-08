@@ -37,19 +37,19 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
       {/* Sidebar */}
-      <aside className="hidden border-r border-border-default bg-surface-1 md:fixed md:inset-y-0 md:left-0 md:flex md:w-64 md:flex-col">
-        <div className="flex h-16 items-center px-6">
-          <BrandLogo />
+      <aside className="hidden bg-background md:fixed md:inset-y-0 md:left-0 md:flex md:w-[260px] md:flex-col z-10">
+        <div className="flex h-[72px] items-center px-6">
+          <BrandLogo className="h-7 w-[120px]" />
         </div>
-        <nav aria-label="Application navigation" className="flex-1 space-y-1 px-4 py-4">
+        <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6">
           {appLinks.map((link) => {
             const isActive = pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore");
             return (
               <Link
                 className={[
-                  "flex h-10 items-center rounded-lg px-3 text-sm font-medium transition-colors",
+                  "flex h-10 items-center rounded-xl px-3 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-surface-2 text-foreground"
+                    ? "bg-surface-1 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05),0_1px_2px_rgba(0,0,0,0.02)] border border-border-default text-foreground scale-[1.02]"
                     : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
                 ].join(" ")}
                 href={link.href}
@@ -60,55 +60,47 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
             );
           })}
         </nav>
+        
+        {/* User profile widget at the bottom of the sidebar */}
+        <div className="p-4 mt-auto">
+          <button className="flex w-full items-center gap-3 rounded-xl p-2 hover:bg-surface-2 transition-colors border border-transparent hover:border-border-default text-left">
+            <div className="h-9 w-9 shrink-0 rounded-full bg-surface-3 flex items-center justify-center border border-border-default">
+              <svg className="h-4 w-4 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">Account</p>
+              <p className="text-xs text-foreground-muted truncate">Manage settings</p>
+            </div>
+            <svg className="h-4 w-4 shrink-0 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+            </svg>
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex w-full flex-col md:ml-64">
-        {/* Desktop Header */}
-        <header className="sticky top-0 z-30 hidden h-16 items-center justify-between border-b border-border-default bg-background/95 px-6 backdrop-blur-md md:flex">
-          <nav className="flex items-center gap-4 lg:gap-6 min-w-0">
-            <Link href="/explore" className="text-sm font-medium text-foreground whitespace-nowrap">
-              Frameworks
-            </Link>
-            <Link href="/projects" className="text-sm font-medium text-foreground-muted hover:text-foreground transition-colors whitespace-nowrap">
-              Projects
-            </Link>
-            <Link href="/contributors" className="text-sm font-medium text-foreground-muted hover:text-foreground transition-colors whitespace-nowrap hidden lg:block">
-              Contributors
-            </Link>
-            <Link href="/collections" className="text-sm font-medium text-foreground-muted hover:text-foreground transition-colors whitespace-nowrap hidden lg:block">
-              Collections
-            </Link>
-          </nav>
+      <div className="flex w-full flex-col md:ml-[260px] min-h-screen">
+        {/* Desktop Header Container (sits above the bento card) */}
+        <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between bg-background px-8 md:flex">
+          <div className="flex-1" />
           
-          <div className="flex items-center gap-2 flex-1 ml-4 justify-end min-w-0">
-            <div className="relative w-full max-w-sm hidden lg:block mr-2 min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="relative w-64 xl:w-80 mr-2">
               <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input 
                 type="text" 
-                placeholder="Search frameworks, projects..." 
-                className="h-9 w-full rounded-lg border border-border-default bg-surface-2 pl-9 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+                placeholder="Search..." 
+                className="h-9 w-full rounded-xl border border-border-default bg-surface-1 pl-9 pr-4 text-sm text-foreground shadow-sm placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
               />
             </div>
-            <div className="shrink-0">
-              <ThemeToggle />
-            </div>
-            <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-default text-foreground-muted hover:bg-surface-2 transition-colors">
+            <ThemeToggle />
+            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted hover:bg-surface-2 transition-colors">
               <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </button>
-            <button className="flex shrink-0 h-9 items-center gap-2 rounded-lg border border-border-default px-3 text-sm font-medium text-foreground hover:bg-surface-2 transition-colors">
-              <div className="h-5 w-5 shrink-0 rounded-full bg-surface-3 flex items-center justify-center">
-                <svg className="h-3 w-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
-              <span className="hidden xl:inline">Account</span>
-              <svg className="h-3 w-3 shrink-0 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
           </div>
@@ -116,7 +108,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
 
         {/* Mobile Header */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border-default bg-background/95 px-4 backdrop-blur-md md:hidden">
-          <BrandLogo className="h-6 w-24" />
+          <BrandLogo className="h-7 w-28" />
           <nav
             aria-label="Mobile application navigation"
             className="flex flex-1 items-center gap-2 overflow-x-auto px-4"
@@ -139,9 +131,12 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
           <ThemeToggle />
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1">{children}</main>
+        {/* Page Content Container - The Bento Box */}
+        <main className="flex-1 bg-surface-1 md:rounded-tl-[32px] md:border-l md:border-t md:border-border-default md:shadow-[-4px_-4px_24px_rgba(0,0,0,0.02)] dark:md:shadow-none overflow-hidden relative z-20">
+          {children}
+        </main>
       </div>
     </div>
   );
 }
+
