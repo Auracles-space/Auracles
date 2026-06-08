@@ -11,7 +11,10 @@ vi.mock("@/lib/auth/token-store", () => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn() },
+  client: {
+    interceptors: { response: { use: vi.fn() } },
+    setConfig: vi.fn(),
+  },
   requestKycUploadUrl: vi.fn(),
   submitKycUpload: vi.fn(),
 }));

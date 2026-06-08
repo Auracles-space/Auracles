@@ -114,8 +114,6 @@ async def delete_framework(
 async def unpublish_framework(
     framework_id: UUID,
     contributor: ContributorUser,
-    _: KycVerifiedUser,
-    __: ProfileCompleteUser,
     db: DatabaseSession,
 ) -> FrameworkResponse:
     """Unpublish an owned Framework so new catalog purchases stop."""

@@ -821,6 +821,35 @@ async def test_contributor_can_unpublish_owned_published_framework(
     assert response.json()["status"] == "unpublished"
 
 
+async def test_kyc_pending_contributor_can_unpublish_owned_published_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Delisting is not KYC-gated because it reduces marketplace exposure."""
+    contributor_id = await create_user_with_roles(
+        "pending-unpublish@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        contributor = await session.get(User, contributor_id)
+        framework = await session.get(Framework, UUID(framework_id))
+        assert contributor is not None
+        assert framework is not None
+        contributor.kyc_status = "pending"
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/unpublish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unpublished"
+
+
 async def test_new_version_without_inherited_artifact_clones_current_artifact(
     client: AsyncClient,
     migrated_database: None,

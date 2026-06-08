@@ -152,57 +152,62 @@ async def grant_license(
     seats_total: int | None,
 ) -> License:
     """Grant an Operator license to a Framework for Phase 2 admin flows."""
-    framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
-    if framework is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Framework not found.",
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await db.scalar(
+            select(Framework).where(Framework.id == framework_id)
         )
-    operator = await db.scalar(select(User).where(User.id == operator_id))
-    if operator is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found.",
+        if framework is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        operator = await db.scalar(select(User).where(User.id == operator_id))
+        if operator is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Operator not found.",
+            )
+        existing = await db.scalar(
+            select(License).where(
+                License.framework_id == framework_id,
+                License.operator_id == operator_id,
+            )
         )
-    existing = await db.scalar(
-        select(License).where(
-            License.framework_id == framework_id,
-            License.operator_id == operator_id,
-        )
-    )
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Operator already has a license for this Framework.",
-        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Operator already has a license for this Framework.",
+            )
 
-    resolved_seats_total = seats_total
-    if license_type == "team" and resolved_seats_total is None:
-        resolved_seats_total = 10
-    license_row = License(
-        framework_id=framework.id,
-        operator_id=operator.id,
-        license_type=license_type,
-        status="active",
-        version_at_grant=framework.version,
-        expires_at=expires_at,
-        seats_used=1,
-        seats_total=resolved_seats_total,
-    )
-    db.add(license_row)
-    await db.flush()
-    await write_audit(
-        db=db,
-        actor_id=admin.id,
-        action="license_granted",
-        target_type="license",
-        target_id=license_row.id,
-        metadata={
-            "framework_id": str(framework.id),
-            "operator_id": str(operator.id),
-            "version_at_grant": framework.version,
-            "type": license_type,
-        },
-    )
-    await db.commit()
+        resolved_seats_total = seats_total
+        if license_type == "team" and resolved_seats_total is None:
+            resolved_seats_total = 10
+        license_row = License(
+            framework_id=framework.id,
+            operator_id=operator.id,
+            license_type=license_type,
+            status="active",
+            version_at_grant=framework.version,
+            expires_at=expires_at,
+            seats_used=1,
+            seats_total=resolved_seats_total,
+        )
+        db.add(license_row)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="license_granted",
+            target_type="license",
+            target_id=license_row.id,
+            metadata={
+                "framework_id": str(framework.id),
+                "operator_id": str(operator.id),
+                "version_at_grant": framework.version,
+                "type": license_type,
+            },
+        )
     return license_row

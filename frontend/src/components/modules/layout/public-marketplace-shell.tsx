@@ -108,7 +108,7 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                       className="rounded-lg border border-border-default bg-surface-1 px-3 py-2 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
                       href="/dashboard/frameworks/new"
                     >
-                      Create Framework
+                      New Framework
                     </Link>
                     <div className="my-2 h-px bg-border-default" />
                     <Link

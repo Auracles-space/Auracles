@@ -18,10 +18,25 @@ const steps = [
   },
 ];
 
+type OnboardingPromptProps = {
+  /**
+   * Path the user attempted before being redirected to onboarding. Forwarded
+   * to the KYC link as `?next=` so the user can resume their intent once
+   * verification completes.
+   */
+  returnTo?: string;
+};
+
 /**
  * Render the first-time user completion prompt.
+ *
+ * @param props - Optional return-to hint from the incomplete-user interceptor.
  */
-export function OnboardingPrompt() {
+export function OnboardingPrompt({ returnTo }: OnboardingPromptProps = {}) {
+  const kycHref = returnTo
+    ? `/settings/kyc?next=${encodeURIComponent(returnTo)}`
+    : "/settings/kyc";
+
   return (
     <div className="space-y-6">
       <div>
@@ -53,7 +68,7 @@ export function OnboardingPrompt() {
       <div className="grid gap-3 sm:grid-cols-2">
         <Link
           className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-transparent bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground active:scale-[0.98] shadow-md"
-          href="/settings/kyc"
+          href={kycHref}
         >
           Start KYC
         </Link>

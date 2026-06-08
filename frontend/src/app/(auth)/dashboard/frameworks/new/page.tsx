@@ -19,7 +19,7 @@ export default function NewFrameworkPage() {
               Create a draft
             </h1>
             <p className="mt-4 text-sm leading-6 text-foreground-muted">
-              Complete the initial metadata to create your draft. You'll be able to upload your artifacts, configure the pricing model in detail, and submit it to the processing pipeline in the next steps.
+              Complete the initial metadata to create your draft. You&apos;ll be able to upload your artifacts, configure the pricing model in detail, and submit it to the processing pipeline in the next steps.
             </p>
             
             <div className="mt-8 rounded-xl bg-surface-2 p-5 border border-border-default">
@@ -30,7 +30,7 @@ export default function NewFrameworkPage() {
                 Pro Tip
               </h3>
               <p className="mt-2 text-xs text-foreground-muted leading-relaxed">
-                Frameworks with highly descriptive titles and specific tags (e.g., "SOC2 Compliance", "Enterprise Django") sell up to 3x faster on the marketplace.
+                Frameworks with highly descriptive titles and specific tags (e.g., &quot;SOC2 Compliance&quot;, &quot;Enterprise Django&quot;) sell up to 3x faster on the marketplace.
               </p>
             </div>
           </div>

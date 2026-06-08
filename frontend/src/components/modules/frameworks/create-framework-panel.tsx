@@ -3,10 +3,10 @@
 /**
  * Create Framework panel.
  *
- * Handles onboarding-aware draft creation and redirects to the edit workspace
- * once the backend creates the draft.
+ * Handles draft creation and redirects to the edit workspace once the backend
+ * creates the draft.
  */
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
 import { createFramework } from "@/lib/generated/sdk.gen";
@@ -16,13 +16,11 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { resolveMarketplaceActionRedirect } from "@/lib/marketplace/action-redirect";
 
 /**
  * Render create form for Contributor drafts.
  */
 export function CreateFrameworkPanel() {
-  const pathname = usePathname();
   const router = useRouter();
 
   async function handleCreate(payload: FrameworkCreate) {
@@ -31,15 +29,6 @@ export function CreateFrameworkPanel() {
       body: payload,
       headers: getAccessTokenHeaders(),
     });
-
-    const redirect = resolveMarketplaceActionRedirect({
-      error: result.error,
-      pathname,
-    });
-    if (redirect) {
-      window.location.assign(redirect);
-      return;
-    }
 
     if (!result.response.ok || !result.data) {
       throw new Error(describeGeneratedError(result.error));

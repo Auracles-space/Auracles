@@ -5,7 +5,10 @@ import { LoginForm } from "@/components/modules/auth/login-form";
 import { getCurrentUser, login } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn() },
+  client: {
+    interceptors: { response: { use: vi.fn() } },
+    setConfig: vi.fn(),
+  },
   getCurrentUser: vi.fn(),
   login: vi.fn(),
 }));

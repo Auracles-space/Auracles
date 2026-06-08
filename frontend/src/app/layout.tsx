@@ -34,6 +34,7 @@ export const metadata: Metadata = {
   },
 };
 
+import { IncompleteUserListener } from "@/components/incomplete-user-listener";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export default function RootLayout({
@@ -50,6 +51,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <IncompleteUserListener />
           {children}
         </ThemeProvider>
       </body>

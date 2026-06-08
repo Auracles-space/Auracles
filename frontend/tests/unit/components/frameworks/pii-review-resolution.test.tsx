@@ -16,7 +16,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   acceptArtifactRedaction: vi.fn(),
-  client: { setConfig: vi.fn() },
+  client: {
+    interceptors: { response: { use: vi.fn() } },
+    setConfig: vi.fn(),
+  },
   resolveArtifactPiiReview: vi.fn(),
 }));
 

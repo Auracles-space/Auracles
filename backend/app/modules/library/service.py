@@ -102,6 +102,27 @@ async def _load_active_license(
     return license_row
 
 
+async def _load_active_license_by_operator_id(
+    db: AsyncSession,
+    operator_id: UUID,
+    framework_id: UUID,
+) -> License:
+    """Load an active license by Operator id or reject access."""
+    license_row = await db.scalar(
+        select(License).where(
+            License.framework_id == framework_id,
+            License.operator_id == operator_id,
+            License.status == "active",
+        )
+    )
+    if license_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active license required.",
+        )
+    return license_row
+
+
 async def _artifact_is_covered_by_license_version(
     db: AsyncSession,
     license_row: License,
@@ -132,57 +153,64 @@ async def request_artifact_download(
     ip_address: str | None,
 ) -> ArtifactDownloadResponse:
     """Issue a presigned GET URL after license and version checks pass."""
-    license_row = await _load_active_license(db, operator, framework_id)
-    artifact = await db.scalar(
-        select(Artifact).where(
-            Artifact.id == artifact_id,
-            Artifact.framework_id == framework_id,
-        )
-    )
-    if artifact is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Artifact not found.",
-        )
-    if not await _artifact_is_covered_by_license_version(
-        db,
-        license_row,
-        artifact.id,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="License does not cover this Artifact version.",
-        )
-
     settings = get_settings()
-    download_url = s3.storage.presigned_get(
-        settings.s3_artifacts_bucket,
-        artifact.file_key,
-        ARTIFACT_DOWNLOAD_URL_TTL_SECONDS,
-    )
-    download = ArtifactDownload(
-        license_id=license_row.id,
-        artifact_id=artifact.id,
-        user_id=operator.id,
-        ip_address=ip_address,
-    )
-    db.add(download)
-    await write_audit(
-        db=db,
-        actor_id=operator.id,
-        action="artifact_downloaded",
-        target_type="artifact",
-        target_id=artifact.id,
-        metadata={
-            "framework_id": str(framework_id),
-            "license_id": str(license_row.id),
-        },
-    )
-    await db.commit()
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        license_row = await _load_active_license_by_operator_id(
+            db,
+            operator_id,
+            framework_id,
+        )
+        artifact = await db.scalar(
+            select(Artifact).where(
+                Artifact.id == artifact_id,
+                Artifact.framework_id == framework_id,
+            )
+        )
+        if artifact is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Artifact not found.",
+            )
+        if not await _artifact_is_covered_by_license_version(
+            db,
+            license_row,
+            artifact.id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="License does not cover this Artifact version.",
+            )
+
+        download_url = s3.storage.presigned_get(
+            settings.s3_artifacts_bucket,
+            artifact.file_key,
+            ARTIFACT_DOWNLOAD_URL_TTL_SECONDS,
+        )
+        download = ArtifactDownload(
+            license_id=license_row.id,
+            artifact_id=artifact.id,
+            user_id=operator_id,
+            ip_address=ip_address,
+        )
+        db.add(download)
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="artifact_downloaded",
+            target_type="artifact",
+            target_id=artifact.id,
+            metadata={
+                "framework_id": str(framework_id),
+                "license_id": str(license_row.id),
+            },
+        )
     logger.bind(
         module="library",
         action="request_artifact_download",
-        user_id=operator.id,
+        user_id=operator_id,
         framework_id=framework_id,
         artifact_id=artifact.id,
     ).info("artifact_downloaded")

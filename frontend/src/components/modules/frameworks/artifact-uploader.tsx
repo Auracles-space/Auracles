@@ -6,7 +6,6 @@
  * Uses backend-issued S3 presigned POST targets and then confirms the artifact
  * through the generated API so the processing pipeline can start.
  */
-import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import {
@@ -19,7 +18,6 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { resolveMarketplaceActionRedirect } from "@/lib/marketplace/action-redirect";
 
 type ArtifactUploaderProps = {
   frameworkId: string;
@@ -35,7 +33,6 @@ export function ArtifactUploader({
   frameworkId,
   onUploaded,
 }: ArtifactUploaderProps) {
-  const pathname = usePathname();
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -57,15 +54,6 @@ export function ArtifactUploader({
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
-
-    const redirect = resolveMarketplaceActionRedirect({
-      error: requestResult.error,
-      pathname,
-    });
-    if (redirect) {
-      window.location.assign(redirect);
-      return;
-    }
 
     if (!requestResult.response.ok || !requestResult.data) {
       setMessage(describeGeneratedError(requestResult.error));

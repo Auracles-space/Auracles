@@ -4,7 +4,10 @@ import { loadExploreCatalog } from "@/lib/marketplace/explore-read-model";
 import { listExploreFrameworks } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn() },
+  client: {
+    interceptors: { response: { use: vi.fn() } },
+    setConfig: vi.fn(),
+  },
   listExploreFrameworks: vi.fn(),
 }));
 

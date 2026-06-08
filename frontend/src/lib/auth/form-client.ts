@@ -6,12 +6,17 @@
  */
 import { client } from "@/lib/generated/sdk.gen";
 
+import { installIncompleteUserInterceptor } from "./incomplete-user-interceptor";
 import { authTokenStore } from "./token-store";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /**
  * Configure the generated client for browser calls that need cookies.
+ *
+ * Also installs the shared incomplete-user response interceptor so any 403
+ * carrying `{error_code, onboarding_url}` routes the user to onboarding
+ * without per-form wiring.
  */
 export function configureBrowserClient(): void {
   client.setConfig({
@@ -19,6 +24,7 @@ export function configureBrowserClient(): void {
     cache: "no-store",
     credentials: "include",
   });
+  installIncompleteUserInterceptor();
 }
 
 /**

@@ -6,7 +6,6 @@
  * Lists active licenses and requests short-lived download URLs only after the
  * backend confirms role, KYC, license state, and version coverage.
  */
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -23,7 +22,6 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { resolveMarketplaceActionRedirect } from "@/lib/marketplace/action-redirect";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type LibraryCardState = {
@@ -98,7 +96,6 @@ type LibraryCardProps = {
  * @param props - Operator library item.
  */
 function LibraryCard({ item }: LibraryCardProps) {
-  const pathname = usePathname();
   const [state, setState] = useState<LibraryCardState>({
     artifacts: [],
     error: null,
@@ -132,15 +129,6 @@ function LibraryCard({ item }: LibraryCardProps) {
         framework_id: item.framework_id,
       },
     });
-
-    const redirect = resolveMarketplaceActionRedirect({
-      error: result.error,
-      pathname,
-    });
-    if (redirect) {
-      window.location.assign(redirect);
-      return;
-    }
 
     if (!result.response.ok || !result.data) {
       setState((current) => ({

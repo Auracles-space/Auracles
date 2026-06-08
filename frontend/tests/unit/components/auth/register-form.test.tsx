@@ -5,7 +5,10 @@ import { RegisterForm } from "@/components/modules/auth/register-form";
 import { registerUser } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn() },
+  client: {
+    interceptors: { response: { use: vi.fn() } },
+    setConfig: vi.fn(),
+  },
   registerUser: vi.fn(),
 }));
 
