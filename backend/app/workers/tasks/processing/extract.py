@@ -36,6 +36,10 @@ ZIP_MAX_NESTED_DEPTH = 1
 TINY_TEXT_WORD_THRESHOLD = 5
 SUPPORTED_MIME_BY_SUFFIX = {
     ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pptx": (
@@ -43,6 +47,7 @@ SUPPORTED_MIME_BY_SUFFIX = {
     ),
     ".zip": "application/zip",
 }
+IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 @dataclass(frozen=True)
@@ -110,6 +115,15 @@ def _extract_office_zip(path: str) -> str:
                 if node.text is not None and node.text.strip()
             )
     return "\n".join(text_parts)
+
+
+def _extract_image(path: str) -> tuple[str, int, int]:
+    """Validate an image file and mark it as an OCR candidate."""
+    from PIL import Image
+
+    with Image.open(path) as image:
+        image.verify()
+    return "", 0, 1
 
 
 def _is_zip_symlink(info: zipfile.ZipInfo) -> bool:
@@ -234,6 +248,8 @@ def extract_text_from_file(
         text = _extract_with_unstructured(path) or _extract_office_zip(path)
         table_count = 0
         image_count = 0
+    elif mime_type in IMAGE_MIME_TYPES:
+        text, table_count, image_count = _extract_image(path)
     elif mime_type == "application/zip":
         return _extract_zip(path, archive_depth)
     else:

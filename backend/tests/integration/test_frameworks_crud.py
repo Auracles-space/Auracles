@@ -433,6 +433,33 @@ async def test_artifact_upload_url_rejects_wrong_mime_and_oversize_total(
     assert too_large.status_code == 413
 
 
+async def test_artifact_upload_url_accepts_preview_image_artifacts(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Standalone image Artifacts are accepted for deterministic thumbnails."""
+    contributor_id = await create_user_with_roles(
+        "artifact-image@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "cover.png",
+            "mime_type": "image/png",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["fields"]["Content-Type"] == "image/png"
+
+
 async def test_artifact_upload_url_is_denied_for_non_owner(
     client: AsyncClient,
     migrated_database: None,

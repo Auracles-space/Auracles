@@ -35,6 +35,9 @@ ALLOWED_ARTIFACT_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/zip",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
 }
 ARTIFACT_MAX_TOTAL_SIZE = 500 * 1024 * 1024
 ARTIFACT_UPLOAD_URL_TTL_SECONDS = 900

@@ -82,7 +82,7 @@ Sliced into **12 small, independently reviewable adds** so the human keeps pace 
 | Internal rarity | `1 - max_jaccard_to_any_existing_published_artifact` | Slice 5 computes against DB-backed published artifact signatures. Slice 9 inserts/removes published artifacts into a Redis-backed LSH index for sub-linear lookup once publish/unpublish state transitions exist. |
 | External rarity | **Brave Search API** (independent index, GDPR-friendly, free 2k/mo dev tier, ~$5/1k after) | Stage B; gated by `internal_rarity > 0.7` so we only pay when content is internally rare. 8 top-tf-idf phrase queries, quoted. Phrase-level Redis cache (30d TTL) so popular phrases dedupe across uploads. Graceful degrade: if Brave returns error/timeout → set `external_rarity = NULL`, surface "external check unavailable" badge in Contributor pipeline status, do not block publish. |
 | External rarity gate | **Soft-fail w/ acknowledgement** | When `external_rarity < 0.3`, Contributor sees "this content appears widely available online (X web matches). I confirm this is my original work or properly licensed → publish." Acknowledgement timestamp + IP audited. Hard block reserved for virus + internal duplicate + KYC. |
-| Thumbnail | `pdf2image` (Poppler) + Pillow | First page of preview artifact (or first PDF/image artifact) → 400×600 PNG, stored at `s3://auracles-thumbnails-{env}/{framework_id}.png`. |
+| Thumbnail | `pdf2image` (Poppler) + Pillow + LibreOffice headless | Preview artifact first, else first artifact. PDF → first page; image → resized original; DOCX/PPTX/XLSX → LibreOffice PDF conversion then first page; ZIP → first safe previewable inner file. Output is a 400×600 PNG stored at `s3://auracles-thumbnails-{env}/{framework_id}.png`. |
 | Search | Postgres FTS — `to_tsvector('english', title || description || coalesce(tags_text, ''))` + GIN index | TDD §7 confirmed. Migrate to Meilisearch in Phase 5 only if catalog grows past ~50k frameworks. |
 | Versioning UX | Contributor picks change type via 3-radio (`fix` / `improvement` / `major`). Platform auto-computes semver (`1.2.0 → 1.2.1` / `1.3.0` / `2.0.0`). Stored as `version VARCHAR(20)` per TDD. Prior version always displayed in modal. `change_log` textarea required. Artifact inheritance is per-file checkbox. | No typing → no stress, no format errors, no forgotten prior. |
 | License types | `single_user`, `team` (10 seats max), `enterprise` (admin-mediated, custom invoice, manual seat ceiling) | Subscription/perpetual deferred to Phase 3 / 5. |
@@ -179,7 +179,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 ### Slice 3 — Artifact upload + S3 + virus scan
 **Add:**
 - Service: `request_artifact_upload_url(framework_id, filename, mime, size)` returns presigned POST target w/ size + mime conditions; `confirm_artifact_upload(artifact_id)` writes row to `artifacts`, dispatches `scan_artifact` Celery task; `delete_artifact` (draft only).
-- Validate: mime in `{application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/zip}`; total per-framework size ≤ 500MB (FR-FWK-002).
+- Validate: mime in `{application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/zip, image/jpeg, image/png, image/webp}`; total per-framework size ≤ 500MB (FR-FWK-002).
 - Router: `POST /v1/frameworks/{id}/artifacts/upload-url`, `POST /v1/frameworks/{id}/artifacts/confirm`, `GET /v1/frameworks/{id}/artifacts`, `DELETE /v1/frameworks/{id}/artifacts/{aid}`, `PATCH /v1/frameworks/{id}/preview-artifact` (FR-FWK-004).
 - `app/workers/tasks/artifacts.py`: `scan_artifact(artifact_id)` runs ClamAV (`clamdscan`) against S3 object → updates `scan_status`. On `clean`, dispatches `process_artifact`. On `infected`, sets `processing_status='failed'`, writes audit row, dispatches no further. On `error`, retries.
 - Dockerfile: worker image includes ClamAV daemon.
@@ -256,17 +256,17 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 ### Slice 7 — Pipeline step 7+8+9: blend + thumbnail + tsvector index
 **Add:**
 - `app/workers/tasks/processing/blend.py`: `compute_final_rarity(artifact_id)` → reads `internal_rarity`, `external_rarity` (or `NULL`), and `metadata_uplift`; writes `rarity_score = 0.5*internal + 0.4*external + 0.1*metadata_uplift` w/ `external_rarity=NULL` re-weights to `0.625*internal + 0.125*metadata_uplift + 0.25*NULL_handled_as_neutral_0.5`. Persists + finalizes audit row. Current implementation stores neutral `metadata_uplift=0.0000` until the product threshold for catalog-density uplift is explicitly chosen.
-- `app/workers/tasks/processing/thumbnail.py`: `make_thumbnail(framework_id)` → picks preview artifact (FR-FWK-004) else first PDF/image artifact → `pdf2image.convert_from_path` first page → Pillow resize 400×600 → S3 upload to `auracles-thumbnails-{env}/{framework_id}.png` → store key on `frameworks.thumbnail_key`.
+- `app/workers/tasks/processing/thumbnail.py`: `make_thumbnail(framework_id)` → picks preview artifact (FR-FWK-004) else first artifact. PDF uses `pdf2image.convert_from_path`; image artifacts resize directly; DOCX/PPTX/XLSX convert through LibreOffice headless then render first page; ZIP artifacts select the first safe previewable inner file. Uploads a 400×600 PNG to `auracles-thumbnails-{env}/{framework_id}.png` → store key on `frameworks.thumbnail_key`.
 - `app/workers/tasks/processing/search_index.py`: `refresh_framework_tsvector(framework_id)` → syncs `frameworks.tags_text = array_to_string(tags, ' ')`, which feeds the existing Postgres expression GIN index (`to_tsvector('english', title || ' ' || description || ' ' || tags_text)`). Run on publish (Slice 9) and on metadata update of published framework.
 - Final orchestrator action: when all sub-tasks done w/o failure → set the Artifact `processing_status='processed'`, persist thumbnail/search/rareness outputs, and return per-step results. Framework-level `submitted → processing → {pipeline_passed|pipeline_failed}` remains Slice 9, where all artifacts on the Framework can be evaluated together without making a draft uneditable too early.
 
 **Edge cases tested:**
-- Thumbnail with no PDF/image artifact → defaults to generic Brand-Blue framework-type icon (stored once, all such frameworks share the key).
+- Thumbnail with no previewable artifact → defaults to generic framework thumbnail PNG.
 - Blend when `external_rarity = NULL` → re-weighting verified.
 - Tsvector contains tags → search by tag matches.
 - Re-run of pipeline (e.g. version bump) → tsvector replaced atomically, thumbnail overwritten.
 
-**Deps added:** `pdf2image`, `pillow`. Poppler in worker Dockerfile.
+**Deps added:** `pdf2image`, `pillow`. Poppler and LibreOffice in worker Dockerfile.
 
 ---
 

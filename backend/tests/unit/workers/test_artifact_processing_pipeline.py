@@ -244,6 +244,15 @@ def build_zip_bytes(entries: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
+def build_png_bytes(color: tuple[int, int, int] = (220, 24, 24)) -> bytes:
+    """Build a small PNG image used by deterministic thumbnail tests."""
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (80, 80), color=color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def read_artifact_state(
     artifact_id: UUID,
 ) -> tuple[
@@ -700,11 +709,40 @@ def test_thumbnail_generation_uses_preview_artifact_and_stores_framework_key(
     assert uploads[framework.thumbnail_key] == b"PNG-BYTES"
 
 
-def test_thumbnail_generation_uses_generic_png_without_renderable_artifact(
+def test_thumbnail_generation_renders_standalone_image_artifact(
     migrated_database: None,
     processing_context: dict[str, Any],
 ) -> None:
-    """Non-renderable artifacts get a generic thumbnail instead of failing."""
+    """Image artifacts are resized onto the standard thumbnail canvas."""
+    from PIL import Image
+
+    from app.workers.tasks.processing import thumbnail
+
+    artifact_id = create_processing_artifact(
+        name="cover.png",
+        mime_type="image/png",
+    )
+    framework_id = set_preview_artifact(artifact_id)
+    processing_context["storage"].download_body = build_png_bytes()
+
+    thumbnail.make_thumbnail.apply(args=[str(framework_id)]).get()
+    asyncio.run(engine.dispose())
+
+    _, framework = read_artifact_framework(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert framework is not None
+    rendered = Image.open(BytesIO(uploads[framework.thumbnail_key]))
+    assert rendered.size == (400, 600)
+    assert rendered.getpixel((200, 300)) == (220, 24, 24)
+
+
+def test_thumbnail_generation_converts_office_artifact_to_preview_png(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Office artifacts use deterministic conversion instead of a generic icon."""
     from app.workers.tasks.processing import thumbnail
 
     artifact_id = create_processing_artifact(
@@ -714,6 +752,11 @@ def test_thumbnail_generation_uses_generic_png_without_renderable_artifact(
         ),
     )
     framework_id = set_preview_artifact(artifact_id)
+    monkeypatch.setattr(
+        thumbnail,
+        "render_office_thumbnail",
+        lambda *_: b"OFFICE-THUMBNAIL",
+    )
 
     thumbnail.make_thumbnail.apply(args=[str(framework_id)]).get()
     asyncio.run(engine.dispose())
@@ -723,7 +766,71 @@ def test_thumbnail_generation_uses_generic_png_without_renderable_artifact(
 
     assert framework is not None
     assert framework.thumbnail_key == f"frameworks/{framework_id}/thumbnail.png"
-    assert uploads[framework.thumbnail_key].startswith(b"\x89PNG")
+    assert uploads[framework.thumbnail_key] == b"OFFICE-THUMBNAIL"
+
+
+def test_thumbnail_generation_uses_first_previewable_zip_member(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """ZIP artifacts render the first safe previewable inner file."""
+    from PIL import Image
+
+    from app.workers.tasks.processing import thumbnail
+
+    artifact_id = create_processing_artifact(
+        name="framework-bundle.zip",
+        mime_type="application/zip",
+    )
+    framework_id = set_preview_artifact(artifact_id)
+    processing_context["storage"].download_body = build_zip_bytes(
+        {
+            "notes.txt": b"not previewable",
+            "assets/cover.png": build_png_bytes(color=(18, 140, 82)),
+        }
+    )
+
+    thumbnail.make_thumbnail.apply(args=[str(framework_id)]).get()
+    asyncio.run(engine.dispose())
+
+    _, framework = read_artifact_framework(artifact_id)
+    uploads = processing_context["storage"].uploads
+
+    assert framework is not None
+    rendered = Image.open(BytesIO(uploads[framework.thumbnail_key]))
+    assert rendered.size == (400, 600)
+    assert rendered.getpixel((200, 300)) == (18, 140, 82)
+
+
+def test_image_artifact_extraction_marks_ocr_needed(
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Image-only Artifacts are captured as low-confidence OCR candidates."""
+    from app.workers.tasks.processing import extract
+
+    artifact_id = create_processing_artifact(
+        name="diagram.png",
+        mime_type="image/png",
+    )
+    processing_context["storage"].download_body = build_png_bytes()
+
+    extract.extract_text.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, _, _, _ = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.metadata_vector is not None
+    assert artifact.metadata_vector["extraction"]["image_count"] == 1
+    assert artifact.metadata_vector["extraction"]["quality"] == {
+        "empty_text": True,
+        "tiny_text": False,
+        "image_heavy": True,
+        "needs_ocr": True,
+        "low_confidence": True,
+        "reason_codes": ["empty_extraction", "image_heavy_extraction", "needs_ocr"],
+    }
 
 
 def test_search_index_refresh_syncs_tags_text_for_fts(
