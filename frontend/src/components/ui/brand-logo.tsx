@@ -6,9 +6,9 @@ type BrandLogoProps = {
   className?: string;
 };
 
-export function BrandLogo({ href = "/explore", className = "relative h-8 w-32" }: BrandLogoProps) {
+export function BrandLogo({ href = "/explore", className = "h-8 w-32" }: BrandLogoProps) {
   return (
-    <Link href={href} className={`block ${className}`}>
+    <Link href={href} className={`relative block shrink-0 ${className}`}>
       {/* Light mode logo (hidden in dark mode) */}
       <Image
         src="/images/logo-text-black.png"

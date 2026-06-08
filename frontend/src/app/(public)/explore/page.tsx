@@ -79,15 +79,46 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
       <div className="mx-auto w-full max-w-[1600px]">
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full lg:w-64 lg:shrink-0">
-            <FilterSidebar
-              active={{
-                category: query.category ?? undefined,
-                license_type: query.license_type ?? undefined,
-                org_size: query.org_size ?? undefined,
-                q: query.q ?? undefined,
-                sort: query.sort,
-              }}
-            />
+            {/* Mobile Filters Accordion */}
+            <div className="block lg:hidden mb-4">
+              <details className="group rounded-xl border border-border-default bg-surface-1 overflow-hidden">
+                <summary className="flex cursor-pointer items-center justify-between p-4 font-medium text-foreground outline-none hover:bg-surface-2 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    Filters
+                  </div>
+                  <svg className="h-5 w-5 text-foreground-muted transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </summary>
+                <div className="border-t border-border-default p-4 bg-background">
+                  <FilterSidebar
+                    active={{
+                      category: query.category ?? undefined,
+                      license_type: query.license_type ?? undefined,
+                      org_size: query.org_size ?? undefined,
+                      q: query.q ?? undefined,
+                      sort: query.sort,
+                    }}
+                  />
+                </div>
+              </details>
+            </div>
+            
+            {/* Desktop Filters Sidebar */}
+            <div className="hidden lg:block">
+              <FilterSidebar
+                active={{
+                  category: query.category ?? undefined,
+                  license_type: query.license_type ?? undefined,
+                  org_size: query.org_size ?? undefined,
+                  q: query.q ?? undefined,
+                  sort: query.sort,
+                }}
+              />
+            </div>
           </div>
           <section className="flex-1 min-w-0">
             <div className="mb-6 flex items-center justify-between border-b border-border-default pb-4">
