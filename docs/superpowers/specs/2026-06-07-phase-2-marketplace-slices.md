@@ -439,6 +439,14 @@ These slices cover known limitations that are intentionally not pulled into the 
 ---
 
 ### Slice 15 — Semantic and visual similarity upgrade
+**Status:** Deferred anti-plagiarism hardening. Do not implement in Phase 2 MVP unless production evidence shows MinHash + external rarity is missing meaningful plagiarism cases.
+
+**Revisit triggers:**
+- Contributor/operator/admin reports show paraphrased copied Frameworks that MinHash did not flag.
+- Disputes show copied workflow structure, operating model, process map, or diagram layout with rewritten text.
+- More than 5 credible plagiarism reports in 30 days involve non-public or heavily paraphrased sources.
+- Image-heavy / diagram-heavy Frameworks become a meaningful share of submissions and current rarity confidence is often low.
+
 **Add:**
 - Semantic paraphrase detection for text-heavy artifacts using embeddings only after cost/privacy approval.
 - Visual/diagram similarity for image-heavy frameworks using a vision embedding model only after data-processing approval.
@@ -451,6 +459,27 @@ These slices cover known limitations that are intentionally not pulled into the 
 - No raw artifacts are sent to external model providers unless approved by human and documented in privacy/security notes.
 
 **Deps / infra:** TBD after architecture decision. Options: local embedding model, OpenAI embeddings/vision, or AWS Bedrock/Textract-style stack.
+
+---
+
+### Slice 16 — Visual / image-embedded PII redaction
+**Status:** Deferred redaction hardening. This is separate from Slice 14 because it redacts pixels/regions, not selectable text or Office XML text.
+
+**Add:**
+- OCR bounding-box extraction for scanned pages and embedded images.
+- PDF image/region redaction for scanned pages, screenshots, and image-backed text.
+- DOCX/PPTX/XLSX embedded media rewrite where practical, preserving package structure.
+- Post-redaction verification: re-run extraction and OCR against the generated artifact before it can become `clean_file_key`.
+- Conservative failure mode: if visual redaction cannot confidently remove detected PII, keep `pii_review_needed=true` and never publish.
+
+**Edge cases tested:**
+- Scanned PDF containing an email as pixels → redacted PDF has no OCR-detectable email.
+- PPTX slide with embedded screenshot containing PII → redacted package opens and OCR no longer detects the PII.
+- XLSX chart/image containing visible PII → redaction either removes the visible PII or fails closed.
+- OCR bounding-box mismatch / low confidence → no `clean_file_key`, original remains private, `pii_review_needed=true`.
+- Post-redaction OCR still detects PII → redaction rejected and audited.
+
+**Deps / infra:** TBD after architecture decision. Options include local OCR bounding boxes via Tesseract TSV, image manipulation via Pillow/OpenCV, PDF region replacement via PyMuPDF, and stricter provider review before any external vision model is used.
 
 ---
 
