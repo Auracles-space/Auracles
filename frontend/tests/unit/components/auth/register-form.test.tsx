@@ -53,6 +53,7 @@ describe("RegisterForm", () => {
       target: { value: "StrongerPass123!" },
     });
     fireEvent.click(screen.getByLabelText(/contributor/i));
+    fireEvent.click(screen.getByLabelText(/terms of service/i));
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
 
     await waitFor(() => {

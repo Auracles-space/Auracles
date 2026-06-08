@@ -5,6 +5,8 @@
  * available in Phase 1 while making it clear that browsing and framework
  * previews remain available.
  */
+import Link from "next/link";
+
 const steps = [
   {
     body: "Your registered display name is the Phase 1 profile baseline. Expanded public profile fields arrive in the settings phase.",
@@ -49,18 +51,18 @@ export function OnboardingPrompt() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <a
+        <Link
           className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-transparent bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground active:scale-[0.98] shadow-md"
           href="/settings/kyc"
         >
           Start KYC
-        </a>
-        <a
+        </Link>
+        <Link
           className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-2 border-foreground bg-transparent px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-foreground hover:text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
           href="/explore"
         >
           Browse frameworks
-        </a>
+        </Link>
       </div>
     </div>
   );
