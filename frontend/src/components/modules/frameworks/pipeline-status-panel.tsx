@@ -82,8 +82,8 @@ export function PipelineStatusPanel({
   const checks = buildPipelineChecks(artifacts, frameworkStatus);
 
   return (
-    <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
-      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-lg font-bold text-foreground">
             Pipeline status
@@ -92,21 +92,21 @@ export function PipelineStatusPanel({
             Publish is available only after the backend gate passes.
           </p>
         </div>
-        <span className="rounded-[4px] border border-border-default px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+        <span className="w-fit rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
           {frameworkStatus.replaceAll("_", " ")}
         </span>
       </div>
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         {checks.map((check) => (
           <div
-            className="rounded-[8px] border border-border-default bg-background p-4"
+            className="rounded-xl border border-border-default bg-background p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all hover:shadow-[0_4px_12px_-2px_rgba(0,0,0,0.08)]"
             key={check.label}
           >
             <div className="flex items-center justify-between gap-3">
               <p className="font-semibold text-foreground">{check.label}</p>
               <span className={badgeClass(check.state)}>{check.value}</span>
             </div>
-            <p className="mt-2 text-sm leading-6 text-foreground-muted">
+            <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
               {check.description}
             </p>
           </div>
@@ -123,10 +123,10 @@ export function PipelineStatusPanel({
  */
 function badgeClass(state: PipelineCheck["state"]): string {
   if (state === "pass") {
-    return "rounded-[4px] border border-success/30 bg-success/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-success";
+    return "rounded-lg border border-success/20 bg-success/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-success";
   }
   if (state === "fail") {
-    return "rounded-[4px] border border-error/30 bg-error/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-error";
+    return "rounded-lg border border-error/20 bg-error/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-error";
   }
-  return "rounded-[4px] border border-warning/30 bg-warning/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-warning";
+  return "rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-warning";
 }

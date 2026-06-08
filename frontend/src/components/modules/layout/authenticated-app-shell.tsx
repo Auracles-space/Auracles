@@ -20,6 +20,7 @@ type AuthenticatedAppShellProps = {
 const appLinks = [
   { href: "/explore", label: "Explore" },
   { href: "/dashboard/frameworks", label: "Frameworks" },
+  { href: "/library", label: "Library" },
   { href: "/settings/account", label: "Settings" },
 ];
 
@@ -36,7 +37,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
       {/* Sidebar */}
       <aside className="hidden bg-background md:fixed md:inset-y-0 md:left-0 md:flex md:w-[260px] md:flex-col z-10">
         <div className="flex h-[72px] items-center px-6">
-          <BrandLogo className="h-7 w-[120px]" />
+          <BrandLogo href="/explore" className="h-7 w-[120px]" />
         </div>
         <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6">
           {appLinks.map((link) => {
@@ -106,7 +107,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
         {/* Mobile Header & Drawer */}
         <header className="sticky top-0 z-30 flex flex-col border-b border-border-default bg-background/95 px-4 backdrop-blur-md md:hidden">
           <div className="flex h-16 items-center justify-between">
-            <BrandLogo className="h-7 w-28" />
+            <BrandLogo href="/explore" className="h-7 w-28" />
             <div className="flex items-center gap-2">
               <ThemeToggle />
               {/* Native HTML details/summary for simple zero-JS mobile menu */}
@@ -152,4 +153,3 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
     </div>
   );
 }
-

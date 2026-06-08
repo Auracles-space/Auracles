@@ -2793,6 +2793,9 @@ components:
         - processing_status
         - pii_detected
         - pii_review_needed
+        - redaction_available
+        - redaction_status
+        - redaction_accepted
         - rarity_score
         - created_at
       properties:
@@ -2829,6 +2832,14 @@ components:
         pii_detected:
           type: boolean
         pii_review_needed:
+          type: boolean
+        redaction_available:
+          type: boolean
+        redaction_status:
+          type:
+            - string
+            - "null"
+        redaction_accepted:
           type: boolean
         rarity_score:
           type:

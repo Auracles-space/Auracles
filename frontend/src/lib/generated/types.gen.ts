@@ -91,6 +91,9 @@ export type ArtifactResponse = {
     processing_status: 'pending' | 'processing' | 'processed' | 'failed' | 'flagged_pii' | 'flagged_rarity';
     pii_detected: boolean;
     pii_review_needed: boolean;
+    redaction_available: boolean;
+    redaction_status: (string) | null;
+    redaction_accepted: boolean;
     rarity_score: (string) | null;
     created_at: string;
 };

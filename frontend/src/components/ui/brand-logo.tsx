@@ -8,11 +8,15 @@ type BrandLogoProps = {
 
 export function BrandLogo({ href = "/", className = "h-8 w-32" }: BrandLogoProps) {
   return (
-    <Link href={href} className={`relative block shrink-0 ${className}`}>
+    <Link
+      href={href}
+      aria-label="Auracles"
+      className={`relative block shrink-0 ${className}`}
+    >
       {/* Light mode logo (hidden in dark mode) */}
       <Image
         src="/images/logo-text-black.png"
-        alt="Auracles"
+        alt=""
         fill
         className="object-contain object-left dark:hidden"
         priority
@@ -20,7 +24,7 @@ export function BrandLogo({ href = "/", className = "h-8 w-32" }: BrandLogoProps
       {/* Dark mode logo (hidden in light mode) */}
       <Image
         src="/images/logo-text-white.png"
-        alt="Auracles"
+        alt=""
         fill
         className="hidden object-contain object-left dark:block"
         priority

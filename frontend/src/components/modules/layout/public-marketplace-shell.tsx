@@ -16,7 +16,7 @@ type PublicMarketplaceShellProps = {
 };
 
 const topLinks = [
-  { href: "/explore", label: "Frameworks" },
+  { href: "/explore", label: "Explore" },
 ];
 
 /**
@@ -63,6 +63,13 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
             <div className="hidden items-center gap-2 md:flex">
               <ThemeToggle />
               <Link
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-border-default bg-surface-1 px-4 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
+                href="/dashboard/frameworks/new"
+              >
+                Create Framework
+              </Link>
+              <div className="mx-1 h-4 w-px bg-border-default" />
+              <Link
                 className="inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
                 href="/login"
               >
@@ -96,6 +103,13 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                         {link.label}
                       </Link>
                     ))}
+                    <div className="my-2 h-px bg-border-default" />
+                    <Link
+                      className="rounded-lg border border-border-default bg-surface-1 px-3 py-2 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
+                      href="/dashboard/frameworks/new"
+                    >
+                      Create Framework
+                    </Link>
                     <div className="my-2 h-px bg-border-default" />
                     <Link
                       className="rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"

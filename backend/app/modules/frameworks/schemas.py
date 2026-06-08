@@ -205,5 +205,8 @@ class ArtifactResponse(BaseModel):
     processing_status: str
     pii_detected: bool
     pii_review_needed: bool
+    redaction_available: bool
+    redaction_status: str | None
+    redaction_accepted: bool
     rarity_score: Decimal | None
     created_at: datetime

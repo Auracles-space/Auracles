@@ -67,6 +67,8 @@ def _tags_text(tags: list[str]) -> str:
 
 def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
     """Map an Artifact row to the contributor-facing status response."""
+    metadata = artifact.metadata_vector or {}
+    redaction = metadata.get("redaction") or {}
     return ArtifactResponse(
         id=artifact.id,
         framework_id=artifact.framework_id,
@@ -78,6 +80,11 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
         processing_status=artifact.processing_status,
         pii_detected=artifact.pii_detected,
         pii_review_needed=artifact.pii_review_needed,
+        redaction_available=artifact.clean_file_key is not None,
+        redaction_status=(
+            str(redaction.get("status")) if redaction.get("status") else None
+        ),
+        redaction_accepted=bool(redaction.get("accepted")),
         rarity_score=artifact.rarity_score,
         created_at=artifact.created_at,
     )

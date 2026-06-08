@@ -637,6 +637,53 @@ async def test_confirm_artifact_upload_is_idempotent_and_dispatches_scan_once(
     assert listed.json()[0]["processing_status"] == "processing"
 
 
+async def test_artifact_response_exposes_safe_redaction_status(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Artifact responses expose redaction state without leaking S3 clean keys."""
+    contributor_id = await create_user_with_roles(
+        "artifact-redaction-status@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        artifact.pii_review_needed = True
+        artifact.processing_status = "flagged_pii"
+        artifact.clean_file_key = (
+            f"frameworks/{framework_id}/artifacts/{artifact_id}/redacted/a.pdf"
+        )
+        artifact.metadata_vector = {
+            "redaction": {
+                "status": "generated",
+                "clean_file_key": artifact.clean_file_key,
+                "accepted": False,
+            }
+        }
+        await session.commit()
+
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert listed.status_code == 200
+    body = listed.json()[0]
+    assert body["redaction_available"] is True
+    assert body["redaction_status"] == "generated"
+    assert body["redaction_accepted"] is False
+    assert "clean_file_key" not in body
+
+
 async def test_confirm_artifact_upload_requires_uploaded_s3_object(
     client: AsyncClient,
     migrated_database: None,

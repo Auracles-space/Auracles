@@ -16,6 +16,9 @@ const baseArtifact: ArtifactResponse = {
   pii_review_needed: false,
   processing_status: "processed",
   rarity_score: "0.91",
+  redaction_accepted: false,
+  redaction_available: false,
+  redaction_status: null,
   scan_status: "clean",
 };
 
