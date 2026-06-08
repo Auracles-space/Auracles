@@ -104,6 +104,24 @@ async def search_external_phrase(phrase: str) -> int:
     return result.total_hits
 
 
+async def _mark_external_unavailable(
+    artifact_id: UUID,
+    framework_id: UUID,
+) -> None:
+    """Record that external rarity is unavailable without blocking publish."""
+    async with async_session_factory() as db:
+        artifact = await db.get(Artifact, artifact_id)
+        if artifact is None:
+            return
+        artifact.external_rarity = None
+        framework = await db.get(Framework, framework_id)
+        if framework is not None:
+            failure_reasons = dict(framework.pipeline_failure_reasons or {})
+            failure_reasons["external_check"] = "unavailable"
+            framework.pipeline_failure_reasons = failure_reasons
+        await db.commit()
+
+
 async def _compute_external_rarity_impl(artifact_id: str) -> dict[str, Any]:
     """Compute or skip external rarity for an Artifact."""
     parsed_artifact_id = UUID(artifact_id)
@@ -158,18 +176,13 @@ async def _compute_external_rarity_impl(artifact_id: str) -> dict[str, Any]:
 
     try:
         hit_counts = [await search_external_phrase(phrase) for phrase in phrases]
-    except BraveSearchError:
-        async with async_session_factory() as db:
-            artifact = await db.get(Artifact, parsed_artifact_id)
-            if artifact is None:
-                return {"artifact_id": artifact_id, "status": "missing"}
-            artifact.external_rarity = None
-            framework = await db.get(Framework, framework_id)
-            if framework is not None:
-                failure_reasons = dict(framework.pipeline_failure_reasons or {})
-                failure_reasons["external_check"] = "unavailable"
-                framework.pipeline_failure_reasons = failure_reasons
-            await db.commit()
+    except (BraveSearchError, RuntimeError, ValueError, LookupError) as exc:
+        logger.bind(
+            module="artifacts",
+            action="compute_external_rarity",
+            artifact_id=artifact_id,
+        ).warning("external_rarity_unavailable", error=str(exc))
+        await _mark_external_unavailable(parsed_artifact_id, framework_id)
         return {
             "artifact_id": artifact_id,
             "status": "external_rarity_unavailable",

@@ -874,6 +874,50 @@ def test_external_rarity_gracefully_degrades_when_brave_unavailable(
     assert framework.pipeline_failure_reasons["external_check"] == "unavailable"
 
 
+def test_external_rarity_gracefully_degrades_when_phrase_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """Cache/provider plumbing failures also keep external rarity non-blocking."""
+    from app.workers.tasks.processing import rarity_external
+
+    artifact_id = create_processing_artifact(name="phrase-lookup-failure.pdf")
+    set_external_rarity_context(
+        artifact_id,
+        internal_rarity=Decimal("0.9500"),
+        text=(
+            "Vendor governance evidence workflow maps controls into "
+            "remediation reporting and board oversight cadence."
+        ),
+        top_terms=[
+            "vendor",
+            "governance",
+            "evidence",
+            "workflow",
+            "controls",
+            "remediation",
+            "reporting",
+        ],
+    )
+
+    async def fail_search(_: str) -> int:
+        """Simulate a Redis/cache plumbing failure around phrase lookup."""
+        raise RuntimeError("Redis unavailable.")
+
+    monkeypatch.setattr(rarity_external, "search_external_phrase", fail_search)
+
+    rarity_external.compute_external_rarity.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, framework = read_artifact_framework(artifact_id)
+
+    assert artifact is not None
+    assert artifact.external_rarity is None
+    assert framework is not None
+    assert framework.pipeline_failure_reasons["external_check"] == "unavailable"
+
+
 def test_final_rarity_blend_persists_score_and_audit(
     migrated_database: None,
     processing_context: dict[str, Any],
