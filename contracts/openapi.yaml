@@ -591,6 +591,76 @@ paths:
           description: Framework not found.
         "409":
           description: Only draft Frameworks can be deleted.
+  /v1/frameworks/{framework_id}/unpublish:
+    post:
+      tags:
+        - Frameworks
+      operationId: unpublishFramework
+      summary: Unpublish a Framework
+      description: Moves an owned published Framework out of the public catalog while preserving existing license access.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Framework unpublished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only published Frameworks can be unpublished.
+  /v1/frameworks/{framework_id}/versions:
+    post:
+      tags:
+        - Frameworks
+      operationId: createFrameworkVersion
+      summary: Create a new draft Framework version
+      description: Snapshots the current published version and starts a new editable draft version with explicit Artifact inheritance choices.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FrameworkVersionCreate"
+      responses:
+        "200":
+          description: New draft Framework version created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrameworkResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role, completed profile, or verified KYC required.
+        "404":
+          description: Framework not found.
+        "409":
+          description: Only published or unpublished Frameworks can be versioned.
+        "422":
+          description: Invalid version request or Artifact inheritance map.
   /v1/frameworks/{framework_id}/artifacts/upload-url:
     post:
       tags:
@@ -1737,6 +1807,26 @@ components:
             - string
             - "null"
           format: date-time
+    FrameworkVersionCreate:
+      type: object
+      required:
+        - change_type
+        - change_log
+      properties:
+        change_type:
+          type: string
+          enum:
+            - fix
+            - improvement
+            - major
+        change_log:
+          type: string
+          minLength: 1
+        artifact_inheritance:
+          type: object
+          additionalProperties:
+            type: boolean
+          default: {}
     FrameworkListItem:
       type: object
       required:

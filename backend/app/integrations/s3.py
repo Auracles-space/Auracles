@@ -85,5 +85,19 @@ class S3Storage:
         """Download a private S3 object to a local file path."""
         self._client.download_file(bucket, key, destination)
 
+    def copy_object(
+        self,
+        source_bucket: str,
+        source_key: str,
+        destination_bucket: str,
+        destination_key: str,
+    ) -> None:
+        """Copy one private S3 object to another private S3 key."""
+        self._client.copy_object(
+            Bucket=destination_bucket,
+            Key=destination_key,
+            CopySource={"Bucket": source_bucket, "Key": source_key},
+        )
+
 
 storage = S3Storage()

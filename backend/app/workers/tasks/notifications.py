@@ -5,9 +5,12 @@ They can be retried safely when the external provider is temporarily down.
 """
 
 from typing import Any
+from uuid import UUID
 
 from loguru import logger
+from sqlalchemy import func, select
 
+from app.core.database import async_session_factory
 from app.integrations.resend import (
     send_email_change_verification as send_email_change_via_resend,
 )
@@ -16,6 +19,8 @@ from app.integrations.resend import (
     send_password_reset_email as send_password_reset_via_resend,
 )
 from app.integrations.resend import send_verification_email as send_via_resend
+from app.modules.frameworks.models import License
+from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 
@@ -90,3 +95,48 @@ def send_new_device_email(
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
+
+
+async def _notify_licensees_of_new_version_impl(
+    framework_id: str,
+    new_version: str,
+) -> dict[str, Any]:
+    """Return active-license count for future new-version notifications."""
+    parsed_framework_id = UUID(framework_id)
+    async with async_session_factory() as db:
+        active_license_count = await db.scalar(
+            select(func.count(License.id)).where(
+                License.framework_id == parsed_framework_id,
+                License.status == "active",
+            )
+        )
+    return {
+        "framework_id": framework_id,
+        "new_version": new_version,
+        "active_license_count": int(active_license_count or 0),
+    }
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def notify_licensees_of_new_version(
+    self: Any,
+    framework_id: str,
+    new_version: str,
+) -> dict[str, Any]:
+    """Notify active licensees that a Framework has a new published version."""
+    log = logger.bind(
+        module="frameworks",
+        action="notify_licensees_of_new_version",
+        task_id=self.request.id,
+        framework_id=framework_id,
+    )
+    log.info("task_started")
+    try:
+        result = run_async(
+            _notify_licensees_of_new_version_impl(framework_id, new_version)
+        )
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed", result=result)
+    return result

@@ -25,6 +25,7 @@ FrameworkStatus = Literal[
     "suspended",
 ]
 LicenseType = Literal["single_user", "team", "enterprise"]
+ChangeType = Literal["fix", "improvement", "major"]
 OrgSize = Literal["startup", "small_business", "sme", "mid_market", "enterprise"]
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -179,6 +180,14 @@ class PreviewArtifactRequest(BaseModel):
     """Request body for selecting a Framework preview Artifact."""
 
     artifact_id: UUID
+
+
+class FrameworkVersionCreate(BaseModel):
+    """Request body for starting a new draft version of a Framework."""
+
+    change_type: ChangeType
+    change_log: str = Field(min_length=1)
+    artifact_inheritance: dict[UUID, bool] = Field(default_factory=dict)
 
 
 class ArtifactResponse(BaseModel):

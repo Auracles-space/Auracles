@@ -22,7 +22,13 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
-from app.modules.frameworks.models import Framework, FrameworkVersion, License, Review
+from app.modules.frameworks.models import (
+    Framework,
+    FrameworkVersion,
+    FrameworkVersionArtifact,
+    License,
+    Review,
+)
 from app.modules.frameworks.models_artifact import (
     Artifact,
     ArtifactDownload,
@@ -112,6 +118,7 @@ def processing_context(
             session.execute(delete(License))
             session.execute(delete(ArtifactRarityAudit))
             session.execute(delete(ArtifactPiiAudit))
+            session.execute(delete(FrameworkVersionArtifact))
             session.execute(delete(FrameworkVersion))
             session.execute(delete(Artifact))
             session.execute(delete(Framework))

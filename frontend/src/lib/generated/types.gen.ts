@@ -36,6 +36,54 @@ export type AdminRoleAssignmentResponse = {
     approved: boolean;
 };
 
+export type ArtifactConfirmRequest = {
+    artifact_id: string;
+};
+
+export type ArtifactResponse = {
+    id: string;
+    framework_id: string;
+    name: string;
+    file_key: string;
+    file_size: number;
+    mime_type: string;
+    scan_status: 'pending' | 'clean' | 'infected' | 'error';
+    processing_status: 'pending' | 'processing' | 'processed' | 'failed' | 'flagged_pii' | 'flagged_rarity';
+    pii_detected: boolean;
+    pii_review_needed: boolean;
+    rarity_score: (string) | null;
+    created_at: string;
+};
+
+export type scan_status = 'pending' | 'clean' | 'infected' | 'error';
+
+export type processing_status = 'pending' | 'processing' | 'processed' | 'failed' | 'flagged_pii' | 'flagged_rarity';
+
+export type ArtifactUploadUrlRequest = {
+    filename: string;
+    mime_type: 'application/pdf' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.openxmlformats-officedocument.presentationml.presentation' | 'application/zip';
+    file_size: number;
+};
+
+export type mime_type = 'application/pdf' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.openxmlformats-officedocument.presentationml.presentation' | 'application/zip';
+
+export type ArtifactUploadUrlResponse = {
+    artifact_id: string;
+    /**
+     * S3 endpoint URL for the multipart/form-data POST upload.
+     */
+    upload_url: string;
+    /**
+     * Form fields that must be included with the uploaded file.
+     */
+    fields: {
+        [key: string]: (string);
+    };
+    file_key: string;
+    max_size: number;
+    expires_in: number;
+};
+
 export type ComponentHealth = {
     status: 'ok' | 'unavailable';
     detail?: (string) | null;
@@ -66,6 +114,85 @@ export type ForgotPasswordRequest = {
     email: string;
 };
 
+export type FrameworkCreate = {
+    title: string;
+    description: string;
+    category: string;
+    sector?: (string) | null;
+    industry?: (string) | null;
+    function?: (string) | null;
+    tags?: Array<(string)>;
+    jurisdiction?: (string) | null;
+    complexity?: (number) | null;
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise') | null;
+    lifecycle_stage?: (string) | null;
+    pricing: PricingConfig;
+};
+
+export type org_size = 'startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise';
+
+export type FrameworkListItem = {
+    id: string;
+    title: string;
+    version: string;
+    status: string;
+    category: string;
+    price: string;
+    currency: string;
+    created_at: string;
+    updated_at: string;
+};
+
+export type FrameworkResponse = {
+    id: string;
+    contributor_id: string;
+    title: string;
+    description: string;
+    version: string;
+    status: 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+    category: string;
+    sector: (string) | null;
+    industry: (string) | null;
+    function: (string) | null;
+    tags: Array<(string)>;
+    jurisdiction: (string) | null;
+    complexity: (number) | null;
+    org_size: (string) | null;
+    lifecycle_stage: (string) | null;
+    pricing: PricingConfig;
+    preview_artifact_id: (string) | null;
+    created_at: string;
+    updated_at: string;
+    published_at: (string) | null;
+};
+
+export type status3 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+
+export type FrameworkUpdate = {
+    title?: (string) | null;
+    description?: (string) | null;
+    category?: (string) | null;
+    sector?: (string) | null;
+    industry?: (string) | null;
+    function?: (string) | null;
+    tags?: Array<(string)> | null;
+    jurisdiction?: (string) | null;
+    complexity?: (number) | null;
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise') | null;
+    lifecycle_stage?: (string) | null;
+    pricing?: (PricingConfig | null);
+};
+
+export type FrameworkVersionCreate = {
+    change_type: 'fix' | 'improvement' | 'major';
+    change_log: string;
+    artifact_inheritance?: {
+        [key: string]: (boolean);
+    };
+};
+
+export type change_type = 'fix' | 'improvement' | 'major';
+
 export type HealthResponse = {
     status: 'ok' | 'unhealthy';
     components: {
@@ -73,7 +200,7 @@ export type HealthResponse = {
     };
 };
 
-export type status3 = 'ok' | 'unhealthy';
+export type status4 = 'ok' | 'unhealthy';
 
 export type KycDocumentResponse = {
     id: string;
@@ -105,7 +232,16 @@ export type KycUploadUrlRequest = {
 export type doc_type = 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
 
 export type KycUploadUrlResponse = {
+    /**
+     * S3 endpoint URL for the multipart/form-data POST upload.
+     */
     upload_url: string;
+    /**
+     * Form fields that must be included with the uploaded file.
+     */
+    fields: {
+        [key: string]: (string);
+    };
     s3_key: string;
     max_size: number;
     expires_in: number;
@@ -125,6 +261,18 @@ export type LoginResponse = {
 };
 
 export type token_type = 'bearer';
+
+export type PreviewArtifactRequest = {
+    artifact_id: string;
+};
+
+export type PricingConfig = {
+    price: string;
+    currency?: string;
+    license_types: Array<('single_user' | 'team' | 'enterprise')>;
+    commercial_rights?: (string) | null;
+    usage_restrictions?: (string) | null;
+};
 
 export type RegisterRequest = {
     email: string;
@@ -316,6 +464,124 @@ export type ResetPasswordData = {
 export type ResetPasswordResponse = (RegisterResponse);
 
 export type ResetPasswordError = (unknown);
+
+export type CreateFrameworkData = {
+    body: FrameworkCreate;
+};
+
+export type CreateFrameworkResponse = (FrameworkResponse);
+
+export type CreateFrameworkError = (unknown);
+
+export type ListContributorFrameworksResponse = (Array<FrameworkListItem>);
+
+export type ListContributorFrameworksError = (unknown);
+
+export type GetContributorFrameworkData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetContributorFrameworkResponse = (FrameworkResponse);
+
+export type GetContributorFrameworkError = (unknown);
+
+export type UpdateFrameworkData = {
+    body: FrameworkUpdate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type UpdateFrameworkResponse = (FrameworkResponse);
+
+export type UpdateFrameworkError = (unknown);
+
+export type DeleteDraftFrameworkData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type DeleteDraftFrameworkResponse = (void);
+
+export type DeleteDraftFrameworkError = (unknown);
+
+export type UnpublishFrameworkData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type UnpublishFrameworkResponse = (FrameworkResponse);
+
+export type UnpublishFrameworkError = (unknown);
+
+export type CreateFrameworkVersionData = {
+    body: FrameworkVersionCreate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type CreateFrameworkVersionResponse = (FrameworkResponse);
+
+export type CreateFrameworkVersionError = (unknown);
+
+export type RequestArtifactUploadUrlData = {
+    body: ArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type RequestArtifactUploadUrlResponse = (ArtifactUploadUrlResponse);
+
+export type RequestArtifactUploadUrlError = (unknown);
+
+export type ConfirmArtifactUploadData = {
+    body: ArtifactConfirmRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ConfirmArtifactUploadResponse = (ArtifactResponse);
+
+export type ConfirmArtifactUploadError = (unknown);
+
+export type ListFrameworkArtifactsData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkArtifactsResponse = (Array<ArtifactResponse>);
+
+export type ListFrameworkArtifactsError = (unknown);
+
+export type DeleteDraftArtifactData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type DeleteDraftArtifactResponse = (void);
+
+export type DeleteDraftArtifactError = (unknown);
+
+export type SetPreviewArtifactData = {
+    body: PreviewArtifactRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type SetPreviewArtifactResponse = (FrameworkResponse);
+
+export type SetPreviewArtifactError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;

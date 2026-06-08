@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -230,6 +231,43 @@ class FrameworkVersion(CreatedAtMixin, Base):
     )
 
     framework: Mapped[Framework] = relationship(back_populates="versions")
+    artifacts: Mapped[list[FrameworkVersionArtifact]] = relationship(
+        back_populates="framework_version",
+        cascade="all, delete-orphan",
+    )
+
+
+class FrameworkVersionArtifact(Base):
+    """Join row preserving which Artifacts belonged to a published version."""
+
+    __tablename__ = "framework_version_artifacts"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "framework_version_id",
+            "artifact_id",
+            name="pk_framework_version_artifacts",
+        ),
+        Index("idx_framework_version_artifacts_artifact", "artifact_id"),
+    )
+
+    framework_version_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("framework_versions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    artifact_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=False,
+    )
+    is_preview: Mapped[bool] = mapped_column(
+        nullable=False,
+        server_default=text("false"),
+    )
+
+    framework_version: Mapped[FrameworkVersion] = relationship(
+        back_populates="artifacts",
+    )
 
 
 class License(CreatedAtMixin, Base):

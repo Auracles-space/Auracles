@@ -220,7 +220,10 @@ async def _thumbnail_source(
 
         artifact = await db.scalar(
             select(Artifact)
-            .where(Artifact.framework_id == framework_id)
+            .where(
+                Artifact.framework_id == framework_id,
+                Artifact.current_for_framework.is_(True),
+            )
             .order_by(Artifact.created_at.asc())
         )
         return framework, artifact

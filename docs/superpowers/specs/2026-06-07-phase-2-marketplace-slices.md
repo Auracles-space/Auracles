@@ -278,6 +278,7 @@ Each slice ends green: `ruff` + `mypy --strict` + `pytest --cov` (≥80% on touc
 - Router: `POST /v1/frameworks/{id}/versions` (body: `{change_type, change_log, artifact_inheritance: {artifact_id: bool}}`), `POST /v1/frameworks/{id}/unpublish`.
 - Schema updates: `framework_versions.version` is the source-of-truth history. `frameworks.version` points to latest published version's semver string. Prior version snapshot stored in `framework_versions` w/ FK to its artifacts via a join table `framework_version_artifacts` (added in this slice) so prior licensees can still download the exact files they paid for.
 - New table `framework_version_artifacts`: `framework_version_id`, `artifact_id`, `is_preview` (PRIMARY KEY composite).
+- `artifacts.current_for_framework BOOLEAN DEFAULT true`: current working-version membership. New draft/version views filter to current artifacts only; historical artifacts remain available through `framework_version_artifacts` for licensed prior-version downloads.
 
 **Edge cases tested:**
 - Create new version when no artifact changed + no metadata changed → 422 ("nothing to bump").

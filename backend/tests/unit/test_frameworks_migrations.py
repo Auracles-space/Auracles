@@ -17,7 +17,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import configure_mappers
 
 from app.core.config import get_settings
-from app.modules.frameworks.models import Framework, FrameworkVersion, License, Review
+from app.modules.frameworks.models import (
+    Framework,
+    FrameworkVersion,
+    FrameworkVersionArtifact,
+    License,
+    Review,
+)
 from app.modules.frameworks.models_artifact import (
     Artifact,
     ArtifactDownload,
@@ -28,6 +34,7 @@ from app.modules.frameworks.models_artifact import (
 MARKETPLACE_TABLES = {
     "frameworks",
     "framework_versions",
+    "framework_version_artifacts",
     "artifacts",
     "artifact_pii_audit",
     "artifact_rarity_audit",
@@ -55,6 +62,7 @@ def migrated_engine() -> Iterator[Engine]:
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     alembic_config = Config("alembic.ini")
 
+    command.downgrade(alembic_config, PRE_MARKETPLACE_REVISION)
     command.upgrade(alembic_config, "head")
     try:
         yield engine
@@ -127,6 +135,40 @@ def test_marketplace_migration_creates_thumbnail_storage_column(
     assert "thumbnail_key" in framework_columns
 
 
+def test_marketplace_migration_creates_version_artifact_snapshot_table(
+    migrated_engine: Engine,
+) -> None:
+    """Published versions snapshot the Artifacts available to licensees."""
+    inspector = inspect(migrated_engine)
+    columns = {
+        column["name"]
+        for column in inspector.get_columns("framework_version_artifacts")
+    }
+    primary_key = inspector.get_pk_constraint("framework_version_artifacts")
+
+    assert columns == {"framework_version_id", "artifact_id", "is_preview"}
+    assert set(primary_key["constrained_columns"]) == {
+        "framework_version_id",
+        "artifact_id",
+    }
+
+
+def test_marketplace_migration_marks_current_framework_artifacts(
+    migrated_engine: Engine,
+) -> None:
+    """Artifact rows expose current-version membership for draft versioning."""
+    inspector = inspect(migrated_engine)
+    artifact_columns = {
+        column["name"] for column in inspector.get_columns("artifacts")
+    }
+    artifact_indexes = {
+        index["name"] for index in inspector.get_indexes("artifacts")
+    }
+
+    assert "current_for_framework" in artifact_columns
+    assert "idx_artifacts_current_framework" in artifact_indexes
+
+
 def test_marketplace_migration_omits_pgvector(
     migrated_engine: Engine,
 ) -> None:
@@ -192,7 +234,9 @@ def test_marketplace_orm_models_bind_to_phase_two_tables() -> None:
     assert Framework.__tablename__ == "frameworks"
     assert "thumbnail_key" in Framework.__table__.columns
     assert FrameworkVersion.__tablename__ == "framework_versions"
+    assert FrameworkVersionArtifact.__tablename__ == "framework_version_artifacts"
     assert Artifact.__tablename__ == "artifacts"
+    assert "current_for_framework" in Artifact.__table__.columns
     assert ArtifactPiiAudit.__tablename__ == "artifact_pii_audit"
     assert ArtifactRarityAudit.__tablename__ == "artifact_rarity_audit"
     assert License.__tablename__ == "licenses"

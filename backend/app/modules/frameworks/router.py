@@ -23,6 +23,7 @@ from app.modules.frameworks.schemas import (
     FrameworkListItem,
     FrameworkResponse,
     FrameworkUpdate,
+    FrameworkVersionCreate,
     PreviewArtifactRequest,
 )
 
@@ -107,6 +108,40 @@ async def delete_framework(
         framework_id=framework_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{framework_id}/unpublish", response_model=FrameworkResponse)
+async def unpublish_framework(
+    framework_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Unpublish an owned Framework so new catalog purchases stop."""
+    return await service.unpublish_framework(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
+@router.post("/{framework_id}/versions", response_model=FrameworkResponse)
+async def create_new_version(
+    framework_id: UUID,
+    payload: FrameworkVersionCreate,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Start a new editable draft version of an owned Framework."""
+    return await service.create_new_version(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        payload=payload,
+    )
 
 
 @router.post(

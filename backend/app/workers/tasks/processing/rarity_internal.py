@@ -35,6 +35,7 @@ async def _published_candidates(
             .join(Framework, Framework.id == Artifact.framework_id)
             .where(
                 Artifact.id != artifact_id,
+                Artifact.current_for_framework.is_(True),
                 Artifact.minhash_signature.is_not(None),
                 Framework.status == "published",
             )

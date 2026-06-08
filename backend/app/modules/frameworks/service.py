@@ -13,7 +13,11 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.auth.models import User
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import (
+    Framework,
+    FrameworkVersion,
+    FrameworkVersionArtifact,
+)
 from app.modules.frameworks.models_artifact import Artifact
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
@@ -24,6 +28,7 @@ from app.modules.frameworks.schemas import (
     FrameworkListItem,
     FrameworkResponse,
     FrameworkUpdate,
+    FrameworkVersionCreate,
     PreviewArtifactRequest,
     PricingConfig,
 )
@@ -70,6 +75,18 @@ def _extension_for_filename(filename: str) -> str:
     """Return a safe filename extension from the original upload name."""
     suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
     return "".join(character for character in suffix if character.isalnum()) or "bin"
+
+
+def _bump_semver(version: str, change_type: str) -> str:
+    """Return the next semantic version for a requested change type."""
+    major, minor, patch = (int(part) for part in version.split("."))
+    if version == "0.0.0":
+        return "1.0.0"
+    if change_type == "fix":
+        return f"{major}.{minor}.{patch + 1}"
+    if change_type == "improvement":
+        return f"{major}.{minor + 1}.0"
+    return f"{major + 1}.0.0"
 
 
 def framework_to_response(framework: Framework) -> FrameworkResponse:
@@ -315,6 +332,41 @@ async def delete_draft(
     ).info("framework_draft_deleted")
 
 
+async def unpublish_framework(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Move an owned published Framework out of the public catalog."""
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status == "unpublished":
+        return framework_to_response(framework)
+    if framework.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only published Frameworks can be unpublished.",
+        )
+
+    framework.status = "unpublished"
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="framework_unpublished",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"version": framework.version},
+    )
+    await db.commit()
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="unpublish_framework",
+        user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_unpublished")
+    return framework_to_response(framework)
+
+
 async def request_artifact_upload_url(
     db: AsyncSession,
     contributor: User,
@@ -406,7 +458,10 @@ async def list_artifacts(
     artifacts = (
         await db.execute(
             select(Artifact)
-            .where(Artifact.framework_id == framework.id)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
             .order_by(Artifact.created_at)
         )
     ).scalars().all()
@@ -423,6 +478,7 @@ async def _load_owned_artifact(
         select(Artifact).where(
             Artifact.id == artifact_id,
             Artifact.framework_id == framework.id,
+            Artifact.current_for_framework.is_(True),
         )
     )
     if artifact is None:
@@ -514,6 +570,11 @@ async def delete_artifact(
     if framework.preview_artifact_id == artifact.id:
         framework.preview_artifact_id = None
         await db.flush()
+    version_reference_count = await db.scalar(
+        select(func.count(FrameworkVersionArtifact.artifact_id)).where(
+            FrameworkVersionArtifact.artifact_id == artifact.id
+        )
+    )
     await write_audit(
         db=db,
         actor_id=contributor.id,
@@ -522,7 +583,10 @@ async def delete_artifact(
         target_id=artifact.id,
         metadata={"framework_id": str(framework.id)},
     )
-    await db.delete(artifact)
+    if int(version_reference_count or 0) > 0:
+        artifact.current_for_framework = False
+    else:
+        await db.delete(artifact)
     await db.commit()
     logger.bind(
         module="frameworks",
@@ -531,3 +595,162 @@ async def delete_artifact(
         framework_id=framework.id,
         artifact_id=artifact.id,
     ).info("artifact_deleted")
+
+
+async def _snapshot_current_version(
+    db: AsyncSession,
+    framework: Framework,
+    current_artifacts: list[Artifact],
+    payload: FrameworkVersionCreate,
+) -> FrameworkVersion:
+    """Ensure the current published version has an immutable Artifact snapshot."""
+    snapshot = await db.scalar(
+        select(FrameworkVersion).where(
+            FrameworkVersion.framework_id == framework.id,
+            FrameworkVersion.version == framework.version,
+        )
+    )
+    if snapshot is None:
+        snapshot = FrameworkVersion(
+            framework_id=framework.id,
+            version=framework.version,
+            change_type=payload.change_type,
+            change_log=payload.change_log.strip(),
+        )
+        db.add(snapshot)
+        await db.flush()
+
+    for artifact in current_artifacts:
+        existing = await db.get(FrameworkVersionArtifact, (snapshot.id, artifact.id))
+        if existing is None:
+            db.add(
+                FrameworkVersionArtifact(
+                    framework_version_id=snapshot.id,
+                    artifact_id=artifact.id,
+                    is_preview=framework.preview_artifact_id == artifact.id,
+                )
+            )
+    return snapshot
+
+
+async def create_new_version(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: FrameworkVersionCreate,
+) -> FrameworkResponse:
+    """Start a new draft version from a published or unpublished Framework."""
+    if not payload.artifact_inheritance:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Nothing to bump.",
+        )
+
+    settings = get_settings()
+    contributor_id = contributor.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await db.scalar(
+            select(Framework).where(
+                Framework.id == framework_id,
+                Framework.contributor_id == contributor_id,
+            )
+        )
+        if framework is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        if framework.status not in {"published", "unpublished"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only published or unpublished Frameworks can be versioned.",
+            )
+
+        current_artifact_rows = await db.execute(
+            select(Artifact)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
+            .order_by(Artifact.created_at)
+        )
+        current_artifacts = list(current_artifact_rows.scalars().all())
+        current_artifact_ids = {artifact.id for artifact in current_artifacts}
+        requested_artifact_ids = set(payload.artifact_inheritance)
+        if not requested_artifact_ids.issubset(current_artifact_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Artifact inheritance contains non-current Artifacts.",
+            )
+        if not current_artifacts:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="At least one Artifact is required to create a new version.",
+            )
+
+        await _snapshot_current_version(db, framework, current_artifacts, payload)
+
+        preview_replacement_id: UUID | None = None
+        cloned_artifact_ids: list[str] = []
+        for artifact in current_artifacts:
+            should_inherit = payload.artifact_inheritance.get(artifact.id, True)
+            if should_inherit:
+                continue
+
+            artifact.current_for_framework = False
+            new_artifact_id = uuid4()
+            extension = _extension_for_filename(artifact.name)
+            new_file_key = (
+                f"frameworks/{framework.id}/artifacts/{new_artifact_id}.{extension}"
+            )
+            s3.storage.copy_object(
+                settings.s3_artifacts_bucket,
+                artifact.file_key,
+                settings.s3_artifacts_bucket,
+                new_file_key,
+            )
+            new_artifact = Artifact(
+                id=new_artifact_id,
+                framework_id=framework.id,
+                name=artifact.name,
+                file_key=new_file_key,
+                file_size=artifact.file_size,
+                mime_type=artifact.mime_type,
+                current_for_framework=True,
+            )
+            db.add(new_artifact)
+            await db.flush()
+            cloned_artifact_ids.append(str(new_artifact_id))
+            if framework.preview_artifact_id == artifact.id:
+                preview_replacement_id = new_artifact_id
+
+        if preview_replacement_id is not None:
+            framework.preview_artifact_id = preview_replacement_id
+        framework.version = _bump_semver(framework.version, payload.change_type)
+        framework.status = "draft"
+        framework.change_type = payload.change_type
+        framework.published_at = None
+        framework.pipeline_failure_reasons = {}
+        await write_audit(
+            db=db,
+            actor_id=contributor_id,
+            action="framework_version_bumped",
+            target_type="framework",
+            target_id=framework.id,
+            metadata={
+                "version": framework.version,
+                "change_type": payload.change_type,
+                "cloned_artifact_ids": cloned_artifact_ids,
+            },
+        )
+
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="create_new_version",
+        user_id=contributor_id,
+        framework_id=framework.id,
+    ).info("framework_version_bumped")
+    return framework_to_response(framework)

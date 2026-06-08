@@ -71,6 +71,11 @@ class Artifact(CreatedAtMixin, Base):
             name="ck_artifacts_rarity_score_range",
         ),
         Index("idx_artifacts_framework", "framework_id"),
+        Index(
+            "idx_artifacts_current_framework",
+            "framework_id",
+            "current_for_framework",
+        ),
         Index("idx_artifacts_processing_status", "processing_status"),
         Index("idx_artifacts_simhash", "simhash"),
     )
@@ -109,6 +114,11 @@ class Artifact(CreatedAtMixin, Base):
         Boolean,
         nullable=False,
         server_default=text("false"),
+    )
+    current_for_framework: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
     )
     minhash_signature: Mapped[bytes | None] = mapped_column(BYTEA, nullable=True)
     simhash: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

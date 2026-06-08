@@ -16,14 +16,20 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, func, select, update
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
-from app.modules.frameworks.models import Framework, FrameworkVersion, License, Review
+from app.modules.frameworks.models import (
+    Framework,
+    FrameworkVersion,
+    FrameworkVersionArtifact,
+    License,
+    Review,
+)
 from app.modules.frameworks.models_artifact import (
     Artifact,
     ArtifactDownload,
@@ -44,6 +50,7 @@ class FakeArtifactStorage:
         """Create empty fake S3 state."""
         self.existing_keys: set[str] = set()
         self.presigned_requests: list[tuple[str, str, str, int, int]] = []
+        self.copy_requests: list[tuple[str, str, str, str]] = []
 
     def presigned_post(
         self,
@@ -68,6 +75,19 @@ class FakeArtifactStorage:
     def object_exists(self, bucket: str, key: str) -> bool:
         """Return whether the fake object was marked uploaded."""
         return key in self.existing_keys
+
+    def copy_object(
+        self,
+        source_bucket: str,
+        source_key: str,
+        destination_bucket: str,
+        destination_key: str,
+    ) -> None:
+        """Record a copy and mark the destination object as present."""
+        self.copy_requests.append(
+            (source_bucket, source_key, destination_bucket, destination_key)
+        )
+        self.existing_keys.add(destination_key)
 
 
 @pytest.fixture
@@ -95,12 +115,16 @@ async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
     async def cleanup() -> None:
         """Remove marketplace rows before deleting users in test isolation."""
         async with async_session_factory() as session:
+            await session.execute(
+                update(Framework).values(preview_artifact_id=None)
+            )
             await session.execute(delete(AuditLog))
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
             await session.execute(delete(License))
             await session.execute(delete(ArtifactRarityAudit))
             await session.execute(delete(ArtifactPiiAudit))
+            await session.execute(delete(FrameworkVersionArtifact))
             await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Artifact))
             await session.execute(delete(Framework))
@@ -658,6 +682,252 @@ async def test_published_framework_artifact_delete_is_rejected(
     )
 
     assert response.status_code == 409
+
+
+async def test_contributor_can_unpublish_owned_published_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributors can hide a published Framework from new catalog purchases."""
+    contributor_id = await create_user_with_roles(
+        "artifact-unpublish@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/unpublish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unpublished"
+
+
+async def test_new_version_without_inherited_artifact_clones_current_artifact(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A non-inherited Artifact is copied into the new draft version."""
+    contributor_id = await create_user_with_roles(
+        "version-clone@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "versioned.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert framework is not None
+        assert artifact is not None
+        framework.status = "published"
+        artifact.scan_status = "clean"
+        artifact.processing_status = "processed"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/versions",
+        json={
+            "change_type": "improvement",
+            "change_log": "Refresh the implementation playbook.",
+            "artifact_inheritance": {artifact_id: False},
+        },
+        headers=headers,
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["version"] == "1.1.0"
+    assert response.json()["status"] == "draft"
+    current_artifacts = listed.json()
+    assert len(current_artifacts) == 1
+    assert current_artifacts[0]["id"] != artifact_id
+    assert current_artifacts[0]["processing_status"] == "pending"
+    assert framework_test_context["storage"].copy_requests
+
+    async with async_session_factory() as session:
+        old_artifact = await session.get(Artifact, UUID(artifact_id))
+        snapshot = await session.scalar(
+            select(FrameworkVersion).where(
+                FrameworkVersion.framework_id == UUID(framework_id),
+                FrameworkVersion.version == "1.0.0",
+            )
+        )
+        assert old_artifact is not None
+        assert old_artifact.current_for_framework is False
+        assert snapshot is not None
+        snapshot_artifact = await session.get(
+            FrameworkVersionArtifact,
+            (snapshot.id, UUID(artifact_id)),
+        )
+        assert snapshot_artifact is not None
+        assert snapshot_artifact.is_preview is True
+
+
+async def test_new_version_rejects_empty_inheritance_as_nothing_to_bump(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Version creation needs an explicit Artifact inheritance decision."""
+    contributor_id = await create_user_with_roles(
+        "version-empty@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/versions",
+        json={
+            "change_type": "fix",
+            "change_log": "No artifact decision.",
+            "artifact_inheritance": {},
+        },
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Nothing to bump."
+
+
+async def test_major_bump_from_zero_version_starts_at_one_zero_zero(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """The first major version from 0.0.0 starts cleanly at 1.0.0."""
+    contributor_id = await create_user_with_roles(
+        "version-zero@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "zero.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        framework.version = "0.0.0"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/versions",
+        json={
+            "change_type": "major",
+            "change_log": "Initial published version.",
+            "artifact_inheritance": {artifact_id: True},
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["version"] == "1.0.0"
+
+
+async def test_deleting_inherited_version_artifact_keeps_historical_snapshot(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Inherited Artifacts are hidden from drafts, not deleted historically."""
+    contributor_id = await create_user_with_roles(
+        "version-inherit-delete@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "inherited.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    version = await client.post(
+        f"/v1/frameworks/{framework_id}/versions",
+        json={
+            "change_type": "fix",
+            "change_log": "Start a draft with inherited files.",
+            "artifact_inheritance": {artifact_id: True},
+        },
+        headers=headers,
+    )
+    deleted = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}",
+        headers=headers,
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=headers,
+    )
+
+    assert version.status_code == 200
+    assert deleted.status_code == 204
+    assert listed.json() == []
+
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        snapshot = await session.scalar(
+            select(FrameworkVersion).where(
+                FrameworkVersion.framework_id == UUID(framework_id),
+                FrameworkVersion.version == "1.0.0",
+            )
+        )
+        assert artifact is not None
+        assert artifact.current_for_framework is False
+        assert snapshot is not None
+        assert await session.get(
+            FrameworkVersionArtifact,
+            (snapshot.id, UUID(artifact_id)),
+        )
 
 
 async def test_unauthenticated_create_returns_401_and_creates_no_draft(
