@@ -6,7 +6,13 @@
  */
 import Link from "next/link";
 
-import { formatLabel } from "@/lib/marketplace/format";
+import {
+  FRAMEWORK_CATEGORY_OPTIONS,
+  FUNCTION_OPTIONS,
+  INDUSTRY_OPTIONS,
+  ORG_SIZE_OPTIONS,
+  SECTOR_OPTIONS,
+} from "@/lib/marketplace/taxonomy";
 
 type FilterSidebarProps = {
   active: Record<string, string | undefined>;
@@ -14,19 +20,38 @@ type FilterSidebarProps = {
 
 const filterGroups = [
   {
+    key: "sector",
+    label: "Sector",
+    values: SECTOR_OPTIONS,
+  },
+  {
+    key: "industry",
+    label: "Industry",
+    values: INDUSTRY_OPTIONS,
+  },
+  {
+    key: "function",
+    label: "Function",
+    values: FUNCTION_OPTIONS,
+  },
+  {
     key: "category",
     label: "Category",
-    values: ["governance", "risk", "operations", "finance"],
+    values: FRAMEWORK_CATEGORY_OPTIONS,
   },
   {
     key: "license_type",
     label: "License",
-    values: ["single_user", "team", "enterprise"],
+    values: [
+      { label: "Single User", value: "single_user" },
+      { label: "Team", value: "team" },
+      { label: "Enterprise", value: "enterprise" },
+    ],
   },
   {
     key: "org_size",
     label: "Organization",
-    values: ["startup", "sme", "mid_market", "enterprise"],
+    values: ORG_SIZE_OPTIONS,
   },
 ] as const;
 
@@ -61,42 +86,60 @@ export function buildExploreFilterHref(
  */
 export function FilterSidebar({ active }: FilterSidebarProps) {
   return (
-    <aside className="rounded-[8px] border border-border-default bg-surface-2 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="font-heading text-base font-bold text-foreground">
+    <aside className="rounded-2xl border border-border-default bg-surface-1 p-5 sm:p-6 shadow-sm">
+      <div className="mb-6 flex items-center justify-between gap-3 border-b border-border-default pb-4">
+        <h2 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+          <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
           Filters
         </h2>
-        <Link className="text-sm font-semibold text-accent" href="/explore">
-          Clear
-        </Link>
+        {Object.keys(active).length > 0 && (
+          <Link className="text-xs font-semibold text-accent transition-colors hover:text-accent/80" href="/explore">
+            Clear all
+          </Link>
+        )}
       </div>
-      <div className="space-y-5">
-        {filterGroups.map((group) => (
-          <section key={group.key}>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-              {group.label}
-            </h3>
-            <div className="grid gap-2">
-              {group.values.map((value) => {
-                const selected = active[group.key] === value;
-                return (
-                  <Link
-                    className={[
-                      "rounded-[6px] border px-3 py-2 text-sm transition",
-                      selected
-                        ? "border-accent bg-accent/10 text-accent"
-                        : "border-border-default text-foreground hover:border-border-strong hover:bg-surface-3",
-                    ].join(" ")}
-                    href={buildExploreFilterHref(active, group.key, value)}
-                    key={value}
-                  >
-                    {formatLabel(value)}
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+      <div className="flex flex-col gap-6">
+        {filterGroups.map((group) => {
+          const hasActiveFilter = active[group.key] !== undefined;
+          return (
+            <details 
+              key={group.key} 
+              className="group"
+              open={hasActiveFilter}
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between outline-none [&::-webkit-details-marker]:hidden">
+                <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted transition-colors group-hover:text-foreground">
+                  {group.label}
+                </span>
+                <svg className="h-4 w-4 text-foreground-muted transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+              <div className="mt-3 grid gap-2">
+                {group.values.map((option) => {
+                  const value = option.value;
+                  const selected = active[group.key] === value;
+                  return (
+                    <Link
+                      className={[
+                        "rounded-xl border px-3 py-2 text-sm transition-all duration-200",
+                        selected
+                          ? "border-accent bg-accent/10 text-accent font-medium shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                          : "border-transparent text-foreground hover:border-border-default hover:bg-surface-2",
+                      ].join(" ")}
+                      href={buildExploreFilterHref(active, group.key, value)}
+                      key={value}
+                    >
+                      {option.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </details>
+          );
+        })}
       </div>
     </aside>
   );

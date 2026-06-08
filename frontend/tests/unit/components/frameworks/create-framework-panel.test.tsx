@@ -20,7 +20,7 @@ vi.mock("@/components/modules/frameworks/framework-form", () => ({
     <button
       onClick={() =>
         onSubmit({
-          category: "operations",
+          category: "toolkit",
           description: "A clean operating framework.",
           pricing: {
             currency: "USD",
@@ -62,7 +62,7 @@ describe("CreateFrameworkPanel", () => {
     vi.mocked(createFramework).mockResolvedValue({
       data: {
         artifacts: [],
-        category: "operations",
+        category: "toolkit",
         contributor_id: "user_123",
         created_at: "2026-06-08T10:00:00Z",
         current_version: 1,

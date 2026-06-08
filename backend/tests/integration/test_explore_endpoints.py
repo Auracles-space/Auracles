@@ -167,12 +167,12 @@ async def create_framework(
     *,
     title: str,
     status: str = "published",
-    category: str = "Governance",
-    sector: str = "Financial Services",
-    industry: str = "Banking",
-    function: str = "Risk",
+    category: str = "framework",
+    sector: str = "financial_services",
+    industry: str = "fund_management",
+    function: str = "risk_management",
     tags: list[str] | None = None,
-    jurisdiction: str = "US",
+    jurisdiction: str = "us",
     complexity: int = 3,
     org_size: str = "mid_market",
     lifecycle_stage: str = "scale",
@@ -244,8 +244,8 @@ async def test_public_catalog_search_filters_and_visibility(
     await create_framework(
         contributor_id,
         title="People Operations Toolkit",
-        category="Operations",
-        sector="Technology",
+        category="toolkit",
+        sector="technology",
         tags=["people", "operations"],
         price=Decimal("199.00"),
     )
@@ -260,8 +260,8 @@ async def test_public_catalog_search_filters_and_visibility(
         "/v1/explore/frameworks",
         params={
             "q": "risk",
-            "sector": "Financial Services",
-            "category": "Governance",
+            "sector": "financial_services",
+            "category": "framework",
             "price_min": "400.00",
             "price_max": "600.00",
         },
@@ -271,6 +271,11 @@ async def test_public_catalog_search_filters_and_visibility(
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["title"] == "Board Risk Operating System"
+    assert body["items"][0]["category"] == "framework"
+    assert body["items"][0]["sector"] == "financial_services"
+    assert body["items"][0]["industry"] == "fund_management"
+    assert body["items"][0]["function"] == "risk_management"
+    assert body["items"][0]["org_size"] == "mid_market"
     assert body["items"][0]["owned"] is False
 
 
@@ -371,8 +376,8 @@ async def test_related_frameworks_use_tag_category_and_sector_overlap(
     await create_framework(
         other_id,
         title="Sales Playbook",
-        category="Sales",
-        sector="Technology",
+        category="playbook",
+        sector="technology",
         tags=["sales"],
     )
 

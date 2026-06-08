@@ -13,12 +13,46 @@ import type {
   FrameworkResponse,
   PricingConfig,
 } from "@/lib/generated/types.gen";
+import {
+  FRAMEWORK_CATEGORY_OPTIONS,
+  FUNCTION_OPTIONS,
+  INDUSTRY_OPTIONS,
+  ORG_SIZE_OPTIONS,
+  SECTOR_OPTIONS,
+  type MarketplaceOption,
+} from "@/lib/marketplace/taxonomy";
 
 type FrameworkFormProps = {
   framework?: FrameworkResponse;
   onSubmit: (payload: FrameworkCreate) => Promise<void>;
   submitLabel?: string;
 };
+
+type FrameworkFormState = {
+  category: FrameworkCreate["category"];
+  description: string;
+  function: NonNullable<FrameworkCreate["function"]>;
+  industry: NonNullable<FrameworkCreate["industry"]>;
+  orgSize: NonNullable<FrameworkCreate["org_size"]>;
+  price: string;
+  sector: NonNullable<FrameworkCreate["sector"]>;
+  tags: string;
+  title: string;
+};
+
+/**
+ * Return a known taxonomy value, falling back for legacy records.
+ *
+ * @param value - Persisted value from an existing Framework.
+ * @param options - Allowed canonical values for the select.
+ */
+function coerceTaxonomyValue<TValue extends string>(
+  value: string | null | undefined,
+  options: readonly MarketplaceOption<TValue>[],
+): TValue {
+  const match = options.find((option) => option.value === value);
+  return match?.value ?? options[0].value;
+}
 
 /**
  * Render a Framework create/edit form.
@@ -32,10 +66,14 @@ export function FrameworkForm({
 }: FrameworkFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    category: framework?.category ?? "operations",
+  const [form, setForm] = useState<FrameworkFormState>({
+    category: coerceTaxonomyValue(framework?.category, FRAMEWORK_CATEGORY_OPTIONS),
     description: framework?.description ?? "",
+    function: coerceTaxonomyValue(framework?.function, FUNCTION_OPTIONS),
+    industry: coerceTaxonomyValue(framework?.industry, INDUSTRY_OPTIONS),
+    orgSize: coerceTaxonomyValue(framework?.org_size, ORG_SIZE_OPTIONS),
     price: framework?.pricing.price ?? "250",
+    sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
     tags: framework?.tags.join(", ") ?? "",
     title: framework?.title ?? "",
   });
@@ -55,7 +93,11 @@ export function FrameworkForm({
       await onSubmit({
         category: form.category,
         description: form.description,
+        function: form.function,
+        industry: form.industry,
+        org_size: form.orgSize,
         pricing,
+        sector: form.sector,
         tags: form.tags
           .split(",")
           .map((tag) => tag.trim())
@@ -103,31 +145,47 @@ export function FrameworkForm({
       </label>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
-            Category
-          </span>
-          <div className="relative">
-            <select
-              className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10"
-              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-              required
-              value={form.category}
-            >
-              <option value="operations">Operations & Playbooks</option>
-              <option value="engineering">Engineering & Architecture</option>
-              <option value="design">Design Systems</option>
-              <option value="compliance">Compliance & Security</option>
-              <option value="finance">Finance & Modeling</option>
-              <option value="hr">People & HR</option>
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-foreground-muted">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        </label>
+        <FormSelectInput
+          label="Sector"
+          onChange={(value) => setForm((current) => ({ ...current, sector: value }))}
+          options={SECTOR_OPTIONS}
+          required
+          value={form.sector}
+        />
+        <FormSelectInput
+          label="Industry"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, industry: value }))
+          }
+          options={INDUSTRY_OPTIONS}
+          required
+          value={form.industry}
+        />
+        <FormSelectInput
+          label="Function"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, function: value }))
+          }
+          options={FUNCTION_OPTIONS}
+          required
+          value={form.function}
+        />
+        <FormSelectInput
+          label="Category"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, category: value }))
+          }
+          options={FRAMEWORK_CATEGORY_OPTIONS}
+          required
+          value={form.category}
+        />
+        <FormSelectInput
+          label="Organization Size"
+          onChange={(value) => setForm((current) => ({ ...current, orgSize: value }))}
+          options={ORG_SIZE_OPTIONS}
+          required
+          value={form.orgSize}
+        />
         
         <label className="block">
           <span className="mb-1.5 block text-sm font-semibold text-foreground">
@@ -192,6 +250,65 @@ export function FrameworkForm({
   );
 }
 
+type FormSelectInputProps<TValue extends string> = {
+  label: string;
+  onChange: (value: TValue) => void;
+  options: readonly MarketplaceOption<TValue>[];
+  required?: boolean;
+  value: TValue;
+};
+
+/**
+ * Render one taxonomy select field.
+ *
+ * @param props - Label, selected value, options, and change handler.
+ */
+function FormSelectInput<TValue extends string>({
+  label,
+  onChange,
+  options,
+  required = false,
+  value,
+}: FormSelectInputProps<TValue>) {
+  const inputId = `framework-${label.toLowerCase().replaceAll(" ", "-")}`;
+
+  return (
+    <div className="block">
+      <label
+        className="mb-1.5 block text-sm font-semibold text-foreground"
+        htmlFor={inputId}
+      >
+        {label}
+        {required && (
+          <span aria-hidden="true" className="ml-1 text-accent">
+            *
+          </span>
+        )}
+      </label>
+      <div className="relative">
+        <select
+          className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10"
+          id={inputId}
+          onChange={(event) => onChange(event.target.value as TValue)}
+          required={required}
+          value={value}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-foreground-muted">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type FormTextInputProps = {
   label: string;
   onChange: (value: string) => void;
@@ -218,7 +335,11 @@ function FormTextInput({
     <label className="block">
       <span className="mb-1.5 block text-sm font-semibold text-foreground">
         {label}
-        {required && <span className="ml-1 text-accent">*</span>}
+        {required && (
+          <span aria-hidden="true" className="ml-1 text-accent">
+            *
+          </span>
+        )}
       </span>
       <input
         className="h-11 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 placeholder:text-foreground-muted/50"

@@ -169,7 +169,7 @@ def create_processing_artifact(
             contributor_id=user.id,
             title="Pipeline Framework",
             description="Pipeline Framework description",
-            category="Operations",
+            category="toolkit",
             tags=["risk", "governance"],
             tags_text="risk governance",
             price="100.00",

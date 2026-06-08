@@ -190,12 +190,12 @@ def valid_framework_payload() -> dict[str, Any]:
     return {
         "title": "Board Risk Operating System",
         "description": "A board-ready governance framework for risk operations.",
-        "category": "Governance",
-        "sector": "Financial Services",
-        "industry": "Banking",
-        "function": "Risk",
+        "category": "framework",
+        "sector": "financial_services",
+        "industry": "fund_management",
+        "function": "risk_management",
         "tags": ["risk", "board", "governance"],
-        "jurisdiction": "US",
+        "jurisdiction": "us",
         "complexity": 3,
         "org_size": "mid_market",
         "lifecycle_stage": "scale",
@@ -308,6 +308,11 @@ async def test_verified_contributor_can_create_draft_framework(
     assert body["title"] == "Board Risk Operating System"
     assert body["status"] == "draft"
     assert body["version"] == "1.0.0"
+    assert body["category"] == "framework"
+    assert body["sector"] == "financial_services"
+    assert body["industry"] == "fund_management"
+    assert body["function"] == "risk_management"
+    assert body["org_size"] == "mid_market"
     assert body["contributor_id"] == str(contributor_id)
     assert body["pricing"]["price"] == "499.00"
     assert body["pricing"]["license_types"] == ["single_user", "team"]
@@ -394,6 +399,40 @@ async def test_framework_create_validates_pricing_payload(
 
     assert response.status_code == 422
     assert expected_field in str(response.json()["detail"])
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("category", "made_up_category"),
+        ("sector", "made_up_sector"),
+        ("industry", "made_up_industry"),
+        ("function", "made_up_function"),
+    ],
+)
+async def test_framework_create_rejects_unknown_taxonomy_values(
+    field_name: str,
+    invalid_value: str,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Framework creation rejects taxonomy values outside the catalog vocabulary."""
+    contributor_id = await create_user_with_roles(
+        "invalid-taxonomy@auracles.space",
+        ["contributor"],
+    )
+    payload = valid_framework_payload()
+    payload[field_name] = invalid_value
+
+    response = await client.post(
+        "/v1/frameworks",
+        json=payload,
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+    assert field_name in str(response.json()["detail"])
 
 
 async def test_contributor_can_view_list_update_and_delete_draft_framework(

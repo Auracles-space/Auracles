@@ -14,6 +14,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.frameworks.taxonomy import (
+    FrameworkCategory,
+    FrameworkFunction,
+    FrameworkIndustry,
+    FrameworkSector,
+)
+
 FrameworkStatus = Literal[
     "draft",
     "submitted",
@@ -51,10 +58,10 @@ class FrameworkCreate(BaseModel):
 
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1)
-    category: str = Field(min_length=1, max_length=100)
-    sector: str | None = Field(default=None, max_length=100)
-    industry: str | None = Field(default=None, max_length=100)
-    function: str | None = Field(default=None, max_length=100)
+    category: FrameworkCategory
+    sector: FrameworkSector | None = None
+    industry: FrameworkIndustry | None = None
+    function: FrameworkFunction | None = None
     tags: list[str] = Field(default_factory=list)
     jurisdiction: str | None = Field(default=None, max_length=100)
     complexity: int | None = Field(default=None, ge=1, le=5)
@@ -74,10 +81,10 @@ class FrameworkUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, min_length=1)
-    category: str | None = Field(default=None, min_length=1, max_length=100)
-    sector: str | None = Field(default=None, max_length=100)
-    industry: str | None = Field(default=None, max_length=100)
-    function: str | None = Field(default=None, max_length=100)
+    category: FrameworkCategory | None = None
+    sector: FrameworkSector | None = None
+    industry: FrameworkIndustry | None = None
+    function: FrameworkFunction | None = None
     tags: list[str] | None = None
     jurisdiction: str | None = Field(default=None, max_length=100)
     complexity: int | None = Field(default=None, ge=1, le=5)

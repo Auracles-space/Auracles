@@ -9,9 +9,22 @@ import { FrameworkCard } from "@/components/modules/explore/framework-card";
 import type {
   ExploreFrameworkCard,
   ExploreSort,
+  FrameworkCategory,
+  FrameworkFunction,
+  FrameworkIndustry,
+  FrameworkSector,
   ListExploreFrameworksData,
+  OrgSize,
 } from "@/lib/generated/types.gen";
 import { loadExploreCatalog } from "@/lib/marketplace/explore-read-model";
+import {
+  FRAMEWORK_CATEGORY_OPTIONS,
+  FUNCTION_OPTIONS,
+  INDUSTRY_OPTIONS,
+  ORG_SIZE_OPTIONS,
+  SECTOR_OPTIONS,
+  type MarketplaceOption,
+} from "@/lib/marketplace/taxonomy";
 
 type ExplorePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -43,30 +56,68 @@ function numberParam(
 }
 
 /**
+ * Parse a taxonomy query param only when it is in the current vocabulary.
+ *
+ * @param value - Next.js search param value.
+ * @param options - Allowed taxonomy options for the filter.
+ * @returns Typed taxonomy value or null when absent/unknown.
+ */
+function taxonomyParam<TValue extends string>(
+  value: string | string[] | undefined,
+  options: readonly MarketplaceOption<TValue>[],
+): TValue | null {
+  const param = firstParam(value);
+  const match = options.find((option) => option.value === param);
+  return match?.value ?? null;
+}
+
+/**
+ * Parse Explore sort, falling back to newest for unknown query strings.
+ *
+ * @param value - Next.js search param value.
+ * @returns Supported sort value.
+ */
+function sortParam(value: string | string[] | undefined): ExploreSort {
+  const param = firstParam(value);
+  if (
+    param === "top-rated" ||
+    param === "most-purchased" ||
+    param === "price_asc" ||
+    param === "price_desc"
+  ) {
+    return param;
+  }
+  return "newest";
+}
+
+/**
  * Render the public marketplace catalog.
  *
  * @param props - Next.js query params.
  */
 export default async function ExplorePage({ searchParams }: ExplorePageProps) {
   const params = (await searchParams) ?? {};
-  const query: ListExploreFrameworksData["query"] = {
-    category: firstParam(params.category) ?? null,
+  const query: NonNullable<ListExploreFrameworksData["query"]> = {
+    category: taxonomyParam<FrameworkCategory>(
+      params.category,
+      FRAMEWORK_CATEGORY_OPTIONS,
+    ),
     complexity: firstParam(params.complexity)
       ? Number(firstParam(params.complexity))
       : null,
-    function: firstParam(params.function) ?? null,
-    industry: firstParam(params.industry) ?? null,
+    function: taxonomyParam<FrameworkFunction>(params.function, FUNCTION_OPTIONS),
+    industry: taxonomyParam<FrameworkIndustry>(params.industry, INDUSTRY_OPTIONS),
     jurisdiction: firstParam(params.jurisdiction) ?? null,
     license_type: firstParam(params.license_type) ?? null,
     lifecycle_stage: firstParam(params.lifecycle_stage) ?? null,
-    org_size: firstParam(params.org_size) ?? null,
+    org_size: taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS),
     page: numberParam(params.page, 1),
     page_size: 12,
     price_max: firstParam(params.price_max) ?? null,
     price_min: firstParam(params.price_min) ?? null,
     q: firstParam(params.q) ?? null,
-    sector: firstParam(params.sector) ?? null,
-    sort: (firstParam(params.sort) as ExploreSort | undefined) ?? "newest",
+    sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS),
+    sort: sortParam(params.sort),
   };
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
@@ -94,9 +145,12 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                   <FilterSidebar
                     active={{
                       category: query.category ?? undefined,
+                      function: query.function ?? undefined,
+                      industry: query.industry ?? undefined,
                       license_type: query.license_type ?? undefined,
                       org_size: query.org_size ?? undefined,
                       q: query.q ?? undefined,
+                      sector: query.sector ?? undefined,
                       sort: query.sort,
                     }}
                   />
@@ -109,9 +163,12 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
               <FilterSidebar
                 active={{
                   category: query.category ?? undefined,
+                  function: query.function ?? undefined,
+                  industry: query.industry ?? undefined,
                   license_type: query.license_type ?? undefined,
                   org_size: query.org_size ?? undefined,
                   q: query.q ?? undefined,
+                  sector: query.sector ?? undefined,
                   sort: query.sort,
                 }}
               />

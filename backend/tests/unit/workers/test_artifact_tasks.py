@@ -135,7 +135,7 @@ def create_pending_artifact() -> UUID:
             contributor_id=user.id,
             title="Task Framework",
             description="Task Framework description",
-            category="Operations",
+            category="toolkit",
             tags=[],
             tags_text="",
             price="100.00",

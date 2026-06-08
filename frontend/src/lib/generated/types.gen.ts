@@ -205,22 +205,26 @@ export type ForgotPasswordRequest = {
     email: string;
 };
 
+export type FrameworkCategory = 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
+
 export type FrameworkCreate = {
     title: string;
     description: string;
-    category: string;
-    sector?: (string) | null;
-    industry?: (string) | null;
-    function?: (string) | null;
+    category: FrameworkCategory;
+    sector?: (FrameworkSector | null);
+    industry?: (FrameworkIndustry | null);
+    function?: (FrameworkFunction | null);
     tags?: Array<(string)>;
     jurisdiction?: (string) | null;
     complexity?: (number) | null;
-    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise') | null;
+    org_size?: (OrgSize | null);
     lifecycle_stage?: (string) | null;
     pricing: PricingConfig;
 };
 
-export type org_size = 'startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise';
+export type FrameworkFunction = 'governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security';
+
+export type FrameworkIndustry = 'fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies';
 
 export type FrameworkListItem = {
     id: string;
@@ -259,17 +263,19 @@ export type FrameworkResponse = {
 
 export type status3 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
+export type FrameworkSector = 'private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology';
+
 export type FrameworkUpdate = {
     title?: (string) | null;
     description?: (string) | null;
-    category?: (string) | null;
-    sector?: (string) | null;
-    industry?: (string) | null;
-    function?: (string) | null;
+    category?: (FrameworkCategory | null);
+    sector?: (FrameworkSector | null);
+    industry?: (FrameworkIndustry | null);
+    function?: (FrameworkFunction | null);
     tags?: Array<(string)> | null;
     jurisdiction?: (string) | null;
     complexity?: (number) | null;
-    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise') | null;
+    org_size?: (OrgSize | null);
     lifecycle_stage?: (string) | null;
     pricing?: (PricingConfig | null);
 };
@@ -376,6 +382,8 @@ export type LoginResponse = {
 };
 
 export type token_type = 'bearer';
+
+export type OrgSize = 'startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise';
 
 export type PreviewArtifactRequest = {
     artifact_id: string;
@@ -782,20 +790,20 @@ export type SetPreviewArtifactError = (unknown);
 
 export type ListExploreFrameworksData = {
     query?: {
-        category?: (string) | null;
+        category?: (FrameworkCategory | null);
         complexity?: (number) | null;
-        function?: (string) | null;
-        industry?: (string) | null;
+        function?: (FrameworkFunction | null);
+        industry?: (FrameworkIndustry | null);
         jurisdiction?: (string) | null;
         license_type?: (string) | null;
         lifecycle_stage?: (string) | null;
-        org_size?: (string) | null;
+        org_size?: (OrgSize | null);
         page?: number;
         page_size?: number;
         price_max?: (string) | null;
         price_min?: (string) | null;
         q?: (string) | null;
-        sector?: (string) | null;
+        sector?: (FrameworkSector | null);
         sort?: ExploreSort;
     };
 };

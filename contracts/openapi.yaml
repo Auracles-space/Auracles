@@ -1165,27 +1165,27 @@ paths:
         - name: sector
           in: query
           schema:
-            type:
-              - string
-              - "null"
+            anyOf:
+              - $ref: "#/components/schemas/FrameworkSector"
+              - type: "null"
         - name: industry
           in: query
           schema:
-            type:
-              - string
-              - "null"
+            anyOf:
+              - $ref: "#/components/schemas/FrameworkIndustry"
+              - type: "null"
         - name: function
           in: query
           schema:
-            type:
-              - string
-              - "null"
+            anyOf:
+              - $ref: "#/components/schemas/FrameworkFunction"
+              - type: "null"
         - name: category
           in: query
           schema:
-            type:
-              - string
-              - "null"
+            anyOf:
+              - $ref: "#/components/schemas/FrameworkCategory"
+              - type: "null"
         - name: license_type
           in: query
           schema:
@@ -1203,9 +1203,9 @@ paths:
         - name: org_size
           in: query
           schema:
-            type:
-              - string
-              - "null"
+            anyOf:
+              - $ref: "#/components/schemas/OrgSize"
+              - type: "null"
         - name: lifecycle_stage
           in: query
           schema:
@@ -2157,6 +2157,75 @@ components:
         - price_asc
         - price_desc
       default: newest
+    FrameworkCategory:
+      type: string
+      enum:
+        - framework
+        - playbook
+        - sop
+        - policy
+        - template
+        - toolkit
+        - assessment
+        - control_matrix
+        - workflow
+        - training_program
+    FrameworkSector:
+      type: string
+      enum:
+        - private_equity
+        - venture_capital
+        - infrastructure
+        - real_estate
+        - healthcare
+        - manufacturing
+        - government
+        - education
+        - financial_services
+        - energy
+        - telecommunications
+        - technology
+    FrameworkIndustry:
+      type: string
+      enum:
+        - fund_management
+        - portfolio_operations
+        - energy_infrastructure
+        - transportation_infrastructure
+        - residential_real_estate
+        - commercial_real_estate
+        - property_management
+        - healthcare_providers
+        - health_technology
+        - medical_devices
+        - software_engineering
+        - data_centers
+        - renewable_energy
+        - public_sector_agencies
+    FrameworkFunction:
+      type: string
+      enum:
+        - governance
+        - compliance
+        - risk_management
+        - operations
+        - finance
+        - legal
+        - engineering
+        - human_resources
+        - sales
+        - marketing
+        - product
+        - data_ai
+        - information_security
+    OrgSize:
+      type: string
+      enum:
+        - startup
+        - small_business
+        - sme
+        - mid_market
+        - enterprise
     ExploreFrameworkCard:
       type: object
       required:
@@ -2435,24 +2504,19 @@ components:
           type: string
           minLength: 1
         category:
-          type: string
-          minLength: 1
-          maxLength: 100
+          $ref: "#/components/schemas/FrameworkCategory"
         sector:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkSector"
+            - type: "null"
         industry:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkIndustry"
+            - type: "null"
         function:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkFunction"
+            - type: "null"
         tags:
           type: array
           items:
@@ -2470,16 +2534,9 @@ components:
           minimum: 1
           maximum: 5
         org_size:
-          type:
-            - string
-            - "null"
-          enum:
-            - startup
-            - small_business
-            - sme
-            - mid_market
-            - enterprise
-            - null
+          anyOf:
+            - $ref: "#/components/schemas/OrgSize"
+            - type: "null"
         lifecycle_stage:
           type:
             - string
@@ -2502,26 +2559,21 @@ components:
             - "null"
           minLength: 1
         category:
-          type:
-            - string
-            - "null"
-          minLength: 1
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkCategory"
+            - type: "null"
         sector:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkSector"
+            - type: "null"
         industry:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkIndustry"
+            - type: "null"
         function:
-          type:
-            - string
-            - "null"
-          maxLength: 100
+          anyOf:
+            - $ref: "#/components/schemas/FrameworkFunction"
+            - type: "null"
         tags:
           type:
             - array
@@ -2540,16 +2592,9 @@ components:
           minimum: 1
           maximum: 5
         org_size:
-          type:
-            - string
-            - "null"
-          enum:
-            - startup
-            - small_business
-            - sme
-            - mid_market
-            - enterprise
-            - null
+          anyOf:
+            - $ref: "#/components/schemas/OrgSize"
+            - type: "null"
         lifecycle_stage:
           type:
             - string
