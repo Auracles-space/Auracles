@@ -3,7 +3,7 @@
 **Date:** 2026-06-09
 **Phase:** 3 (Transactions & Financials)
 **Maps to:** FR-FIN-001..014, BR-FIN-001..005, TDD §3 (transactions/licenses/escrows/payouts/payout_accounts), TDD §9 (webhooks, payout Celery), CLAUDE.md Phase 3 build sequence
-**Cross-cuts:** closes the `licenses` gap left open by Phase 2; provides EscrowService consumed by Phase 4 Projects/Attestation.
+**Cross-cuts:** extends the Phase 2 `licenses` foundation into paid purchases; provides EscrowService consumed by Phase 4 Projects/Attestation.
 
 ---
 
@@ -27,7 +27,7 @@ Turn purchase intent into real money. Ship:
 
 | Decision | Value | Rationale |
 |----------|-------|-----------|
-| `license_type_enum` | `personal, team, organizational, enterprise` | TDD names minus `white_label`. Supersedes Phase 2 spec's `{single_user, team(10), enterprise}` lock. |
+| `license_type_enum` | Keep existing `single_user, team, enterprise`; add `organizational` additively | Avoids breaking Phase 2 licenses/admin grants/library downloads while expanding the commercial model. `white_label` is deferred until custom contract/resale-rights support exists. |
 | Invoice format | WeasyPrint PDF in a Celery task, stored in S3, served via presigned URL | Real PDF without external service. Cairo/Pango added to worker image only. |
 | Payout onboarding | Provider-hosted — Stripe Connect Express + Paystack subaccount | Provider runs KYC. We store `provider_ref` only; no bank-detail forms. |
 | Refund trigger | Self-serve Operator button, eligibility-checked | `< 48h` AND `artifact_downloads == 0`. Provider refund API called inline. |
@@ -37,6 +37,7 @@ Turn purchase intent into real money. Ship:
 | `available` balance formula | `sum(completed purchases where created_at < now() - refund_window_hours) − commission(15%) − sum(paid out)` | Refund-safe; no clawback path needed. Pending balance = sales inside the window. |
 | Currency | USD + NGN only, no FX conversion in code | Stripe handles non-NGN; Paystack handles NGN. Contributors price per currency. |
 | Partner API / Developer Platform | Deferred to Phase 5 | Per CLAUDE.md phase plan. |
+| Self-serve checkout license types | `single_user`, `team`, `organizational` | `enterprise` remains admin/custom-grant for now. `white_label` remains out of scope. |
 | KYC gate | Required for: payout onboarding, payout request, escrow funding (Phase 4 consumers), artifact download (Phase 1 deviation). **Not** required for purchase or refund. |
 | 2FA gate | Required for: payout request, payout-account changes (BR-FIN-005), admin escrow override, admin config change. |
 | Commission | Deducted at payout, not at sale (BR-FIN-001). Default 15%, in `platform_config`. |
@@ -49,7 +50,6 @@ Turn purchase intent into real money. Ship:
 **New tables**
 
 - `transactions(id, payer_id, payee_id?, amount, currency, platform_commission, net_amount, type, status, provider, provider_ref, ref_id?, ref_type?, created_at, updated_at)`
-- `licenses(id, framework_id, operator_id, transaction_id, type, status, version_at_grant, granted_at, expires_at?, seats_used, seats_total)` — UNIQUE `(framework_id, operator_id)`
 - `escrows(id, ref_id, ref_type, amount, currency, status, release_conditions JSONB, transaction_id, held_at, released_at?, released_by?)`
 - `payouts(id, contributor_id, payout_account_id, amount, currency, commission_deducted, net_amount, status, provider_ref, initiated_at, completed_at?)`
 - `payout_accounts(id, user_id, provider, provider_account_id, type, is_default, verified_at?, created_at, deleted_at?)` — `provider_account_id` encrypted at rest
@@ -58,9 +58,12 @@ Turn purchase intent into real money. Ship:
 **Extended tables**
 
 - `users` — add `stripe_customer_id` (nullable, indexed) — created on first Operator card-add.
+- `licenses` — existing Phase 2 table remains in `frameworks.models`; add FK to `transactions(id)` when purchase flow lands, keep `transaction_id` nullable for existing/admin grants, and expand `license_type_enum` additively with `organizational`.
 - `platform_config` — seed rows: `commission_rate=0.15`, `min_payout_usd=50`, `min_payout_ngn=20000`, `refund_window_hours=48`.
 
-**New enums:** `transaction_type_enum`, `transaction_status_enum`, `payment_provider_enum`, `license_type_enum`, `license_status_enum`, `escrow_status_enum`, `payout_status_enum`, `webhook_event_status_enum`.
+**New enums:** `transaction_type_enum`, `transaction_status_enum`, `payment_provider_enum`, `escrow_status_enum`, `payout_status_enum`, `webhook_event_status_enum`.
+
+**Existing enum extensions:** `license_type_enum` add value `organizational`. Do not rename `single_user`, do not recreate `license_type_enum`, and do not add `white_label` in Phase 3.
 
 ---
 
@@ -73,7 +76,7 @@ backend/app/
 │   │   ├── router.py
 │   │   ├── service.py            # purchase, payment-methods, payout-accounts, earnings, payouts, refunds
 │   │   ├── escrow_service.py     # hold / release / refund (slice 9)
-│   │   ├── models.py             # Transaction, License, Escrow, Payout, PayoutAccount
+│   │   ├── models.py             # Transaction, Escrow, Payout, PayoutAccount
 │   │   └── schemas.py
 │   └── webhooks/
 │       ├── router.py             # /v1/webhooks/stripe, /v1/webhooks/paystack
@@ -99,7 +102,7 @@ backend/app/
 Working agreement per slice (unchanged from Phase 1/2): one-line summary → file list → failing test → minimum impl → `ruff` + `mypy --strict` + `pytest --cov` green + Alembic up/down green → stop for human review/commit.
 
 ### Slice 1 — Schema foundation + platform_config seed
-Migrations (enums, six tables, `users.stripe_customer_id`, seed rows). ORM models. Empty module dirs. Migration up/down test + seed assertion.
+Migrations (new financial enums/tables, additive `license_type_enum` value `organizational`, existing `licenses.transaction_id` FK to `transactions`, `users.stripe_customer_id`, seed rows). ORM models. Empty module dirs. Migration up/down test + seed assertion. `License` stays in `frameworks.models`; financials imports/updates it.
 
 ### Slice 2 — Provider integration layer (no endpoints)
 `stripe.py`, `paystack.py`, `payment_router.py`. Production validator rejects placeholder provider secrets. Unit tests via `respx` + signature verify matrix.
@@ -111,7 +114,7 @@ Migrations (enums, six tables, `users.stripe_customer_id`, seed rows). ORM model
 `POST /v1/financials/payout-accounts/onboard` (KYC-required) → Stripe Express account link or Paystack subaccount creation. `GET` list. `DELETE` (2FA-required) soft-deletes. Audit each transition.
 
 ### Slice 5 — Purchase flow
-`POST /v1/financials/purchase/{framework_id}` validates, creates `transactions(status=pending)`, calls provider `create_payment_intent` with `metadata={transaction_id, kind:"purchase"}`. Returns `{transaction_id, client_secret, provider}`. License **only** created in Slice 6 webhook handler.
+`POST /v1/financials/purchase/{framework_id}` validates selected self-serve license type (`single_user`, `team`, `organizational`), creates `transactions(status=pending)`, calls provider `create_payment_intent` with `metadata={transaction_id, kind:"purchase"}`. Returns `{transaction_id, client_secret, provider}`. License **only** created in Slice 6 webhook handler. `enterprise` remains admin/custom-grant and is not exposed in checkout.
 
 ### Slice 6 — Webhooks (Stripe + Paystack)
 `POST /v1/webhooks/stripe` + `POST /v1/webhooks/paystack`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
@@ -135,7 +138,7 @@ Migrations (enums, six tables, `users.stripe_customer_id`, seed rows). ORM model
 Update `contracts/openapi.yaml` for all new paths. Regenerate `frontend/src/lib/generated/`. FE helpers `stripe-client.ts` + `paystack-client.ts` (publishable key from env).
 
 ### Slice 13 — FE Operator (mobile-first)
-Pages: `checkout/[framework_id]`, `library`, `settings/payment-methods`. Components: `CheckoutForm`, `PurchaseHistoryTable`, `RefundButton`, `PaymentMethodList`. E2E `purchase.spec.ts` per CLAUDE.md Phase 6 critical flow.
+Pages: `checkout/[framework_id]`, `library`, `settings/payment-methods`. Components: `CheckoutForm` (self-serve license choices: `single_user`, `team`, `organizational`), `PurchaseHistoryTable`, `RefundButton`, `PaymentMethodList`. E2E `purchase.spec.ts` per CLAUDE.md Phase 6 critical flow.
 
 ### Slice 14 — FE Contributor (mobile-first)
 Pages: `dashboard/earnings`, `dashboard/payouts`, `settings/payout-accounts`. Components: `EarningsSummary`, `PayoutRequestModal` (TOTP challenge), `PayoutAccountConnect`, `PayoutHistoryTable`. E2E `financials.spec.ts` per CLAUDE.md Phase 6 critical flow.
@@ -177,6 +180,8 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 
 - **Stripe Connect Express vs Custom:** Express chosen; Stripe owns onboarding dashboard. Cheaper compliance.
 - **Paystack subaccounts** only payout in NGN — confirm before Slice 4.
+- **License enum migration:** add `organizational` only. Existing `single_user/team/enterprise` values stay valid to preserve Phase 2 grants, library access, and generated frontend contracts.
+- **White-label licensing:** deferred because the app does not yet support resale/rebrand contract terms, approval workflow, or custom rights enforcement.
 - **WeasyPrint image bloat:** worker image grows ~150 MB with Cairo + Pango. Acceptable for Render Background Worker tier.
 - **48-hour refund + payout collision:** `available` formula excludes the window, so payouts can never include refundable sales. Regression-tested in Slice 10.
 - **Currency rounding:** all amounts NUMERIC(12,2). Stripe expects integer minor units — provider wrappers normalise consistently.
@@ -204,6 +209,7 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 ## 10. Out of scope (later phases)
 
 - Reviews submission flow (FR-FWK-014) — schema dormant, wired in a later polish phase.
+- White-label licensing — requires contract terms, resale/rebrand rights, admin approval/quote flow, and stronger rights audit.
 - Partner / Developer Platform commissions & tier upgrades — Phase 5 (FR-DEV-017..030).
 - Projects + Attestation modules — Phase 4 (consumes `EscrowService` shipped here).
 - Tax compliance, 1099/W-9 — separate compliance phase.
