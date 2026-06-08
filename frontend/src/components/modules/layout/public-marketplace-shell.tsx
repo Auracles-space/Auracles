@@ -32,11 +32,11 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full items-center justify-between px-4 md:px-6">
-          <div className="flex items-center gap-8 flex-1">
-            <BrandLogo className="h-6 w-24" />
+          <div className="flex items-center gap-4 lg:gap-8 flex-1 min-w-0">
+            <BrandLogo className="h-6 w-24 shrink-0" />
             <nav
               aria-label="Public marketplace navigation"
-              className="hidden items-center gap-6 md:flex"
+              className="hidden items-center gap-4 lg:gap-6 lg:flex shrink-0"
             >
               {topLinks.map((link) => (
                 <Link
@@ -49,9 +49,9 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
               ))}
             </nav>
             
-            <div className="hidden flex-1 max-w-md ml-auto mr-4 md:block">
+            <div className="hidden flex-1 max-w-md ml-auto mr-4 md:block min-w-0">
               <div className="relative w-full">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input 

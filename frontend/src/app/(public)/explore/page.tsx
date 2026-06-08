@@ -78,31 +78,30 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     <main className="min-h-[calc(100vh-4rem)] bg-background p-6 text-foreground">
       <div className="mx-auto w-full max-w-[1600px]">
         <div className="flex flex-col gap-8 lg:flex-row">
-          <FilterSidebar
-            active={{
-              category: query.category ?? undefined,
-              license_type: query.license_type ?? undefined,
-              org_size: query.org_size ?? undefined,
-              q: query.q ?? undefined,
-              sort: query.sort,
-            }}
-          />
-          <section className="flex-1">
+          <div className="w-full lg:w-64 lg:shrink-0">
+            <FilterSidebar
+              active={{
+                category: query.category ?? undefined,
+                license_type: query.license_type ?? undefined,
+                org_size: query.org_size ?? undefined,
+                q: query.q ?? undefined,
+                sort: query.sort,
+              }}
+            />
+          </div>
+          <section className="flex-1 min-w-0">
             <div className="mb-6 flex items-center justify-between border-b border-border-default pb-4">
               <p className="text-sm font-medium text-foreground-muted">{catalog?.total ?? 0} frameworks</p>
               
               <div className="flex items-center gap-3">
                 <button className="flex items-center gap-2 rounded-lg border border-border-default px-3 py-1.5 text-sm font-medium text-foreground-muted hover:bg-surface-2 transition-colors">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                   </svg>
-                  Filters
-                </button>
-                <button className="flex items-center gap-2 rounded-lg border border-border-default px-3 py-1.5 text-sm font-medium text-foreground-muted hover:bg-surface-2 transition-colors">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  Sort: Newest
+                  <svg className="h-3 w-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
-                  Recents
                 </button>
               </div>
             </div>
