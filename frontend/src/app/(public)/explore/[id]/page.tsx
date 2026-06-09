@@ -103,9 +103,9 @@ export default async function ExploreDetailPage({
             </dl>
             <Link
               className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
-              href="/login"
+              href={`/checkout/${framework.id}`}
             >
-              Log in to license
+              License Framework
             </Link>
           </aside>
         </div>

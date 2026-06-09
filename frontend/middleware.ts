@@ -57,6 +57,7 @@ export const config = {
     "/2fa-setup",
     "/admin/:path*",
     "/assignments/:path*",
+    "/checkout/:path*",
     "/dashboard/:path*",
     "/forgot-password",
     "/login",

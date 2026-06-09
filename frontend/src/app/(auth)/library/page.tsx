@@ -2,6 +2,7 @@
  * Operator library route.
  */
 import { OperatorLibrary } from "@/components/modules/library/operator-library";
+import { PurchaseHistoryTable } from "@/components/modules/financials/purchase-history-table";
 
 /**
  * Render the Operator's licensed Framework library.
@@ -21,7 +22,10 @@ export default function LibraryPage() {
             Download the licensed version snapshots available to your account.
           </p>
         </header>
-        <OperatorLibrary />
+        <div className="grid gap-8">
+          <OperatorLibrary />
+          <PurchaseHistoryTable />
+        </div>
       </div>
     </main>
   );

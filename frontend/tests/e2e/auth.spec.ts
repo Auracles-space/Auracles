@@ -5,12 +5,15 @@
  * auth pages submit the expected flows, handle 2FA, and redirect based on JWT
  * roles. Backend integration remains covered by FastAPI tests.
  */
+import { createHmac } from "node:crypto";
+
 import { expect, type Page, test } from "@playwright/test";
 
 type MockAuthMode = "2fa" | "operator-login";
 
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
+const sessionHintSecret = "auracles-e2e-secret";
 
 function base64Url(value: string): string {
   return Buffer.from(value)
@@ -39,6 +42,30 @@ function fakeAccessToken(roles: string[]): string {
 }
 
 /**
+ * Create a signed session hint cookie accepted by frontend middleware.
+ *
+ * @param roles - Roles encoded into the routing hint.
+ */
+function sessionHintCookie(roles: string[]): string {
+  const payload = base64Url(
+    JSON.stringify(
+      {
+        exp: Math.floor(Date.now() / 1000) + 900,
+        iat: Math.floor(Date.now() / 1000),
+        roles,
+        totp_verified: true,
+        user_id: "00000000-0000-4000-8000-000000000001",
+      },
+      ["exp", "iat", "roles", "totp_verified", "user_id"],
+    ),
+  );
+  const signature = createHmac("sha256", sessionHintSecret)
+    .update(payload)
+    .digest("base64url");
+  return `session_hint=${payload}.${signature}; Path=/; SameSite=Lax`;
+}
+
+/**
  * Fulfill mocked API responses with CORS headers accepted by the browser.
  *
  * @param route - Playwright route object.
@@ -49,6 +76,7 @@ async function fulfillJson(
   route: Parameters<Parameters<Page["route"]>[1]>[0],
   body: unknown,
   status = 200,
+  headers: Record<string, string> = {},
 ): Promise<void> {
   await route.fulfill({
     body: JSON.stringify(body),
@@ -58,6 +86,7 @@ async function fulfillJson(
       "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
       "access-control-allow-origin": appOrigin,
       "content-type": "application/json",
+      ...headers,
     },
     status,
   });
@@ -123,20 +152,30 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
     }
 
     if (path === "/v1/auth/login") {
-      await fulfillJson(route, {
-        access_token: fakeAccessToken(["operator"]),
-        expires_in: 900,
-        token_type: "bearer",
-      });
+      await fulfillJson(
+        route,
+        {
+          access_token: fakeAccessToken(["operator"]),
+          expires_in: 900,
+          token_type: "bearer",
+        },
+        200,
+        { "set-cookie": sessionHintCookie(["operator"]) },
+      );
       return;
     }
 
     if (path === "/v1/auth/2fa/verify-login") {
-      await fulfillJson(route, {
-        access_token: fakeAccessToken(["contributor"]),
-        expires_in: 900,
-        token_type: "bearer",
-      });
+      await fulfillJson(
+        route,
+        {
+          access_token: fakeAccessToken(["contributor"]),
+          expires_in: 900,
+          token_type: "bearer",
+        },
+        200,
+        { "set-cookie": sessionHintCookie(["contributor"]) },
+      );
       return;
     }
 
@@ -152,6 +191,7 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
   await page.getByLabel("Email").fill("ada@example.com");
   await page.getByLabel("Password").fill("StrongerPass123!");
   await page.getByLabel("Operator").check();
+  await page.getByLabel(/I agree to the Terms/).check();
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByText(/verification sent/i)).toBeVisible();
 

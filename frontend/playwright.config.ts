@@ -18,7 +18,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 corepack pnpm dev --hostname 127.0.0.1 --port 3100",
+      "SESSION_HINT_SECRET=auracles-e2e-secret NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_auracles_e2e corepack pnpm dev --hostname 127.0.0.1 --port 3100",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: "http://127.0.0.1:3100",

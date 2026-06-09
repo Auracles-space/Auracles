@@ -32,6 +32,16 @@ describe("auth route guards", () => {
     expect(
       resolveAuthRouteDecision({ hint: null, pathname: "/settings/kyc" }),
     ).toEqual({ kind: "redirect", location: "/login?next=%2Fsettings%2Fkyc" });
+    expect(
+      resolveAuthRouteDecision({
+        hint: null,
+        pathname: "/checkout/00000000-0000-4000-8000-000000000013",
+      }),
+    ).toEqual({
+      kind: "redirect",
+      location:
+        "/login?next=%2Fcheckout%2F00000000-0000-4000-8000-000000000013",
+    });
   });
 
   it("allows the 2FA challenge before a browser session exists", () => {
