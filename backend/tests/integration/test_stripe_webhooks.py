@@ -22,6 +22,18 @@ from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 
 
+class FakeInvoiceTask:
+    """Celery task double that records invoice generation requests."""
+
+    def __init__(self) -> None:
+        """Initialise the in-memory dispatch log."""
+        self.dispatched: list[str] = []
+
+    def delay(self, transaction_id: str) -> None:
+        """Record the transaction id that would be sent to Celery."""
+        self.dispatched.append(transaction_id)
+
+
 async def reset_webhook_state() -> None:
     """Remove webhook test data in foreign-key-safe order."""
     async with async_session_factory() as session:
@@ -42,7 +54,12 @@ async def webhook_context(
     """Reset state and install a controllable Stripe verifier double."""
     await engine.dispose()
     await reset_webhook_state()
-    context: dict[str, Any] = {"event": None, "verified_payloads": []}
+    fake_invoice_task = FakeInvoiceTask()
+    context: dict[str, Any] = {
+        "event": None,
+        "verified_payloads": [],
+        "invoice_task": fake_invoice_task,
+    }
 
     def fake_verify_webhook(
         payload: bytes,
@@ -63,6 +80,12 @@ async def webhook_context(
         webhook_service.stripe,
         "verify_webhook",
         fake_verify_webhook,
+    )
+    monkeypatch.setattr(
+        webhook_service,
+        "generate_invoice_pdf",
+        fake_invoice_task,
+        raising=False,
     )
     try:
         yield context
@@ -220,6 +243,8 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert events[0].status == "processed"
     assert audit is not None
     assert audit.target_id == transaction_id
+    invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
+    assert invoice_task.dispatched == [str(transaction_id)]
 
 
 async def test_stripe_webhook_rejects_bad_signature_before_event_storage(

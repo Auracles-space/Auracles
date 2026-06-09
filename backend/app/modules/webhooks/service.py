@@ -25,6 +25,7 @@ from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.webhooks.schemas import WebhookIngestResponse
+from app.workers.tasks.financials import generate_invoice_pdf
 
 
 class WebhookProcessingError(RuntimeError):
@@ -153,7 +154,7 @@ async def _mark_event_status(
 async def _handle_purchase_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
-) -> None:
+) -> UUID:
     """Mark a purchase complete and grant its Framework License."""
     transaction_id = _purchase_transaction_id(event)
     payment_intent_id = _event_object_id(event)
@@ -214,6 +215,19 @@ async def _handle_purchase_succeeded(
             "license_type": license_type,
         },
     )
+    return transaction.id
+
+
+def _queue_purchase_invoice_generation(transaction_id: UUID) -> None:
+    """Queue invoice PDF generation after purchase state is committed."""
+    try:
+        generate_invoice_pdf.delay(str(transaction_id))
+    except Exception as exc:
+        logger.bind(
+            module="webhooks",
+            action="queue_purchase_invoice_generation",
+            transaction_id=transaction_id,
+        ).error("invoice_generation_dispatch_failed", error=str(exc))
 
 
 async def _handle_purchase_failed(
@@ -304,45 +318,45 @@ async def _dispatch_verified_event(
     event_id: str,
     event_type: str,
     event: dict[str, Any],
-) -> str:
-    """Dispatch a verified event and return its durable status."""
+) -> tuple[str, UUID | None]:
+    """Dispatch a verified event and return status plus optional invoice work."""
     metadata = _event_metadata(event)
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "purchase":
-        await _handle_purchase_succeeded(db, event)
+        invoice_transaction_id = await _handle_purchase_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", invoice_transaction_id
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "escrow":
         logger.bind(module="webhooks", action="stripe_escrow_stub").info(
             "escrow_funding_deferred"
         )
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
     if event_type == "payment_intent.payment_failed":
         await _handle_purchase_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
     if event_type == "account.updated":
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
     if event_type == "transfer.paid":
         await _handle_transfer_event(db, event, payout_status="completed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
     if event_type == "transfer.failed":
         await _handle_transfer_event(db, event, payout_status="failed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
     if event_type == "charge.refunded":
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed"
+        return "processed", None
 
     logger.bind(
         module="webhooks",
         action="unknown_stripe_event",
         provider_event_id=event_id,
     ).warning("unknown_event_type")
-    return "received"
+    return "received", None
 
 
 async def handle_stripe_webhook(
@@ -385,8 +399,9 @@ async def handle_stripe_webhook(
     try:
         if db.in_transaction():
             await db.rollback()
+        invoice_transaction_id: UUID | None = None
         async with db.begin():
-            event_status = await _dispatch_verified_event(
+            event_status, invoice_transaction_id = await _dispatch_verified_event(
                 db,
                 event_id=event_id,
                 event_type=event_type,
@@ -411,6 +426,8 @@ async def handle_stripe_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed.",
         ) from exc
+    if invoice_transaction_id is not None:
+        _queue_purchase_invoice_generation(invoice_transaction_id)
 
     logger.bind(
         module="webhooks",
