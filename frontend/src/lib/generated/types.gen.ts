@@ -11,6 +11,31 @@ export type AddRoleRequest = {
 
 export type role = 'contributor' | 'operator' | 'attestor';
 
+export type AdminConfigItem = {
+    key: string;
+    value: string;
+    editable: boolean;
+    updated_at: string;
+    updated_by: (string) | null;
+};
+
+export type AdminConfigPatchRequest = {
+    reason: string;
+    totp_code: string;
+    updates: Array<AdminConfigUpdateItem>;
+};
+
+export type AdminConfigResponse = {
+    items: Array<AdminConfigItem>;
+};
+
+export type AdminConfigUpdateItem = {
+    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours';
+    value: string;
+};
+
+export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours';
+
 export type AdminEscrowOverrideRequest = {
     reason: string;
     totp_code: string;
@@ -714,6 +739,18 @@ export type VerifyTotpLoginData = {
 export type VerifyTotpLoginResponse = (LoginResponse);
 
 export type VerifyTotpLoginError = (unknown);
+
+export type ListPlatformConfigResponse = (AdminConfigResponse);
+
+export type ListPlatformConfigError = (unknown);
+
+export type UpdatePlatformConfigData = {
+    body: AdminConfigPatchRequest;
+};
+
+export type UpdatePlatformConfigResponse = (AdminConfigResponse);
+
+export type UpdatePlatformConfigError = (unknown);
 
 export type AssignUserRoleData = {
     body: AdminRoleAssignmentRequest;

@@ -12,6 +12,9 @@ from app.core.dependencies import require_role
 from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminConfigItem,
+    AdminConfigPatchRequest,
+    AdminConfigResponse,
     AdminEscrowOverrideRequest,
     AdminEscrowResponse,
     AdminFrameworkStatusResponse,
@@ -24,7 +27,7 @@ from app.modules.admin.schemas import (
     AdminRoleAssignmentResponse,
 )
 from app.modules.auth.models import User
-from app.modules.financials.models import Escrow
+from app.modules.financials.models import Escrow, PlatformConfig
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -45,6 +48,52 @@ def _escrow_response(escrow: Escrow) -> AdminEscrowResponse:
         released_at=escrow.released_at,
         released_by=escrow.released_by,
     )
+
+
+def _config_response(items: list[PlatformConfig]) -> AdminConfigResponse:
+    """Map config model rows to the admin response schema."""
+    return AdminConfigResponse(
+        items=[
+            AdminConfigItem(
+                key=item.key,
+                value=item.value,
+                editable=item.key in service.EDITABLE_PLATFORM_CONFIG_KEYS,
+                updated_at=item.updated_at,
+                updated_by=item.updated_by,
+            )
+            for item in items
+        ]
+    )
+
+
+@router.get("/config", response_model=AdminConfigResponse)
+async def list_platform_config(
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminConfigResponse:
+    """List platform financial configuration for admin review."""
+    del admin
+    items = await service.list_platform_config(db=db)
+    return _config_response(items)
+
+
+@router.patch("/config", response_model=AdminConfigResponse)
+async def update_platform_config(
+    payload: AdminConfigPatchRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminConfigResponse:
+    """Update editable platform financial configuration with admin 2FA."""
+    items = await service.update_platform_config(
+        db=db,
+        redis=redis,
+        admin=admin,
+        updates=[(item.key, item.value) for item in payload.updates],
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return _config_response(items)
 
 
 @router.patch("/users/{user_id}/roles", response_model=AdminRoleAssignmentResponse)

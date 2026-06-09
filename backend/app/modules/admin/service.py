@@ -1,6 +1,7 @@
 """Admin service logic."""
 
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,11 +16,22 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.financials import escrow_service
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.workers.tasks.processing.minhash_index import (
     remove_framework_artifacts_from_index,
 )
+
+EDITABLE_PLATFORM_CONFIG_KEYS = {
+    "commission_rate",
+    "min_payout_usd",
+    "refund_window_hours",
+}
+COMMISSION_RATE_MAX = Decimal("0.50")
+MIN_PAYOUT_USD_MIN = Decimal("1.00")
+MIN_PAYOUT_USD_MAX = Decimal("100000.00")
+REFUND_WINDOW_HOURS_MIN = 0
+REFUND_WINDOW_HOURS_MAX = 720
 
 
 async def assign_user_role(
@@ -219,13 +231,133 @@ async def grant_license(
     return license_row
 
 
+async def list_platform_config(db: AsyncSession) -> list[PlatformConfig]:
+    """Return platform financial configuration rows in stable key order."""
+    result = await db.execute(select(PlatformConfig).order_by(PlatformConfig.key))
+    return list(result.scalars().all())
+
+
+def _format_decimal_config(value: Decimal) -> str:
+    """Return a stable plain-string representation for decimal config values."""
+    return format(value.normalize(), "f")
+
+
+def _parse_decimal_config(key: str, raw_value: str) -> Decimal:
+    """Parse a decimal admin config value or raise a 422 API error."""
+    try:
+        return Decimal(raw_value.strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{key} must be a valid decimal number.",
+        ) from exc
+
+
+def _normalise_platform_config_value(key: str, raw_value: str) -> str:
+    """Validate and normalize an editable platform config value."""
+    if key == "commission_rate":
+        value = _parse_decimal_config(key, raw_value)
+        if value < Decimal("0") or value > COMMISSION_RATE_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="commission_rate must be between 0 and 0.50.",
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.0001")))
+
+    if key == "min_payout_usd":
+        value = _parse_decimal_config(key, raw_value)
+        if value < MIN_PAYOUT_USD_MIN or value > MIN_PAYOUT_USD_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="min_payout_usd must be between 1.00 and 100000.00.",
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.01")))
+
+    if key == "refund_window_hours":
+        try:
+            hours = int(raw_value.strip())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="refund_window_hours must be a whole number.",
+            ) from exc
+        if hours < REFUND_WINDOW_HOURS_MIN or hours > REFUND_WINDOW_HOURS_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="refund_window_hours must be between 0 and 720.",
+            )
+        return str(hours)
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=f"{key} is not editable.",
+    )
+
+
+async def update_platform_config(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    updates: list[tuple[str, str]],
+    reason: str,
+    totp_code: str,
+) -> list[PlatformConfig]:
+    """Apply audited admin platform configuration changes."""
+    admin_id = admin.id
+    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
+
+    seen_keys: set[str] = set()
+    normalised_updates: list[tuple[str, str]] = []
+    for key, raw_value in updates:
+        if key in seen_keys:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} can only be updated once per request.",
+            )
+        seen_keys.add(key)
+        normalised_updates.append(
+            (key, _normalise_platform_config_value(key, raw_value))
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        for key, value in normalised_updates:
+            config = await db.get(PlatformConfig, key)
+            if config is None:
+                config = PlatformConfig(key=key, value=value, updated_by=admin_id)
+                db.add(config)
+                old_value = None
+            else:
+                old_value = config.value
+                config.value = value
+                config.updated_by = admin_id
+                config.updated_at = datetime.now(UTC)
+
+            if old_value != value:
+                await write_audit(
+                    db=db,
+                    actor_id=admin_id,
+                    action="platform_config_updated",
+                    target_type="platform_config",
+                    metadata={
+                        "key": key,
+                        "old_value": old_value,
+                        "new_value": value,
+                        "reason": reason.strip(),
+                    },
+                )
+
+    return await list_platform_config(db)
+
+
 async def _verify_admin_2fa(
     db: AsyncSession,
     redis: Redis,
     admin: User,
     totp_code: str,
 ) -> None:
-    """Require a valid admin TOTP or backup code before escrow override."""
+    """Require a valid admin TOTP or backup code before sensitive admin writes."""
     await auth_service.verify_totp_for_sensitive_action(
         db=db,
         redis=redis,

@@ -281,6 +281,53 @@ paths:
           description: Invalid TOTP or backup code.
         "429":
           description: TOTP verification rate limit exceeded.
+  /v1/admin/config:
+    get:
+      tags:
+        - Admin
+      operationId: listPlatformConfig
+      summary: List platform config
+      description: Admin-only endpoint for inspecting platform financial configuration.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Platform configuration values.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role required.
+    patch:
+      tags:
+        - Admin
+      operationId: updatePlatformConfig
+      summary: Update platform config
+      description: Admin-only endpoint for changing whitelisted financial configuration after 2FA confirmation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminConfigPatchRequest"
+      responses:
+        "200":
+          description: Platform configuration updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfigResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role or enabled 2FA required.
+        "422":
+          description: Invalid config payload or 2FA code.
   /v1/admin/users/{user_id}/roles:
     patch:
       tags:
@@ -2745,6 +2792,75 @@ components:
           type: string
           minLength: 6
           maxLength: 16
+    AdminConfigItem:
+      type: object
+      required:
+        - key
+        - value
+        - editable
+        - updated_at
+        - updated_by
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        editable:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type:
+            - string
+            - "null"
+          format: uuid
+    AdminConfigResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminConfigItem"
+    AdminConfigUpdateItem:
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          type: string
+          enum:
+            - commission_rate
+            - min_payout_usd
+            - refund_window_hours
+        value:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AdminConfigPatchRequest:
+      type: object
+      required:
+        - reason
+        - totp_code
+        - updates
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+        updates:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/AdminConfigUpdateItem"
     AdminRoleAssignmentRequest:
       type: object
       required:

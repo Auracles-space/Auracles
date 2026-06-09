@@ -55,7 +55,7 @@ class AdminLicenseGrantRequest(BaseModel):
 
     framework_id: UUID
     operator_id: UUID
-    type: Literal["single_user", "team", "enterprise"]
+    type: Literal["single_user", "team", "organizational", "enterprise"]
     expires_at: datetime | None = None
     seats_total: int | None = Field(default=None, ge=1)
 
@@ -93,3 +93,34 @@ class AdminEscrowResponse(BaseModel):
     status: str
     released_at: datetime | None
     released_by: UUID | None
+
+
+class AdminConfigItem(BaseModel):
+    """Single platform configuration value visible to administrators."""
+
+    key: str
+    value: str
+    editable: bool
+    updated_at: datetime
+    updated_by: UUID | None
+
+
+class AdminConfigResponse(BaseModel):
+    """Response body for admin platform configuration reads and writes."""
+
+    items: list[AdminConfigItem]
+
+
+class AdminConfigUpdateItem(BaseModel):
+    """Single admin platform configuration change request."""
+
+    key: Literal["commission_rate", "min_payout_usd", "refund_window_hours"]
+    value: str = Field(min_length=1, max_length=100)
+
+
+class AdminConfigPatchRequest(BaseModel):
+    """Request body for audited platform configuration changes."""
+
+    reason: str = Field(min_length=1, max_length=500)
+    totp_code: str = Field(min_length=6, max_length=16)
+    updates: list[AdminConfigUpdateItem] = Field(min_length=1, max_length=10)
