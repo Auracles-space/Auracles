@@ -17,6 +17,9 @@ from app.integrations.stripe import (
     create_customer,
     create_payment_intent,
     create_refund,
+    create_setup_intent,
+    detach_payment_method,
+    list_payment_methods,
     make_test_signature_header,
     verify_webhook,
 )
@@ -72,6 +75,7 @@ async def test_stripe_create_customer_and_refund_use_idempotency_keys() -> None:
     customer = await create_customer(
         email="operator@example.com",
         name="Operator One",
+        idempotency_key="customer:user_123",
         settings=STRIPE_SETTINGS,
     )
     refund = await create_refund(
@@ -84,6 +88,9 @@ async def test_stripe_create_customer_and_refund_use_idempotency_keys() -> None:
 
     assert customer.id == "cus_123"
     assert refund.id == "re_123"
+    assert customer_route.calls.last.request.headers["Idempotency-Key"] == (
+        "customer:user_123"
+    )
     assert refund.status == "succeeded"
     assert parse_qs(customer_route.calls.last.request.content.decode())["email"] == [
         "operator@example.com"
@@ -91,6 +98,66 @@ async def test_stripe_create_customer_and_refund_use_idempotency_keys() -> None:
     assert refund_route.calls.last.request.headers["Idempotency-Key"] == (
         "refund:txn_123"
     )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stripe_setup_intent_and_payment_methods_are_provider_held() -> None:
+    """SetupIntent/list/detach helpers expose only non-sensitive card metadata."""
+    setup_route = respx.post("https://api.stripe.com/v1/setup_intents").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "seti_123", "client_secret": "seti_123_secret_456"},
+        )
+    )
+    list_route = respx.get("https://api.stripe.com/v1/payment_methods").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {
+                            "brand": "visa",
+                            "last4": "4242",
+                            "exp_month": 8,
+                            "exp_year": 2028,
+                        },
+                    }
+                ]
+            },
+        )
+    )
+    detach_route = respx.post(
+        "https://api.stripe.com/v1/payment_methods/pm_123/detach"
+    ).mock(return_value=httpx.Response(200, json={"id": "pm_123"}))
+
+    setup_intent = await create_setup_intent(
+        customer_id="cus_123",
+        settings=STRIPE_SETTINGS,
+    )
+    payment_methods = await list_payment_methods(
+        customer_id="cus_123",
+        settings=STRIPE_SETTINGS,
+    )
+    detached = await detach_payment_method(
+        payment_method_id="pm_123",
+        settings=STRIPE_SETTINGS,
+    )
+
+    assert setup_intent.id == "seti_123"
+    assert setup_intent.client_secret == "seti_123_secret_456"
+    setup_form = parse_qs(setup_route.calls.last.request.content.decode())
+    assert setup_form["customer"] == ["cus_123"]
+    assert setup_form["usage"] == ["off_session"]
+    assert setup_form["automatic_payment_methods[enabled]"] == ["true"]
+    assert payment_methods[0].id == "pm_123"
+    assert payment_methods[0].brand == "visa"
+    assert payment_methods[0].last4 == "4242"
+    assert list_route.calls.last.request.url.params["customer"] == "cus_123"
+    assert detached == "pm_123"
+    assert detach_route.called
 
 
 def test_stripe_webhook_signature_matrix_accepts_only_valid_raw_payload() -> None:

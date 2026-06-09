@@ -111,7 +111,9 @@ Migrations (new financial enums/tables, additive `license_type_enum` value `orga
 
 ### Slice 3 — Payment methods (Operator)
 
-`POST/GET/DELETE /v1/financials/payment-methods`. Creates Stripe Customer on first add. No PAN ever stored. RBAC: Operator role. Audit `payment_method_added/removed`.
+`POST/GET/DELETE /v1/financials/payment-methods`. Creates Stripe Customer on first add and returns a Stripe SetupIntent so the browser can attach a provider-held payment method. No PAN ever stored. RBAC: Operator role. Audit `payment_method_added/removed`.
+
+Paystack note: Slice 3 does not create standalone saved Paystack payment methods because Paystack reusable authorizations are produced from a successful charge, not a SetupIntent-style card-add flow. For NGN/Paystack purchases, Slice 6 webhook handling must capture reusable authorization metadata from `charge.success` when Paystack marks the authorization reusable.
 
 ### Slice 4 — Payout accounts (Contributor) + onboarding
 
@@ -123,7 +125,7 @@ Migrations (new financial enums/tables, additive `license_type_enum` value `orga
 
 ### Slice 6 — Webhooks (Stripe + Paystack)
 
-`POST /v1/webhooks/stripe` + `POST /v1/webhooks/paystack`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
+`POST /v1/webhooks/stripe` + `POST /v1/webhooks/paystack`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Paystack `charge.success` captures reusable authorization metadata when `authorization.reusable == true` so future NGN purchases can use Paystack charge authorization without storing PAN data. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
 
 ### Slice 7 — Self-serve refund
 

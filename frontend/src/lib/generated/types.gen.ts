@@ -385,6 +385,42 @@ export type token_type = 'bearer';
 
 export type OrgSize = 'startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise';
 
+export type PaymentMethodDeleteRequest = {
+    totp_code: string;
+};
+
+export type PaymentMethodDeleteResponse = {
+    provider: 'stripe';
+    payment_method_id: string;
+    removed: boolean;
+};
+
+export type provider = 'stripe';
+
+export type PaymentMethodResponse = {
+    id: string;
+    provider: 'stripe';
+    type: string;
+    brand: (string) | null;
+    last4: (string) | null;
+    exp_month: (number) | null;
+    exp_year: (number) | null;
+};
+
+export type PaymentMethodSetupRequest = {
+    totp_code: string;
+};
+
+export type PaymentMethodSetupResponse = {
+    provider: 'stripe';
+    setup_intent_id: string;
+    client_secret: string;
+};
+
+export type PaymentMethodsResponse = {
+    payment_methods: Array<PaymentMethodResponse>;
+};
+
 export type PreviewArtifactRequest = {
     artifact_id: string;
 };
@@ -842,6 +878,29 @@ export type ListOperatorLibraryData = {
 export type ListOperatorLibraryResponse = (LibraryResponse);
 
 export type ListOperatorLibraryError = (unknown);
+
+export type CreatePaymentMethodSetupData = {
+    body: PaymentMethodSetupRequest;
+};
+
+export type CreatePaymentMethodSetupResponse = (PaymentMethodSetupResponse);
+
+export type CreatePaymentMethodSetupError = (unknown);
+
+export type ListPaymentMethodsResponse = (PaymentMethodsResponse);
+
+export type ListPaymentMethodsError = (unknown);
+
+export type DeletePaymentMethodData = {
+    body: PaymentMethodDeleteRequest;
+    path: {
+        payment_method_id: string;
+    };
+};
+
+export type DeletePaymentMethodResponse = (PaymentMethodDeleteResponse);
+
+export type DeletePaymentMethodError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;

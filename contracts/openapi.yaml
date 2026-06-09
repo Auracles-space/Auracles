@@ -21,6 +21,8 @@ tags:
     description: Public marketplace catalog endpoints.
   - name: Library
     description: Operator library and licensed download endpoints.
+  - name: Financials
+    description: Payment methods, purchases, payouts, and escrow endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -1336,6 +1338,96 @@ paths:
           description: Missing or invalid access token.
         "403":
           description: Operator role required.
+  /v1/financials/payment-methods:
+    post:
+      tags:
+        - Financials
+      operationId: createPaymentMethodSetup
+      summary: Start payment method setup
+      description: Creates or reuses the Operator's Stripe Customer and returns a SetupIntent client secret. No PAN data is accepted or stored by Auracles.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentMethodSetupRequest"
+      responses:
+        "200":
+          description: Provider setup intent created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodSetupResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role or 2FA confirmation required.
+        "422":
+          description: Invalid setup payload or TOTP code.
+        "502":
+          description: Payment provider unavailable.
+    get:
+      tags:
+        - Financials
+      operationId: listPaymentMethods
+      summary: List payment methods
+      description: Returns safe metadata for provider-held payment methods. Full card numbers, CVCs, and PAN data are never returned.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Payment methods returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodsResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
+        "502":
+          description: Payment provider unavailable.
+  /v1/financials/payment-methods/{payment_method_id}:
+    delete:
+      tags:
+        - Financials
+      operationId: deletePaymentMethod
+      summary: Delete payment method
+      description: Detaches a provider-held payment method after Operator role, ownership, and 2FA checks.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: payment_method_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentMethodDeleteRequest"
+      responses:
+        "200":
+          description: Payment method removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodDeleteResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role or 2FA confirmation required.
+        "404":
+          description: Payment method not found for this Operator.
+        "422":
+          description: Invalid delete payload or TOTP code.
+        "502":
+          description: Payment provider unavailable.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -1674,6 +1766,100 @@ components:
           format: password
           minLength: 12
           maxLength: 128
+    PaymentMethodSetupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - totp_code
+      properties:
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+    PaymentMethodSetupResponse:
+      type: object
+      required:
+        - provider
+        - setup_intent_id
+        - client_secret
+      properties:
+        provider:
+          type: string
+          enum:
+            - stripe
+        setup_intent_id:
+          type: string
+        client_secret:
+          type: string
+    PaymentMethodResponse:
+      type: object
+      required:
+        - id
+        - provider
+        - type
+        - brand
+        - last4
+        - exp_month
+        - exp_year
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+          enum:
+            - stripe
+        type:
+          type: string
+        brand:
+          type:
+            - string
+            - "null"
+        last4:
+          type:
+            - string
+            - "null"
+        exp_month:
+          type:
+            - integer
+            - "null"
+        exp_year:
+          type:
+            - integer
+            - "null"
+    PaymentMethodsResponse:
+      type: object
+      required:
+        - payment_methods
+      properties:
+        payment_methods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMethodResponse"
+    PaymentMethodDeleteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - totp_code
+      properties:
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+    PaymentMethodDeleteResponse:
+      type: object
+      required:
+        - provider
+        - payment_method_id
+        - removed
+      properties:
+        provider:
+          type: string
+          enum:
+            - stripe
+        payment_method_id:
+          type: string
+        removed:
+          type: boolean
     LoginResponse:
       type: object
       required:

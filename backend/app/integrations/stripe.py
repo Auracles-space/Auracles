@@ -47,6 +47,26 @@ class StripePaymentIntent:
 
 
 @dataclass(frozen=True)
+class StripeSetupIntent:
+    """Normalized Stripe SetupIntent result returned to card setup services."""
+
+    id: str
+    client_secret: str
+
+
+@dataclass(frozen=True)
+class StripePaymentMethod:
+    """Safe Stripe PaymentMethod metadata without PAN or CVC data."""
+
+    id: str
+    type: str
+    brand: str | None
+    last4: str | None
+    exp_month: int | None
+    exp_year: int | None
+
+
+@dataclass(frozen=True)
 class StripeRefund:
     """Normalized Stripe refund result."""
 
@@ -134,12 +154,48 @@ async def _post_form(
             await resolved_client.aclose()
 
 
+async def _get_json(
+    path: str,
+    *,
+    params: Mapping[str, str],
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, Any]:
+    """GET a Stripe resource and return its JSON object payload."""
+    resolved_settings = settings or get_settings()
+    headers = {"Authorization": f"Bearer {_require_secret_key(resolved_settings)}"}
+    owns_client = client is None
+    resolved_client = client or httpx.AsyncClient(timeout=STRIPE_TIMEOUT_SECONDS)
+    try:
+        response = await resolved_client.get(
+            f"{STRIPE_API_BASE_URL}{path}",
+            params=dict(params),
+            headers=headers,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise StripeProviderError(
+                f"Stripe returned {response.status_code}."
+            ) from exc
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise StripeProviderError("Stripe returned malformed JSON.")
+        return payload
+    except httpx.HTTPError as exc:
+        raise StripeProviderError("Stripe request failed.") from exc
+    finally:
+        if owns_client:
+            await resolved_client.aclose()
+
+
 async def create_customer(
     *,
     email: str,
     name: str | None = None,
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
+    idempotency_key: str | None = None,
 ) -> StripeCustomer:
     """Create a Stripe Customer and return its provider id."""
     form: dict[str, str] = {"email": email}
@@ -150,6 +206,7 @@ async def create_customer(
         form,
         settings=settings,
         client=client,
+        idempotency_key=idempotency_key,
     )
     customer_id = payload.get("id")
     if not isinstance(customer_id, str):
@@ -191,6 +248,94 @@ async def create_payment_intent(
     if not isinstance(payment_intent_id, str) or not isinstance(client_secret, str):
         raise StripeProviderError("Stripe PaymentIntent response missing fields.")
     return StripePaymentIntent(id=payment_intent_id, client_secret=client_secret)
+
+
+async def create_setup_intent(
+    *,
+    customer_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> StripeSetupIntent:
+    """Create a Stripe SetupIntent so Elements can attach a provider-held method."""
+    payload = await _post_form(
+        "/setup_intents",
+        {
+            "customer": customer_id,
+            "usage": "off_session",
+            "automatic_payment_methods[enabled]": "true",
+        },
+        settings=settings,
+        client=client,
+    )
+    setup_intent_id = payload.get("id")
+    client_secret = payload.get("client_secret")
+    if not isinstance(setup_intent_id, str) or not isinstance(client_secret, str):
+        raise StripeProviderError("Stripe SetupIntent response missing fields.")
+    return StripeSetupIntent(id=setup_intent_id, client_secret=client_secret)
+
+
+async def list_payment_methods(
+    *,
+    customer_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> list[StripePaymentMethod]:
+    """List provider-held card metadata for a Stripe customer."""
+    payload = await _get_json(
+        "/payment_methods",
+        params={"customer": customer_id, "type": "card"},
+        settings=settings,
+        client=client,
+    )
+    data = payload.get("data")
+    if not isinstance(data, list):
+        raise StripeProviderError("Stripe PaymentMethods response missing data.")
+
+    payment_methods: list[StripePaymentMethod] = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise StripeProviderError("Stripe PaymentMethod item is malformed.")
+        method_id = item.get("id")
+        method_type = item.get("type")
+        card = item.get("card")
+        if not isinstance(method_id, str) or not isinstance(method_type, str):
+            raise StripeProviderError("Stripe PaymentMethod response missing fields.")
+        if not isinstance(card, dict):
+            card = {}
+        brand = card.get("brand")
+        last4 = card.get("last4")
+        exp_month = card.get("exp_month")
+        exp_year = card.get("exp_year")
+        payment_methods.append(
+            StripePaymentMethod(
+                id=method_id,
+                type=method_type,
+                brand=brand if isinstance(brand, str) else None,
+                last4=last4 if isinstance(last4, str) else None,
+                exp_month=exp_month if isinstance(exp_month, int) else None,
+                exp_year=exp_year if isinstance(exp_year, int) else None,
+            )
+        )
+    return payment_methods
+
+
+async def detach_payment_method(
+    *,
+    payment_method_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> str:
+    """Detach a Stripe PaymentMethod from its customer."""
+    payload = await _post_form(
+        f"/payment_methods/{payment_method_id}/detach",
+        {},
+        settings=settings,
+        client=client,
+    )
+    detached_id = payload.get("id")
+    if not isinstance(detached_id, str):
+        raise StripeProviderError("Stripe detach response missing id.")
+    return detached_id
 
 
 async def create_refund(
