@@ -17,7 +17,8 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
-from app.modules.projects.models import Project, Proposal
+from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 
 
@@ -45,6 +46,8 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
         """Delete project rows in dependency order."""
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
+            await session.execute(delete(WorkspaceMessage))
+            await session.execute(delete(ProposalAmendment))
             await session.execute(delete(Project))
             await session.execute(delete(Proposal))
             await session.execute(delete(UserRole))
@@ -217,3 +220,94 @@ async def test_project_create_requires_kyc_and_enforces_active_cap(
     assert kyc_blocked.status_code == 403
     assert cap_blocked.status_code == 409
     assert "maximum" in cap_blocked.json()["detail"].lower()
+
+
+async def test_project_member_proposes_and_counterparty_accepts_amendment(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Accepted Project members can amend budget only with counterparty consent."""
+    operator_id = await create_user("amend-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "amend-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    async with async_session_factory() as session:
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        assert project is not None
+        project.milestone_plan_status = "finalized"
+        await session.commit()
+
+    amendment = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+        headers=contributor_headers,
+        json={
+            "change_type": "budget",
+            "after": {"budget": "1750.00"},
+            "reason": "Scope needs deeper implementation support.",
+        },
+    )
+    amendment_id = amendment.json()["id"]
+    proposer_accept = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/"
+        f"{amendment_id}/accept",
+        headers=contributor_headers,
+    )
+    accepted = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/"
+        f"{amendment_id}/accept",
+        headers=operator_headers,
+    )
+
+    async with async_session_factory() as session:
+        proposal = await session.scalar(
+            select(Proposal).where(Proposal.id == proposal_id)
+        )
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        messages = (
+            (
+                await session.execute(
+                    select(WorkspaceMessage)
+                    .where(WorkspaceMessage.project_id == UUID(project_id))
+                    .order_by(WorkspaceMessage.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert amendment.status_code == 201
+    assert amendment.json()["status"] == "pending"
+    assert amendment.json()["before"]["budget"] == "1500.00"
+    assert amendment.json()["after"]["budget"] == "1750.00"
+    assert proposer_accept.status_code == 403
+    assert accepted.status_code == 200
+    assert accepted.json()["status"] == "accepted"
+    assert proposal is not None
+    assert str(proposal.budget) == "1750.00"
+    assert project is not None
+    assert project.milestone_plan_status == "draft"
+    assert [message.system_event for message in messages] == [
+        "amendment_proposed",
+        "amendment_accepted",
+    ]

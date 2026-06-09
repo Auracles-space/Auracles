@@ -10,7 +10,8 @@ from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
-from app.modules.projects.models import Project, Proposal
+from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.workspace.models import WorkspaceMessage
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -111,6 +112,49 @@ async def _close_expired_projects() -> dict[str, int]:
     return {"closed_count": closed_count, "withdrawn_count": withdrawn_count}
 
 
+async def _expire_pending_amendments() -> int:
+    """Expire pending Proposal Amendments whose seven-day window has elapsed."""
+    now = datetime.now(UTC)
+    expired_count = 0
+    async with async_session_factory() as db:
+        async with db.begin():
+            rows = (
+                await db.execute(
+                    select(ProposalAmendment, Proposal.project_id)
+                    .join(Proposal, Proposal.id == ProposalAmendment.proposal_id)
+                    .where(
+                        ProposalAmendment.status == "pending",
+                        ProposalAmendment.expires_at < now,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+            for amendment, project_id in rows:
+                amendment.status = "expired"
+                amendment.responded_at = now
+                db.add(
+                    WorkspaceMessage(
+                        project_id=project_id,
+                        sender_id=None,
+                        system_event="amendment_expired",
+                        system_payload={
+                            "amendment_id": str(amendment.id),
+                            "proposal_id": str(amendment.proposal_id),
+                        },
+                    )
+                )
+                expired_count += 1
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="amendment_expired",
+                    target_type="proposal_amendment",
+                    target_id=amendment.id,
+                    metadata={"project_id": str(project_id)},
+                )
+    return expired_count
+
+
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def expire_open_proposals(self: Any) -> dict[str, int]:
     """Withdraw pending Proposals attached to closed Projects."""
@@ -136,5 +180,20 @@ def close_expired_projects(self: Any) -> dict[str, int]:
     )
     log.info("task_started")
     result = run_async(_close_expired_projects())
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def expire_pending_amendments(self: Any) -> dict[str, int]:
+    """Expire stale Proposal Amendments that were not accepted or rejected."""
+    log = logger.bind(
+        module="projects",
+        action="expire_pending_amendments",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    expired_count = run_async(_expire_pending_amendments())
+    result = {"expired_count": expired_count}
     log.info("task_completed", result=result)
     return result

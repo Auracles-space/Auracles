@@ -16,7 +16,8 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
-from app.modules.projects.models import Project, Proposal
+from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import projects_beat
 
@@ -45,6 +46,8 @@ def projects_beat_context() -> Iterator[sessionmaker]:
         """Delete Project rows in dependency order."""
         with session_factory() as session:
             session.execute(delete(AuditLog))
+            session.execute(delete(WorkspaceMessage))
+            session.execute(delete(ProposalAmendment))
             session.execute(delete(Project))
             session.execute(delete(Proposal))
             session.execute(delete(UserRole))
@@ -127,6 +130,43 @@ def create_project_with_pending_proposal(
         return project.id, proposal.id
 
 
+def create_expired_pending_amendment(session_factory: sessionmaker) -> UUID:
+    """Create an accepted Proposal with an expired pending Amendment."""
+    with session_factory() as session:
+        project_id, proposal_id = create_project_with_pending_proposal(
+            session_factory,
+            project_status="assigned",
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+        proposal = session.get(Proposal, proposal_id)
+        project = session.get(Project, project_id)
+        assert proposal is not None
+        assert project is not None
+        proposal.status = "accepted"
+        proposal.accepted_at = datetime.now(UTC)
+        project.accepted_proposal_id = proposal.id
+        amendment = ProposalAmendment(
+            proposal_id=proposal.id,
+            proposed_by=proposal.contributor_id,
+            change_type="timeline",
+            before={
+                "scope": proposal.scope,
+                "budget": f"{proposal.budget:.2f}",
+                "timeline_days": proposal.timeline_days,
+            },
+            after={
+                "scope": proposal.scope,
+                "budget": f"{proposal.budget:.2f}",
+                "timeline_days": proposal.timeline_days + 7,
+            },
+            reason="Need more calendar time.",
+            expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+        session.add(amendment)
+        session.commit()
+        return amendment.id
+
+
 def test_close_expired_projects_closes_open_projects_and_withdraws_proposals(
     migrated_database: None,
     projects_beat_context: sessionmaker,
@@ -174,3 +214,24 @@ def test_expire_open_proposals_withdraws_pending_proposals_on_closed_projects(
     assert second_result == {"withdrawn_count": 0}
     assert proposal is not None
     assert proposal.status == "withdrawn"
+
+
+def test_expire_pending_amendments_marks_expired_and_writes_workspace_message(
+    migrated_database: None,
+    projects_beat_context: sessionmaker,
+) -> None:
+    """Expired pending Amendments are marked expired exactly once."""
+    amendment_id = create_expired_pending_amendment(projects_beat_context)
+
+    result = projects_beat.expire_pending_amendments.apply().get()
+    second_result = projects_beat.expire_pending_amendments.apply().get()
+
+    with projects_beat_context() as session:
+        amendment = session.get(ProposalAmendment, amendment_id)
+        messages = session.query(WorkspaceMessage).all()
+
+    assert result == {"expired_count": 1}
+    assert second_result == {"expired_count": 0}
+    assert amendment is not None
+    assert amendment.status == "expired"
+    assert [message.system_event for message in messages] == ["amendment_expired"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -88,6 +88,33 @@ class ProposalCreateRequest(BaseModel):
         if value.upper() != "USD":
             raise ValueError("Proposal currency must be USD.")
         return value.upper()
+
+
+class AmendmentCreateRequest(BaseModel):
+    """Project member request body for proposing a Proposal amendment."""
+
+    change_type: Literal["scope", "budget", "timeline", "combo"]
+    after: dict[str, Any]
+    reason: str = Field(min_length=5, max_length=4000)
+
+
+class AmendmentResponse(BaseModel):
+    """Proposal amendment response returned to Project members."""
+
+    id: UUID
+    proposal_id: UUID
+    proposed_by: UUID
+    change_type: str
+    before: dict[str, Any]
+    after: dict[str, Any]
+    reason: str
+    status: str
+    responded_at: datetime | None
+    responded_by: UUID | None
+    expires_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProjectResponse(BaseModel):

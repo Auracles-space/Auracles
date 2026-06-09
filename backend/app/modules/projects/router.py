@@ -16,6 +16,8 @@ from app.core.dependencies import (
 from app.modules.auth.models import User
 from app.modules.projects import service
 from app.modules.projects.schemas import (
+    AmendmentCreateRequest,
+    AmendmentResponse,
     ProjectCreateRequest,
     ProjectResponse,
     ProjectsResponse,
@@ -152,6 +154,95 @@ async def list_my_project_proposals(
         contributor=contributor,
         project_id=project_id,
     )
+
+
+@router.post(
+    "/{project_id}/proposals/{proposal_id}/amendments",
+    response_model=AmendmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def propose_amendment(
+    project_id: UUID,
+    proposal_id: UUID,
+    payload: AmendmentCreateRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AmendmentResponse:
+    """Propose scope, budget, or timeline changes for an accepted Proposal."""
+    amendment = await service.propose_amendment(
+        db=db,
+        actor=current_user,
+        project_id=project_id,
+        proposal_id=proposal_id,
+        payload=payload,
+    )
+    return AmendmentResponse.model_validate(amendment)
+
+
+@router.post(
+    "/{project_id}/proposals/{proposal_id}/amendments/{amendment_id}/accept",
+    response_model=AmendmentResponse,
+)
+async def accept_amendment(
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AmendmentResponse:
+    """Accept a pending amendment as the counterparty."""
+    amendment = await service.accept_amendment(
+        db=db,
+        actor=current_user,
+        project_id=project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment_id,
+    )
+    return AmendmentResponse.model_validate(amendment)
+
+
+@router.post(
+    "/{project_id}/proposals/{proposal_id}/amendments/{amendment_id}/reject",
+    response_model=AmendmentResponse,
+)
+async def reject_amendment(
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AmendmentResponse:
+    """Reject a pending amendment as the counterparty."""
+    amendment = await service.reject_amendment(
+        db=db,
+        actor=current_user,
+        project_id=project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment_id,
+    )
+    return AmendmentResponse.model_validate(amendment)
+
+
+@router.patch(
+    "/{project_id}/proposals/{proposal_id}/amendments/{amendment_id}/withdraw",
+    response_model=AmendmentResponse,
+)
+async def withdraw_amendment(
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AmendmentResponse:
+    """Withdraw a pending amendment as its proposer."""
+    amendment = await service.withdraw_amendment(
+        db=db,
+        actor=current_user,
+        project_id=project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment_id,
+    )
+    return AmendmentResponse.model_validate(amendment)
 
 
 @router.patch(

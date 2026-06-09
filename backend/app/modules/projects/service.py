@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from decimal import Decimal, InvalidOperation
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
-from app.modules.projects.models import Project, Proposal
+from app.modules.projects.models import Project, Proposal, ProposalAmendment
 from app.modules.projects.schemas import (
+    AmendmentCreateRequest,
     DeliverableSpec,
     ProjectCreateRequest,
     ProjectsResponse,
@@ -27,6 +29,7 @@ from app.modules.projects.schemas import (
     ProposalCreateRequest,
     ProposalsResponse,
 )
+from app.modules.workspace.models import WorkspaceMessage
 
 ACTIVE_PROJECT_STATUSES = {
     "open",
@@ -57,6 +60,110 @@ async def _load_project(db: AsyncSession, project_id: UUID) -> Project:
 def _serialize_deliverables(payload: Sequence[DeliverableSpec]) -> list[dict[str, str]]:
     """Convert Pydantic deliverable specs to JSONB-safe dictionaries."""
     return [item.model_dump() for item in payload]
+
+
+def _proposal_snapshot(proposal: Proposal) -> dict[str, Any]:
+    """Return the amendment-controlled Proposal fields as JSONB-safe values."""
+    return {
+        "scope": proposal.scope,
+        "budget": f"{proposal.budget:.2f}",
+        "timeline_days": proposal.timeline_days,
+    }
+
+
+def _normalize_amendment_after(
+    *,
+    change_type: str,
+    after: dict[str, Any],
+    before: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and normalize an amendment's requested Proposal changes."""
+    allowed_by_type = {
+        "scope": {"scope"},
+        "budget": {"budget"},
+        "timeline": {"timeline_days"},
+        "combo": {"scope", "budget", "timeline_days"},
+    }
+    allowed_keys = allowed_by_type[change_type]
+    if not after or not set(after).issubset(allowed_keys):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Amendment after fields must match change_type '{change_type}'.",
+        )
+
+    normalized = dict(before)
+    if "scope" in after:
+        scope = str(after["scope"]).strip()
+        if len(scope) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amended scope must be at least 10 characters.",
+            )
+        normalized["scope"] = scope
+    if "budget" in after:
+        try:
+            budget = Decimal(str(after["budget"]))
+        except InvalidOperation as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amended budget must be a decimal amount.",
+            ) from exc
+        if budget <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amended budget must be positive.",
+            )
+        normalized["budget"] = f"{budget.quantize(Decimal('0.01'))}"
+    if "timeline_days" in after:
+        try:
+            timeline_days = int(after["timeline_days"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amended timeline_days must be an integer.",
+            ) from exc
+        if timeline_days <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amended timeline_days must be positive.",
+            )
+        normalized["timeline_days"] = timeline_days
+    if normalized == before:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Amendment must change at least one Proposal field.",
+        )
+    return normalized
+
+
+def _is_project_member(project: Project, proposal: Proposal, user_id: UUID) -> bool:
+    """Return whether a user is the Project Operator or accepted Contributor."""
+    return user_id in {project.operator_id, proposal.contributor_id}
+
+
+def _is_counterparty(
+    project: Project,
+    proposal: Proposal,
+    actor_id: UUID,
+    proposed_by: UUID,
+) -> bool:
+    """Return whether actor is the other Project party for an amendment."""
+    return _is_project_member(project, proposal, actor_id) and actor_id != proposed_by
+
+
+def _workspace_system_message(
+    *,
+    project_id: UUID,
+    system_event: str,
+    payload: dict[str, Any],
+) -> WorkspaceMessage:
+    """Build a workspace system message for Project collaboration history."""
+    return WorkspaceMessage(
+        project_id=project_id,
+        sender_id=None,
+        system_event=system_event,
+        system_payload=payload,
+    )
 
 
 async def create_project(
@@ -482,3 +589,305 @@ async def accept_proposal(
         await db.flush()
         await db.refresh(project)
     return project
+
+
+async def propose_amendment(
+    *,
+    db: AsyncSession,
+    actor: User,
+    project_id: UUID,
+    proposal_id: UUID,
+    payload: AmendmentCreateRequest,
+) -> ProposalAmendment:
+    """Create a pending Proposal amendment from one accepted Project member."""
+    actor_id = actor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    async with db.begin():
+        project = await db.scalar(
+            select(Project).where(Project.id == project_id).with_for_update()
+        )
+        proposal = await db.scalar(
+            select(Proposal)
+            .where(Proposal.id == proposal_id, Proposal.project_id == project_id)
+            .with_for_update()
+        )
+        if project is None or proposal is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project or Proposal not found.",
+            )
+        if project.accepted_proposal_id != proposal.id or proposal.status != "accepted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Amendments require an accepted Proposal.",
+            )
+        if not _is_project_member(project, proposal, actor_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Project members can propose amendments.",
+            )
+
+        existing = await db.scalar(
+            select(ProposalAmendment)
+            .where(
+                ProposalAmendment.proposal_id == proposal.id,
+                ProposalAmendment.status == "pending",
+            )
+            .with_for_update()
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This Proposal already has a pending amendment.",
+            )
+
+        before = _proposal_snapshot(proposal)
+        after = _normalize_amendment_after(
+            change_type=payload.change_type,
+            after=payload.after,
+            before=before,
+        )
+        amendment = ProposalAmendment(
+            proposal_id=proposal.id,
+            proposed_by=actor_id,
+            change_type=payload.change_type,
+            before=before,
+            after=after,
+            reason=payload.reason,
+            expires_at=now + timedelta(days=7),
+        )
+        db.add(amendment)
+        await db.flush()
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="amendment_proposed",
+                payload={
+                    "amendment_id": str(amendment.id),
+                    "proposal_id": str(proposal.id),
+                    "proposed_by": str(actor_id),
+                    "change_type": amendment.change_type,
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="amendment_proposed",
+            target_type="proposal_amendment",
+            target_id=amendment.id,
+            metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
+        )
+        await db.flush()
+        await db.refresh(amendment)
+    return amendment
+
+
+async def accept_amendment(
+    *,
+    db: AsyncSession,
+    actor: User,
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+) -> ProposalAmendment:
+    """Accept a pending amendment as the counterparty and mutate the Proposal."""
+    actor_id = actor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal, amendment = await _load_pending_amendment_for_update(
+            db=db,
+            project_id=project_id,
+            proposal_id=proposal_id,
+            amendment_id=amendment_id,
+        )
+        if not _is_counterparty(project, proposal, actor_id, amendment.proposed_by):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the amendment counterparty can accept it.",
+            )
+
+        if proposal.scope != amendment.after["scope"]:
+            proposal.scope = amendment.after["scope"]
+        if f"{proposal.budget:.2f}" != amendment.after["budget"]:
+            proposal.budget = Decimal(amendment.after["budget"])
+            project.milestone_plan_status = "draft"
+        if proposal.timeline_days != amendment.after["timeline_days"]:
+            proposal.timeline_days = int(amendment.after["timeline_days"])
+
+        amendment.status = "accepted"
+        amendment.responded_at = datetime.now(UTC)
+        amendment.responded_by = actor_id
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="amendment_accepted",
+                payload={
+                    "amendment_id": str(amendment.id),
+                    "proposal_id": str(proposal.id),
+                    "responded_by": str(actor_id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="amendment_accepted",
+            target_type="proposal_amendment",
+            target_id=amendment.id,
+            metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
+        )
+        await db.flush()
+        await db.refresh(amendment)
+    return amendment
+
+
+async def reject_amendment(
+    *,
+    db: AsyncSession,
+    actor: User,
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+) -> ProposalAmendment:
+    """Reject a pending amendment as the counterparty."""
+    actor_id = actor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal, amendment = await _load_pending_amendment_for_update(
+            db=db,
+            project_id=project_id,
+            proposal_id=proposal_id,
+            amendment_id=amendment_id,
+        )
+        if not _is_counterparty(project, proposal, actor_id, amendment.proposed_by):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the amendment counterparty can reject it.",
+            )
+        amendment.status = "rejected"
+        amendment.responded_at = datetime.now(UTC)
+        amendment.responded_by = actor_id
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="amendment_rejected",
+                payload={
+                    "amendment_id": str(amendment.id),
+                    "proposal_id": str(proposal.id),
+                    "responded_by": str(actor_id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="amendment_rejected",
+            target_type="proposal_amendment",
+            target_id=amendment.id,
+            metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
+        )
+        await db.flush()
+        await db.refresh(amendment)
+    return amendment
+
+
+async def withdraw_amendment(
+    *,
+    db: AsyncSession,
+    actor: User,
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+) -> ProposalAmendment:
+    """Withdraw a pending amendment as its proposer."""
+    actor_id = actor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal, amendment = await _load_pending_amendment_for_update(
+            db=db,
+            project_id=project_id,
+            proposal_id=proposal_id,
+            amendment_id=amendment_id,
+        )
+        if amendment.proposed_by != actor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the amendment proposer can withdraw it.",
+            )
+        amendment.status = "withdrawn"
+        amendment.responded_at = datetime.now(UTC)
+        amendment.responded_by = actor_id
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="amendment_rejected",
+                payload={
+                    "amendment_id": str(amendment.id),
+                    "proposal_id": str(proposal.id),
+                    "withdrawn_by": str(actor_id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="amendment_withdrawn",
+            target_type="proposal_amendment",
+            target_id=amendment.id,
+            metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
+        )
+        await db.flush()
+        await db.refresh(amendment)
+    return amendment
+
+
+async def _load_pending_amendment_for_update(
+    *,
+    db: AsyncSession,
+    project_id: UUID,
+    proposal_id: UUID,
+    amendment_id: UUID,
+) -> tuple[Project, Proposal, ProposalAmendment]:
+    """Load a pending amendment with its Project and Proposal under row locks."""
+    project = await db.scalar(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    proposal = await db.scalar(
+        select(Proposal)
+        .where(Proposal.id == proposal_id, Proposal.project_id == project_id)
+        .with_for_update()
+    )
+    amendment = await db.scalar(
+        select(ProposalAmendment)
+        .where(
+            ProposalAmendment.id == amendment_id,
+            ProposalAmendment.proposal_id == proposal_id,
+        )
+        .with_for_update()
+    )
+    if project is None or proposal is None or amendment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Amendment not found.",
+        )
+    if amendment.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending amendments can be changed.",
+        )
+    if project.accepted_proposal_id != proposal.id or proposal.status != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Amendments require an accepted Proposal.",
+        )
+    return project, proposal, amendment
