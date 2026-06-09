@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.security import hash_payout_provider_account_id
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.financials import escrow_service
@@ -220,6 +221,19 @@ async def _handle_purchase_succeeded(
         )
         db.add(existing_license)
         await db.flush()
+    elif existing_license.transaction_id == transaction.id:
+        pass
+    elif existing_license.status != "active":
+        existing_license.transaction_id = transaction.id
+        existing_license.license_type = license_type
+        existing_license.status = "active"
+        existing_license.version_at_grant = framework.version
+        existing_license.seats_used = 1
+        existing_license.seats_total = _license_seats_total(license_type)
+    else:
+        raise WebhookProcessingError(
+            "framework already licensed by a different transaction"
+        )
 
     transaction.status = "completed"
     await write_audit(
@@ -308,11 +322,23 @@ async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> No
     payout_account = await db.scalar(
         select(PayoutAccount).where(
             PayoutAccount.provider == "stripe",
-            PayoutAccount.provider_account_id == account_id,
+            PayoutAccount.provider_account_lookup_hash
+            == hash_payout_provider_account_id(account_id),
             PayoutAccount.deleted_at.is_(None),
         )
     )
-    if payout_account is None or payout_account.verified_at is not None:
+    if payout_account is None:
+        logger.bind(
+            module="webhooks",
+            action="stripe_account_updated",
+        ).warning("payout_account_not_found", provider="stripe")
+        return
+    if payout_account.verified_at is not None:
+        logger.bind(
+            module="webhooks",
+            action="stripe_account_updated",
+            user_id=payout_account.user_id,
+        ).info("payout_account_already_verified")
         return
     payout_account.verified_at = datetime.now(UTC)
     await write_audit(

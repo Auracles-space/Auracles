@@ -8,6 +8,7 @@ typed lets later auth slices compose them without duplicating security logic.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -91,6 +92,16 @@ def _totp_cipher() -> Fernet:
     return Fernet(key)
 
 
+def _payout_account_cipher() -> Fernet:
+    """Build the Fernet cipher used for provider payout account IDs."""
+    key = (
+        get_settings()
+        .payout_account_encryption_key.get_secret_value()
+        .encode("utf-8")
+    )
+    return Fernet(key)
+
+
 def encrypt_totp_secret(secret: str) -> str:
     """Encrypt a TOTP shared secret before database persistence."""
     return _totp_cipher().encrypt(secret.encode("utf-8")).decode("utf-8")
@@ -99,6 +110,34 @@ def encrypt_totp_secret(secret: str) -> str:
 def decrypt_totp_secret(encrypted_secret: str) -> str:
     """Decrypt a stored TOTP shared secret for verification."""
     return _totp_cipher().decrypt(encrypted_secret.encode("utf-8")).decode("utf-8")
+
+
+def encrypt_payout_provider_account_id(provider_account_id: str) -> str:
+    """Encrypt a provider payout account id before database persistence."""
+    return _payout_account_cipher().encrypt(provider_account_id.encode("utf-8")).decode(
+        "utf-8"
+    )
+
+
+def decrypt_payout_provider_account_id(encrypted_provider_account_id: str) -> str:
+    """Decrypt a provider payout account id before provider API calls."""
+    return (
+        _payout_account_cipher()
+        .decrypt(encrypted_provider_account_id.encode("utf-8"))
+        .decode("utf-8")
+    )
+
+
+def hash_payout_provider_account_id(provider_account_id: str) -> str:
+    """Return a stable keyed lookup hash for provider payout account ids."""
+    key = get_settings().payout_account_encryption_key.get_secret_value().encode(
+        "utf-8"
+    )
+    return hmac.new(
+        key,
+        provider_account_id.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def generate_backup_codes(n: int = 10) -> list[str]:

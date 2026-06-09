@@ -173,6 +173,7 @@ def test_financials_orm_models_bind_to_slice_one_tables() -> None:
     assert "release_conditions" in Escrow.__table__.columns.keys()
     assert PayoutAccount.__tablename__ == "payout_accounts"
     assert "provider_account_id" in PayoutAccount.__table__.columns.keys()
+    assert "provider_account_lookup_hash" in PayoutAccount.__table__.columns.keys()
     assert Payout.__tablename__ == "payouts"
     assert "commission_deducted" in Payout.__table__.columns.keys()
     assert PlatformConfig.__tablename__ == "platform_config"

@@ -15,7 +15,11 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.security import (
+    encrypt_payout_provider_account_id,
+    hash_password,
+    hash_payout_provider_account_id,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -244,10 +248,14 @@ def create_pending_payout() -> UUID:
                 approved_at=datetime.now(UTC),
             )
         )
+        provider_account_id = "acct_payout_123"
         payout_account = PayoutAccount(
             user_id=contributor.id,
             provider="stripe",
-            provider_account_id="acct_payout_123",
+            provider_account_id=encrypt_payout_provider_account_id(provider_account_id),
+            provider_account_lookup_hash=hash_payout_provider_account_id(
+                provider_account_id
+            ),
             account_type="express",
             is_default=True,
             verified_at=datetime.now(UTC),

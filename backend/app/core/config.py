@@ -16,7 +16,9 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
 PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
+PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 DEV_SECRET_KEY = "dev-only-change-me"
 PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
 PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
@@ -65,6 +67,10 @@ class Settings(BaseSettings):
     totp_encryption_key: SecretStr = Field(
         default=SecretStr(DEV_TOTP_ENCRYPTION_KEY),
         alias="TOTP_ENCRYPTION_KEY",
+    )
+    payout_account_encryption_key: SecretStr = Field(
+        default=SecretStr(DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY),
+        alias="PAYOUT_ACCOUNT_ENCRYPTION_KEY",
     )
     cors_allowed_origins: str = Field(
         default="http://localhost:3000",
@@ -156,6 +162,29 @@ class Settings(BaseSettings):
             in {DEV_TOTP_ENCRYPTION_KEY, PLACEHOLDER_TOTP_ENCRYPTION_KEY}
         ):
             raise ValueError("TOTP_ENCRYPTION_KEY must be set outside local.")
+        return self
+
+    @model_validator(mode="after")
+    def production_payout_account_key_is_not_placeholder(self) -> Self:
+        """Reject the dev payout-account encryption key outside local environments."""
+        raw_key = self.payout_account_encryption_key.get_secret_value()
+        if (
+            self.environment == "local"
+            and raw_key == PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY
+        ):
+            self.payout_account_encryption_key = SecretStr(
+                DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY
+            )
+            return self
+        if (
+            self.environment != "local"
+            and raw_key
+            in {
+                DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
+                PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
+            }
+        ):
+            raise ValueError("PAYOUT_ACCOUNT_ENCRYPTION_KEY must be set outside local.")
         return self
 
     @model_validator(mode="after")

@@ -304,8 +304,6 @@ async def update_platform_config(
 ) -> list[PlatformConfig]:
     """Apply audited admin platform configuration changes."""
     admin_id = admin.id
-    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
-
     seen_keys: set[str] = set()
     normalised_updates: list[tuple[str, str]] = []
     for key, raw_value in updates:
@@ -322,6 +320,12 @@ async def update_platform_config(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
         for key, value in normalised_updates:
             config = await db.get(PlatformConfig, key)
             if config is None:
@@ -354,17 +358,22 @@ async def update_platform_config(
 async def _verify_admin_2fa(
     db: AsyncSession,
     redis: Redis,
-    admin: User,
+    admin_id: UUID,
     totp_code: str,
 ) -> None:
     """Require a valid admin TOTP or backup code before sensitive admin writes."""
+    admin = await db.get(User, admin_id, with_for_update=True)
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token.",
+        )
     await auth_service.verify_totp_for_sensitive_action(
         db=db,
         redis=redis,
         user=admin,
         code=totp_code,
     )
-    await db.commit()
 
 
 async def release_escrow_override(
@@ -377,10 +386,15 @@ async def release_escrow_override(
 ) -> Escrow:
     """Release held escrow funds through an audited admin override."""
     admin_id = admin.id
-    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
         escrow = await escrow_service.release(
             db,
             escrow_id=escrow_id,
@@ -401,54 +415,62 @@ async def refund_escrow_override(
 ) -> Escrow:
     """Refund held escrow funds through an audited admin override."""
     admin_id = admin.id
-    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
-
-    escrow = await db.get(Escrow, escrow_id)
-    if escrow is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Escrow not found.",
-        )
-    if escrow.status == "refunded":
-        return escrow
-    if escrow.status == "released":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Released escrow cannot be refunded.",
-        )
-    transaction = await db.get(Transaction, escrow.transaction_id)
-    if transaction is None or transaction.provider_ref is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Escrow funding transaction is missing provider metadata.",
-        )
-    if transaction.provider != "stripe":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Unsupported escrow payment provider.",
-        )
-    try:
-        await stripe.create_refund(
-            payment_intent_id=transaction.provider_ref,
-            amount=transaction.amount,
-            currency=transaction.currency,
-            idempotency_key=f"escrow_refund:{escrow_id}",
-        )
-    except StripeProviderError as exc:
-        logger.bind(
-            module="admin",
-            action="refund_escrow_override",
-            user_id=admin_id,
-            escrow_id=escrow_id,
-        ).error("stripe_escrow_refund_failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
 
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
+        escrow = await db.get(Escrow, escrow_id, with_for_update=True)
+        if escrow is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Escrow not found.",
+            )
+        if escrow.status == "refunded":
+            return escrow
+        if escrow.status == "released":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Released escrow cannot be refunded.",
+            )
+        transaction = await db.get(
+            Transaction,
+            escrow.transaction_id,
+            with_for_update=True,
+        )
+        if transaction is None or transaction.provider_ref is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Escrow funding transaction is missing provider metadata.",
+            )
+        if transaction.provider != "stripe":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Unsupported escrow payment provider.",
+            )
+        try:
+            await stripe.create_refund(
+                payment_intent_id=transaction.provider_ref,
+                amount=transaction.amount,
+                currency=transaction.currency,
+                idempotency_key=f"escrow_refund:{escrow_id}",
+            )
+        except StripeProviderError as exc:
+            logger.bind(
+                module="admin",
+                action="refund_escrow_override",
+                user_id=admin_id,
+                escrow_id=escrow_id,
+            ).error("stripe_escrow_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
         escrow = await escrow_service.refund(
             db,
             escrow_id=escrow_id,

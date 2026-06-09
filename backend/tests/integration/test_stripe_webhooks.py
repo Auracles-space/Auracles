@@ -286,6 +286,83 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert invoice_task.dispatched == [str(transaction_id)]
 
 
+async def test_purchase_webhook_fails_duplicate_active_license_transaction(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A second purchase webhook cannot complete without granting a License."""
+    first_transaction_id, framework_id, operator_id, contributor_id = (
+        await create_pending_purchase()
+    )
+    webhook_context["event"] = payment_intent_event(
+        "evt_first_purchase_success",
+        "payment_intent.succeeded",
+        transaction_id=first_transaction_id,
+        framework_id=framework_id,
+    )
+    first = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            second_transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("149.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("149.00"),
+                transaction_type="purchase",
+                status="pending",
+                provider="stripe",
+                provider_ref="pi_webhook_duplicate",
+                ref_id=framework_id,
+                ref_type="framework",
+            )
+            session.add(second_transaction)
+            await session.flush()
+            second_transaction_id = second_transaction.id
+
+    webhook_context["event"] = payment_intent_event(
+        "evt_duplicate_purchase_success",
+        "payment_intent.succeeded",
+        transaction_id=second_transaction_id,
+        framework_id=framework_id,
+        provider_ref="pi_webhook_duplicate",
+    )
+    duplicate = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        second = await session.get(Transaction, second_transaction_id)
+        licenses = (
+            await session.execute(
+                select(License).where(License.framework_id == framework_id)
+            )
+        ).scalars().all()
+        duplicate_event = await session.scalar(
+            select(WebhookEvent).where(
+                WebhookEvent.provider_event_id == "evt_duplicate_purchase_success"
+            )
+        )
+
+    assert first.status_code == 200
+    assert duplicate.status_code == 500
+    assert second is not None
+    assert second.status == "pending"
+    assert len(licenses) == 1
+    assert duplicate_event is not None
+    assert duplicate_event.status == "failed"
+    assert duplicate_event.error is not None
+    assert "different transaction" in duplicate_event.error
+
+
 async def test_stripe_payment_intent_success_funds_escrow_once(
     client: AsyncClient,
     webhook_context: dict[str, Any],

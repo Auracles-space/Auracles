@@ -15,11 +15,14 @@ from pydantic import BaseModel, ValidationError, field_validator
 from app.core.security import (
     create_access_token,
     decode_access_token,
+    decrypt_payout_provider_account_id,
     decrypt_totp_secret,
+    encrypt_payout_provider_account_id,
     encrypt_totp_secret,
     generate_backup_codes,
     generate_opaque_token,
     hash_password,
+    hash_payout_provider_account_id,
     hash_token,
     validate_password_strength,
     verify_password,
@@ -87,6 +90,17 @@ def test_totp_secrets_encrypt_and_backup_codes_are_one_time_material() -> None:
     assert len(backup_codes) == 10
     assert len(set(backup_codes)) == 10
     assert all(len(code) == 9 and code[4] == "-" for code in backup_codes)
+
+
+def test_payout_provider_account_ids_encrypt_and_hash_for_lookup() -> None:
+    """Provider payout IDs are stored encrypted but matched by stable HMAC hash."""
+    encrypted = encrypt_payout_provider_account_id("acct_test_123")
+    lookup_hash = hash_payout_provider_account_id("acct_test_123")
+
+    assert encrypted != "acct_test_123"
+    assert decrypt_payout_provider_account_id(encrypted) == "acct_test_123"
+    assert lookup_hash == hash_payout_provider_account_id("acct_test_123")
+    assert lookup_hash != hash_payout_provider_account_id("acct_other_123")
 
 
 def test_password_strength_validator_rejects_weak_passwords() -> None:

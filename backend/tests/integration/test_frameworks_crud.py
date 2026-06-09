@@ -24,6 +24,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import (
     Framework,
     FrameworkVersion,
@@ -123,6 +124,9 @@ async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
             await session.execute(delete(License))
+            await session.execute(delete(Payout))
+            await session.execute(delete(PayoutAccount))
+            await session.execute(delete(Transaction))
             await session.execute(delete(ArtifactRarityAudit))
             await session.execute(delete(ArtifactPiiAudit))
             await session.execute(delete(FrameworkVersionArtifact))
@@ -316,6 +320,30 @@ async def test_verified_contributor_can_create_draft_framework(
     assert body["contributor_id"] == str(contributor_id)
     assert body["pricing"]["price"] == "499.00"
     assert body["pricing"]["license_types"] == ["single_user", "team"]
+
+
+async def test_framework_creation_rejects_non_usd_pricing(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributors cannot create non-USD Frameworks during Stripe-only MVP."""
+    del migrated_database, framework_test_context
+    contributor_id = await create_user_with_roles(
+        "ngn-creator@auracles.space",
+        ["contributor"],
+    )
+    payload = valid_framework_payload()
+    payload["pricing"]["currency"] = "NGN"
+
+    response = await client.post(
+        "/v1/frameworks",
+        json=payload,
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+    assert "Only USD Framework pricing is supported." in response.text
 
 
 @pytest.mark.parametrize("kyc_status", ["unverified", "pending"])

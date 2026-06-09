@@ -6,15 +6,21 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.security import (
+    decrypt_payout_provider_account_id,
+    encrypt_payout_provider_account_id,
+    hash_payout_provider_account_id,
+)
 from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
@@ -61,13 +67,24 @@ def _masked_provider_ref(provider_ref: str) -> str:
     return f"****{provider_ref[-4:]}" if len(provider_ref) > 4 else "****"
 
 
+def _provider_account_id_plaintext(payout_account: PayoutAccount) -> str:
+    """Return the provider account id, decrypting rows written after Slice 14."""
+    try:
+        return decrypt_payout_provider_account_id(payout_account.provider_account_id)
+    except InvalidToken:
+        # Local/dev rows may predate the encryption migration. Keep reads working
+        # while all new writes use encrypted storage and lookup hashes.
+        return payout_account.provider_account_id
+
+
 def _payout_account_response(payout_account: PayoutAccount) -> PayoutAccountResponse:
     """Map a payout account row to safe Contributor-facing metadata."""
+    provider_account_id = _provider_account_id_plaintext(payout_account)
     return PayoutAccountResponse(
         id=payout_account.id,
         provider="stripe",
         account_type=payout_account.account_type,
-        provider_account_ref=_masked_provider_ref(payout_account.provider_account_id),
+        provider_account_ref=_masked_provider_ref(provider_account_id),
         is_default=payout_account.is_default,
         verified_at=payout_account.verified_at,
         created_at=payout_account.created_at,
@@ -229,6 +246,18 @@ async def _available_payout_balance(
     cleared_net = _normalise_money(cleared_gross * (Decimal("1") - commission_rate))
     available = max(_normalise_money(cleared_net - claimed), Decimal("0.00"))
     return gross_revenue, pending_clearance, available, claimed, commission_rate
+
+
+async def _lock_contributor_financials(
+    db: AsyncSession,
+    *,
+    contributor_id: UUID,
+) -> None:
+    """Serialize payout balance mutations for one Contributor."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"payout:{contributor_id}"},
+    )
 
 
 async def _count_license_downloads(db: AsyncSession, license_id: UUID) -> int:
@@ -437,11 +466,13 @@ async def _load_operator_purchase(
 ) -> Transaction:
     """Load an Operator-owned Framework purchase transaction."""
     transaction = await db.scalar(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.id == transaction_id,
             Transaction.payer_id == operator_id,
             Transaction.transaction_type == "purchase",
         )
+        .with_for_update()
     )
     if transaction is None:
         raise HTTPException(
@@ -851,11 +882,13 @@ async def _load_refundable_purchase(
         )
 
     license_row = await db.scalar(
-        select(License).where(
+        select(License)
+        .where(
             License.transaction_id == transaction.id,
             License.operator_id == operator_id,
             License.status == "active",
         )
+        .with_for_update()
     )
     if license_row is None:
         raise HTTPException(
@@ -887,62 +920,57 @@ async def refund_framework_purchase(
 ) -> RefundResponse:
     """Refund an eligible Framework purchase and revoke its License."""
     operator_id = operator.id
-    transaction, license_row = await _load_refundable_purchase(
-        db=db,
-        operator_id=operator_id,
-        transaction_id=transaction_id,
-    )
-    payment_intent_id = transaction.provider_ref
-    if payment_intent_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Purchase is missing refundable provider metadata.",
-        )
-    amount = _normalise_money(transaction.amount)
-    currency = transaction.currency.upper()
-    license_id = license_row.id
-
-    try:
-        refund = await stripe.create_refund(
-            payment_intent_id=payment_intent_id,
-            amount=amount,
-            currency=currency,
-            idempotency_key=f"refund:{transaction_id}",
-        )
-    except StripeProviderError as exc:
-        logger.bind(
-            module="financials",
-            action="refund_framework_purchase",
-            user_id=operator_id,
-            transaction_id=transaction_id,
-        ).error("stripe_refund_failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
-
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        transaction_row = await db.get(Transaction, transaction_id)
-        license_to_revoke = await db.get(License, license_id)
-        if transaction_row is None or license_to_revoke is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Purchase not found.",
+        transaction, license_row = await _load_refundable_purchase(
+            db=db,
+            operator_id=operator_id,
+            transaction_id=transaction_id,
+        )
+        assert transaction.provider_ref is not None
+        try:
+            refund = await stripe.create_refund(
+                payment_intent_id=transaction.provider_ref,
+                amount=_normalise_money(transaction.amount),
+                currency=transaction.currency.upper(),
+                idempotency_key=f"refund:{transaction_id}",
             )
-        transaction_row.status = "refunded"
-        license_to_revoke.status = "revoked"
+        except StripeProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="refund_framework_purchase",
+                user_id=operator_id,
+                transaction_id=transaction_id,
+            ).error("stripe_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
+
+        if await _count_license_downloads(db, license_row.id) > 0:
+            logger.bind(
+                module="financials",
+                action="refund_framework_purchase",
+                user_id=operator_id,
+                transaction_id=transaction_id,
+            ).critical("refund_download_race_after_provider_refund")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Refund provider call completed but a download was recorded.",
+            )
+        transaction.status = "refunded"
+        license_row.status = "revoked"
         await write_audit(
             db=db,
             actor_id=operator_id,
             action="purchase_refunded",
             target_type="transaction",
-            target_id=transaction_row.id,
+            target_id=transaction.id,
             metadata={
                 "provider": "stripe",
                 "refund_ref": _masked_provider_ref(refund.id),
-                "license_id": str(license_to_revoke.id),
+                "license_id": str(license_row.id),
             },
         )
 
@@ -1006,50 +1034,57 @@ async def request_payout(
             detail=f"Minimum payout is ${minimum}.",
         )
 
-    payout_account = await db.scalar(
-        select(PayoutAccount).where(
-            PayoutAccount.id == payload.payout_account_id,
-            PayoutAccount.user_id == contributor_id,
-            PayoutAccount.deleted_at.is_(None),
-        )
-    )
-    if payout_account is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Payout account not found.",
-        )
-    if payout_account.verified_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Payout account is not verified.",
-        )
-
-    _, _, available, _, commission_rate = await _available_payout_balance(
-        db,
-        contributor_id=contributor_id,
-        currency=currency,
-    )
-    if requested_net > available:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Requested payout exceeds available balance.",
-        )
-
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=contributor,
-        code=payload.totp_code,
-    )
-    await db.commit()
-
-    gross_drawdown = _normalise_money(
-        requested_net / (Decimal("1") - commission_rate)
-    )
-    commission_deducted = _normalise_money(gross_drawdown - requested_net)
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _lock_contributor_financials(db, contributor_id=contributor_id)
+        payout_account = await db.scalar(
+            select(PayoutAccount)
+            .where(
+                PayoutAccount.id == payload.payout_account_id,
+                PayoutAccount.user_id == contributor_id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if payout_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payout account not found.",
+            )
+        if payout_account.verified_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payout account is not verified.",
+            )
+
+        _, _, available, _, commission_rate = await _available_payout_balance(
+            db,
+            contributor_id=contributor_id,
+            currency=currency,
+        )
+        if requested_net > available:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Requested payout exceeds available balance.",
+            )
+
+        contributor_for_2fa = await db.get(User, contributor_id, with_for_update=True)
+        if contributor_for_2fa is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=contributor_for_2fa,
+            code=payload.totp_code,
+        )
+        gross_drawdown = _normalise_money(
+            requested_net / (Decimal("1") - commission_rate)
+        )
+        commission_deducted = _normalise_money(gross_drawdown - requested_net)
         payout = Payout(
             contributor_id=contributor_id,
             payout_account_id=payload.payout_account_id,
@@ -1147,7 +1182,12 @@ async def onboard_payout_account(
             payout_account = PayoutAccount(
                 user_id=contributor_id,
                 provider=payload.provider,
-                provider_account_id=provider_account_id,
+                provider_account_id=encrypt_payout_provider_account_id(
+                    provider_account_id
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    provider_account_id
+                ),
                 account_type=account_type,
                 is_default=not await _has_active_payout_account(db, contributor_id),
             )
@@ -1216,10 +1256,11 @@ async def delete_payout_account(
     totp_code: str,
 ) -> PayoutAccountDeleteResponse:
     """Soft-delete an owned payout account after TOTP confirmation."""
+    contributor_id = contributor.id
     payout_account = await db.scalar(
         select(PayoutAccount).where(
             PayoutAccount.id == payout_account_id,
-            PayoutAccount.user_id == contributor.id,
+            PayoutAccount.user_id == contributor_id,
             PayoutAccount.deleted_at.is_(None),
         )
     )
@@ -1229,34 +1270,40 @@ async def delete_payout_account(
             detail="Payout account not found.",
         )
 
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=contributor,
-        code=totp_code,
-    )
-    await db.commit()
-
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
         payout_account = await db.scalar(
-            select(PayoutAccount).where(
+            select(PayoutAccount)
+            .where(
                 PayoutAccount.id == payout_account_id,
-                PayoutAccount.user_id == contributor.id,
+                PayoutAccount.user_id == contributor_id,
                 PayoutAccount.deleted_at.is_(None),
             )
+            .with_for_update()
         )
         if payout_account is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payout account not found.",
             )
+        contributor_for_2fa = await db.get(User, contributor_id, with_for_update=True)
+        if contributor_for_2fa is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=contributor_for_2fa,
+            code=totp_code,
+        )
         payout_account.deleted_at = datetime.now(UTC)
         payout_account.is_default = False
         await write_audit(
             db=db,
-            actor_id=contributor.id,
+            actor_id=contributor_id,
             action="payout_account_deleted",
             target_type="payout_account",
             target_id=payout_account.id,
@@ -1264,7 +1311,7 @@ async def delete_payout_account(
                 "provider": payout_account.provider,
                 "account_type": payout_account.account_type,
                 "provider_account_ref": _masked_provider_ref(
-                    payout_account.provider_account_id
+                    _provider_account_id_plaintext(payout_account)
                 ),
             },
         )
@@ -1272,7 +1319,7 @@ async def delete_payout_account(
     logger.bind(
         module="financials",
         action="delete_payout_account",
-        user_id=contributor.id,
+        user_id=contributor_id,
     ).info("payout_account_deleted")
     return PayoutAccountDeleteResponse(
         payout_account_id=payout_account_id,

@@ -50,7 +50,10 @@ class PricingConfig(BaseModel):
     @classmethod
     def currency_is_uppercase_iso_code(cls, value: str) -> str:
         """Normalize ISO-like currency codes to uppercase three-letter text."""
-        return value.upper()
+        currency = value.upper()
+        if currency != "USD":
+            raise ValueError("Only USD Framework pricing is supported.")
+        return currency
 
 
 class FrameworkCreate(BaseModel):

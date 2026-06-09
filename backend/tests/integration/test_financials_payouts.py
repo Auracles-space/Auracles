@@ -17,11 +17,17 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, encrypt_totp_secret
+from app.core.security import (
+    create_access_token,
+    encrypt_payout_provider_account_id,
+    encrypt_totp_secret,
+    hash_payout_provider_account_id,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 
 
@@ -78,9 +84,11 @@ async def reset_payout_state() -> None:
     """Remove payout test rows in foreign-key-safe order."""
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(License))
         await session.execute(delete(Payout))
         await session.execute(delete(PayoutAccount))
         await session.execute(delete(Transaction))
+        await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
         await session.commit()
@@ -200,12 +208,18 @@ async def create_sale(
 
 async def create_verified_payout_account(contributor_id: UUID) -> UUID:
     """Create a default verified payout account for the contributor."""
+    provider_account_id = f"acct_{uuid4()}"
     async with async_session_factory() as session:
         async with session.begin():
             payout_account = PayoutAccount(
                 user_id=contributor_id,
                 provider="stripe",
-                provider_account_id=f"acct_{uuid4()}",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    provider_account_id
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    provider_account_id
+                ),
                 account_type="express",
                 is_default=True,
                 verified_at=datetime.now(UTC),

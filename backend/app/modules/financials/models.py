@@ -202,8 +202,8 @@ class PayoutAccount(CreatedAtMixin, Base):
     __table_args__ = (
         UniqueConstraint(
             "provider",
-            "provider_account_id",
-            name="uq_payout_accounts_provider_account",
+            "provider_account_lookup_hash",
+            name="uq_payout_accounts_provider_account_lookup",
         ),
         Index("idx_payout_accounts_user", "user_id"),
         Index("idx_payout_accounts_user_default", "user_id", "is_default"),
@@ -221,6 +221,10 @@ class PayoutAccount(CreatedAtMixin, Base):
     )
     provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
     provider_account_id: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_account_lookup_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
     account_type: Mapped[str] = mapped_column("type", String(50), nullable=False)
     is_default: Mapped[bool] = mapped_column(
         Boolean,

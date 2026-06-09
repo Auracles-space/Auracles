@@ -17,7 +17,7 @@ from app.core.security import create_access_token, hash_password
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Transaction
+from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.shared.models.audit_log import AuditLog
@@ -39,6 +39,8 @@ async def reset_refund_state() -> None:
         await session.execute(delete(ArtifactDownload))
         await session.execute(delete(Artifact))
         await session.execute(delete(License))
+        await session.execute(delete(Payout))
+        await session.execute(delete(PayoutAccount))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))

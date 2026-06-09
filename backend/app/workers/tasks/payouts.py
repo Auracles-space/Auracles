@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
+from app.core.security import decrypt_payout_provider_account_id
 from app.integrations import stripe
 from app.modules.financials.models import Payout, PayoutAccount
 from app.workers.async_runner import run_async
@@ -45,7 +46,9 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
         transfer = await stripe.create_transfer(
             amount=payout.net_amount,
             currency=payout.currency,
-            destination_account_id=payout_account.provider_account_id,
+            destination_account_id=decrypt_payout_provider_account_id(
+                payout_account.provider_account_id
+            ),
             metadata={
                 "payout_id": str(payout.id),
                 "contributor_id": str(payout.contributor_id),

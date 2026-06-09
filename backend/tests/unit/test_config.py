@@ -74,6 +74,24 @@ def test_settings_allows_local_totp_placeholder_as_dev_key() -> None:
     )
 
 
+def test_settings_rejects_placeholder_payout_account_key_outside_local() -> None:
+    """Staging and production must configure payout-account encryption."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="a-real-openssl-rand-hex-32-value-with-entropy",
+            TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+            STRIPE_SECRET_KEY="sk_live_real",
+            STRIPE_WEBHOOK_SECRET="whsec_real",
+        )
+    except ValidationError as exc:
+        assert "PAYOUT_ACCOUNT_ENCRYPTION_KEY must be set outside local" in str(exc)
+    else:
+        raise AssertionError("Expected payout-account key validation to fail.")
+
+
 # A valid Fernet key so the TOTP validator passes and the SECRET_KEY
 # validator runs second — both are `model_validator(mode="after")` and
 # pydantic short-circuits if the first raises.

@@ -100,6 +100,7 @@ async def hold(
     if existing is not None:
         _ensure_matching_escrow(existing, transaction)
         transaction.status = "completed"
+        await db.flush()
         return existing
 
     transaction.status = "completed"

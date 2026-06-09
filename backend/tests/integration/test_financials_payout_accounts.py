@@ -16,11 +16,18 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, encrypt_totp_secret, hash_password
+from app.core.security import (
+    create_access_token,
+    encrypt_payout_provider_account_id,
+    encrypt_totp_secret,
+    hash_password,
+    hash_payout_provider_account_id,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import PayoutAccount
+from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 
 
@@ -106,7 +113,11 @@ async def payout_account_context(
     await engine.dispose()
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(License))
+        await session.execute(delete(Payout))
         await session.execute(delete(PayoutAccount))
+        await session.execute(delete(Transaction))
+        await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
         await session.commit()
@@ -230,7 +241,10 @@ async def test_contributor_can_onboard_stripe_express_payout_account(
     assert body["payout_account"]["provider_account_ref"] == "****_123"
     assert body["payout_account"]["is_default"] is True
     assert payout_account is not None
-    assert payout_account.provider_account_id == "acct_test_123"
+    assert payout_account.provider_account_id != "acct_test_123"
+    assert payout_account.provider_account_lookup_hash == (
+        hash_payout_provider_account_id("acct_test_123")
+    )
     assert audit is not None
     assert audit.metadata_["provider_account_ref"] == "****_123"
 
@@ -288,7 +302,12 @@ async def test_contributor_lists_and_soft_deletes_payout_account_with_totp(
                 PayoutAccount(
                     user_id=contributor_id,
                     provider="stripe",
-                    provider_account_id="acct_delete_123",
+                    provider_account_id=encrypt_payout_provider_account_id(
+                        "acct_delete_123"
+                    ),
+                    provider_account_lookup_hash=hash_payout_provider_account_id(
+                        "acct_delete_123"
+                    ),
                     account_type="express",
                     is_default=True,
                 )
