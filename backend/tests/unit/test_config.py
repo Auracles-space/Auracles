@@ -125,7 +125,31 @@ def test_settings_allows_real_secret_key_in_production() -> None:
         ENVIRONMENT="production",
         SECRET_KEY="a-real-openssl-rand-hex-32-value-with-entropy",
         TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+        STRIPE_SECRET_KEY="sk_live_real",
+        STRIPE_WEBHOOK_SECRET="whsec_real",
+        PAYSTACK_SECRET_KEY="sk_live_paystack",
+        PAYSTACK_WEBHOOK_SECRET="sk_live_paystack",
     )
 
     assert settings.environment == "production"
     assert settings.secret_key.startswith("a-real")
+
+
+def test_settings_rejects_placeholder_provider_secrets_outside_local() -> None:
+    """Stripe and Paystack secrets must be real outside local environments."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="a-real-openssl-rand-hex-32-value-with-entropy",
+            TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+            STRIPE_SECRET_KEY="replace-in-local-env",
+            STRIPE_WEBHOOK_SECRET="whsec_real",
+            PAYSTACK_SECRET_KEY="sk_live_paystack",
+            PAYSTACK_WEBHOOK_SECRET="sk_live_paystack",
+        )
+    except ValidationError as exc:
+        assert "Payment provider secrets must be set outside local" in str(exc)
+    else:
+        raise AssertionError("Expected provider secret validation to fail.")

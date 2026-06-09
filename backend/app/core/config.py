@@ -19,6 +19,7 @@ DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 DEV_SECRET_KEY = "dev-only-change-me"
 PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
+PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
 
 
 def _replace_database(url: str, database: int) -> str:
@@ -170,6 +171,31 @@ class Settings(BaseSettings):
             and self.secret_key in {DEV_SECRET_KEY, PLACEHOLDER_SECRET_KEY}
         ):
             raise ValueError("SECRET_KEY must be set outside local.")
+        return self
+
+    @model_validator(mode="after")
+    def production_provider_secrets_are_not_placeholders(self) -> Self:
+        """Reject missing or placeholder payment secrets outside local.
+
+        Phase 3 runs Stripe and Paystack together. Staging/production should not
+        boot with placeholder provider keys because webhook spoofing or failed
+        settlement would become a financial integrity risk.
+        """
+        if self.environment == "local":
+            return self
+
+        provider_secrets = [
+            self.stripe_secret_key,
+            self.stripe_webhook_secret,
+            self.paystack_secret_key,
+            self.paystack_webhook_secret,
+        ]
+        if any(
+            secret is None
+            or secret.get_secret_value().strip() in {"", PLACEHOLDER_PROVIDER_SECRET}
+            for secret in provider_secrets
+        ):
+            raise ValueError("Payment provider secrets must be set outside local.")
         return self
 
     @property
