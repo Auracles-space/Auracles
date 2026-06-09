@@ -9,7 +9,10 @@ from app.modules.auth import models as _auth_models  # noqa: F401
 from app.modules.financials import models as _financials_models  # noqa: F401
 from app.modules.frameworks import models as _framework_models  # noqa: F401
 from app.modules.frameworks import models_artifact as _artifact_models  # noqa: F401
+from app.modules.notifications import models as _notification_models  # noqa: F401
+from app.modules.projects import models as _project_models  # noqa: F401
 from app.modules.webhooks import models as _webhook_models  # noqa: F401
+from app.modules.workspace import models as _workspace_models  # noqa: F401
 from app.shared.models import audit_log as _audit_log_models  # noqa: F401
 
 config = context.config
