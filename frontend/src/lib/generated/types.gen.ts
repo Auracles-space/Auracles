@@ -37,12 +37,12 @@ export type AdminKycReviewResponse = {
 export type AdminLicenseGrantRequest = {
     framework_id: string;
     operator_id: string;
-    type: 'single_user' | 'team' | 'enterprise';
+    type: 'single_user' | 'team' | 'organizational' | 'enterprise';
     expires_at?: (string) | null;
     seats_total?: (number) | null;
 };
 
-export type type = 'single_user' | 'team' | 'enterprise';
+export type type = 'single_user' | 'team' | 'organizational' | 'enterprise';
 
 export type AdminLicenseGrantResponse = {
     license_id: string;
@@ -392,7 +392,7 @@ export type PreviewArtifactRequest = {
 export type PricingConfig = {
     price: string;
     currency?: string;
-    license_types: Array<('single_user' | 'team' | 'enterprise')>;
+    license_types: Array<('single_user' | 'team' | 'organizational' | 'enterprise')>;
     commercial_rights?: (string) | null;
     usage_restrictions?: (string) | null;
 };

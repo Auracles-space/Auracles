@@ -31,7 +31,7 @@ FrameworkStatus = Literal[
     "unpublished",
     "suspended",
 ]
-LicenseType = Literal["single_user", "team", "enterprise"]
+LicenseType = Literal["single_user", "team", "organizational", "enterprise"]
 ChangeType = Literal["fix", "improvement", "major"]
 OrgSize = Literal["startup", "small_business", "sme", "mid_market", "enterprise"]
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")

@@ -25,23 +25,23 @@ Turn purchase intent into real money. Ship:
 
 ## 2. Architectural decisions (locked)
 
-| Decision | Value | Rationale |
-|----------|-------|-----------|
-| `license_type_enum` | Keep existing `single_user, team, enterprise`; add `organizational` additively | Avoids breaking Phase 2 licenses/admin grants/library downloads while expanding the commercial model. `white_label` is deferred until custom contract/resale-rights support exists. |
-| Invoice format | WeasyPrint PDF in a Celery task, stored in S3, served via presigned URL | Real PDF without external service. Cairo/Pango added to worker image only. |
-| Payout onboarding | Provider-hosted — Stripe Connect Express + Paystack subaccount | Provider runs KYC. We store `provider_ref` only; no bank-detail forms. |
-| Refund trigger | Self-serve Operator button, eligibility-checked | `< 48h` AND `artifact_downloads == 0`. Provider refund API called inline. |
-| Reviews wiring (FR-FWK-014) | Defer — Phase 2 schema stays dormant | Reduces Phase 3 scope; closes in a later polish phase. |
-| Escrow scope | Migration + `EscrowService.hold/release/refund` + admin override endpoints + tests | Phase 4 calls the service. Webhook routes funding events tagged `metadata.kind == "escrow"`. |
-| Webhook idempotency | Dedicated `webhook_events` table, UNIQUE `(provider, provider_event_id)`, status `received/processed/failed` | Durable audit + dedupe. Replays return 200, no side effects. |
-| `available` balance formula | `sum(completed purchases where created_at < now() - refund_window_hours) − commission(15%) − sum(paid out)` | Refund-safe; no clawback path needed. Pending balance = sales inside the window. |
-| Currency | USD + NGN only, no FX conversion in code | Stripe handles non-NGN; Paystack handles NGN. Contributors price per currency. |
-| Partner API / Developer Platform | Deferred to Phase 5 | Per CLAUDE.md phase plan. |
-| Self-serve checkout license types | `single_user`, `team`, `organizational` | `enterprise` remains admin/custom-grant for now. `white_label` remains out of scope. |
-| KYC gate | Required for: payout onboarding, payout request, escrow funding (Phase 4 consumers), artifact download (Phase 1 deviation). **Not** required for purchase or refund. |
-| 2FA gate | Required for: payout request, payout-account changes (BR-FIN-005), admin escrow override, admin config change. |
-| Commission | Deducted at payout, not at sale (BR-FIN-001). Default 15%, in `platform_config`. |
-| Minimum payout | $50 USD, ₦20,000 NGN — configurable per currency in `platform_config`. |
+| Decision                          | Value                                                                                                                                                                | Rationale                                                                                                                                                                           |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `license_type_enum`               | Keep existing `single_user, team, enterprise`; add `organizational` additively                                                                                       | Avoids breaking Phase 2 licenses/admin grants/library downloads while expanding the commercial model. `white_label` is deferred until custom contract/resale-rights support exists. |
+| Invoice format                    | WeasyPrint PDF in a Celery task, stored in S3, served via presigned URL                                                                                              | Real PDF without external service. Cairo/Pango added to worker image only.                                                                                                          |
+| Payout onboarding                 | Provider-hosted — Stripe Connect Express + Paystack subaccount                                                                                                       | Provider runs KYC. We store `provider_ref` only; no bank-detail forms.                                                                                                              |
+| Refund trigger                    | Self-serve Operator button, eligibility-checked                                                                                                                      | `< 48h` AND `artifact_downloads == 0`. Provider refund API called inline.                                                                                                           |
+| Reviews wiring (FR-FWK-014)       | Defer — Phase 2 schema stays dormant                                                                                                                                 | Reduces Phase 3 scope; closes in a later polish phase.                                                                                                                              |
+| Escrow scope                      | Migration + `EscrowService.hold/release/refund` + admin override endpoints + tests                                                                                   | Phase 4 calls the service. Webhook routes funding events tagged `metadata.kind == "escrow"`.                                                                                        |
+| Webhook idempotency               | Dedicated `webhook_events` table, UNIQUE `(provider, provider_event_id)`, status `received/processed/failed`                                                         | Durable audit + dedupe. Replays return 200, no side effects.                                                                                                                        |
+| `available` balance formula       | `sum(completed purchases where created_at < now() - refund_window_hours) − commission(15%) − sum(paid out)`                                                          | Refund-safe; no clawback path needed. Pending balance = sales inside the window.                                                                                                    |
+| Currency                          | USD + NGN only, no FX conversion in code                                                                                                                             | Stripe handles non-NGN; Paystack handles NGN. Contributors price per currency.                                                                                                      |
+| Partner API / Developer Platform  | Deferred to Phase 5                                                                                                                                                  | Per CLAUDE.md phase plan.                                                                                                                                                           |
+| Self-serve checkout license types | `single_user`, `team`, `organizational`                                                                                                                              | `enterprise` remains admin/custom-grant for now. `white_label` remains out of scope.                                                                                                |
+| KYC gate                          | Required for: payout onboarding, payout request, escrow funding (Phase 4 consumers), artifact download (Phase 1 deviation). **Not** required for purchase or refund. |
+| 2FA gate                          | Required for: payout request, payout-account changes (BR-FIN-005), admin escrow override, admin config change.                                                       |
+| Commission                        | Deducted at payout, not at sale (BR-FIN-001). Default 15%, in `platform_config`.                                                                                     |
+| Minimum payout                    | $50 USD, ₦20,000 NGN — configurable per currency in `platform_config`.                                                                                               |
 
 ---
 
@@ -102,62 +102,76 @@ backend/app/
 Working agreement per slice (unchanged from Phase 1/2): one-line summary → file list → failing test → minimum impl → `ruff` + `mypy --strict` + `pytest --cov` green + Alembic up/down green → stop for human review/commit.
 
 ### Slice 1 — Schema foundation + platform_config seed
+
 Migrations (new financial enums/tables, additive `license_type_enum` value `organizational`, existing `licenses.transaction_id` FK to `transactions`, `users.stripe_customer_id`, seed rows). ORM models. Empty module dirs. Migration up/down test + seed assertion. `License` stays in `frameworks.models`; financials imports/updates it.
 
 ### Slice 2 — Provider integration layer (no endpoints)
+
 `stripe.py`, `paystack.py`, `payment_router.py`. Production validator rejects placeholder provider secrets. Unit tests via `respx` + signature verify matrix.
 
 ### Slice 3 — Payment methods (Operator)
+
 `POST/GET/DELETE /v1/financials/payment-methods`. Creates Stripe Customer on first add. No PAN ever stored. RBAC: Operator role. Audit `payment_method_added/removed`.
 
 ### Slice 4 — Payout accounts (Contributor) + onboarding
+
 `POST /v1/financials/payout-accounts/onboard` (KYC-required) → Stripe Express account link or Paystack subaccount creation. `GET` list. `DELETE` (2FA-required) soft-deletes. Audit each transition.
 
 ### Slice 5 — Purchase flow
+
 `POST /v1/financials/purchase/{framework_id}` validates selected self-serve license type (`single_user`, `team`, `organizational`), creates `transactions(status=pending)`, calls provider `create_payment_intent` with `metadata={transaction_id, kind:"purchase"}`. Returns `{transaction_id, client_secret, provider}`. License **only** created in Slice 6 webhook handler. `enterprise` remains admin/custom-grant and is not exposed in checkout.
 
 ### Slice 6 — Webhooks (Stripe + Paystack)
+
 `POST /v1/webhooks/stripe` + `POST /v1/webhooks/paystack`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
 
 ### Slice 7 — Self-serve refund
+
 `POST /v1/financials/purchases/{transaction_id}/refund`. Eligibility: txn `completed`, type `purchase`, owner, `now − created_at < refund_window_hours`, `artifact_downloads.count == 0`. On pass: provider refund call + mark `refunded` + license `revoked` + audit. Stripe `charge.refunded` webhook becomes idempotent ack.
 
 ### Slice 8 — Purchase history + invoice PDF
+
 `GET /v1/financials/purchases` (paginated). `GET /v1/financials/purchases/{id}/invoice` (302 to presigned S3, 202 if not yet generated). Celery task `generate_invoice_pdf` renders Jinja2 → WeasyPrint → S3. Worker image adds Cairo + Pango + GDK-PixBuf.
 
 ### Slice 9 — Escrow service + admin override
+
 `EscrowService.hold/release/refund`, idempotent. Admin endpoints `POST /v1/admin/escrows/{id}/release` and `…/refund` (admin role + 2FA + reason). Webhook handler now calls real `hold(...)`. Audit `escrow_*` events; mismatches CRITICAL.
 
 ### Slice 10 — Earnings dashboard + payout request + Celery payout
+
 `GET /v1/financials/earnings` (computed via SQL against `refund_window_hours`). `POST /v1/financials/payouts` (KYC + 2FA, ≥ min). `GET /v1/financials/payouts`. Celery `process_payout` calls provider transfer; webhook flips to `completed`/`failed`. Beat job `clear_expired_licenses` daily.
 
 ### Slice 11 — Admin config + dispute polish
+
 `GET /v1/admin/config`, `PATCH /v1/admin/config` (admin + 2FA + reason; whitelist of keys + ranges). Audit each change. Wire admin escrow endpoints into FE admin shell if it exists; else backend-only.
 
 ### Slice 12 — OpenAPI sync + FE codegen + helpers
+
 Update `contracts/openapi.yaml` for all new paths. Regenerate `frontend/src/lib/generated/`. FE helpers `stripe-client.ts` + `paystack-client.ts` (publishable key from env).
 
 ### Slice 13 — FE Operator (mobile-first)
+
 Pages: `checkout/[framework_id]`, `library`, `settings/payment-methods`. Components: `CheckoutForm` (self-serve license choices: `single_user`, `team`, `organizational`), `PurchaseHistoryTable`, `RefundButton`, `PaymentMethodList`. E2E `purchase.spec.ts` per CLAUDE.md Phase 6 critical flow.
 
 ### Slice 14 — FE Contributor (mobile-first)
-Pages: `dashboard/earnings`, `dashboard/payouts`, `settings/payout-accounts`. Components: `EarningsSummary`, `PayoutRequestModal` (TOTP challenge), `PayoutAccountConnect`, `PayoutHistoryTable`. E2E `financials.spec.ts` per CLAUDE.md Phase 6 critical flow.
+
+Pages: `dashboard/earnings`, `dashboard/payouts`, `settings/payout-accounts`. Components: `EarningsSummary`, `PayoutRequestModal` (TOTP challenge), `PayoutAccountConnect`, `PayoutHistoryTable`. E2E `financials.spec.ts` per AGENT.md Phase 6 critical flow.
 
 ---
 
 ## 6. Webhook event matrix
 
-| Provider | Event | Handler effect |
-|----------|-------|----------------|
-| Stripe | `payment_intent.succeeded` | If `metadata.kind == "purchase"` → mark txn completed + create License; if `kind == "escrow"` → `EscrowService.hold(...)`. Audit `purchase_completed` / `escrow_funded`. |
-| Stripe | `payment_intent.payment_failed` | Mark txn failed. Audit `purchase_failed`. |
-| Stripe | `charge.refunded` | Idempotent ack (refund already updated by Slice 7 inline call). |
-| Stripe | `account.updated` | If `charges_enabled && payouts_enabled`, flip `payout_accounts.verified_at`. |
-| Stripe | `transfer.paid` | Mark payout completed; audit `payout_completed`. |
-| Stripe | `transfer.failed` | Mark payout failed; audit `payout_failed`. |
-| Paystack | `charge.success` | Same as Stripe `payment_intent.succeeded`. |
-| Paystack | `transfer.success` | Mark payout completed. |
-| Paystack | `transfer.failed` | Mark payout failed. |
+| Provider | Event                           | Handler effect                                                                                                                                                           |
+| -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Stripe   | `payment_intent.succeeded`      | If `metadata.kind == "purchase"` → mark txn completed + create License; if `kind == "escrow"` → `EscrowService.hold(...)`. Audit `purchase_completed` / `escrow_funded`. |
+| Stripe   | `payment_intent.payment_failed` | Mark txn failed. Audit `purchase_failed`.                                                                                                                                |
+| Stripe   | `charge.refunded`               | Idempotent ack (refund already updated by Slice 7 inline call).                                                                                                          |
+| Stripe   | `account.updated`               | If `charges_enabled && payouts_enabled`, flip `payout_accounts.verified_at`.                                                                                             |
+| Stripe   | `transfer.paid`                 | Mark payout completed; audit `payout_completed`.                                                                                                                         |
+| Stripe   | `transfer.failed`               | Mark payout failed; audit `payout_failed`.                                                                                                                               |
+| Paystack | `charge.success`                | Same as Stripe `payment_intent.succeeded`.                                                                                                                               |
+| Paystack | `transfer.success`              | Mark payout completed.                                                                                                                                                   |
+| Paystack | `transfer.failed`               | Mark payout failed.                                                                                                                                                      |
 
 All other events: insert `webhook_events(status=received)` and return 200. Unknown event types audited at WARNING per CLAUDE.md logging table.
 

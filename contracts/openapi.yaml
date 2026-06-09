@@ -1892,6 +1892,7 @@ components:
           enum:
             - single_user
             - team
+            - organizational
             - enterprise
         expires_at:
           type:
@@ -2139,6 +2140,7 @@ components:
             enum:
               - single_user
               - team
+              - organizational
               - enterprise
         commercial_rights:
           type:

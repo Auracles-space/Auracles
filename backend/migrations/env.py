@@ -6,8 +6,10 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import get_settings
 from app.core.database import Base
 from app.modules.auth import models as _auth_models  # noqa: F401
+from app.modules.financials import models as _financials_models  # noqa: F401
 from app.modules.frameworks import models as _framework_models  # noqa: F401
 from app.modules.frameworks import models_artifact as _artifact_models  # noqa: F401
+from app.modules.webhooks import models as _webhook_models  # noqa: F401
 from app.shared.models import audit_log as _audit_log_models  # noqa: F401
 
 config = context.config

@@ -56,6 +56,7 @@ ORG_SIZE_ENUM = ENUM(
 LICENSE_TYPE_ENUM = ENUM(
     "single_user",
     "team",
+    "organizational",
     "enterprise",
     name="license_type_enum",
     create_type=False,
@@ -273,9 +274,8 @@ class FrameworkVersionArtifact(Base):
 class License(CreatedAtMixin, Base):
     """Operator entitlement to a Framework version.
 
-    `transaction_id` is nullable until Phase 3 financials introduces the
-    transactions table and purchase write path; that slice should add the
-    foreign key and tighten nullability once every license comes from payment.
+    `transaction_id` is nullable because legacy/admin grants can exist without
+    checkout, while paid purchase grants link back to Phase 3 transactions.
     """
 
     __tablename__ = "licenses"
@@ -302,6 +302,7 @@ class License(CreatedAtMixin, Base):
     )
     transaction_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
+        ForeignKey("transactions.id"),
         nullable=True,
     )
     license_type: Mapped[str] = mapped_column(

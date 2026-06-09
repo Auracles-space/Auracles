@@ -77,6 +77,10 @@ class User(UpdatedAtMixin, Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     kyc_status: Mapped[str] = mapped_column(
         KYC_STATUS_ENUM,
         nullable=False,
