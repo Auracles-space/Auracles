@@ -18,6 +18,9 @@ from app.integrations.resend import send_new_device_email as send_new_device_via
 from app.integrations.resend import (
     send_password_reset_email as send_password_reset_via_resend,
 )
+from app.integrations.resend import (
+    send_project_notification_email as send_project_notification_via_resend,
+)
 from app.integrations.resend import send_verification_email as send_via_resend
 from app.modules.frameworks.models import License
 from app.workers.async_runner import run_async
@@ -91,6 +94,35 @@ def send_new_device_email(
     log.info("task_started")
     try:
         send_new_device_via_resend(email=email, ip=ip, user_agent=user_agent)
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed")
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def send_project_notification_email(
+    self: Any,
+    *,
+    email: str,
+    title: str,
+    body: str,
+    link: str | None = None,
+) -> None:
+    """Send an off-session project notification email."""
+    log = logger.bind(
+        module="notifications",
+        action="send_project_notification_email",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    try:
+        send_project_notification_via_resend(
+            email=email,
+            title=title,
+            body=body,
+            link=link,
+        )
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc

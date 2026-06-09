@@ -1,5 +1,7 @@
 """Resend transactional email adapter."""
 
+from html import escape
+
 from loguru import logger
 
 from app.core.config import get_settings
@@ -101,5 +103,42 @@ def send_new_device_email(
                 f"<p>IP: <code>{ip or 'unknown'}</code></p>"
                 f"<p>User agent: <code>{user_agent or 'unknown'}</code></p>"
             ),
+        }
+    )
+
+
+def send_project_notification_email(
+    *,
+    email: str,
+    title: str,
+    body: str,
+    link: str | None,
+) -> None:
+    """Send a project notification email through Resend when configured."""
+    settings = get_settings()
+    if settings.resend_api_key is None:
+        logger.bind(
+            module="notifications",
+            action="send_project_notification_email",
+        ).info(
+            "resend_not_configured",
+            email=email,
+        )
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key.get_secret_value()
+    action_html = (
+        f"<p><a href='{escape(link, quote=True)}'>Open in Auracles</a></p>"
+        if link
+        else ""
+    )
+    resend.Emails.send(
+        {
+            "from": settings.resend_from_address,
+            "to": email,
+            "subject": title,
+            "html": f"<p>{escape(body)}</p>{action_html}",
         }
     )
