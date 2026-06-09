@@ -554,6 +554,13 @@ export type VerifyEmailRequest = {
     token: string;
 };
 
+export type WebhookIngestResponse = {
+    received: boolean;
+    status: 'processed' | 'received' | 'duplicate';
+};
+
+export type status5 = 'processed' | 'received' | 'duplicate';
+
 export type RegisterUserData = {
     body: RegisterRequest;
 };
@@ -983,6 +990,19 @@ export type DeletePayoutAccountData = {
 export type DeletePayoutAccountResponse = (PayoutAccountDeleteResponse);
 
 export type DeletePayoutAccountError = (unknown);
+
+export type IngestStripeWebhookData = {
+    body: {
+        [key: string]: unknown;
+    };
+    headers: {
+        'Stripe-Signature': string;
+    };
+};
+
+export type IngestStripeWebhookResponse = (WebhookIngestResponse);
+
+export type IngestStripeWebhookError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;

@@ -23,6 +23,8 @@ tags:
     description: Operator library and licensed download endpoints.
   - name: Financials
     description: Payment methods, purchases, payouts, and escrow endpoints.
+  - name: Webhooks
+    description: Payment provider webhook ingestion endpoints.
 paths:
   /v1/auth/register:
     post:
@@ -1558,6 +1560,37 @@ paths:
           description: Payout account not found.
         "422":
           description: Invalid 2FA code or payload.
+  /v1/webhooks/stripe:
+    post:
+      tags:
+        - Webhooks
+      operationId: ingestStripeWebhook
+      summary: Ingest Stripe webhook
+      description: Verifies the Stripe-Signature header against the raw request body before storing and dispatching the provider event.
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Webhook accepted or replay acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookIngestResponse"
+        "400":
+          description: Missing or invalid Stripe signature.
+        "500":
+          description: Verified webhook could not be processed.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -2120,6 +2153,20 @@ components:
           format: uuid
         deleted:
           type: boolean
+    WebhookIngestResponse:
+      type: object
+      required:
+        - received
+        - status
+      properties:
+        received:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - processed
+            - received
+            - duplicate
     LoginResponse:
       type: object
       required:

@@ -11,6 +11,7 @@ from app.modules.frameworks.router import router as frameworks_router
 from app.modules.health.router import router as health_router
 from app.modules.library.router import router as library_router
 from app.modules.settings.router import router as settings_router
+from app.modules.webhooks.router import router as webhooks_router
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     application.include_router(frameworks_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")
     application.include_router(settings_router, prefix="/v1")
+    application.include_router(webhooks_router, prefix="/v1")
     application.include_router(health_router, prefix="/v1")
 
     return application
