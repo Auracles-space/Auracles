@@ -38,6 +38,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.processing.search_index",
             "app.workers.tasks.processing.thumbnail",
             "app.workers.tasks.project_notifications",
+            "app.workers.tasks.projects_beat",
             "app.workers.tasks.reputation",
             "app.workers.tasks.scheduled",
         ],
