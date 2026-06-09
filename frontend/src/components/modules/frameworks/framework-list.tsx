@@ -59,7 +59,7 @@ export function FrameworkList() {
 
   if (frameworks.length === 0) {
     return (
-      <div className="rounded-[8px] border border-border-default bg-surface-2 p-8 text-center">
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-12 text-center shadow-sm">
         <h2 className="font-heading text-xl font-bold text-foreground">
           No frameworks yet
         </h2>
@@ -74,7 +74,7 @@ export function FrameworkList() {
     <div className="grid gap-4">
       {frameworks.map((framework) => (
         <article
-          className="rounded-[8px] border border-border-default bg-surface-2 p-5"
+          className="rounded-xl border border-border-default bg-surface-1 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors hover:border-border-strong"
           key={framework.id}
         >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -91,7 +91,7 @@ export function FrameworkList() {
               </p>
             </div>
             <Link
-              className="inline-flex min-h-11 items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
+              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
               href={`/dashboard/frameworks/${framework.id}`}
             >
               Open
