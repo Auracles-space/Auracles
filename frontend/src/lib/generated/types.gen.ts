@@ -163,6 +163,15 @@ export type CurrentUserResponse = {
     deactivated_at: (string) | null;
 };
 
+export type EarningsResponse = {
+    currency: string;
+    gross_revenue: string;
+    pending_clearance: string;
+    available_balance: string;
+    commission_rate: string;
+    minimum_payout: string;
+};
+
 export type EmailChangeConfirmRequest = {
     token: string;
 };
@@ -483,6 +492,32 @@ export type PayoutAccountsResponse = {
     payout_accounts: Array<PayoutAccountResponse>;
 };
 
+export type PayoutRequest = {
+    amount: string;
+    currency: string;
+    payout_account_id: string;
+    totp_code: string;
+};
+
+export type PayoutResponse = {
+    id: string;
+    payout_account_id: string;
+    amount: string;
+    currency: string;
+    commission_deducted: string;
+    net_amount: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    provider_ref: (string) | null;
+    initiated_at: string;
+    completed_at: (string) | null;
+};
+
+export type status7 = 'pending' | 'processing' | 'completed' | 'failed';
+
+export type PayoutsResponse = {
+    payouts: Array<PayoutResponse>;
+};
+
 export type PreviewArtifactRequest = {
     artifact_id: string;
 };
@@ -534,7 +569,7 @@ export type RefundResponse = {
     status: 'refunded';
 };
 
-export type status7 = 'refunded';
+export type status8 = 'refunded';
 
 export type RegisterRequest = {
     email: string;
@@ -614,7 +649,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status8 = 'processed' | 'received' | 'duplicate';
+export type status9 = 'processed' | 'received' | 'duplicate';
 
 export type RegisterUserData = {
     body: RegisterRequest;
@@ -1056,6 +1091,22 @@ export type OnboardPayoutAccountError = (unknown);
 export type ListPayoutAccountsResponse = (PayoutAccountsResponse);
 
 export type ListPayoutAccountsError = (unknown);
+
+export type GetContributorEarningsResponse = (EarningsResponse);
+
+export type GetContributorEarningsError = (unknown);
+
+export type RequestPayoutData = {
+    body: PayoutRequest;
+};
+
+export type RequestPayoutResponse = (PayoutResponse);
+
+export type RequestPayoutError = (unknown);
+
+export type ListPayoutsResponse = (PayoutsResponse);
+
+export type ListPayoutsError = (unknown);
 
 export type DeletePayoutAccountData = {
     body: PayoutAccountDeleteRequest;

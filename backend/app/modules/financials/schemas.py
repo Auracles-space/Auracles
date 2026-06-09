@@ -170,3 +170,46 @@ class PayoutAccountDeleteResponse(BaseModel):
 
     payout_account_id: UUID
     deleted: bool
+
+
+class EarningsResponse(BaseModel):
+    """Contributor earnings summary in a single settlement currency."""
+
+    currency: str
+    gross_revenue: Decimal
+    pending_clearance: Decimal
+    available_balance: Decimal
+    commission_rate: Decimal
+    minimum_payout: Decimal
+
+
+class PayoutRequest(BaseModel):
+    """Request body for a Contributor payout request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    payout_account_id: UUID
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class PayoutResponse(BaseModel):
+    """Contributor-facing payout request and processing status."""
+
+    id: UUID
+    payout_account_id: UUID
+    amount: Decimal
+    currency: str
+    commission_deducted: Decimal
+    net_amount: Decimal
+    status: str
+    provider_ref: str | None
+    initiated_at: datetime
+    completed_at: datetime | None
+
+
+class PayoutsResponse(BaseModel):
+    """Response body for Contributor payout history."""
+
+    payouts: list[PayoutResponse]

@@ -1,0 +1,400 @@
+"""Integration tests for Contributor earnings and payout requests."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+from uuid import UUID, uuid4
+
+import pyotp
+import pytest
+from alembic import command
+from alembic.config import Config
+from httpx import AsyncClient
+from sqlalchemy import create_engine, delete, select
+
+from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
+from app.core.security import create_access_token, encrypt_totp_secret
+from app.main import app
+from app.modules.auth.models import User, UserRole
+from app.modules.financials import service as financials_service
+from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.shared.models.audit_log import AuditLog
+
+
+class FakeRedis:
+    """Redis test double for TOTP-sensitive payout routes."""
+
+    def __init__(self) -> None:
+        """Create empty in-memory Redis state."""
+        self.values: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored value or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """Record a TTL for a key."""
+        self.ttls[key] = seconds
+
+    async def delete(self, *keys: str) -> int:
+        """Delete stored values and counters."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+            self.ttls.pop(key, None)
+        return removed
+
+
+class FakePayoutTask:
+    """Celery task double that records payout processing dispatches."""
+
+    def __init__(self) -> None:
+        """Initialise the in-memory dispatch log."""
+        self.dispatched: list[str] = []
+
+    def delay(self, payout_id: str) -> None:
+        """Record the payout id that would be sent to Celery."""
+        self.dispatched.append(payout_id)
+
+
+async def reset_payout_state() -> None:
+    """Remove payout test rows in foreign-key-safe order."""
+    async with async_session_factory() as session:
+        await session.execute(delete(AuditLog))
+        await session.execute(delete(Payout))
+        await session.execute(delete(PayoutAccount))
+        await session.execute(delete(Transaction))
+        await session.execute(delete(UserRole))
+        await session.execute(delete(User))
+        await session.commit()
+
+
+@pytest.fixture
+def migrated_database() -> Iterator[None]:
+    """Ensure financial tables exist for payout tests."""
+    sync_engine = create_engine(
+        app.state.settings.sync_database_url,
+        pool_pre_ping=True,
+    )
+    command.upgrade(Config("alembic.ini"), "head")
+    try:
+        yield
+    finally:
+        command.upgrade(Config("alembic.ini"), "head")
+        sync_engine.dispose()
+
+
+@pytest.fixture
+async def payout_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[dict[str, Any]]:
+    """Reset state and install Redis/task doubles."""
+    fake_redis = FakeRedis()
+    fake_task = FakePayoutTask()
+    await engine.dispose()
+    await reset_payout_state()
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double for dependency injection."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        financials_service,
+        "process_payout",
+        fake_task,
+        raising=False,
+    )
+    try:
+        yield {"redis": fake_redis, "payout_task": fake_task}
+    finally:
+        app.dependency_overrides.pop(get_redis, None)
+        await reset_payout_state()
+        await engine.dispose()
+
+
+async def create_user_with_roles(
+    email: str,
+    roles: list[str],
+    *,
+    kyc_status: str = "verified",
+    enable_totp: bool = True,
+) -> tuple[UUID, str | None]:
+    """Create a verified user with roles, KYC state, and optional TOTP."""
+    secret = pyotp.random_base32() if enable_totp else None
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash="not-used",
+                display_name=email.split("@")[0],
+                email_verified=True,
+                kyc_status=kyc_status,
+                totp_enabled=enable_totp,
+                totp_secret=encrypt_totp_secret(secret) if secret else None,
+            )
+            session.add(user)
+            await session.flush()
+            for role in roles:
+                session.add(
+                    UserRole(
+                        user_id=user.id,
+                        role=role,
+                        approved_at=datetime.now(UTC),
+                    )
+                )
+        return user.id, secret
+
+
+async def create_sale(
+    contributor_id: UUID,
+    *,
+    amount: Decimal,
+    created_at: datetime,
+    status: str = "completed",
+) -> UUID:
+    """Create a framework purchase transaction payable to the contributor."""
+    operator_id, _ = await create_user_with_roles(
+        f"operator-{uuid4()}@auracles.space",
+        ["operator"],
+        enable_totp=False,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=amount,
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=amount,
+                transaction_type="purchase",
+                status=status,
+                provider="stripe",
+                provider_ref=f"pi_sale_{uuid4()}",
+                ref_id=uuid4(),
+                ref_type="framework",
+                created_at=created_at,
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id
+
+
+async def create_verified_payout_account(contributor_id: UUID) -> UUID:
+    """Create a default verified payout account for the contributor."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=contributor_id,
+                provider="stripe",
+                provider_account_id=f"acct_{uuid4()}",
+                account_type="express",
+                is_default=True,
+                verified_at=datetime.now(UTC),
+            )
+            session.add(payout_account)
+            await session.flush()
+            return payout_account.id
+
+
+async def create_payout(
+    contributor_id: UUID,
+    payout_account_id: UUID,
+    *,
+    net_amount: Decimal,
+    status: str = "completed",
+) -> None:
+    """Create an existing payout row that reduces available balance."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Payout(
+                    contributor_id=contributor_id,
+                    payout_account_id=payout_account_id,
+                    amount=net_amount,
+                    currency="USD",
+                    commission_deducted=Decimal("0.00"),
+                    net_amount=net_amount,
+                    status=status,
+                    provider_ref=f"tr_{uuid4()}",
+                )
+            )
+
+
+def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
+    """Create bearer auth headers for a test user."""
+    token = create_access_token(user_id=user_id, roles=roles)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_contributor_earnings_are_refund_window_and_payout_aware(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Earnings exclude refundable sales and subtract prior payout claims."""
+    del migrated_database, payout_context
+    contributor_id, _ = await create_user_with_roles(
+        "earnings-contributor@auracles.space",
+        ["contributor"],
+    )
+    payout_account_id = await create_verified_payout_account(contributor_id)
+    await create_sale(
+        contributor_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    await create_sale(
+        contributor_id,
+        amount=Decimal("80.00"),
+        created_at=datetime.now(UTC),
+    )
+    await create_sale(
+        contributor_id,
+        amount=Decimal("40.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+        status="refunded",
+    )
+    await create_payout(
+        contributor_id,
+        payout_account_id,
+        net_amount=Decimal("10.00"),
+        status="completed",
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "180.00",
+        "pending_clearance": "80.00",
+        "available_balance": "75.00",
+        "commission_rate": "0.15",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """A verified Contributor can request an available payout once."""
+    del migrated_database
+    contributor_id, totp_secret = await create_user_with_roles(
+        "request-payout@auracles.space",
+        ["contributor"],
+    )
+    payout_account_id = await create_verified_payout_account(contributor_id)
+    await create_sale(
+        contributor_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    assert totp_secret is not None
+    code = pyotp.TOTP(totp_secret).now()
+
+    response = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "amount": "50.00",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+            "totp_code": code,
+        },
+    )
+    history = await client.get(
+        "/v1/financials/payouts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.scalar(select(Payout))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_requested")
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["net_amount"] == "50.00"
+    assert body["commission_deducted"] == "8.82"
+    assert history.status_code == 200
+    assert history.json()["payouts"][0]["id"] == body["id"]
+    assert payout is not None
+    assert payout.amount == Decimal("58.82")
+    assert payout.net_amount == Decimal("50.00")
+    assert payout.status == "pending"
+    assert payout_context["payout_task"].dispatched == [str(payout.id)]
+    assert audit is not None
+    assert audit.target_id == payout.id
+
+
+async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Payout requests enforce minimum and available-balance limits."""
+    del migrated_database, payout_context
+    contributor_id, totp_secret = await create_user_with_roles(
+        "low-payout@auracles.space",
+        ["contributor"],
+    )
+    payout_account_id = await create_verified_payout_account(contributor_id)
+    await create_sale(
+        contributor_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    assert totp_secret is not None
+    code = pyotp.TOTP(totp_secret).now()
+
+    too_small = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "amount": "49.99",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+            "totp_code": code,
+        },
+    )
+    too_large = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "amount": "90.00",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+            "totp_code": code,
+        },
+    )
+
+    assert too_small.status_code == 422
+    assert too_small.json()["detail"] == "Minimum payout is $50.00."
+    assert too_large.status_code == 422
+    assert too_large.json()["detail"] == "Requested payout exceeds available balance."

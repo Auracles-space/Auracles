@@ -13,6 +13,7 @@ from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.financials import service
 from app.modules.financials.schemas import (
+    EarningsResponse,
     PaymentMethodDeleteRequest,
     PaymentMethodDeleteResponse,
     PaymentMethodSetupRequest,
@@ -23,6 +24,9 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
     PayoutAccountsResponse,
+    PayoutRequest,
+    PayoutResponse,
+    PayoutsResponse,
     PurchaseHistoryResponse,
     PurchaseRequest,
     PurchaseResponse,
@@ -146,6 +150,15 @@ async def get_framework_purchase_invoice(
     )
 
 
+@router.get("/earnings", response_model=EarningsResponse)
+async def get_contributor_earnings(
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> EarningsResponse:
+    """Return refund-safe earnings balances for the Contributor."""
+    return await service.get_contributor_earnings(db=db, contributor=contributor)
+
+
 @router.post(
     "/payout-accounts/onboard",
     response_model=PayoutAccountOnboardResponse,
@@ -171,6 +184,32 @@ async def list_payout_accounts(
 ) -> PayoutAccountsResponse:
     """List active payout accounts for the authenticated Contributor."""
     return await service.list_payout_accounts(db=db, contributor=contributor)
+
+
+@router.post("/payouts", response_model=PayoutResponse, status_code=201)
+async def request_payout(
+    payload: PayoutRequest,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> PayoutResponse:
+    """Request payout of available Contributor earnings after 2FA."""
+    return await service.request_payout(
+        db=db,
+        redis=redis,
+        contributor=contributor,
+        payload=payload,
+    )
+
+
+@router.get("/payouts", response_model=PayoutsResponse)
+async def list_payouts(
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> PayoutsResponse:
+    """List payout history for the authenticated Contributor."""
+    return await service.list_payouts(db=db, contributor=contributor)
 
 
 @router.delete(

@@ -20,8 +20,14 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials.invoices import purchase_invoice_key
-from app.modules.financials.models import PayoutAccount, PlatformConfig, Transaction
+from app.modules.financials.models import (
+    Payout,
+    PayoutAccount,
+    PlatformConfig,
+    Transaction,
+)
 from app.modules.financials.schemas import (
+    EarningsResponse,
     InvoiceGenerationResponse,
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
@@ -32,6 +38,9 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
+    PayoutRequest,
+    PayoutResponse,
+    PayoutsResponse,
     PurchaseHistoryItem,
     PurchaseHistoryResponse,
     PurchaseRequest,
@@ -41,8 +50,10 @@ from app.modules.financials.schemas import (
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.workers.tasks.financials import generate_invoice_pdf
+from app.workers.tasks.payouts import process_payout
 
 INVOICE_URL_TTL_SECONDS = 900
+PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
@@ -68,6 +79,24 @@ def _normalise_money(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"))
 
 
+def _payout_response(payout: Payout) -> PayoutResponse:
+    """Map a payout row to Contributor-facing response data."""
+    return PayoutResponse(
+        id=payout.id,
+        payout_account_id=payout.payout_account_id,
+        amount=payout.amount,
+        currency=payout.currency,
+        commission_deducted=payout.commission_deducted,
+        net_amount=payout.net_amount,
+        status=payout.status,
+        provider_ref=(
+            _masked_provider_ref(payout.provider_ref) if payout.provider_ref else None
+        ),
+        initiated_at=payout.initiated_at,
+        completed_at=payout.completed_at,
+    )
+
+
 async def _refund_window_hours(db: AsyncSession) -> int:
     """Return the configured self-serve purchase refund window."""
     configured = await db.scalar(
@@ -82,6 +111,124 @@ async def _refund_window_hours(db: AsyncSession) -> int:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Refund window configuration is invalid.",
         ) from exc
+
+
+async def _platform_decimal_config(
+    db: AsyncSession,
+    *,
+    key: str,
+    default: Decimal,
+) -> Decimal:
+    """Return a decimal platform configuration value."""
+    configured = await db.scalar(
+        select(PlatformConfig.value).where(PlatformConfig.key == key)
+    )
+    if configured is None:
+        return default
+    try:
+        return Decimal(configured)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{key} configuration is invalid.",
+        ) from exc
+
+
+async def _commission_rate(db: AsyncSession) -> Decimal:
+    """Return the configured platform commission rate."""
+    return await _platform_decimal_config(
+        db,
+        key="commission_rate",
+        default=Decimal("0.15"),
+    )
+
+
+async def _minimum_payout(db: AsyncSession, currency: str) -> Decimal:
+    """Return the configured minimum payout for a currency."""
+    config_key = f"min_payout_{currency.lower()}"
+    default = Decimal("50.00") if currency.upper() == "USD" else Decimal("0.00")
+    return _normalise_money(
+        await _platform_decimal_config(db, key=config_key, default=default)
+    )
+
+
+async def _sum_transactions(
+    db: AsyncSession,
+    *,
+    contributor_id: UUID,
+    currency: str,
+    before: datetime | None = None,
+    after_or_at: datetime | None = None,
+) -> Decimal:
+    """Return gross completed purchase volume for a Contributor."""
+    filters = [
+        Transaction.payee_id == contributor_id,
+        Transaction.transaction_type == "purchase",
+        Transaction.status == "completed",
+        Transaction.currency == currency,
+    ]
+    if before is not None:
+        filters.append(Transaction.created_at < before)
+    if after_or_at is not None:
+        filters.append(Transaction.created_at >= after_or_at)
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Transaction.amount), 0)).where(*filters)
+    )
+    return _normalise_money(Decimal(value or "0"))
+
+
+async def _claimed_payouts(
+    db: AsyncSession,
+    *,
+    contributor_id: UUID,
+    currency: str,
+) -> Decimal:
+    """Return net payout amounts already claimed from available earnings."""
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Payout.net_amount), 0)).where(
+            Payout.contributor_id == contributor_id,
+            Payout.currency == currency,
+            Payout.status.in_(PAYOUT_CLAIM_STATUSES),
+        )
+    )
+    return _normalise_money(Decimal(value or "0"))
+
+
+async def _available_payout_balance(
+    db: AsyncSession,
+    *,
+    contributor_id: UUID,
+    currency: str,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
+    """Return gross, pending, available, claimed, and commission-rate balances."""
+    refund_window_hours = await _refund_window_hours(db)
+    commission_rate = await _commission_rate(db)
+    cutoff = datetime.now(UTC) - timedelta(hours=refund_window_hours)
+    gross_revenue = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+    )
+    pending_clearance = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+        after_or_at=cutoff,
+    )
+    cleared_gross = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+        before=cutoff,
+    )
+    claimed = await _claimed_payouts(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+    )
+    cleared_net = _normalise_money(cleared_gross * (Decimal("1") - commission_rate))
+    available = max(_normalise_money(cleared_net - claimed), Decimal("0.00"))
+    return gross_revenue, pending_clearance, available, claimed, commission_rate
 
 
 async def _count_license_downloads(db: AsyncSession, license_id: UUID) -> int:
@@ -811,6 +958,154 @@ async def refund_framework_purchase(
         refund_id=refund.id,
         status="refunded",
     )
+
+
+async def get_contributor_earnings(
+    db: AsyncSession,
+    contributor: User,
+) -> EarningsResponse:
+    """Return refund-safe Contributor earnings balances."""
+    currency = "USD"
+    gross_revenue, pending_clearance, available, _, commission_rate = (
+        await _available_payout_balance(
+            db,
+            contributor_id=contributor.id,
+            currency=currency,
+        )
+    )
+    return EarningsResponse(
+        currency=currency,
+        gross_revenue=gross_revenue,
+        pending_clearance=pending_clearance,
+        available_balance=available,
+        commission_rate=commission_rate,
+        minimum_payout=await _minimum_payout(db, currency),
+    )
+
+
+async def request_payout(
+    db: AsyncSession,
+    redis: Redis,
+    contributor: User,
+    payload: PayoutRequest,
+) -> PayoutResponse:
+    """Create a pending payout request and queue provider transfer processing."""
+    contributor_id = contributor.id
+    currency = payload.currency.upper()
+    if currency != "USD":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only USD payouts are supported.",
+        )
+
+    requested_net = _normalise_money(payload.amount)
+    minimum = await _minimum_payout(db, currency)
+    if requested_net < minimum:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Minimum payout is ${minimum}.",
+        )
+
+    payout_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.id == payload.payout_account_id,
+            PayoutAccount.user_id == contributor_id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if payout_account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payout account not found.",
+        )
+    if payout_account.verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account is not verified.",
+        )
+
+    _, _, available, _, commission_rate = await _available_payout_balance(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+    )
+    if requested_net > available:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Requested payout exceeds available balance.",
+        )
+
+    await auth_service.verify_totp_for_sensitive_action(
+        db=db,
+        redis=redis,
+        user=contributor,
+        code=payload.totp_code,
+    )
+    await db.commit()
+
+    gross_drawdown = _normalise_money(
+        requested_net / (Decimal("1") - commission_rate)
+    )
+    commission_deducted = _normalise_money(gross_drawdown - requested_net)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        payout = Payout(
+            contributor_id=contributor_id,
+            payout_account_id=payload.payout_account_id,
+            amount=gross_drawdown,
+            currency=currency,
+            commission_deducted=commission_deducted,
+            net_amount=requested_net,
+            status="pending",
+        )
+        db.add(payout)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=contributor_id,
+            action="payout_requested",
+            target_type="payout",
+            target_id=payout.id,
+            metadata={
+                "currency": currency,
+                "net_amount": str(requested_net),
+                "commission_deducted": str(commission_deducted),
+            },
+        )
+
+    try:
+        process_payout.delay(str(payout.id))
+    except Exception as exc:
+        logger.bind(
+            module="financials",
+            action="request_payout",
+            user_id=contributor_id,
+            payout_id=payout.id,
+        ).error("payout_task_dispatch_failed", error=str(exc))
+
+    logger.bind(
+        module="financials",
+        action="request_payout",
+        user_id=contributor_id,
+        payout_id=payout.id,
+    ).info("payout_requested")
+    return _payout_response(payout)
+
+
+async def list_payouts(
+    db: AsyncSession,
+    contributor: User,
+) -> PayoutsResponse:
+    """List payout history for the Contributor."""
+    payouts = (
+        await db.execute(
+            select(Payout)
+            .where(Payout.contributor_id == contributor.id)
+            .order_by(Payout.initiated_at.desc())
+        )
+    ).scalars().all()
+    return PayoutsResponse(payouts=[_payout_response(payout) for payout in payouts])
 
 
 async def onboard_payout_account(
