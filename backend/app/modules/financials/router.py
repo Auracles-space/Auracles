@@ -23,6 +23,8 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
     PayoutAccountsResponse,
+    PurchaseRequest,
+    PurchaseResponse,
 )
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
@@ -76,6 +78,22 @@ async def delete_payment_method(
         operator=operator,
         payment_method_id=payment_method_id,
         totp_code=payload.totp_code,
+    )
+
+
+@router.post("/purchase/{framework_id}", response_model=PurchaseResponse)
+async def create_framework_purchase(
+    framework_id: UUID,
+    payload: PurchaseRequest,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> PurchaseResponse:
+    """Start Stripe checkout for a published self-serve Framework license."""
+    return await service.create_framework_purchase(
+        db=db,
+        operator=operator,
+        framework_id=framework_id,
+        payload=payload,
     )
 
 

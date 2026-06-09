@@ -469,6 +469,18 @@ export type PricingConfig = {
     usage_restrictions?: (string) | null;
 };
 
+export type PurchaseRequest = {
+    license_type: 'single_user' | 'team' | 'organizational';
+};
+
+export type license_type = 'single_user' | 'team' | 'organizational';
+
+export type PurchaseResponse = {
+    transaction_id: string;
+    provider: 'stripe';
+    client_secret: string;
+};
+
 export type RegisterRequest = {
     email: string;
     password: string;
@@ -937,6 +949,17 @@ export type DeletePaymentMethodData = {
 export type DeletePaymentMethodResponse = (PaymentMethodDeleteResponse);
 
 export type DeletePaymentMethodError = (unknown);
+
+export type CreateFrameworkPurchaseData = {
+    body: PurchaseRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type CreateFrameworkPurchaseResponse = (PurchaseResponse);
+
+export type CreateFrameworkPurchaseError = (unknown);
 
 export type OnboardPayoutAccountData = {
     body: PayoutAccountOnboardRequest;

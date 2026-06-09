@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -17,7 +18,7 @@ from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
-from app.modules.financials.models import PayoutAccount
+from app.modules.financials.models import PayoutAccount, Transaction
 from app.modules.financials.schemas import (
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
@@ -28,7 +29,10 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
+    PurchaseRequest,
+    PurchaseResponse,
 )
+from app.modules.frameworks.models import Framework, License
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
@@ -47,6 +51,11 @@ def _payout_account_response(payout_account: PayoutAccount) -> PayoutAccountResp
         verified_at=payout_account.verified_at,
         created_at=payout_account.created_at,
     )
+
+
+def _normalise_money(amount: Decimal) -> Decimal:
+    """Return a two-decimal money value for persisted payment records."""
+    return amount.quantize(Decimal("0.01"))
 
 
 async def _verify_sensitive_payment_method_change(
@@ -254,6 +263,262 @@ async def delete_payment_method(
         provider="stripe",
         payment_method_id=detached_id,
         removed=True,
+    )
+
+
+async def _create_pending_purchase_transaction(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    customer_id: str,
+    contributor_id: UUID,
+    framework_id: UUID,
+    amount: Decimal,
+    currency: str,
+) -> UUID:
+    """Persist the local purchase record before provider confirmation."""
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        operator = await db.get(User, operator_id)
+        if operator is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        if operator.stripe_customer_id is None:
+            operator.stripe_customer_id = customer_id
+        transaction = Transaction(
+            payer_id=operator_id,
+            payee_id=contributor_id,
+            amount=amount,
+            currency=currency,
+            platform_commission=Decimal("0.00"),
+            net_amount=amount,
+            transaction_type="purchase",
+            status="pending",
+            provider="stripe",
+            ref_id=framework_id,
+            ref_type="framework",
+        )
+        db.add(transaction)
+        await db.flush()
+        transaction_id = transaction.id
+    return transaction_id
+
+
+async def _mark_purchase_initiated(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    transaction_id: UUID,
+    provider_ref: str,
+    framework_id: UUID,
+    license_type: str,
+) -> None:
+    """Attach provider intent metadata and audit a checkout start."""
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        transaction = await db.get(Transaction, transaction_id)
+        if transaction is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase transaction not found.",
+            )
+        transaction.provider_ref = provider_ref
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="purchase_initiated",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "provider": "stripe",
+                "provider_ref": _masked_provider_ref(provider_ref),
+                "framework_id": str(framework_id),
+                "license_type": license_type,
+            },
+        )
+
+
+async def _mark_purchase_failed(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    transaction_id: UUID,
+    framework_id: UUID,
+    license_type: str,
+) -> None:
+    """Mark checkout failure without granting a License."""
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        transaction = await db.get(Transaction, transaction_id)
+        if transaction is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase transaction not found.",
+            )
+        transaction.status = "failed"
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="purchase_failed",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "provider": "stripe",
+                "framework_id": str(framework_id),
+                "license_type": license_type,
+            },
+        )
+
+
+async def create_framework_purchase(
+    db: AsyncSession,
+    operator: User,
+    *,
+    framework_id: UUID,
+    payload: PurchaseRequest,
+) -> PurchaseResponse:
+    """Create a pending transaction and Stripe PaymentIntent for checkout."""
+    operator_id = operator.id
+    operator_email = operator.email
+    operator_display_name = operator.display_name
+    customer_id = operator.stripe_customer_id
+
+    framework = await db.scalar(
+        select(Framework).where(
+            Framework.id == framework_id,
+            Framework.status == "published",
+            Framework.deleted_at.is_(None),
+        )
+    )
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+
+    contributor_id = framework.contributor_id
+    if contributor_id == operator_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot purchase your own Framework.",
+        )
+
+    existing_license_id = await db.scalar(
+        select(License.id)
+        .where(
+            License.framework_id == framework_id,
+            License.operator_id == operator_id,
+            License.status == "active",
+        )
+        .limit(1)
+    )
+    if existing_license_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Framework is already licensed.",
+        )
+
+    if payload.license_type not in framework.license_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Selected license type is not available for this Framework.",
+        )
+
+    amount = _normalise_money(framework.price)
+    currency = framework.currency.upper()
+    if currency != "USD":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only USD purchases are supported.",
+        )
+
+    try:
+        if customer_id is None:
+            customer = await stripe.create_customer(
+                email=operator_email,
+                name=operator_display_name,
+                idempotency_key=f"stripe_customer:{operator_id}",
+            )
+            customer_id = customer.id
+    except StripeProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="create_framework_purchase",
+            user_id=operator_id,
+            framework_id=framework_id,
+        ).error("stripe_customer_create_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    transaction_id = await _create_pending_purchase_transaction(
+        db=db,
+        operator_id=operator_id,
+        customer_id=customer_id,
+        contributor_id=contributor_id,
+        framework_id=framework_id,
+        amount=amount,
+        currency=currency,
+    )
+
+    try:
+        payment_intent = await stripe.create_payment_intent(
+            customer_id=customer_id,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": payload.license_type,
+            },
+            idempotency_key=f"purchase:{transaction_id}",
+        )
+    except StripeProviderError as exc:
+        await _mark_purchase_failed(
+            db=db,
+            operator_id=operator_id,
+            transaction_id=transaction_id,
+            framework_id=framework_id,
+            license_type=payload.license_type,
+        )
+        logger.bind(
+            module="financials",
+            action="create_framework_purchase",
+            user_id=operator_id,
+            framework_id=framework_id,
+            transaction_id=transaction_id,
+        ).error("stripe_payment_intent_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_purchase_initiated(
+        db=db,
+        operator_id=operator_id,
+        transaction_id=transaction_id,
+        provider_ref=payment_intent.id,
+        framework_id=framework_id,
+        license_type=payload.license_type,
+    )
+    logger.bind(
+        module="financials",
+        action="create_framework_purchase",
+        user_id=operator_id,
+        framework_id=framework_id,
+        transaction_id=transaction_id,
+    ).info("purchase_initiated")
+    return PurchaseResponse(
+        transaction_id=transaction_id,
+        provider="stripe",
+        client_secret=payment_intent.client_secret,
     )
 
 

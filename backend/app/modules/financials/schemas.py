@@ -60,6 +60,23 @@ class PaymentMethodDeleteResponse(BaseModel):
 
 
 PayoutProvider = Literal["stripe"]
+SelfServeLicenseType = Literal["single_user", "team", "organizational"]
+
+
+class PurchaseRequest(BaseModel):
+    """Request body for starting self-serve Framework checkout."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    license_type: SelfServeLicenseType
+
+
+class PurchaseResponse(BaseModel):
+    """PaymentIntent data needed by the browser to complete checkout."""
+
+    transaction_id: UUID
+    provider: Literal["stripe"]
+    client_secret: str
 
 
 class PayoutAccountOnboardRequest(BaseModel):

@@ -1428,6 +1428,47 @@ paths:
           description: Invalid delete payload or TOTP code.
         "502":
           description: Payment provider unavailable.
+  /v1/financials/purchase/{framework_id}:
+    post:
+      tags:
+        - Financials
+      operationId: createFrameworkPurchase
+      summary: Start Framework purchase
+      description: Creates a pending purchase transaction and Stripe PaymentIntent for a self-serve Framework license. The License is granted only after the Stripe webhook confirms payment.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: framework_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseRequest"
+      responses:
+        "200":
+          description: Purchase PaymentIntent created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
+        "404":
+          description: Published Framework not found.
+        "409":
+          description: Framework already licensed or self-purchase attempted.
+        "422":
+          description: Invalid or unavailable self-serve license type.
+        "502":
+          description: Payment provider unavailable.
   /v1/financials/payout-accounts/onboard:
     post:
       tags:
@@ -1949,6 +1990,34 @@ components:
           type: string
         removed:
           type: boolean
+    PurchaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - license_type
+      properties:
+        license_type:
+          type: string
+          enum:
+            - single_user
+            - team
+            - organizational
+    PurchaseResponse:
+      type: object
+      required:
+        - transaction_id
+        - provider
+        - client_secret
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - stripe
+        client_secret:
+          type: string
     PayoutAccountOnboardRequest:
       type: object
       additionalProperties: false

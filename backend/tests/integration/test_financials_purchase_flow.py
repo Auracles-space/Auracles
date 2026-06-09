@@ -1,0 +1,374 @@
+"""Integration tests for Operator framework purchase initiation."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator, Mapping
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from httpx import AsyncClient
+from sqlalchemy import create_engine, delete, select
+
+from app.core.database import async_session_factory, engine
+from app.core.security import create_access_token, hash_password
+from app.integrations.stripe import StripeProviderError
+from app.main import app
+from app.modules.auth.models import User, UserRole
+from app.modules.financials import service as financials_service
+from app.modules.financials.models import Transaction
+from app.modules.frameworks.models import Framework, License
+from app.shared.models.audit_log import AuditLog
+
+
+class FakeStripeCustomer:
+    """Small stand-in for a Stripe Customer result."""
+
+    def __init__(self, customer_id: str) -> None:
+        """Store the provider customer id."""
+        self.id = customer_id
+
+
+class FakeStripePaymentIntent:
+    """Small stand-in for a Stripe PaymentIntent result."""
+
+    def __init__(self, payment_intent_id: str, client_secret: str) -> None:
+        """Store the provider intent id and browser client secret."""
+        self.id = payment_intent_id
+        self.client_secret = client_secret
+
+
+async def reset_purchase_state() -> None:
+    """Remove purchase-flow rows in foreign-key-safe order."""
+    async with async_session_factory() as session:
+        await session.execute(delete(AuditLog))
+        await session.execute(delete(License))
+        await session.execute(delete(Transaction))
+        await session.execute(delete(Framework))
+        await session.execute(delete(UserRole))
+        await session.execute(delete(User))
+        await session.commit()
+
+
+@pytest.fixture
+def migrated_database() -> Iterator[None]:
+    """Ensure financial tables exist for purchase-flow tests."""
+    sync_engine = create_engine(
+        app.state.settings.sync_database_url,
+        pool_pre_ping=True,
+    )
+    command.upgrade(Config("alembic.ini"), "head")
+    try:
+        yield
+    finally:
+        command.upgrade(Config("alembic.ini"), "head")
+        sync_engine.dispose()
+
+
+@pytest.fixture
+async def purchase_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[dict[str, list[Any]]]:
+    """Reset marketplace state and replace Stripe calls with test doubles."""
+    calls: dict[str, list[Any]] = {
+        "customers": [],
+        "payment_intents": [],
+    }
+
+    await engine.dispose()
+    await reset_purchase_state()
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> FakeStripeCustomer:
+        """Record Customer creation and return a stable provider id."""
+        calls["customers"].append(
+            {"email": email, "name": name, "idempotency_key": idempotency_key}
+        )
+        return FakeStripeCustomer("cus_purchase_123")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        idempotency_key: str | None = None,
+    ) -> FakeStripePaymentIntent:
+        """Record PaymentIntent creation and return a browser client secret."""
+        calls["payment_intents"].append(
+            {
+                "customer_id": customer_id,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripePaymentIntent("pi_purchase_123", "pi_secret_123")
+
+    monkeypatch.setattr(
+        financials_service.stripe,
+        "create_customer",
+        fake_create_customer,
+    )
+    monkeypatch.setattr(
+        financials_service.stripe,
+        "create_payment_intent",
+        fake_create_payment_intent,
+    )
+    try:
+        yield calls
+    finally:
+        await reset_purchase_state()
+        await engine.dispose()
+
+
+async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
+    """Create a verified user with approved roles."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash=hash_password("CorrectHorse9"),
+                display_name=email.split("@")[0],
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            for role in roles:
+                session.add(
+                    UserRole(
+                        user_id=user.id,
+                        role=role,
+                        approved_at=datetime.now(UTC),
+                    )
+                )
+        return user.id
+
+
+async def create_published_framework(
+    contributor_id: UUID,
+    *,
+    price: Decimal = Decimal("149.00"),
+    currency: str = "USD",
+    license_types: list[str] | None = None,
+) -> UUID:
+    """Create a published Framework available in checkout."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Revenue Operations Playbook",
+                description="A practical operating system for revenue teams.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["revenue", "operations"],
+                price=price,
+                currency=currency,
+                license_types=license_types or ["single_user", "team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            return framework.id
+
+
+def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
+    """Create bearer auth headers for a test user."""
+    token = create_access_token(user_id=user_id, roles=roles)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_operator_can_start_stripe_purchase_without_license_grant(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Checkout creates a pending transaction, not a License grant."""
+    contributor_id = await create_user_with_roles(
+        "purchase-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "purchase-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team", "organizational"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    async with async_session_factory() as session:
+        operator = await session.get(User, operator_id)
+        transaction = await session.scalar(select(Transaction))
+        license_row = await session.scalar(select(License))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "purchase_initiated")
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "stripe"
+    assert body["client_secret"] == "pi_secret_123"
+    assert UUID(body["transaction_id"])
+    assert operator is not None
+    assert operator.stripe_customer_id == "cus_purchase_123"
+    assert transaction is not None
+    assert transaction.payer_id == operator_id
+    assert transaction.payee_id == contributor_id
+    assert transaction.amount == Decimal("149.00")
+    assert transaction.currency == "USD"
+    assert transaction.transaction_type == "purchase"
+    assert transaction.status == "pending"
+    assert transaction.provider == "stripe"
+    assert transaction.provider_ref == "pi_purchase_123"
+    assert transaction.ref_id == framework_id
+    assert transaction.ref_type == "framework"
+    assert license_row is None
+    assert audit is not None
+    assert audit.target_id == transaction.id
+    assert audit.metadata_["license_type"] == "team"
+    assert purchase_context["customers"] == [
+        {
+            "email": "purchase-operator@auracles.space",
+            "name": "purchase-operator",
+            "idempotency_key": f"stripe_customer:{operator_id}",
+        }
+    ]
+    assert purchase_context["payment_intents"] == [
+        {
+            "customer_id": "cus_purchase_123",
+            "amount": Decimal("149.00"),
+            "currency": "USD",
+            "metadata": {
+                "transaction_id": str(transaction.id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": "team",
+            },
+            "idempotency_key": f"purchase:{transaction.id}",
+        }
+    ]
+
+
+async def test_purchase_rejects_non_self_serve_and_unavailable_frameworks(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Purchase initiation blocks wrong roles and non-checkout license types."""
+    del purchase_context
+    contributor_id = await create_user_with_roles(
+        "reject-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "reject-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user"],
+    )
+
+    wrong_role = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={"license_type": "single_user"},
+    )
+    enterprise = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "enterprise"},
+    )
+    unsupported_type = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    assert wrong_role.status_code == 403
+    assert enterprise.status_code == 422
+    assert unsupported_type.status_code == 422
+
+
+async def test_failed_payment_provider_marks_purchase_transaction_failed(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider failure leaves no License and marks the transaction failed."""
+    contributor_id = await create_user_with_roles(
+        "failed-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "failed-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(contributor_id)
+
+    async def fake_create_payment_intent_failure(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        idempotency_key: str | None = None,
+    ) -> FakeStripePaymentIntent:
+        """Simulate a Stripe outage after the local transaction is created."""
+        purchase_context["payment_intents"].append(
+            {
+                "customer_id": customer_id,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        raise StripeProviderError("Stripe unavailable.")
+
+    monkeypatch.setattr(
+        financials_service.stripe,
+        "create_payment_intent",
+        fake_create_payment_intent_failure,
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        license_row = await session.scalar(select(License))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "purchase_failed")
+        )
+
+    assert response.status_code == 502
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert transaction.provider_ref is None
+    assert license_row is None
+    assert audit is not None
+    assert audit.target_id == transaction.id
