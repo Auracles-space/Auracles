@@ -11,7 +11,7 @@
 
 Turn purchase intent into real money. Ship:
 
-- Stripe + Paystack integration with provider routing.
+- Stripe integration for checkout, refunds, Connect onboarding, and payouts.
 - Purchase flow (PaymentIntent → webhook → License grant).
 - Self-serve refund within 48 hours, gated by zero downloads.
 - Contributor payout pipeline: provider-hosted onboarding → request with KYC + 2FA → Celery transfer → webhook completion.
@@ -29,19 +29,19 @@ Turn purchase intent into real money. Ship:
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `license_type_enum`               | Keep existing `single_user, team, enterprise`; add `organizational` additively                                                                                       | Avoids breaking Phase 2 licenses/admin grants/library downloads while expanding the commercial model. `white_label` is deferred until custom contract/resale-rights support exists. |
 | Invoice format                    | WeasyPrint PDF in a Celery task, stored in S3, served via presigned URL                                                                                              | Real PDF without external service. Cairo/Pango added to worker image only.                                                                                                          |
-| Payout onboarding                 | Provider-hosted — Stripe Connect Express + Paystack subaccount                                                                                                       | Provider runs KYC. We store `provider_ref` only; no bank-detail forms.                                                                                                              |
+| Payout onboarding                 | Provider-hosted — Stripe Connect Express                                                                                                                             | Stripe runs hosted onboarding/KYC. We store `provider_ref` only; no bank-detail forms.                                                                                             |
 | Refund trigger                    | Self-serve Operator button, eligibility-checked                                                                                                                      | `< 48h` AND `artifact_downloads == 0`. Provider refund API called inline.                                                                                                           |
 | Reviews wiring (FR-FWK-014)       | Defer — Phase 2 schema stays dormant                                                                                                                                 | Reduces Phase 3 scope; closes in a later polish phase.                                                                                                                              |
 | Escrow scope                      | Migration + `EscrowService.hold/release/refund` + admin override endpoints + tests                                                                                   | Phase 4 calls the service. Webhook routes funding events tagged `metadata.kind == "escrow"`.                                                                                        |
 | Webhook idempotency               | Dedicated `webhook_events` table, UNIQUE `(provider, provider_event_id)`, status `received/processed/failed`                                                         | Durable audit + dedupe. Replays return 200, no side effects.                                                                                                                        |
 | `available` balance formula       | `sum(completed purchases where created_at < now() - refund_window_hours) − commission(15%) − sum(paid out)`                                                          | Refund-safe; no clawback path needed. Pending balance = sales inside the window.                                                                                                    |
-| Currency                          | USD + NGN only, no FX conversion in code                                                                                                                             | Stripe handles non-NGN; Paystack handles NGN. Contributors price per currency.                                                                                                      |
+| Currency                          | USD only for Phase 3 MVP                                                                                                                                              | Team decision on 2026-06-09: Stripe-only for MVP. NGN/Paystack is deferred, so no FX conversion is implemented.                                                                     |
 | Partner API / Developer Platform  | Deferred to Phase 5                                                                                                                                                  | Per CLAUDE.md phase plan.                                                                                                                                                           |
 | Self-serve checkout license types | `single_user`, `team`, `organizational`                                                                                                                              | `enterprise` remains admin/custom-grant for now. `white_label` remains out of scope.                                                                                                |
 | KYC gate                          | Required for: payout onboarding, payout request, escrow funding (Phase 4 consumers), artifact download (Phase 1 deviation). **Not** required for purchase or refund. |
 | 2FA gate                          | Required for: payout request, payout-account changes (BR-FIN-005), admin escrow override, admin config change.                                                       |
 | Commission                        | Deducted at payout, not at sale (BR-FIN-001). Default 15%, in `platform_config`.                                                                                     |
-| Minimum payout                    | $50 USD, ₦20,000 NGN — configurable per currency in `platform_config`.                                                                                               |
+| Minimum payout                    | $50 USD — configurable in `platform_config`.                                                                                                                         |
 
 ---
 
@@ -79,20 +79,16 @@ backend/app/
 │   │   ├── models.py             # Transaction, Escrow, Payout, PayoutAccount
 │   │   └── schemas.py
 │   └── webhooks/
-│       ├── router.py             # /v1/webhooks/stripe, /v1/webhooks/paystack
+│       ├── router.py             # /v1/webhooks/stripe
 │       ├── service.py            # dedupe via webhook_events, dispatch by event type
 │       ├── handlers/             # one file per event type
 │       │   ├── stripe_payment_intent.py
 │       │   ├── stripe_account.py
-│       │   ├── stripe_transfer.py
-│       │   ├── paystack_charge.py
-│       │   └── paystack_transfer.py
+│       │   └── stripe_transfer.py
 │       ├── models.py             # WebhookEvent
 │       └── schemas.py
 └── integrations/
-    ├── stripe.py                 # create_customer, create_payment_intent, create_refund, create_express_account, create_account_link, create_transfer, verify_webhook
-    ├── paystack.py               # create_customer, initialize_transaction, refund_transaction, create_subaccount, initiate_transfer, verify_webhook
-    └── payment_router.py         # select_provider(country, currency)
+    └── stripe.py                 # create_customer, create_payment_intent, create_refund, create_express_account, create_account_link, create_transfer, verify_webhook
 ```
 
 ---
@@ -107,25 +103,23 @@ Migrations (new financial enums/tables, additive `license_type_enum` value `orga
 
 ### Slice 2 — Provider integration layer (no endpoints)
 
-`stripe.py`, `paystack.py`, `payment_router.py`. Production validator rejects placeholder provider secrets. Unit tests via `respx` + signature verify matrix.
+`stripe.py`. Production validator rejects placeholder Stripe secrets. Unit tests via `respx` + signature verify matrix.
 
 ### Slice 3 — Payment methods (Operator)
 
 `POST/GET/DELETE /v1/financials/payment-methods`. Creates Stripe Customer on first add and returns a Stripe SetupIntent so the browser can attach a provider-held payment method. No PAN ever stored. RBAC: Operator role. Audit `payment_method_added/removed`.
 
-Paystack note: Slice 3 does not create standalone saved Paystack payment methods because Paystack reusable authorizations are produced from a successful charge, not a SetupIntent-style card-add flow. For NGN/Paystack purchases, Slice 6 webhook handling must capture reusable authorization metadata from `charge.success` when Paystack marks the authorization reusable.
-
 ### Slice 4 — Payout accounts (Contributor) + onboarding
 
-`POST /v1/financials/payout-accounts/onboard` (KYC-required) → Stripe Express account link or Paystack subaccount creation. `GET` list. `DELETE` (2FA-required) soft-deletes. Audit each transition.
+`POST /v1/financials/payout-accounts/onboard` (KYC-required) → Stripe Express account link creation. `GET` list. `DELETE` (2FA-required) soft-deletes. Audit each transition.
 
 ### Slice 5 — Purchase flow
 
 `POST /v1/financials/purchase/{framework_id}` validates selected self-serve license type (`single_user`, `team`, `organizational`), creates `transactions(status=pending)`, calls provider `create_payment_intent` with `metadata={transaction_id, kind:"purchase"}`. Returns `{transaction_id, client_secret, provider}`. License **only** created in Slice 6 webhook handler. `enterprise` remains admin/custom-grant and is not exposed in checkout.
 
-### Slice 6 — Webhooks (Stripe + Paystack)
+### Slice 6 — Webhooks (Stripe)
 
-`POST /v1/webhooks/stripe` + `POST /v1/webhooks/paystack`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Paystack `charge.success` captures reusable authorization metadata when `authorization.reusable == true` so future NGN purchases can use Paystack charge authorization without storing PAN data. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
+`POST /v1/webhooks/stripe`. Signature verify before any DB write. Insert `webhook_events(status=received)`. Dispatch by `event_type`. Replay returns 200, no side effects. Handlers wrapped in `async with db.begin()`. Escrow funding branch stubs into `EscrowService.hold` (full impl in Slice 9).
 
 ### Slice 7 — Self-serve refund
 
@@ -149,7 +143,7 @@ Paystack note: Slice 3 does not create standalone saved Paystack payment methods
 
 ### Slice 12 — OpenAPI sync + FE codegen + helpers
 
-Update `contracts/openapi.yaml` for all new paths. Regenerate `frontend/src/lib/generated/`. FE helpers `stripe-client.ts` + `paystack-client.ts` (publishable key from env).
+Update `contracts/openapi.yaml` for all new paths. Regenerate `frontend/src/lib/generated/`. FE helper `stripe-client.ts` (publishable key from env).
 
 ### Slice 13 — FE Operator (mobile-first)
 
@@ -171,9 +165,6 @@ Pages: `dashboard/earnings`, `dashboard/payouts`, `settings/payout-accounts`. Co
 | Stripe   | `account.updated`               | If `charges_enabled && payouts_enabled`, flip `payout_accounts.verified_at`.                                                                                             |
 | Stripe   | `transfer.paid`                 | Mark payout completed; audit `payout_completed`.                                                                                                                         |
 | Stripe   | `transfer.failed`               | Mark payout failed; audit `payout_failed`.                                                                                                                               |
-| Paystack | `charge.success`                | Same as Stripe `payment_intent.succeeded`.                                                                                                                               |
-| Paystack | `transfer.success`              | Mark payout completed.                                                                                                                                                   |
-| Paystack | `transfer.failed`               | Mark payout failed.                                                                                                                                                      |
 
 All other events: insert `webhook_events(status=received)` and return 200. Unknown event types audited at WARNING per CLAUDE.md logging table.
 
@@ -181,9 +172,9 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 
 ## 7. Security gates
 
-- **Webhook signature verification** before any parse or DB write. Stripe via `Stripe-Signature`. Paystack via HMAC SHA-512. Failure → 400 + audit.
+- **Webhook signature verification** before any parse or DB write. Stripe via `Stripe-Signature`. Failure → 400 + audit.
 - **DB transactions** wrap every multi-table write (purchase + license, refund + license-revoke, escrow hold/release, payout + txn pair).
-- **No PAN** in our codebase; Stripe Elements + Paystack Inline tokenize client-side.
+- **No PAN** in our codebase; Stripe Elements tokenizes client-side.
 - **Provider secrets** validated at startup (placeholder values rejected outside `environment=local`, mirroring `SECRET_KEY` and `TOTP_ENCRYPTION_KEY` validators from Phase 1).
 - **2FA** required for payout request, payout-account delete, admin escrow override, admin config patch. Uses the Phase 1 `verify_totp_login` challenge pattern; challenge consumed once.
 - **KYC** required for payout onboarding, payout request, and Phase 4 escrow funding. Not required for purchase or refund (per Phase 1 deviation table).
@@ -195,7 +186,7 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 ## 8. Risk flags
 
 - **Stripe Connect Express vs Custom:** Express chosen; Stripe owns onboarding dashboard. Cheaper compliance.
-- **Paystack subaccounts** only payout in NGN — confirm before Slice 4.
+- **Paystack/NGN rails deferred:** Team decision on 2026-06-09 is Stripe-only for Phase 3 MVP. Keep Paystack out of active checkout, webhook, and payout slices until a later regional-payments phase.
 - **License enum migration:** add `organizational` only. Existing `single_user/team/enterprise` values stay valid to preserve Phase 2 grants, library access, and generated frontend contracts.
 - **White-label licensing:** deferred because the app does not yet support resale/rebrand contract terms, approval workflow, or custom rights enforcement.
 - **WeasyPrint image bloat:** worker image grows ~150 MB with Cairo + Pango. Acceptable for Render Background Worker tier.
@@ -211,9 +202,8 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 1. `docker compose up` (api, db, redis, worker, beat, frontend).
 2. Backend: `uv run pytest --cov=app/modules/financials --cov=app/modules/webhooks --cov=app/integrations` → ≥ 80% line coverage on touched modules.
 3. Frontend: `pnpm test` (vitest) + `pnpm exec playwright test tests/e2e/purchase.spec.ts tests/e2e/financials.spec.ts`.
-4. Manual smoke (Stripe + Paystack test modes):
+4. Manual smoke (Stripe test mode):
    - Operator buys framework via Stripe (US card) → library entry → artifact download → invoice PDF.
-   - Operator buys via Paystack (NG card) → library entry.
    - Operator refunds inside 48 h → status `refunded`, license `revoked`.
    - Contributor onboards Stripe Connect Express test account → webhook flips `verified_at`.
    - Contributor requests payout with TOTP code → Celery transfer → webhook completes payout.
@@ -229,6 +219,7 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 - Partner / Developer Platform commissions & tier upgrades — Phase 5 (FR-DEV-017..030).
 - Projects + Attestation modules — Phase 4 (consumes `EscrowService` shipped here).
 - Tax compliance, 1099/W-9 — separate compliance phase.
-- Multi-currency beyond USD + NGN.
+- Multi-currency beyond USD.
+- Paystack / NGN payment and payout rails.
 - ACH / wire transfer rails outside provider rails.
 - GDPR-driven payout-account export — Phase 5 GDPR slice.

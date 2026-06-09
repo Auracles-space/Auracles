@@ -1,6 +1,10 @@
 """Pydantic schemas for financials endpoints."""
 
+from __future__ import annotations
+
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,3 +57,58 @@ class PaymentMethodDeleteResponse(BaseModel):
     provider: Literal["stripe"]
     payment_method_id: str
     removed: bool
+
+
+PayoutProvider = Literal["stripe"]
+
+
+class PayoutAccountOnboardRequest(BaseModel):
+    """Request body for creating a provider-held payout destination."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: PayoutProvider
+    country: str = Field(min_length=2, max_length=2)
+    refresh_url: str = Field(min_length=1)
+    return_url: str = Field(min_length=1)
+
+
+class PayoutAccountResponse(BaseModel):
+    """Safe Contributor payout-account metadata."""
+
+    id: UUID
+    provider: PayoutProvider
+    account_type: str
+    provider_account_ref: str
+    is_default: bool
+    verified_at: datetime | None
+    created_at: datetime
+
+
+class PayoutAccountOnboardResponse(BaseModel):
+    """Response body for a provider payout-account onboarding request."""
+
+    provider: PayoutProvider
+    onboarding_url: str | None
+    payout_account: PayoutAccountResponse
+
+
+class PayoutAccountsResponse(BaseModel):
+    """Response body for listing active payout accounts."""
+
+    payout_accounts: list[PayoutAccountResponse]
+
+
+class PayoutAccountDeleteRequest(BaseModel):
+    """Request body for soft-deleting a payout account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class PayoutAccountDeleteResponse(BaseModel):
+    """Response body for a soft-deleted payout account."""
+
+    payout_account_id: UUID
+    deleted: bool

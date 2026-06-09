@@ -1428,6 +1428,95 @@ paths:
           description: Invalid delete payload or TOTP code.
         "502":
           description: Payment provider unavailable.
+  /v1/financials/payout-accounts/onboard:
+    post:
+      tags:
+        - Financials
+      operationId: onboardPayoutAccount
+      summary: Onboard payout account
+      description: Creates a Stripe Connect Express payout account and returns the provider-hosted onboarding URL.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutAccountOnboardRequest"
+      responses:
+        "200":
+          description: Payout account onboarding started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutAccountOnboardResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role or verified KYC required.
+        "409":
+          description: Payout account already exists.
+        "422":
+          description: Invalid payout account payload.
+        "502":
+          description: Payout provider unavailable.
+  /v1/financials/payout-accounts:
+    get:
+      tags:
+        - Financials
+      operationId: listPayoutAccounts
+      summary: List payout accounts
+      description: Returns active payout accounts for the authenticated Contributor.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Payout accounts returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutAccountsResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role required.
+  /v1/financials/payout-accounts/{payout_account_id}:
+    delete:
+      tags:
+        - Financials
+      operationId: deletePayoutAccount
+      summary: Delete payout account
+      description: Soft-deletes an owned payout account after 2FA confirmation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: payout_account_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutAccountDeleteRequest"
+      responses:
+        "200":
+          description: Payout account deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutAccountDeleteResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Contributor role or 2FA confirmation required.
+        "404":
+          description: Payout account not found.
+        "422":
+          description: Invalid 2FA code or payload.
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -1859,6 +1948,108 @@ components:
         payment_method_id:
           type: string
         removed:
+          type: boolean
+    PayoutAccountOnboardRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - country
+        - refresh_url
+        - return_url
+      properties:
+        provider:
+          type: string
+          enum:
+            - stripe
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+        refresh_url:
+          type: string
+          minLength: 1
+        return_url:
+          type: string
+          minLength: 1
+    PayoutAccountResponse:
+      type: object
+      required:
+        - id
+        - provider
+        - account_type
+        - provider_account_ref
+        - is_default
+        - verified_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - stripe
+        account_type:
+          type: string
+        provider_account_ref:
+          type: string
+        is_default:
+          type: boolean
+        verified_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    PayoutAccountOnboardResponse:
+      type: object
+      required:
+        - provider
+        - onboarding_url
+        - payout_account
+      properties:
+        provider:
+          type: string
+          enum:
+            - stripe
+        onboarding_url:
+          type:
+            - string
+            - "null"
+        payout_account:
+          $ref: "#/components/schemas/PayoutAccountResponse"
+    PayoutAccountsResponse:
+      type: object
+      required:
+        - payout_accounts
+      properties:
+        payout_accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PayoutAccountResponse"
+    PayoutAccountDeleteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - totp_code
+      properties:
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+    PayoutAccountDeleteResponse:
+      type: object
+      required:
+        - payout_account_id
+        - deleted
+      properties:
+        payout_account_id:
+          type: string
+          format: uuid
+        deleted:
           type: boolean
     LoginResponse:
       type: object

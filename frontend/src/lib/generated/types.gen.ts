@@ -421,6 +421,42 @@ export type PaymentMethodsResponse = {
     payment_methods: Array<PaymentMethodResponse>;
 };
 
+export type PayoutAccountDeleteRequest = {
+    totp_code: string;
+};
+
+export type PayoutAccountDeleteResponse = {
+    payout_account_id: string;
+    deleted: boolean;
+};
+
+export type PayoutAccountOnboardRequest = {
+    provider: 'stripe';
+    country: string;
+    refresh_url: string;
+    return_url: string;
+};
+
+export type PayoutAccountOnboardResponse = {
+    provider: 'stripe';
+    onboarding_url: (string) | null;
+    payout_account: PayoutAccountResponse;
+};
+
+export type PayoutAccountResponse = {
+    id: string;
+    provider: 'stripe';
+    account_type: string;
+    provider_account_ref: string;
+    is_default: boolean;
+    verified_at: (string) | null;
+    created_at: string;
+};
+
+export type PayoutAccountsResponse = {
+    payout_accounts: Array<PayoutAccountResponse>;
+};
+
 export type PreviewArtifactRequest = {
     artifact_id: string;
 };
@@ -901,6 +937,29 @@ export type DeletePaymentMethodData = {
 export type DeletePaymentMethodResponse = (PaymentMethodDeleteResponse);
 
 export type DeletePaymentMethodError = (unknown);
+
+export type OnboardPayoutAccountData = {
+    body: PayoutAccountOnboardRequest;
+};
+
+export type OnboardPayoutAccountResponse = (PayoutAccountOnboardResponse);
+
+export type OnboardPayoutAccountError = (unknown);
+
+export type ListPayoutAccountsResponse = (PayoutAccountsResponse);
+
+export type ListPayoutAccountsError = (unknown);
+
+export type DeletePayoutAccountData = {
+    body: PayoutAccountDeleteRequest;
+    path: {
+        payout_account_id: string;
+    };
+};
+
+export type DeletePayoutAccountResponse = (PayoutAccountDeleteResponse);
+
+export type DeletePayoutAccountError = (unknown);
 
 export type RequestKycUploadUrlData = {
     body: KycUploadUrlRequest;

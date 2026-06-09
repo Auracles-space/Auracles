@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from uuid import UUID
+
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -12,17 +17,36 @@ from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.financials.models import PayoutAccount
 from app.modules.financials.schemas import (
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
     PaymentMethodSetupResponse,
     PaymentMethodsResponse,
+    PayoutAccountDeleteResponse,
+    PayoutAccountOnboardRequest,
+    PayoutAccountOnboardResponse,
+    PayoutAccountResponse,
+    PayoutAccountsResponse,
 )
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
     """Return a log-safe provider reference that preserves only the last chars."""
     return f"****{provider_ref[-4:]}" if len(provider_ref) > 4 else "****"
+
+
+def _payout_account_response(payout_account: PayoutAccount) -> PayoutAccountResponse:
+    """Map a payout account row to safe Contributor-facing metadata."""
+    return PayoutAccountResponse(
+        id=payout_account.id,
+        provider="stripe",
+        account_type=payout_account.account_type,
+        provider_account_ref=_masked_provider_ref(payout_account.provider_account_id),
+        is_default=payout_account.is_default,
+        verified_at=payout_account.verified_at,
+        created_at=payout_account.created_at,
+    )
 
 
 async def _verify_sensitive_payment_method_change(
@@ -39,6 +63,19 @@ async def _verify_sensitive_payment_method_change(
         code=totp_code,
     )
     await db.commit()
+
+
+async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
+    """Return whether the Contributor has any non-deleted payout account."""
+    existing_id = await db.scalar(
+        select(PayoutAccount.id)
+        .where(
+            PayoutAccount.user_id == user_id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    return existing_id is not None
 
 
 async def create_payment_method_setup(
@@ -217,4 +254,176 @@ async def delete_payment_method(
         provider="stripe",
         payment_method_id=detached_id,
         removed=True,
+    )
+
+
+async def onboard_payout_account(
+    db: AsyncSession,
+    contributor: User,
+    payload: PayoutAccountOnboardRequest,
+) -> PayoutAccountOnboardResponse:
+    """Create a provider-held payout destination for a KYC-verified Contributor."""
+    contributor_id = contributor.id
+
+    try:
+        stripe_account = await stripe.create_express_account(
+            email=contributor.email,
+            country=payload.country,
+        )
+        account_link = await stripe.create_account_link(
+            account_id=stripe_account.id,
+            refresh_url=payload.refresh_url,
+            return_url=payload.return_url,
+        )
+        provider_account_id = stripe_account.id
+        account_type = "express"
+        onboarding_url = account_link.url
+    except StripeProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="onboard_payout_account",
+            user_id=contributor_id,
+        ).error("payout_account_provider_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payout provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    try:
+        async with db.begin():
+            payout_account = PayoutAccount(
+                user_id=contributor_id,
+                provider=payload.provider,
+                provider_account_id=provider_account_id,
+                account_type=account_type,
+                is_default=not await _has_active_payout_account(db, contributor_id),
+            )
+            db.add(payout_account)
+            await db.flush()
+            await write_audit(
+                db=db,
+                actor_id=contributor_id,
+                action="payout_account_onboarded",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "provider": payload.provider,
+                    "account_type": account_type,
+                    "provider_account_ref": _masked_provider_ref(provider_account_id),
+                },
+            )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account already exists.",
+        ) from exc
+
+    logger.bind(
+        module="financials",
+        action="onboard_payout_account",
+        user_id=contributor_id,
+    ).info("payout_account_onboarded")
+    return PayoutAccountOnboardResponse(
+        provider=payload.provider,
+        onboarding_url=onboarding_url,
+        payout_account=_payout_account_response(payout_account),
+    )
+
+
+async def list_payout_accounts(
+    db: AsyncSession,
+    contributor: User,
+) -> PayoutAccountsResponse:
+    """List active payout accounts for the authenticated Contributor."""
+    payout_accounts = (
+        await db.execute(
+            select(PayoutAccount)
+            .where(
+                PayoutAccount.user_id == contributor.id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+            .order_by(PayoutAccount.created_at.desc())
+        )
+    ).scalars().all()
+    return PayoutAccountsResponse(
+        payout_accounts=[
+            _payout_account_response(payout_account)
+            for payout_account in payout_accounts
+        ]
+    )
+
+
+async def delete_payout_account(
+    db: AsyncSession,
+    redis: Redis,
+    contributor: User,
+    *,
+    payout_account_id: UUID,
+    totp_code: str,
+) -> PayoutAccountDeleteResponse:
+    """Soft-delete an owned payout account after TOTP confirmation."""
+    payout_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.id == payout_account_id,
+            PayoutAccount.user_id == contributor.id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if payout_account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payout account not found.",
+        )
+
+    await auth_service.verify_totp_for_sensitive_action(
+        db=db,
+        redis=redis,
+        user=contributor,
+        code=totp_code,
+    )
+    await db.commit()
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        payout_account = await db.scalar(
+            select(PayoutAccount).where(
+                PayoutAccount.id == payout_account_id,
+                PayoutAccount.user_id == contributor.id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+        )
+        if payout_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payout account not found.",
+            )
+        payout_account.deleted_at = datetime.now(UTC)
+        payout_account.is_default = False
+        await write_audit(
+            db=db,
+            actor_id=contributor.id,
+            action="payout_account_deleted",
+            target_type="payout_account",
+            target_id=payout_account.id,
+            metadata={
+                "provider": payout_account.provider,
+                "account_type": payout_account.account_type,
+                "provider_account_ref": _masked_provider_ref(
+                    payout_account.provider_account_id
+                ),
+            },
+        )
+
+    logger.bind(
+        module="financials",
+        action="delete_payout_account",
+        user_id=contributor.id,
+    ).info("payout_account_deleted")
+    return PayoutAccountDeleteResponse(
+        payout_account_id=payout_account_id,
+        deleted=True,
     )
