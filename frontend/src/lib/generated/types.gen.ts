@@ -481,6 +481,15 @@ export type PurchaseResponse = {
     client_secret: string;
 };
 
+export type RefundResponse = {
+    transaction_id: string;
+    provider: 'stripe';
+    refund_id: string;
+    status: 'refunded';
+};
+
+export type status5 = 'refunded';
+
 export type RegisterRequest = {
     email: string;
     password: string;
@@ -559,7 +568,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status5 = 'processed' | 'received' | 'duplicate';
+export type status6 = 'processed' | 'received' | 'duplicate';
 
 export type RegisterUserData = {
     body: RegisterRequest;
@@ -990,6 +999,16 @@ export type DeletePayoutAccountData = {
 export type DeletePayoutAccountResponse = (PayoutAccountDeleteResponse);
 
 export type DeletePayoutAccountError = (unknown);
+
+export type RefundFrameworkPurchaseData = {
+    path: {
+        transaction_id: string;
+    };
+};
+
+export type RefundFrameworkPurchaseResponse = (RefundResponse);
+
+export type RefundFrameworkPurchaseError = (unknown);
 
 export type IngestStripeWebhookData = {
     body: {

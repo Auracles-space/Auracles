@@ -1560,6 +1560,41 @@ paths:
           description: Payout account not found.
         "422":
           description: Invalid 2FA code or payload.
+  /v1/financials/purchases/{transaction_id}/refund:
+    post:
+      tags:
+        - Financials
+      operationId: refundFrameworkPurchase
+      summary: Refund Framework purchase
+      description: Refunds an eligible completed Framework purchase within the configured refund window when no licensed artifacts have been downloaded. The License is revoked only after the provider refund succeeds.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Purchase refunded and License revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
+        "404":
+          description: Purchase not found for this Operator.
+        "409":
+          description: Purchase is not in a refundable state.
+        "422":
+          description: Refund window expired or artifacts have been downloaded.
+        "502":
+          description: Payment provider unavailable.
   /v1/webhooks/stripe:
     post:
       tags:
@@ -2153,6 +2188,27 @@ components:
           format: uuid
         deleted:
           type: boolean
+    RefundResponse:
+      type: object
+      required:
+        - transaction_id
+        - provider
+        - refund_id
+        - status
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - stripe
+        refund_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - refunded
     WebhookIngestResponse:
       type: object
       required:

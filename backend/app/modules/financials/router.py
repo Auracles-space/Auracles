@@ -25,6 +25,7 @@ from app.modules.financials.schemas import (
     PayoutAccountsResponse,
     PurchaseRequest,
     PurchaseResponse,
+    RefundResponse,
 )
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
@@ -94,6 +95,23 @@ async def create_framework_purchase(
         operator=operator,
         framework_id=framework_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/purchases/{transaction_id}/refund",
+    response_model=RefundResponse,
+)
+async def refund_framework_purchase(
+    transaction_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> RefundResponse:
+    """Refund an eligible completed Framework purchase for the Operator."""
+    return await service.refund_framework_purchase(
+        db=db,
+        operator=operator,
+        transaction_id=transaction_id,
     )
 
 

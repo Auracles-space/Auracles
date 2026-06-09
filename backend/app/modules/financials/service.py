@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
-from app.modules.financials.models import PayoutAccount, Transaction
+from app.modules.financials.models import PayoutAccount, PlatformConfig, Transaction
 from app.modules.financials.schemas import (
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
@@ -31,8 +31,10 @@ from app.modules.financials.schemas import (
     PayoutAccountsResponse,
     PurchaseRequest,
     PurchaseResponse,
+    RefundResponse,
 )
 from app.modules.frameworks.models import Framework, License
+from app.modules.frameworks.models_artifact import ArtifactDownload
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
@@ -56,6 +58,34 @@ def _payout_account_response(payout_account: PayoutAccount) -> PayoutAccountResp
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for persisted payment records."""
     return amount.quantize(Decimal("0.01"))
+
+
+async def _refund_window_hours(db: AsyncSession) -> int:
+    """Return the configured self-serve purchase refund window."""
+    configured = await db.scalar(
+        select(PlatformConfig.value).where(PlatformConfig.key == "refund_window_hours")
+    )
+    if configured is None:
+        return 48
+    try:
+        return int(configured)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Refund window configuration is invalid.",
+        ) from exc
+
+
+async def _count_license_downloads(db: AsyncSession, license_id: UUID) -> int:
+    """Return how many artifacts have been downloaded under a license."""
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(ArtifactDownload)
+            .where(ArtifactDownload.license_id == license_id)
+        )
+        or 0
+    )
 
 
 async def _verify_sensitive_payment_method_change(
@@ -519,6 +549,146 @@ async def create_framework_purchase(
         transaction_id=transaction_id,
         provider="stripe",
         client_secret=payment_intent.client_secret,
+    )
+
+
+async def _load_refundable_purchase(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    transaction_id: UUID,
+) -> tuple[Transaction, License]:
+    """Load and validate the local purchase state before provider refund."""
+    transaction = await db.scalar(
+        select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.payer_id == operator_id,
+            Transaction.transaction_type == "purchase",
+        )
+    )
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Purchase not found.",
+        )
+    if transaction.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only completed purchases can be refunded.",
+        )
+    if transaction.provider != "stripe" or transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Purchase is missing refundable provider metadata.",
+        )
+
+    license_row = await db.scalar(
+        select(License).where(
+            License.transaction_id == transaction.id,
+            License.operator_id == operator_id,
+            License.status == "active",
+        )
+    )
+    if license_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active purchase license not found.",
+        )
+
+    refund_window_hours = await _refund_window_hours(db)
+    if datetime.now(UTC) - transaction.created_at > timedelta(
+        hours=refund_window_hours
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Refund window has expired.",
+        )
+    if await _count_license_downloads(db, license_row.id) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Purchases with artifact downloads cannot be refunded.",
+        )
+    return transaction, license_row
+
+
+async def refund_framework_purchase(
+    db: AsyncSession,
+    operator: User,
+    *,
+    transaction_id: UUID,
+) -> RefundResponse:
+    """Refund an eligible Framework purchase and revoke its License."""
+    operator_id = operator.id
+    transaction, license_row = await _load_refundable_purchase(
+        db=db,
+        operator_id=operator_id,
+        transaction_id=transaction_id,
+    )
+    payment_intent_id = transaction.provider_ref
+    if payment_intent_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Purchase is missing refundable provider metadata.",
+        )
+    amount = _normalise_money(transaction.amount)
+    currency = transaction.currency.upper()
+    license_id = license_row.id
+
+    try:
+        refund = await stripe.create_refund(
+            payment_intent_id=payment_intent_id,
+            amount=amount,
+            currency=currency,
+            idempotency_key=f"refund:{transaction_id}",
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="refund_framework_purchase",
+            user_id=operator_id,
+            transaction_id=transaction_id,
+        ).error("stripe_refund_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        transaction_row = await db.get(Transaction, transaction_id)
+        license_to_revoke = await db.get(License, license_id)
+        if transaction_row is None or license_to_revoke is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase not found.",
+            )
+        transaction_row.status = "refunded"
+        license_to_revoke.status = "revoked"
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="purchase_refunded",
+            target_type="transaction",
+            target_id=transaction_row.id,
+            metadata={
+                "provider": "stripe",
+                "refund_ref": _masked_provider_ref(refund.id),
+                "license_id": str(license_to_revoke.id),
+            },
+        )
+
+    logger.bind(
+        module="financials",
+        action="refund_framework_purchase",
+        user_id=operator_id,
+        transaction_id=transaction_id,
+    ).info("purchase_refunded")
+    return RefundResponse(
+        transaction_id=transaction_id,
+        provider="stripe",
+        refund_id=refund.id,
+        status="refunded",
     )
 
 

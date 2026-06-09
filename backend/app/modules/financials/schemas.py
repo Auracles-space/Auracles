@@ -79,6 +79,15 @@ class PurchaseResponse(BaseModel):
     client_secret: str
 
 
+class RefundResponse(BaseModel):
+    """Response body for a successful self-serve purchase refund."""
+
+    transaction_id: UUID
+    provider: Literal["stripe"]
+    refund_id: str
+    status: Literal["refunded"]
+
+
 class PayoutAccountOnboardRequest(BaseModel):
     """Request body for creating a provider-held payout destination."""
 
