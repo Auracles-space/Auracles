@@ -20,6 +20,8 @@ type AuthenticatedAppShellProps = {
 const appLinks = [
   { href: "/explore", label: "Explore" },
   { href: "/dashboard/frameworks", label: "Frameworks" },
+  { href: "/dashboard/earnings", label: "Earnings" },
+  { href: "/dashboard/payouts", label: "Payouts" },
   { href: "/library", label: "Library" },
   { href: "/settings/account", label: "Settings" },
 ];
@@ -61,7 +63,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
         
         {/* User profile widget at the bottom of the sidebar */}
         <div className="p-4 mt-auto">
-          <button className="flex w-full items-center gap-3 rounded-xl p-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-border-default text-left">
+          <button className="flex w-full items-center gap-3 rounded-xl p-2 hover:bg-black/5 dark:hover:bg-white/5 transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent border border-transparent hover:border-border-default text-left">
             <div className="h-9 w-9 shrink-0 rounded-full bg-surface-3 flex items-center justify-center border border-border-default">
               <svg className="h-4 w-4 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -96,7 +98,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
               />
             </div>
             <ThemeToggle />
-            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted hover:bg-surface-2 transition-colors">
+            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent">
               <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
@@ -112,7 +114,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
               <ThemeToggle />
               {/* Native HTML details/summary for simple zero-JS mobile menu */}
               <details className="group relative">
-                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
+                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
                   <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
@@ -135,7 +137,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                       </Link>
                     ))}
                     <div className="my-2 h-px bg-border-default" />
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted hover:bg-surface-2 hover:text-foreground text-left">
+                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted outline-none transition-all hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent text-left">
                       Sign out
                     </button>
                   </nav>
