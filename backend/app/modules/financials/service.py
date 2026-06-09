@@ -7,6 +7,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import func, select
@@ -14,12 +15,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.integrations import stripe
+from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.financials.invoices import purchase_invoice_key
 from app.modules.financials.models import PayoutAccount, PlatformConfig, Transaction
 from app.modules.financials.schemas import (
+    InvoiceGenerationResponse,
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
     PaymentMethodSetupResponse,
@@ -29,12 +32,17 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
+    PurchaseHistoryItem,
+    PurchaseHistoryResponse,
     PurchaseRequest,
     PurchaseResponse,
     RefundResponse,
 )
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
+from app.workers.tasks.financials import generate_invoice_pdf
+
+INVOICE_URL_TTL_SECONDS = 900
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
@@ -220,6 +228,119 @@ async def list_payment_methods(
             )
             for payment_method in payment_methods
         ]
+    )
+
+
+async def list_framework_purchases(
+    db: AsyncSession,
+    operator: User,
+    *,
+    page: int,
+    page_size: int,
+) -> PurchaseHistoryResponse:
+    """Return the Operator's paginated Framework purchase history."""
+    base_filters = (
+        Transaction.payer_id == operator.id,
+        Transaction.transaction_type == "purchase",
+    )
+    total = int(
+        await db.scalar(
+            select(func.count()).select_from(Transaction).where(*base_filters)
+        )
+        or 0
+    )
+    rows = await db.execute(
+        select(Transaction, Framework, License)
+        .join(Framework, Framework.id == Transaction.ref_id)
+        .outerjoin(License, License.transaction_id == Transaction.id)
+        .where(*base_filters)
+        .order_by(Transaction.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return PurchaseHistoryResponse(
+        items=[
+            PurchaseHistoryItem(
+                transaction_id=transaction.id,
+                framework_id=framework.id,
+                framework_title=framework.title,
+                amount=transaction.amount,
+                currency=transaction.currency,
+                status=transaction.status,
+                provider="stripe",
+                license_id=license_row.id if license_row is not None else None,
+                license_type=(
+                    license_row.license_type if license_row is not None else None
+                ),
+                purchased_at=transaction.created_at,
+            )
+            for transaction, framework, license_row in rows.all()
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+async def _load_operator_purchase(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    transaction_id: UUID,
+) -> Transaction:
+    """Load an Operator-owned Framework purchase transaction."""
+    transaction = await db.scalar(
+        select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.payer_id == operator_id,
+            Transaction.transaction_type == "purchase",
+        )
+    )
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Purchase not found.",
+        )
+    return transaction
+
+
+async def get_framework_purchase_invoice(
+    db: AsyncSession,
+    operator: User,
+    *,
+    transaction_id: UUID,
+) -> Response:
+    """Return a generated invoice URL or queue invoice PDF generation."""
+    transaction = await _load_operator_purchase(
+        db=db,
+        operator_id=operator.id,
+        transaction_id=transaction_id,
+    )
+    if transaction.status not in {"completed", "refunded"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invoice is only available for settled purchases.",
+        )
+
+    key = purchase_invoice_key(transaction_id)
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if s3.storage.object_exists(settings.s3_reports_bucket, key):
+        invoice_url = s3.storage.presigned_get(
+            settings.s3_reports_bucket,
+            key,
+            INVOICE_URL_TTL_SECONDS,
+        )
+        return RedirectResponse(url=invoice_url, status_code=status.HTTP_302_FOUND)
+
+    generate_invoice_pdf.delay(str(transaction_id))
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=InvoiceGenerationResponse(
+            transaction_id=transaction_id,
+            status="generating",
+        ).model_dump(mode="json"),
     )
 
 

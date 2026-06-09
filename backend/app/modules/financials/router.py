@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,7 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
     PayoutAccountsResponse,
+    PurchaseHistoryResponse,
     PurchaseRequest,
     PurchaseResponse,
     RefundResponse,
@@ -59,6 +60,22 @@ async def list_payment_methods(
 ) -> PaymentMethodsResponse:
     """List safe metadata for the Operator's provider-held payment methods."""
     return await service.list_payment_methods(db=db, operator=operator)
+
+
+@router.get("/purchases", response_model=PurchaseHistoryResponse)
+async def list_framework_purchases(
+    operator: OperatorUser,
+    db: DatabaseSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> PurchaseHistoryResponse:
+    """List the authenticated Operator's Framework purchase history."""
+    return await service.list_framework_purchases(
+        db=db,
+        operator=operator,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.delete(
@@ -109,6 +126,20 @@ async def refund_framework_purchase(
 ) -> RefundResponse:
     """Refund an eligible completed Framework purchase for the Operator."""
     return await service.refund_framework_purchase(
+        db=db,
+        operator=operator,
+        transaction_id=transaction_id,
+    )
+
+
+@router.get("/purchases/{transaction_id}/invoice")
+async def get_framework_purchase_invoice(
+    transaction_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> Response:
+    """Redirect to a generated invoice PDF or queue invoice generation."""
+    return await service.get_framework_purchase_invoice(
         db=db,
         operator=operator,
         transaction_id=transaction_id,

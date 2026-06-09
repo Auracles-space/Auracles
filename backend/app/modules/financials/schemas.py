@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -86,6 +87,37 @@ class RefundResponse(BaseModel):
     provider: Literal["stripe"]
     refund_id: str
     status: Literal["refunded"]
+
+
+class PurchaseHistoryItem(BaseModel):
+    """Operator-facing purchase history row."""
+
+    transaction_id: UUID
+    framework_id: UUID
+    framework_title: str
+    amount: Decimal
+    currency: str
+    status: str
+    provider: Literal["stripe"]
+    license_id: UUID | None
+    license_type: str | None
+    purchased_at: datetime
+
+
+class PurchaseHistoryResponse(BaseModel):
+    """Paginated response body for Operator purchase history."""
+
+    items: list[PurchaseHistoryItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class InvoiceGenerationResponse(BaseModel):
+    """Response body returned while invoice PDF generation is queued."""
+
+    transaction_id: UUID
+    status: Literal["generating"]
 
 
 class PayoutAccountOnboardRequest(BaseModel):

@@ -299,6 +299,13 @@ export type HealthResponse = {
 
 export type status4 = 'ok' | 'unhealthy';
 
+export type InvoiceGenerationResponse = {
+    transaction_id: string;
+    status: 'generating';
+};
+
+export type status5 = 'generating';
+
 export type KycDocumentResponse = {
     id: string;
     doc_type: string;
@@ -469,6 +476,26 @@ export type PricingConfig = {
     usage_restrictions?: (string) | null;
 };
 
+export type PurchaseHistoryItem = {
+    transaction_id: string;
+    framework_id: string;
+    framework_title: string;
+    amount: string;
+    currency: string;
+    status: string;
+    provider: 'stripe';
+    license_id: (string) | null;
+    license_type: (string) | null;
+    purchased_at: string;
+};
+
+export type PurchaseHistoryResponse = {
+    items: Array<PurchaseHistoryItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
 export type PurchaseRequest = {
     license_type: 'single_user' | 'team' | 'organizational';
 };
@@ -488,7 +515,7 @@ export type RefundResponse = {
     status: 'refunded';
 };
 
-export type status5 = 'refunded';
+export type status6 = 'refunded';
 
 export type RegisterRequest = {
     email: string;
@@ -568,7 +595,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status6 = 'processed' | 'received' | 'duplicate';
+export type status7 = 'processed' | 'received' | 'duplicate';
 
 export type RegisterUserData = {
     body: RegisterRequest;
@@ -1000,6 +1027,17 @@ export type DeletePayoutAccountResponse = (PayoutAccountDeleteResponse);
 
 export type DeletePayoutAccountError = (unknown);
 
+export type ListFrameworkPurchasesData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type ListFrameworkPurchasesResponse = (PurchaseHistoryResponse);
+
+export type ListFrameworkPurchasesError = (unknown);
+
 export type RefundFrameworkPurchaseData = {
     path: {
         transaction_id: string;
@@ -1009,6 +1047,16 @@ export type RefundFrameworkPurchaseData = {
 export type RefundFrameworkPurchaseResponse = (RefundResponse);
 
 export type RefundFrameworkPurchaseError = (unknown);
+
+export type GetFrameworkPurchaseInvoiceData = {
+    path: {
+        transaction_id: string;
+    };
+};
+
+export type GetFrameworkPurchaseInvoiceResponse = (InvoiceGenerationResponse);
+
+export type GetFrameworkPurchaseInvoiceError = (string | unknown);
 
 export type IngestStripeWebhookData = {
     body: {

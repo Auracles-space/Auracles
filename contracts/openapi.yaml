@@ -1560,6 +1560,42 @@ paths:
           description: Payout account not found.
         "422":
           description: Invalid 2FA code or payload.
+  /v1/financials/purchases:
+    get:
+      tags:
+        - Financials
+      operationId: listFrameworkPurchases
+      summary: List purchase history
+      description: Returns the authenticated Operator's paginated Framework purchase transactions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Purchase history returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseHistoryResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
+        "422":
+          description: Invalid pagination parameters.
   /v1/financials/purchases/{transaction_id}/refund:
     post:
       tags:
@@ -1595,6 +1631,44 @@ paths:
           description: Refund window expired or artifacts have been downloaded.
         "502":
           description: Payment provider unavailable.
+  /v1/financials/purchases/{transaction_id}/invoice:
+    get:
+      tags:
+        - Financials
+      operationId: getFrameworkPurchaseInvoice
+      summary: Get purchase invoice
+      description: Redirects to a short-lived private invoice PDF URL when generated, or queues invoice generation and returns 202.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "302":
+          description: Redirect to a presigned invoice PDF URL.
+          headers:
+            Location:
+              description: Short-lived private invoice PDF URL.
+              schema:
+                type: string
+        "202":
+          description: Invoice generation has been queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceGenerationResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Operator role required.
+        "404":
+          description: Purchase not found for this Operator.
+        "409":
+          description: Invoice is not available for unsettled purchase.
   /v1/webhooks/stripe:
     post:
       tags:
@@ -2188,6 +2262,82 @@ components:
           format: uuid
         deleted:
           type: boolean
+    PurchaseHistoryItem:
+      type: object
+      required:
+        - transaction_id
+        - framework_id
+        - framework_title
+        - amount
+        - currency
+        - status
+        - provider
+        - license_id
+        - license_type
+        - purchased_at
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        framework_title:
+          type: string
+        amount:
+          type: string
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        currency:
+          type: string
+        status:
+          type: string
+        provider:
+          type: string
+          enum:
+            - stripe
+        license_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        license_type:
+          type:
+            - string
+            - "null"
+        purchased_at:
+          type: string
+          format: date-time
+    PurchaseHistoryResponse:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseHistoryItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+    InvoiceGenerationResponse:
+      type: object
+      required:
+        - transaction_id
+        - status
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - generating
     RefundResponse:
       type: object
       required:
