@@ -5,11 +5,17 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
+from redis.asyncio import Redis
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.integrations import stripe
+from app.integrations.stripe import StripeProviderError
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.financials import escrow_service
+from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.workers.tasks.processing.minhash_index import (
     remove_framework_artifacts_from_index,
@@ -211,3 +217,111 @@ async def grant_license(
             },
         )
     return license_row
+
+
+async def _verify_admin_2fa(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    totp_code: str,
+) -> None:
+    """Require a valid admin TOTP or backup code before escrow override."""
+    await auth_service.verify_totp_for_sensitive_action(
+        db=db,
+        redis=redis,
+        user=admin,
+        code=totp_code,
+    )
+    await db.commit()
+
+
+async def release_escrow_override(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    escrow_id: UUID,
+    reason: str,
+    totp_code: str,
+) -> Escrow:
+    """Release held escrow funds through an audited admin override."""
+    admin_id = admin.id
+    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        escrow = await escrow_service.release(
+            db,
+            escrow_id=escrow_id,
+            actor_id=admin_id,
+            reason=reason,
+            admin_override=True,
+        )
+    return escrow
+
+
+async def refund_escrow_override(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    escrow_id: UUID,
+    reason: str,
+    totp_code: str,
+) -> Escrow:
+    """Refund held escrow funds through an audited admin override."""
+    admin_id = admin.id
+    await _verify_admin_2fa(db=db, redis=redis, admin=admin, totp_code=totp_code)
+
+    escrow = await db.get(Escrow, escrow_id)
+    if escrow is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Escrow not found.",
+        )
+    if escrow.status == "refunded":
+        return escrow
+    if escrow.status == "released":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Released escrow cannot be refunded.",
+        )
+    transaction = await db.get(Transaction, escrow.transaction_id)
+    if transaction is None or transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Escrow funding transaction is missing provider metadata.",
+        )
+    if transaction.provider != "stripe":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unsupported escrow payment provider.",
+        )
+    try:
+        await stripe.create_refund(
+            payment_intent_id=transaction.provider_ref,
+            amount=transaction.amount,
+            currency=transaction.currency,
+            idempotency_key=f"escrow_refund:{escrow_id}",
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="admin",
+            action="refund_escrow_override",
+            user_id=admin_id,
+            escrow_id=escrow_id,
+        ).error("stripe_escrow_refund_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        escrow = await escrow_service.refund(
+            db,
+            escrow_id=escrow_id,
+            actor_id=admin_id,
+            reason=reason,
+            admin_override=True,
+        )
+    return escrow

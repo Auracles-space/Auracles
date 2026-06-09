@@ -8,6 +8,7 @@ then dispatched to small handlers that update local financial state.
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.financials import escrow_service
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.webhooks.models import WebhookEvent
@@ -86,6 +88,24 @@ def _license_seats_total(license_type: str) -> int | None:
     if license_type == "team":
         return 10
     return None
+
+
+def _escrow_release_conditions(event: dict[str, Any]) -> dict[str, Any]:
+    """Parse optional escrow release conditions from Stripe metadata."""
+    raw_conditions = _event_metadata(event).get("release_conditions")
+    if raw_conditions is None:
+        return {}
+    try:
+        parsed = json.loads(raw_conditions)
+    except json.JSONDecodeError as exc:
+        raise WebhookProcessingError(
+            "escrow event release_conditions is invalid JSON"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise WebhookProcessingError(
+            "escrow event release_conditions must be an object"
+        )
+    return parsed
 
 
 async def _audit_invalid_signature(db: AsyncSession) -> None:
@@ -253,6 +273,27 @@ async def _handle_purchase_failed(
     )
 
 
+async def _handle_escrow_succeeded(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Mark an escrow funding transaction complete and hold its funds."""
+    transaction_id = _purchase_transaction_id(event)
+    payment_intent_id = _event_object_id(event)
+    transaction = await db.get(Transaction, transaction_id)
+    if transaction is None:
+        raise WebhookProcessingError("escrow transaction not found")
+    if transaction.provider != "stripe":
+        raise WebhookProcessingError("escrow transaction provider mismatch")
+    if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
+        raise WebhookProcessingError("payment intent id mismatch")
+    await escrow_service.hold(
+        db,
+        transaction_id=transaction_id,
+        release_conditions=_escrow_release_conditions(event),
+    )
+
+
 async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> None:
     """Mark a payout account verified when Stripe Connect enables it."""
     event_object = _event_object(event)
@@ -326,9 +367,7 @@ async def _dispatch_verified_event(
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", invoice_transaction_id
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "escrow":
-        logger.bind(module="webhooks", action="stripe_escrow_stub").info(
-            "escrow_funding_deferred"
-        )
+        await _handle_escrow_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None
     if event_type == "payment_intent.payment_failed":

@@ -426,6 +426,84 @@ paths:
           description: Operator already has a license for this Framework.
         "422":
           description: Invalid license grant payload.
+  /v1/admin/escrows/{escrow_id}/release:
+    post:
+      tags:
+        - Admin
+      operationId: releaseEscrow
+      summary: Release held escrow
+      description: Admin-only override endpoint for releasing held escrow funds after 2FA confirmation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: escrow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminEscrowOverrideRequest"
+      responses:
+        "200":
+          description: Escrow released or already released.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEscrowResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role or enabled 2FA required.
+        "404":
+          description: Escrow not found.
+        "409":
+          description: Refunded escrow cannot be released.
+        "422":
+          description: Invalid payload or 2FA code.
+  /v1/admin/escrows/{escrow_id}/refund:
+    post:
+      tags:
+        - Admin
+      operationId: refundEscrow
+      summary: Refund held escrow
+      description: Admin-only override endpoint for refunding held escrow funds after 2FA confirmation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: escrow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminEscrowOverrideRequest"
+      responses:
+        "200":
+          description: Escrow refunded or already refunded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEscrowResponse"
+        "401":
+          description: Missing or invalid access token.
+        "403":
+          description: Admin role or enabled 2FA required.
+        "404":
+          description: Escrow not found.
+        "409":
+          description: Released escrow cannot be refunded.
+        "422":
+          description: Invalid payload or 2FA code.
   /v1/auth/verify-email:
     post:
       tags:
@@ -2642,6 +2720,63 @@ components:
             - string
             - "null"
           format: date-time
+    AdminEscrowOverrideRequest:
+      type: object
+      required:
+        - reason
+        - totp_code
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+    AdminEscrowResponse:
+      type: object
+      required:
+        - escrow_id
+        - transaction_id
+        - ref_id
+        - ref_type
+        - amount
+        - currency
+        - status
+        - released_at
+        - released_by
+      properties:
+        escrow_id:
+          type: string
+          format: uuid
+        transaction_id:
+          type: string
+          format: uuid
+        ref_id:
+          type: string
+          format: uuid
+        ref_type:
+          type: string
+        amount:
+          type: string
+        currency:
+          type: string
+        status:
+          type: string
+          enum:
+            - held
+            - released
+            - refunded
+        released_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        released_by:
+          type:
+            - string
+            - "null"
+          format: uuid
     KycUploadUrlRequest:
       type: object
       required:

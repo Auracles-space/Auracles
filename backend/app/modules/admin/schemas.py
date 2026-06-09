@@ -72,3 +72,24 @@ class AdminLicenseGrantResponse(BaseModel):
     seats_used: int
     seats_total: int | None
     expires_at: datetime | None
+
+
+class AdminEscrowOverrideRequest(BaseModel):
+    """Request body for admin escrow release or refund overrides."""
+
+    reason: str = Field(min_length=1)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminEscrowResponse(BaseModel):
+    """Response body for admin escrow state changes."""
+
+    escrow_id: UUID
+    transaction_id: UUID
+    ref_id: UUID
+    ref_type: str
+    amount: str
+    currency: str
+    status: str
+    released_at: datetime | None
+    released_by: UUID | None

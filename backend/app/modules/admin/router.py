@@ -4,12 +4,16 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
+from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminEscrowOverrideRequest,
+    AdminEscrowResponse,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
     AdminKycReviewRequest,
@@ -20,10 +24,27 @@ from app.modules.admin.schemas import (
     AdminRoleAssignmentResponse,
 )
 from app.modules.auth.models import User
+from app.modules.financials.models import Escrow
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+RedisClient = Annotated[Redis, Depends(get_redis)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+
+
+def _escrow_response(escrow: Escrow) -> AdminEscrowResponse:
+    """Map an escrow model to an admin response schema."""
+    return AdminEscrowResponse(
+        escrow_id=escrow.id,
+        transaction_id=escrow.transaction_id,
+        ref_id=escrow.ref_id,
+        ref_type=escrow.ref_type,
+        amount=str(escrow.amount),
+        currency=escrow.currency,
+        status=escrow.status,
+        released_at=escrow.released_at,
+        released_by=escrow.released_by,
+    )
 
 
 @router.patch("/users/{user_id}/roles", response_model=AdminRoleAssignmentResponse)
@@ -124,3 +145,49 @@ async def grant_license(
         seats_total=license_row.seats_total,
         expires_at=license_row.expires_at,
     )
+
+
+@router.post(
+    "/escrows/{escrow_id}/release",
+    response_model=AdminEscrowResponse,
+)
+async def release_escrow(
+    escrow_id: UUID,
+    payload: AdminEscrowOverrideRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminEscrowResponse:
+    """Release held escrow funds through an audited admin override."""
+    escrow = await service.release_escrow_override(
+        db=db,
+        redis=redis,
+        admin=admin,
+        escrow_id=escrow_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return _escrow_response(escrow)
+
+
+@router.post(
+    "/escrows/{escrow_id}/refund",
+    response_model=AdminEscrowResponse,
+)
+async def refund_escrow(
+    escrow_id: UUID,
+    payload: AdminEscrowOverrideRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminEscrowResponse:
+    """Refund held escrow funds through an audited admin override."""
+    escrow = await service.refund_escrow_override(
+        db=db,
+        redis=redis,
+        admin=admin,
+        escrow_id=escrow_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return _escrow_response(escrow)

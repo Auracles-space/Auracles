@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 from app.core.database import async_session_factory, engine
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Transaction
+from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
@@ -39,6 +39,7 @@ async def reset_webhook_state() -> None:
     async with async_session_factory() as session:
         await session.execute(delete(WebhookEvent))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(Escrow))
         await session.execute(delete(License))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
@@ -165,6 +166,38 @@ async def create_pending_purchase() -> tuple[UUID, UUID, UUID, UUID]:
             return transaction.id, framework.id, operator_id, contributor_id
 
 
+async def create_pending_escrow_transaction() -> tuple[UUID, UUID, UUID]:
+    """Create a pending milestone funding transaction for escrow webhook tests."""
+    operator_id = await create_user_with_roles(
+        "escrow-operator@auracles.space",
+        ["operator"],
+    )
+    contributor_id = await create_user_with_roles(
+        "escrow-contributor@auracles.space",
+        ["contributor"],
+    )
+    milestone_id = UUID("00000000-0000-4000-8000-000000000001")
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("1250.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("1250.00"),
+                transaction_type="milestone",
+                status="pending",
+                provider="stripe",
+                provider_ref="pi_escrow_123",
+                ref_id=milestone_id,
+                ref_type="project_milestone",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id, milestone_id, operator_id
+
+
 def payment_intent_event(
     event_id: str,
     event_type: str,
@@ -172,20 +205,26 @@ def payment_intent_event(
     transaction_id: UUID,
     framework_id: UUID,
     license_type: str = "team",
+    kind: str = "purchase",
+    provider_ref: str = "pi_webhook_123",
+    extra_metadata: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Build a Stripe PaymentIntent event payload for purchase tests."""
+    """Build a Stripe PaymentIntent event payload for financial webhook tests."""
+    metadata = {
+        "transaction_id": str(transaction_id),
+        "kind": kind,
+        "framework_id": str(framework_id),
+        "license_type": license_type,
+    }
+    if extra_metadata:
+        metadata.update(extra_metadata)
     return {
         "id": event_id,
         "type": event_type,
         "data": {
             "object": {
-                "id": "pi_webhook_123",
-                "metadata": {
-                    "transaction_id": str(transaction_id),
-                    "kind": "purchase",
-                    "framework_id": str(framework_id),
-                    "license_type": license_type,
-                },
+                "id": provider_ref,
+                "metadata": metadata,
             }
         },
     }
@@ -245,6 +284,62 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert audit.target_id == transaction_id
     invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
     assert invoice_task.dispatched == [str(transaction_id)]
+
+
+async def test_stripe_payment_intent_success_funds_escrow_once(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A verified escrow webhook creates one held escrow ledger row."""
+    transaction_id, milestone_id, operator_id = (
+        await create_pending_escrow_transaction()
+    )
+    webhook_context["event"] = payment_intent_event(
+        "evt_escrow_success",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=milestone_id,
+        kind="escrow",
+        provider_ref="pi_escrow_123",
+        extra_metadata={
+            "release_conditions": (
+                '{"kind":"project_milestone","required_event":"operator_approval"}'
+            )
+        },
+    )
+
+    first = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+    replay = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrows = (await session.execute(select(Escrow))).scalars().all()
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "escrow_funded")
+        )
+
+    assert first.status_code == 200
+    assert first.json() == {"received": True, "status": "processed"}
+    assert replay.status_code == 200
+    assert replay.json() == {"received": True, "status": "duplicate"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert len(escrows) == 1
+    assert escrows[0].ref_id == milestone_id
+    assert escrows[0].ref_type == "project_milestone"
+    assert escrows[0].transaction_id == transaction_id
+    assert escrows[0].status == "held"
+    assert escrows[0].release_conditions["required_event"] == "operator_approval"
+    assert audit is not None
+    assert audit.actor_id == operator_id
 
 
 async def test_stripe_webhook_rejects_bad_signature_before_event_storage(

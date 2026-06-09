@@ -11,6 +11,25 @@ export type AddRoleRequest = {
 
 export type role = 'contributor' | 'operator' | 'attestor';
 
+export type AdminEscrowOverrideRequest = {
+    reason: string;
+    totp_code: string;
+};
+
+export type AdminEscrowResponse = {
+    escrow_id: string;
+    transaction_id: string;
+    ref_id: string;
+    ref_type: string;
+    amount: string;
+    currency: string;
+    status: 'held' | 'released' | 'refunded';
+    released_at: (string) | null;
+    released_by: (string) | null;
+};
+
+export type status = 'held' | 'released' | 'refunded';
+
 export type AdminFrameworkStatusResponse = {
     framework_id: string;
     status: string;
@@ -26,7 +45,7 @@ export type AdminKycReviewRequest = {
     notes?: (string) | null;
 };
 
-export type status = 'verified' | 'rejected';
+export type status2 = 'verified' | 'rejected';
 
 export type AdminKycReviewResponse = {
     user_id: string;
@@ -132,7 +151,7 @@ export type ComponentHealth = {
     detail?: (string) | null;
 };
 
-export type status2 = 'ok' | 'unavailable';
+export type status3 = 'ok' | 'unavailable';
 
 export type CurrentUserResponse = {
     id: string;
@@ -261,7 +280,7 @@ export type FrameworkResponse = {
     published_at: (string) | null;
 };
 
-export type status3 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status4 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 export type FrameworkSector = 'private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology';
 
@@ -297,14 +316,14 @@ export type HealthResponse = {
     };
 };
 
-export type status4 = 'ok' | 'unhealthy';
+export type status5 = 'ok' | 'unhealthy';
 
 export type InvoiceGenerationResponse = {
     transaction_id: string;
     status: 'generating';
 };
 
-export type status5 = 'generating';
+export type status6 = 'generating';
 
 export type KycDocumentResponse = {
     id: string;
@@ -515,7 +534,7 @@ export type RefundResponse = {
     status: 'refunded';
 };
 
-export type status6 = 'refunded';
+export type status7 = 'refunded';
 
 export type RegisterRequest = {
     email: string;
@@ -595,7 +614,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status7 = 'processed' | 'received' | 'duplicate';
+export type status8 = 'processed' | 'received' | 'duplicate';
 
 export type RegisterUserData = {
     body: RegisterRequest;
@@ -701,6 +720,28 @@ export type GrantLicenseData = {
 export type GrantLicenseResponse = (AdminLicenseGrantResponse);
 
 export type GrantLicenseError = (unknown);
+
+export type ReleaseEscrowData = {
+    body: AdminEscrowOverrideRequest;
+    path: {
+        escrow_id: string;
+    };
+};
+
+export type ReleaseEscrowResponse = (AdminEscrowResponse);
+
+export type ReleaseEscrowError = (unknown);
+
+export type RefundEscrowData = {
+    body: AdminEscrowOverrideRequest;
+    path: {
+        escrow_id: string;
+    };
+};
+
+export type RefundEscrowResponse = (AdminEscrowResponse);
+
+export type RefundEscrowError = (unknown);
 
 export type VerifyEmailData = {
     body: VerifyEmailRequest;
