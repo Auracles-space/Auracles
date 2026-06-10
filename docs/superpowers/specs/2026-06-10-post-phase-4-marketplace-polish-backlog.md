@@ -117,3 +117,74 @@ so Explore trust signals do not stay permanently shimmed.
 - Low nearest-match rating does not auto-pass rarity.
 - Acknowledgement persists differentiation note and unblocks only allowed
   rarity failures.
+
+## Slice 3 — Public Contributor Profiles With Attestation Badges
+
+**Maps to:** FR-ATT-011, FR-ATT-008, FR-EXP-006.
+
+### Product behavior
+
+- Public Explore exposes a Contributor profile page at
+  `/explore/contributors/{id}`.
+- Framework cards and Framework detail pages link the Contributor name to that
+  profile when `contributor_id` and `contributor_name` are available.
+- The profile shows only public identity/profile fields, published Frameworks,
+  and public trust signals. It must not expose email, KYC status, private role
+  metadata, payout state, or private evidence files.
+- Contributor-target Attestations show as the same public badge pattern used by
+  Framework badges:
+  - `report_submitted` → `pending_acceptance`
+  - `closed` → `attested`
+- Public report links remain labelled `pending_acceptance` until the Attestation
+  closes, so the UI does not overstate trust before release/closure.
+
+### Backend scope
+
+- Add `GET /v1/explore/contributors/{contributor_id}`.
+- Response includes:
+  - `id`
+  - `display_name`
+  - `avatar_url`
+  - `bio`
+  - `location`
+  - `website`
+  - `attestation_badge`
+  - `published_framework_count`
+  - `published_frameworks`
+- Extend Explore Framework card/detail responses with `contributor_id` and
+  `contributor_name`.
+- Reuse the existing public badge criteria:
+  - `target_type = "contributor"`
+  - `outcome IS NOT NULL`
+  - `report_key IS NOT NULL`
+  - `status IN ("report_submitted", "closed")`
+- Return only published Frameworks on the profile.
+- Keep this as a public read endpoint; no KYC/profile gate.
+
+### Frontend scope
+
+- Add public route `/explore/contributors/[id]`.
+- Render public identity fields, Contributor Attestation badge, and published
+  Framework cards.
+- Link contributor name from Framework cards and detail pages to the profile.
+- Reuse the existing `AttestationBadge` component and Explore card pattern.
+- Do not redesign the existing Explore layout in this slice.
+
+### Tests
+
+- Public contributor profile returns public fields, badge, and only published
+  Frameworks.
+- Response does not include email, KYC status, payout details, or private
+  evidence keys.
+- Contributor badge maps `report_submitted` to `pending_acceptance` and `closed`
+  to `attested`.
+- Framework card/detail responses include contributor id/name.
+- Frontend profile page renders badge and published Frameworks.
+- Framework cards/detail link to `/explore/contributors/{id}`.
+
+### Out of scope
+
+- Private profile editing.
+- Contributor reputation scoring.
+- Organization membership/affiliation display.
+- Public credential gallery beyond attested credential badges.

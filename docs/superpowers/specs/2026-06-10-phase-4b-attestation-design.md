@@ -231,7 +231,7 @@ backend/app/workers/tasks/
 8. Release flow — requestor accept-report + `auto_release_attestations` Beat + status `released→closed` + **earnings `_sum_transactions` attestation_fee arm**. Tests assert attestor balance credited.
 9. Attestation disputes + admin resolve — raise (≤14d), `escalate_attestation_disputes` Beat, admin resolve release/refund/split then close (reuse EscrowService), admin manual assign/refund for needs_admin. 2FA-gated.
 10. Reputation events + notifications wiring — emit attestation-outcome events/audit (scoring deferred Phase 5); wire in-app + email + realtime for all attestation events.
-11. Explore badges (FR-ATT-011) — attestation badge + outcome on framework cards/detail + contributor profile; filter by attestation status (FR-EXP-004).
+11. Explore badges (FR-ATT-011) — attestation badge + outcome on framework cards/detail + contributor profile; filter by attestation status (FR-EXP-004). Contributor public profile surfacing is deferred to the post-Phase-4 marketplace polish backlog Slice 3 so it lands as a focused public-profile slice instead of being mixed into Slice 12.
 12. OpenAPI sync + FE + E2E — attestor dashboard (applications, assignments, accept/decline, report form), requestor (request, view report, dispute, accept-report), credentials UI, admin (review, resolve, manual assign), badges. `attestation.spec.ts` E2E full flow against Stripe test mode.
 
 ## Risk flags
