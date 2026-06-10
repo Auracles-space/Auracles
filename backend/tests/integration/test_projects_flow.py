@@ -20,7 +20,13 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.projects import milestone_service
-from app.modules.projects.models import Milestone, Project, Proposal, ProposalAmendment
+from app.modules.projects.models import (
+    Deliverable,
+    Milestone,
+    Project,
+    Proposal,
+    ProposalAmendment,
+)
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 
@@ -67,6 +73,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
+            await session.execute(delete(Deliverable))
             await session.execute(delete(Milestone))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
@@ -573,3 +580,185 @@ async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     assert payment_intent["metadata"]["transaction_id"] == str(transaction.id)
     assert payment_intent["metadata"]["project_id"] == project_id
     assert payment_intent["metadata"]["milestone_id"] == milestone_id
+
+
+async def create_funded_project_milestone(
+    client: AsyncClient,
+    *,
+    operator_headers: dict[str, str],
+    contributor_headers: dict[str, str],
+    operator_id: UUID,
+    contributor_id: UUID,
+) -> tuple[str, str]:
+    """Create a Project with one funded Milestone for deliverable tests."""
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    milestone = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+    milestone_id = milestone.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("1500.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("1500.00"),
+                transaction_type="milestone",
+                status="completed",
+                provider="stripe",
+                provider_ref="pi_deliverable_123",
+                ref_id=UUID(milestone_id),
+                ref_type="project_milestone",
+            )
+            session.add(transaction)
+            await session.flush()
+            escrow = Escrow(
+                ref_id=UUID(milestone_id),
+                ref_type="project_milestone",
+                amount=Decimal("1500.00"),
+                currency="USD",
+                status="held",
+                release_conditions={
+                    "kind": "project_milestone",
+                    "milestone_id": milestone_id,
+                    "project_id": project_id,
+                    "approver_user_id": str(operator_id),
+                },
+                transaction_id=transaction.id,
+            )
+            session.add(escrow)
+            await session.flush()
+            stored_project = await session.get(Project, UUID(project_id))
+            stored_milestone = await session.get(Milestone, UUID(milestone_id))
+            assert stored_project is not None
+            assert stored_milestone is not None
+            stored_project.status = "in_progress"
+            stored_milestone.status = "funded"
+            stored_milestone.funded_at = datetime.now(UTC)
+            stored_milestone.escrow_id = escrow.id
+    return project_id, milestone_id
+
+
+async def test_deliverable_revision_approval_and_manual_project_close(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Contributor submits deliverables; Operator approves and closes Project."""
+    operator_id = await create_user("deliverable-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "deliverable-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+
+    first_submission = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Draft playbook",
+            "description": "Initial implementation playbook.",
+            "file_keys": ["workspace/project/draft.pdf"],
+        },
+    )
+    first_deliverable_id = first_submission.json()["id"]
+    revision = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{first_deliverable_id}/request-revision",
+        headers=operator_headers,
+        json={"revision_notes": "Add rollout risks and KPI ownership."},
+    )
+    second_submission = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Final playbook",
+            "description": "Updated implementation playbook.",
+            "file_keys": ["workspace/project/final.pdf"],
+        },
+    )
+    second_deliverable_id = second_submission.json()["id"]
+    approved = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{second_deliverable_id}/approve",
+        headers=operator_headers,
+    )
+    closed = await client.post(
+        f"/v1/projects/{project_id}/close",
+        headers=operator_headers,
+    )
+
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(project_id))
+        milestone = await session.get(Milestone, UUID(milestone_id))
+        escrow = await session.scalar(select(Escrow))
+        messages = (
+            (
+                await session.execute(
+                    select(WorkspaceMessage)
+                    .where(WorkspaceMessage.project_id == UUID(project_id))
+                    .order_by(WorkspaceMessage.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert first_submission.status_code == 201
+    assert first_submission.json()["status"] == "submitted"
+    assert revision.status_code == 200
+    assert revision.json()["status"] == "revision_requested"
+    assert second_submission.status_code == 201
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "closed"
+    assert project is not None
+    assert project.closed_at is not None
+    assert milestone is not None
+    assert milestone.status == "approved"
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert [message.system_event for message in messages] == [
+        "deliverable_submitted",
+        "deliverable_revision_requested",
+        "deliverable_submitted",
+        "deliverable_approved",
+    ]

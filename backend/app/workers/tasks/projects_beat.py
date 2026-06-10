@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from loguru import logger
@@ -10,7 +10,16 @@ from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
-from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.financials import escrow_service
+from app.modules.financials.models import Escrow
+from app.modules.projects.models import (
+    Deliverable,
+    Dispute,
+    Milestone,
+    Project,
+    Proposal,
+    ProposalAmendment,
+)
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
@@ -155,6 +164,153 @@ async def _expire_pending_amendments() -> int:
     return expired_count
 
 
+async def _maybe_mark_project_delivered(
+    *,
+    db: Any,
+    project: Project,
+    now: datetime,
+) -> None:
+    """Mark Project delivered when every Milestone is terminally complete."""
+    active_count = await db.scalar(
+        select(Milestone.id)
+        .where(
+            Milestone.project_id == project.id,
+            Milestone.status.notin_(("approved", "auto_approved", "cancelled")),
+        )
+        .limit(1)
+    )
+    if active_count is None:
+        project.status = "delivered"
+        project.delivered_at = project.delivered_at or now
+
+
+async def _auto_approve_deliverables() -> int:
+    """Auto-approve submitted Deliverables left idle past fourteen days."""
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=14)
+    auto_approved_count = 0
+    async with async_session_factory() as db:
+        async with db.begin():
+            rows = (
+                await db.execute(
+                    select(Deliverable, Milestone, Project)
+                    .join(Milestone, Milestone.id == Deliverable.milestone_id)
+                    .join(Project, Project.id == Milestone.project_id)
+                    .where(
+                        Deliverable.status == "submitted",
+                        Deliverable.submitted_at < cutoff,
+                        Milestone.status.notin_(
+                            (
+                                "disputed",
+                                "revision_requested",
+                                "auto_approved",
+                                "approved",
+                            )
+                        ),
+                    )
+                    .with_for_update()
+                )
+            ).all()
+            for deliverable, milestone, project in rows:
+                active_dispute_id = await db.scalar(
+                    select(Dispute.id)
+                    .where(
+                        Dispute.milestone_id == milestone.id,
+                        Dispute.status.in_(("open", "under_review")),
+                    )
+                    .limit(1)
+                )
+                if active_dispute_id is not None or milestone.escrow_id is None:
+                    continue
+                await db.scalar(
+                    select(Escrow)
+                    .where(Escrow.id == milestone.escrow_id)
+                    .with_for_update()
+                )
+                await escrow_service.release(
+                    db,
+                    escrow_id=milestone.escrow_id,
+                    actor_id=project.operator_id,
+                    reason="deliverable_auto_approved",
+                )
+                deliverable.status = "auto_approved"
+                deliverable.auto_approved = True
+                deliverable.approved_at = now
+                milestone.status = "auto_approved"
+                milestone.approved_at = now
+                await _maybe_mark_project_delivered(db=db, project=project, now=now)
+                db.add(
+                    WorkspaceMessage(
+                        project_id=project.id,
+                        sender_id=None,
+                        system_event="deliverable_auto_approved",
+                        system_payload={
+                            "milestone_id": str(milestone.id),
+                            "deliverable_id": str(deliverable.id),
+                        },
+                    )
+                )
+                auto_approved_count += 1
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="deliverable_auto_approved",
+                    target_type="deliverable",
+                    target_id=deliverable.id,
+                    metadata={
+                        "project_id": str(project.id),
+                        "milestone_id": str(milestone.id),
+                    },
+                )
+    return auto_approved_count
+
+
+async def _auto_close_delivered_projects() -> int:
+    """Archive delivered Projects after the seven-day operational delay."""
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=7)
+    closed_count = 0
+    async with async_session_factory() as db:
+        async with db.begin():
+            projects = (
+                (
+                    await db.execute(
+                        select(Project)
+                        .where(
+                            Project.status == "delivered",
+                            Project.delivered_at < cutoff,
+                        )
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for project in projects:
+                active_dispute_id = await db.scalar(
+                    select(Dispute.id)
+                    .where(
+                        Dispute.project_id == project.id,
+                        Dispute.status.in_(("open", "under_review")),
+                    )
+                    .limit(1)
+                )
+                if active_dispute_id is not None:
+                    continue
+                project.status = "closed"
+                project.closed_at = now
+                closed_count += 1
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="project_closed",
+                    target_type="project",
+                    target_id=project.id,
+                    metadata={"reason": "delivered_project_archive_delay_elapsed"},
+                )
+    return closed_count
+
+
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def expire_open_proposals(self: Any) -> dict[str, int]:
     """Withdraw pending Proposals attached to closed Projects."""
@@ -195,5 +351,35 @@ def expire_pending_amendments(self: Any) -> dict[str, int]:
     log.info("task_started")
     expired_count = run_async(_expire_pending_amendments())
     result = {"expired_count": expired_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def auto_approve_deliverables(self: Any) -> dict[str, int]:
+    """Auto-approve overdue submitted Deliverables and release escrow."""
+    log = logger.bind(
+        module="projects",
+        action="auto_approve_deliverables",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    auto_approved_count = run_async(_auto_approve_deliverables())
+    result = {"auto_approved_count": auto_approved_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def auto_close_delivered_projects(self: Any) -> dict[str, int]:
+    """Close delivered Projects after their archive delay expires."""
+    log = logger.bind(
+        module="projects",
+        action="auto_close_delivered_projects",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    closed_count = run_async(_auto_close_delivered_projects())
+    result = {"closed_count": closed_count}
     log.info("task_completed", result=result)
     return result

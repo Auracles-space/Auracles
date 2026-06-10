@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,19 +17,44 @@ from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
-from app.modules.financials.models import Transaction
-from app.modules.projects.models import Milestone, Project, Proposal
+from app.modules.financials import escrow_service
+from app.modules.financials.models import Escrow, Transaction
+from app.modules.projects.models import (
+    Deliverable,
+    Dispute,
+    Milestone,
+    Project,
+    Proposal,
+)
 from app.modules.projects.schemas import (
+    DeliverableRevisionRequest,
+    DeliverableSubmitRequest,
     MilestoneCreateRequest,
     MilestoneFundingResponse,
     MilestonesResponse,
     MilestoneUpdateRequest,
 )
+from app.modules.workspace.models import WorkspaceMessage
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for persisted funding records."""
     return amount.quantize(Decimal("0.01"))
+
+
+def _workspace_system_message(
+    *,
+    project_id: UUID,
+    system_event: str,
+    payload: dict[str, Any],
+) -> WorkspaceMessage:
+    """Build a workspace system message for Project collaboration history."""
+    return WorkspaceMessage(
+        project_id=project_id,
+        sender_id=None,
+        system_event=system_event,
+        system_payload=payload,
+    )
 
 
 async def _load_project_with_accepted_proposal(
@@ -151,6 +178,80 @@ async def _load_project_milestone_for_funding(
         milestone_id=milestone_id,
     )
     return project, proposal, milestone
+
+
+async def _load_project_milestone_for_workspace_action(
+    *,
+    db: AsyncSession,
+    project_id: UUID,
+    milestone_id: UUID,
+    lock_project: bool = True,
+    lock_milestone: bool = True,
+) -> tuple[Project, Proposal, Milestone]:
+    """Load accepted Project workspace rows for deliverable state changes."""
+    project, proposal = await _load_project_with_accepted_proposal(
+        db=db,
+        project_id=project_id,
+        lock_project=lock_project,
+        lock_proposal=True,
+    )
+    milestone_query = select(Milestone).where(
+        Milestone.id == milestone_id,
+        Milestone.project_id == project.id,
+    )
+    if lock_milestone:
+        milestone_query = milestone_query.with_for_update()
+    milestone = await db.scalar(milestone_query)
+    if milestone is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Milestone not found.",
+        )
+    return project, proposal, milestone
+
+
+async def _load_deliverable_for_update(
+    *,
+    db: AsyncSession,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+) -> Deliverable:
+    """Load a Deliverable under lock or raise a typed HTTP error."""
+    deliverable = await db.scalar(
+        select(Deliverable)
+        .where(
+            Deliverable.id == deliverable_id,
+            Deliverable.milestone_id == milestone_id,
+        )
+        .with_for_update()
+    )
+    if deliverable is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deliverable not found.",
+        )
+    return deliverable
+
+
+async def _maybe_mark_project_delivered(
+    db: AsyncSession,
+    *,
+    project: Project,
+    now: datetime,
+) -> None:
+    """Mark Project delivered when every Milestone is terminally complete."""
+    active_count = await db.scalar(
+        select(func.count(Milestone.id)).where(
+            Milestone.project_id == project.id,
+            Milestone.status.notin_(("approved", "auto_approved", "cancelled")),
+        )
+    )
+    total_count = await db.scalar(
+        select(func.count(Milestone.id)).where(Milestone.project_id == project.id)
+    )
+    if int(total_count or 0) > 0 and int(active_count or 0) == 0:
+        project.status = "delivered"
+        project.delivered_at = project.delivered_at or now
 
 
 async def _ensure_sequence_available(
@@ -642,3 +743,266 @@ async def fund_milestone(
         provider="stripe",
         client_secret=payment_intent.client_secret,
     )
+
+
+async def submit_deliverable(
+    *,
+    db: AsyncSession,
+    contributor: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    payload: DeliverableSubmitRequest,
+) -> Deliverable:
+    """Submit a Deliverable against a funded or revision-requested Milestone."""
+    contributor_id = contributor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    async with db.begin():
+        (
+            project,
+            proposal,
+            milestone,
+        ) = await _load_project_milestone_for_workspace_action(
+            db=db,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
+        _ensure_accepted_contributor(proposal, contributor_id)
+        if milestone.status not in {"funded", "revision_requested"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Deliverables can only be submitted for funded Milestones.",
+            )
+        deliverable = Deliverable(
+            milestone_id=milestone.id,
+            contributor_id=contributor_id,
+            name=payload.name,
+            description=payload.description,
+            file_keys=payload.file_keys,
+            status="submitted",
+            submitted_at=now,
+        )
+        db.add(deliverable)
+        await db.flush()
+        milestone.status = "submitted"
+        milestone.submitted_at = now
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="deliverable_submitted",
+                payload={
+                    "milestone_id": str(milestone.id),
+                    "deliverable_id": str(deliverable.id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=contributor_id,
+            action="deliverable_submitted",
+            target_type="deliverable",
+            target_id=deliverable.id,
+            metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
+        )
+        await db.flush()
+        await db.refresh(deliverable)
+    return deliverable
+
+
+async def request_deliverable_revision(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    payload: DeliverableRevisionRequest,
+) -> Deliverable:
+    """Request revision on a submitted Deliverable as Project Operator."""
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, _, milestone = await _load_project_milestone_for_workspace_action(
+            db=db,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
+        if project.operator_id != operator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the Project Operator can request revisions.",
+            )
+        if milestone.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted Milestones can be sent for revision.",
+            )
+        deliverable = await _load_deliverable_for_update(
+            db=db,
+            milestone_id=milestone.id,
+            deliverable_id=deliverable_id,
+        )
+        if deliverable.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted Deliverables can be sent for revision.",
+            )
+        deliverable.status = "revision_requested"
+        deliverable.revision_notes = payload.revision_notes
+        milestone.status = "revision_requested"
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="deliverable_revision_requested",
+                payload={
+                    "milestone_id": str(milestone.id),
+                    "deliverable_id": str(deliverable.id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="deliverable_revision_requested",
+            target_type="deliverable",
+            target_id=deliverable.id,
+            metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
+        )
+        await db.flush()
+        await db.refresh(deliverable)
+    return deliverable
+
+
+async def approve_deliverable(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+) -> Deliverable:
+    """Approve a submitted Deliverable and release its Milestone escrow."""
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    async with db.begin():
+        project, _, milestone = await _load_project_milestone_for_workspace_action(
+            db=db,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
+        if project.operator_id != operator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the Project Operator can approve Deliverables.",
+            )
+        if milestone.status != "submitted" or milestone.escrow_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted escrow-backed Milestones can be approved.",
+            )
+        deliverable = await _load_deliverable_for_update(
+            db=db,
+            milestone_id=milestone.id,
+            deliverable_id=deliverable_id,
+        )
+        if deliverable.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted Deliverables can be approved.",
+            )
+        await db.scalar(
+            select(Escrow).where(Escrow.id == milestone.escrow_id).with_for_update()
+        )
+        await escrow_service.release(
+            db,
+            escrow_id=milestone.escrow_id,
+            actor_id=operator_id,
+            reason="deliverable_approved",
+        )
+        deliverable.status = "approved"
+        deliverable.approved_at = now
+        milestone.status = "approved"
+        milestone.approved_at = now
+        await _maybe_mark_project_delivered(db, project=project, now=now)
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="deliverable_approved",
+                payload={
+                    "milestone_id": str(milestone.id),
+                    "deliverable_id": str(deliverable.id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="deliverable_approved",
+            target_type="deliverable",
+            target_id=deliverable.id,
+            metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
+        )
+        await db.flush()
+        await db.refresh(deliverable)
+    return deliverable
+
+
+async def close_delivered_project(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+) -> Project:
+    """Close a delivered Project as an archive action."""
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    async with db.begin():
+        project = await db.scalar(
+            select(Project)
+            .where(Project.id == project_id, Project.operator_id == operator_id)
+            .with_for_update()
+        )
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if project.status != "delivered":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only delivered Projects can be closed.",
+            )
+        active_disputes = await db.scalar(
+            select(func.count(Dispute.id)).where(
+                Dispute.project_id == project.id,
+                Dispute.status.in_(("open", "under_review")),
+            )
+        )
+        if int(active_disputes or 0) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Projects with active disputes cannot be closed.",
+            )
+        project.status = "closed"
+        project.closed_at = now
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="project_closed",
+            target_type="project",
+            target_id=project.id,
+            metadata={"reason": "delivered_project_archived"},
+        )
+        await db.flush()
+        await db.refresh(project)
+    return project

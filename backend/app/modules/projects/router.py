@@ -18,6 +18,9 @@ from app.modules.projects import milestone_service, service
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     AmendmentResponse,
+    DeliverableResponse,
+    DeliverableRevisionRequest,
+    DeliverableSubmitRequest,
     MilestoneCreateRequest,
     MilestoneFundingResponse,
     MilestoneResponse,
@@ -253,6 +256,76 @@ async def update_milestone(
     return MilestoneResponse.model_validate(milestone)
 
 
+@router.post(
+    "/{project_id}/milestones/{milestone_id}/deliverables",
+    response_model=DeliverableResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_deliverable(
+    project_id: UUID,
+    milestone_id: UUID,
+    payload: DeliverableSubmitRequest,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> DeliverableResponse:
+    """Submit work for a funded Milestone as the accepted Contributor."""
+    deliverable = await milestone_service.submit_deliverable(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        payload=payload,
+    )
+    return DeliverableResponse.model_validate(deliverable)
+
+
+@router.post(
+    "/{project_id}/milestones/{milestone_id}/deliverables/{deliverable_id}/approve",
+    response_model=DeliverableResponse,
+)
+async def approve_deliverable(
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> DeliverableResponse:
+    """Approve submitted work and release its Milestone escrow."""
+    deliverable = await milestone_service.approve_deliverable(
+        db=db,
+        operator=operator,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+    )
+    return DeliverableResponse.model_validate(deliverable)
+
+
+@router.post(
+    "/{project_id}/milestones/{milestone_id}/deliverables/"
+    "{deliverable_id}/request-revision",
+    response_model=DeliverableResponse,
+)
+async def request_deliverable_revision(
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    payload: DeliverableRevisionRequest,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> DeliverableResponse:
+    """Send submitted work back for revision as the Project Operator."""
+    deliverable = await milestone_service.request_deliverable_revision(
+        db=db,
+        operator=operator,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+        payload=payload,
+    )
+    return DeliverableResponse.model_validate(deliverable)
+
+
 @router.delete(
     "/{project_id}/milestones/{milestone_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -270,6 +343,21 @@ async def delete_milestone(
         project_id=project_id,
         milestone_id=milestone_id,
     )
+
+
+@router.post("/{project_id}/close", response_model=ProjectResponse)
+async def close_delivered_project(
+    project_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Close a delivered Project as an archive action."""
+    project = await milestone_service.close_delivered_project(
+        db=db,
+        operator=operator,
+        project_id=project_id,
+    )
+    return ProjectResponse.model_validate(project)
 
 
 @router.post(

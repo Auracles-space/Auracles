@@ -186,6 +186,39 @@ class MilestoneFundingResponse(BaseModel):
     client_secret: str
 
 
+class DeliverableSubmitRequest(BaseModel):
+    """Accepted Contributor request body for submitting Milestone work."""
+
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=4000)
+    file_keys: list[str] = Field(min_length=1)
+
+
+class DeliverableRevisionRequest(BaseModel):
+    """Operator request body for sending a Deliverable back for revision."""
+
+    revision_notes: str = Field(min_length=5, max_length=4000)
+
+
+class DeliverableResponse(BaseModel):
+    """Deliverable response returned to Project members."""
+
+    id: UUID
+    milestone_id: UUID
+    contributor_id: UUID
+    name: str
+    description: str
+    file_keys: list[str]
+    revision_notes: str | None
+    status: str
+    submitted_at: datetime
+    approved_at: datetime | None
+    auto_approved: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProjectResponse(BaseModel):
     """Project response returned by CRUD and assignment endpoints."""
 

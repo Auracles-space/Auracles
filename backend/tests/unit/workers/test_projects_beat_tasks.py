@@ -16,7 +16,14 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
-from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.financials.models import Escrow, Transaction
+from app.modules.projects.models import (
+    Deliverable,
+    Milestone,
+    Project,
+    Proposal,
+    ProposalAmendment,
+)
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import projects_beat
@@ -47,6 +54,10 @@ def projects_beat_context() -> Iterator[sessionmaker]:
         with session_factory() as session:
             session.execute(delete(AuditLog))
             session.execute(delete(WorkspaceMessage))
+            session.execute(delete(Deliverable))
+            session.execute(delete(Milestone))
+            session.execute(delete(Escrow))
+            session.execute(delete(Transaction))
             session.execute(delete(ProposalAmendment))
             session.execute(delete(Project))
             session.execute(delete(Proposal))
@@ -167,6 +178,165 @@ def create_expired_pending_amendment(session_factory: sessionmaker) -> UUID:
         return amendment.id
 
 
+def create_submitted_deliverable_for_auto_approval(
+    session_factory: sessionmaker,
+) -> tuple[UUID, UUID, UUID, UUID]:
+    """Create an overdue submitted Deliverable backed by held Escrow."""
+    with session_factory() as session:
+        operator = User(
+            email=f"auto-operator-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Auto Operator",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        contributor = User(
+            email=f"auto-contributor-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Auto Contributor",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        session.add_all([operator, contributor])
+        session.flush()
+        session.add_all(
+            [
+                UserRole(
+                    user_id=operator.id,
+                    role="operator",
+                    approved_at=datetime.now(UTC),
+                ),
+                UserRole(
+                    user_id=contributor.id,
+                    role="contributor",
+                    approved_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        project = Project(
+            operator_id=operator.id,
+            title="Auto Approval Project",
+            description="Project with overdue submitted deliverable.",
+            category="operations",
+            required_deliverables=[
+                {"name": "Guide", "description": "Implementation guide"}
+            ],
+            budget_min=Decimal("150.00"),
+            budget_max=Decimal("150.00"),
+            currency="USD",
+            status="in_progress",
+            milestone_plan_status="finalized",
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+        session.add(project)
+        session.flush()
+        proposal = Proposal(
+            project_id=project.id,
+            contributor_id=contributor.id,
+            scope="I will complete the auto approval work.",
+            budget=Decimal("150.00"),
+            currency="USD",
+            timeline_days=14,
+            deliverables=[{"name": "Guide", "description": "Guide"}],
+            status="accepted",
+            accepted_at=datetime.now(UTC),
+        )
+        session.add(proposal)
+        session.flush()
+        project.accepted_proposal_id = proposal.id
+        milestone = Milestone(
+            project_id=project.id,
+            sequence=1,
+            name="Guide",
+            description="Implementation guide.",
+            budget=Decimal("150.00"),
+            currency="USD",
+            status="submitted",
+            submitted_at=datetime.now(UTC) - timedelta(days=15),
+        )
+        session.add(milestone)
+        session.flush()
+        transaction = Transaction(
+            payer_id=operator.id,
+            payee_id=contributor.id,
+            amount=Decimal("150.00"),
+            currency="USD",
+            platform_commission=Decimal("0.00"),
+            net_amount=Decimal("150.00"),
+            transaction_type="milestone",
+            status="completed",
+            provider="stripe",
+            provider_ref="pi_auto_approval",
+            ref_id=milestone.id,
+            ref_type="project_milestone",
+        )
+        session.add(transaction)
+        session.flush()
+        escrow = Escrow(
+            ref_id=milestone.id,
+            ref_type="project_milestone",
+            amount=Decimal("150.00"),
+            currency="USD",
+            status="held",
+            release_conditions={"kind": "project_milestone"},
+            transaction_id=transaction.id,
+        )
+        session.add(escrow)
+        session.flush()
+        milestone.escrow_id = escrow.id
+        deliverable = Deliverable(
+            milestone_id=milestone.id,
+            contributor_id=contributor.id,
+            name="Guide",
+            description="Submitted guide.",
+            file_keys=["workspace/auto/guide.pdf"],
+            status="submitted",
+            submitted_at=datetime.now(UTC) - timedelta(days=15),
+        )
+        session.add(deliverable)
+        session.commit()
+        return project.id, milestone.id, deliverable.id, escrow.id
+
+
+def create_delivered_project_for_auto_close(session_factory: sessionmaker) -> UUID:
+    """Create a delivered Project older than the archive delay."""
+    with session_factory() as session:
+        operator = User(
+            email=f"close-operator-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Close Operator",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        session.add(operator)
+        session.flush()
+        session.add(
+            UserRole(
+                user_id=operator.id,
+                role="operator",
+                approved_at=datetime.now(UTC),
+            )
+        )
+        project = Project(
+            operator_id=operator.id,
+            title="Delivered Project",
+            description="Delivered Project ready for archive.",
+            category="operations",
+            required_deliverables=[
+                {"name": "Guide", "description": "Implementation guide"}
+            ],
+            budget_min=Decimal("150.00"),
+            budget_max=Decimal("150.00"),
+            currency="USD",
+            status="delivered",
+            delivered_at=datetime.now(UTC) - timedelta(days=8),
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+        session.add(project)
+        session.commit()
+        return project.id
+
+
 def test_close_expired_projects_closes_open_projects_and_withdraws_proposals(
     migrated_database: None,
     projects_beat_context: sessionmaker,
@@ -235,3 +405,59 @@ def test_expire_pending_amendments_marks_expired_and_writes_workspace_message(
     assert amendment is not None
     assert amendment.status == "expired"
     assert [message.system_event for message in messages] == ["amendment_expired"]
+
+
+def test_auto_approve_deliverables_releases_escrow_and_marks_project_delivered(
+    migrated_database: None,
+    projects_beat_context: sessionmaker,
+) -> None:
+    """Overdue submitted Deliverables auto-approve and release Escrow once."""
+    project_id, milestone_id, deliverable_id, escrow_id = (
+        create_submitted_deliverable_for_auto_approval(projects_beat_context)
+    )
+
+    result = projects_beat.auto_approve_deliverables.apply().get()
+    second_result = projects_beat.auto_approve_deliverables.apply().get()
+
+    with projects_beat_context() as session:
+        project = session.get(Project, project_id)
+        milestone = session.get(Milestone, milestone_id)
+        deliverable = session.get(Deliverable, deliverable_id)
+        escrow = session.get(Escrow, escrow_id)
+        messages = session.query(WorkspaceMessage).all()
+
+    assert result == {"auto_approved_count": 1}
+    assert second_result == {"auto_approved_count": 0}
+    assert project is not None
+    assert project.status == "delivered"
+    assert project.delivered_at is not None
+    assert milestone is not None
+    assert milestone.status == "auto_approved"
+    assert deliverable is not None
+    assert deliverable.status == "auto_approved"
+    assert deliverable.auto_approved is True
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert [message.system_event for message in messages] == [
+        "deliverable_auto_approved"
+    ]
+
+
+def test_auto_close_delivered_projects_archives_after_delay(
+    migrated_database: None,
+    projects_beat_context: sessionmaker,
+) -> None:
+    """Delivered Projects close after the seven-day archive delay."""
+    project_id = create_delivered_project_for_auto_close(projects_beat_context)
+
+    result = projects_beat.auto_close_delivered_projects.apply().get()
+    second_result = projects_beat.auto_close_delivered_projects.apply().get()
+
+    with projects_beat_context() as session:
+        project = session.get(Project, project_id)
+
+    assert result == {"closed_count": 1}
+    assert second_result == {"closed_count": 0}
+    assert project is not None
+    assert project.status == "closed"
+    assert project.closed_at is not None
