@@ -256,6 +256,12 @@ class AttestationRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AttestationsResponse(BaseModel):
+    """List response for Attestations visible to the authenticated user."""
+
+    attestations: list[AttestationRequestResponse]
+
+
 class AttestorAssignmentResponse(BaseModel):
     """Attestation offer or assignment visible to an approved Attestor."""
 

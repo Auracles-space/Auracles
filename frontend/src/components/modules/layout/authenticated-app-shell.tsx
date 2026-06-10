@@ -20,10 +20,14 @@ type AuthenticatedAppShellProps = {
 const appLinks = [
   { href: "/explore", label: "Explore" },
   { href: "/projects", label: "Projects" },
+  { href: "/attestations", label: "Attestations" },
+  { href: "/attestor/assignments", label: "Attestor" },
   { href: "/dashboard/frameworks", label: "Frameworks" },
   { href: "/dashboard/earnings", label: "Earnings" },
   { href: "/dashboard/payouts", label: "Payouts" },
   { href: "/library", label: "Library" },
+  { href: "/settings/credentials", label: "Credentials" },
+  { href: "/admin/attestations", label: "Admin" },
   { href: "/settings/account", label: "Settings" },
 ];
 

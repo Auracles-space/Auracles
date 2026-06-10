@@ -36,6 +36,7 @@ from app.modules.attestation.schemas import (
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
+    AttestationsResponse,
     AttestorApplicationCreateRequest,
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
@@ -75,6 +76,26 @@ async def request_attestation(
         db=db,
         requestor=requestor,
         payload=payload,
+    )
+
+
+@router.get("/attestations", response_model=AttestationsResponse)
+async def list_attestations(
+    user: CurrentUser,
+    db: DatabaseSession,
+    role: Literal["requestor", "attestor"] = Query(default="requestor"),
+) -> AttestationsResponse:
+    """List Attestations visible to the authenticated user by workflow role."""
+    attestations = await attestation_service.list_attestations_for_user(
+        db=db,
+        user=user,
+        role=role,
+    )
+    return AttestationsResponse(
+        attestations=[
+            AttestationRequestResponse.model_validate(attestation)
+            for attestation in attestations
+        ]
     )
 
 

@@ -36,7 +36,7 @@ export function AttestationBadge({
   return (
     <span
       className={[
-        "inline-flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1",
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1",
         "text-[11px] font-semibold uppercase tracking-[0.05em]",
         className,
       ].join(" ")}
@@ -54,7 +54,7 @@ export function AttestationBadge({
  */
 export function FrameworkCard({ framework }: FrameworkCardProps) {
   return (
-    <article className="group relative flex flex-col justify-between overflow-hidden rounded-[20px] border border-border-default bg-surface-1 p-5 shadow-bento transition duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-hero">
+    <article className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border-default bg-surface-1 p-5 shadow-bento transition duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-hero">
       <div>
         <div className="mb-3 flex items-start justify-between gap-4">
           <h2 className="font-heading text-lg font-semibold leading-tight text-foreground group-hover:text-accent transition-colors">

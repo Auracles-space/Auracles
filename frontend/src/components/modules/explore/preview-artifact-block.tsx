@@ -18,7 +18,7 @@ type PreviewArtifactBlockProps = {
  */
 export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
   return (
-    <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+    <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
       <h2 className="font-heading text-lg font-bold text-foreground">
         Preview
       </h2>
@@ -27,7 +27,7 @@ export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
       </p>
       {framework.preview_url ? (
         <a
-          className="mt-4 inline-flex min-h-11 items-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
+          className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
           href={framework.preview_url}
           rel="noreferrer"
           target="_blank"
@@ -35,7 +35,7 @@ export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
           Open preview artifact
         </a>
       ) : (
-        <p className="mt-4 rounded-[6px] border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+        <p className="mt-4 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
           Preview artifact is not available.
         </p>
       )}

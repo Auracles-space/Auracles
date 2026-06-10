@@ -45,6 +45,31 @@ ATTESTATION_FEE_DEFAULTS = {
 }
 
 
+async def list_attestations_for_user(
+    db: AsyncSession,
+    *,
+    user: User,
+    role: str,
+) -> list[Attestation]:
+    """Return Attestations visible to a user in a requestor or attestor role."""
+    if role == "requestor":
+        predicate = Attestation.requestor_id == user.id
+    elif role == "attestor":
+        predicate = Attestation.attestor_id == user.id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported Attestation list role.",
+        )
+
+    rows = await db.execute(
+        select(Attestation)
+        .where(predicate)
+        .order_by(Attestation.created_at.desc(), Attestation.id.desc())
+    )
+    return list(rows.scalars().all())
+
+
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for persisted payment records."""
     return amount.quantize(Decimal("0.01"))

@@ -96,6 +96,7 @@ def test_settings_rejects_placeholder_payout_account_key_outside_local() -> None
 # validator runs second — both are `model_validator(mode="after")` and
 # pydantic short-circuits if the first raises.
 _VALID_TOTP_KEY = "0123456789012345678901234567890123456789012="
+_VALID_PAYOUT_ACCOUNT_KEY = "1234567890123456789012345678901234567890123="
 
 
 def test_settings_rejects_dev_default_secret_key_outside_local() -> None:
@@ -107,6 +108,7 @@ def test_settings_rejects_dev_default_secret_key_outside_local() -> None:
             ENVIRONMENT="production",
             SECRET_KEY="dev-only-change-me",
             TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+            PAYOUT_ACCOUNT_ENCRYPTION_KEY=_VALID_PAYOUT_ACCOUNT_KEY,
         )
     except ValidationError as exc:
         assert "SECRET_KEY must be set outside local" in str(exc)
@@ -123,6 +125,7 @@ def test_settings_rejects_placeholder_secret_key_outside_local() -> None:
             ENVIRONMENT="staging",
             SECRET_KEY="replace-with-openssl-rand-hex-32",
             TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+            PAYOUT_ACCOUNT_ENCRYPTION_KEY=_VALID_PAYOUT_ACCOUNT_KEY,
         )
     except ValidationError as exc:
         assert "SECRET_KEY must be set outside local" in str(exc)
@@ -143,6 +146,7 @@ def test_settings_allows_real_secret_key_in_production() -> None:
         ENVIRONMENT="production",
         SECRET_KEY="a-real-openssl-rand-hex-32-value-with-entropy",
         TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+        PAYOUT_ACCOUNT_ENCRYPTION_KEY=_VALID_PAYOUT_ACCOUNT_KEY,
         STRIPE_SECRET_KEY="sk_live_real",
         STRIPE_WEBHOOK_SECRET="whsec_real",
     )
@@ -160,6 +164,7 @@ def test_settings_rejects_placeholder_provider_secrets_outside_local() -> None:
             ENVIRONMENT="production",
             SECRET_KEY="a-real-openssl-rand-hex-32-value-with-entropy",
             TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+            PAYOUT_ACCOUNT_ENCRYPTION_KEY=_VALID_PAYOUT_ACCOUNT_KEY,
             STRIPE_SECRET_KEY="replace-in-local-env",
             STRIPE_WEBHOOK_SECRET="whsec_real",
         )

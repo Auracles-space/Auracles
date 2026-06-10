@@ -11,6 +11,36 @@ export type AddRoleRequest = {
 
 export type role = 'contributor' | 'operator' | 'attestor';
 
+/**
+ * Admin request body for manually assigning a needs-admin Attestation.
+ */
+export type AdminAttestationAssignRequest = {
+    attestor_id: string;
+    reason: string;
+    totp_code: string;
+};
+
+/**
+ * Admin request body for resolving an Attestation dispute.
+ */
+export type AdminAttestationDisputeResolveRequest = {
+    resolution_type: 'release' | 'refund' | 'split';
+    release_amount?: (string) | null;
+    refund_amount?: (string) | null;
+    resolution_notes: string;
+    totp_code: string;
+};
+
+export type resolution_type = 'release' | 'refund' | 'split';
+
+/**
+ * Admin request body for refunding a needs-admin Attestation.
+ */
+export type AdminAttestationRefundRequest = {
+    reason: string;
+    totp_code: string;
+};
+
 export type AdminConfigItem = {
     key: string;
     value: string;
@@ -46,8 +76,6 @@ export type AdminDisputeResolveRequest = {
     resolution_notes: string;
     totp_code: string;
 };
-
-export type resolution_type = 'release' | 'refund' | 'split';
 
 export type AdminEscrowOverrideRequest = {
     reason: string;
@@ -219,12 +247,283 @@ export type ArtifactUploadUrlResponse = {
     expires_in: number;
 };
 
+/**
+ * Request body for raising an Attestation report dispute.
+ */
+export type AttestationDisputeCreateRequest = {
+    reason: string;
+};
+
+/**
+ * Attestation dispute details visible to requestors and admins.
+ */
+export type AttestationDisputeResponse = {
+    id: string;
+    attestation_id: string;
+    raised_by: string;
+    reason: string;
+    status: string;
+    resolution_type: (string) | null;
+    release_amount: (string) | null;
+    refund_amount: (string) | null;
+    admin_id: (string) | null;
+    resolution_notes: (string) | null;
+    escalated_at: (string) | null;
+    resolved_at: (string) | null;
+    created_at: string;
+};
+
+/**
+ * Request body for creating an Attestation report evidence upload session.
+ */
+export type AttestationEvidenceUploadCreateRequest = {
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+
+/**
+ * Presigned POST response for private Attestation report evidence.
+ */
+export type AttestationEvidenceUploadSessionResponse = {
+    id: string;
+    s3_key: string;
+    url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    expires_at: string;
+    size_limit: number;
+    scan_status: 'pending_scan' | 'clean' | 'infected' | 'error';
+};
+
+export type scan_status2 = 'pending_scan' | 'clean' | 'infected' | 'error';
+
+/**
+ * PaymentIntent data needed to fund an Attestation fee escrow.
+ */
+export type AttestationFundingResponse = {
+    id: string;
+    transaction_id: string;
+    provider: 'stripe';
+    client_secret: string;
+};
+
+export type provider = 'stripe';
+
+/**
+ * Structured report fields submitted by the assigned Attestor.
+ */
+export type AttestationReportSubmitRequest = {
+    outcome: 'approved' | 'conditional' | 'rejected';
+    summary: string;
+    scope: string;
+    evidence_references?: {
+        [key: string]: unknown;
+    };
+};
+
+export type outcome = 'approved' | 'conditional' | 'rejected';
+
+/**
+ * Request body for creating an escrow-funded Attestation request.
+ */
+export type AttestationRequestCreateRequest = {
+    target_type: 'framework' | 'contributor' | 'operator' | 'credential';
+    target_id: string;
+    requested_specializations: Array<(string)>;
+    requested_jurisdictions: Array<(string)>;
+};
+
+export type target_type = 'framework' | 'contributor' | 'operator' | 'credential';
+
+/**
+ * Attestation request details visible to requestor and assigned Attestor.
+ */
+export type AttestationRequestResponse = {
+    id: string;
+    target_type: string;
+    target_id: string;
+    requestor_id: string;
+    attestor_id: (string) | null;
+    status: string;
+    outcome: (string) | null;
+    requested_specializations: Array<(string)>;
+    requested_jurisdictions: Array<(string)>;
+    summary?: (string) | null;
+    scope?: (string) | null;
+    evidence_references?: {
+        [key: string]: unknown;
+    } | null;
+    report_key?: (string) | null;
+    fee_amount: string;
+    currency: string;
+    escrow_id: (string) | null;
+    accepted_at?: (string) | null;
+    completion_due_at?: (string) | null;
+    issued_at?: (string) | null;
+    dispute_window_ends_at?: (string) | null;
+    closed_at?: (string) | null;
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * List response for Attestations visible to the authenticated user.
+ */
+export type AttestationsResponse = {
+    attestations: Array<AttestationRequestResponse>;
+};
+
+/**
+ * Request body for submitting an Attestor role application.
+ */
+export type AttestorApplicationCreateRequest = {
+    specializations: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    credentials_summary: string;
+    sample_work?: {
+        [key: string]: unknown;
+    };
+    professional_references: string;
+};
+
+/**
+ * Attestor application details visible to its owner and admins.
+ */
+export type AttestorApplicationResponse = {
+    id: string;
+    user_id: string;
+    status: string;
+    specializations: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    credentials_summary: string;
+    sample_work: {
+        [key: string]: unknown;
+    };
+    professional_references: string;
+    admin_feedback: (string) | null;
+    reviewed_by: (string) | null;
+    reviewed_at: (string) | null;
+    created_at: string;
+};
+
+/**
+ * Admin request body for approving or rejecting an Attestor application.
+ */
+export type AttestorApplicationReviewRequest = {
+    decision: 'approved' | 'rejected';
+    feedback?: (string) | null;
+    totp_code: string;
+};
+
+export type decision = 'approved' | 'rejected';
+
+/**
+ * List response for Attestor applications.
+ */
+export type AttestorApplicationsResponse = {
+    applications: Array<AttestorApplicationResponse>;
+};
+
+/**
+ * Attestation offer or assignment visible to an approved Attestor.
+ */
+export type AttestorAssignmentResponse = {
+    offer_id: string;
+    attestation_id: string;
+    target_type: string;
+    target_id: string;
+    attestation_status: string;
+    offer_status: string;
+    cohort_index: number;
+    requested_specializations: Array<(string)>;
+    requested_jurisdictions: Array<(string)>;
+    expires_at: string;
+    accepted_at: (string) | null;
+    completion_due_at: (string) | null;
+};
+
+/**
+ * List response for an Attestor's open offers and accepted work.
+ */
+export type AttestorAssignmentsResponse = {
+    assignments: Array<AttestorAssignmentResponse>;
+};
+
 export type ComponentHealth = {
     status: 'ok' | 'unavailable';
     detail?: (string) | null;
 };
 
 export type status3 = 'ok' | 'unavailable';
+
+/**
+ * Request body for creating a user-owned Credential.
+ */
+export type CredentialCreateRequest = {
+    title: string;
+    issuer: string;
+    issued_date: string;
+    expires_date?: (string) | null;
+};
+
+/**
+ * Request body for creating a Credential evidence upload session.
+ */
+export type CredentialEvidenceUploadCreateRequest = {
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+
+/**
+ * Presigned POST response for a Credential evidence upload.
+ */
+export type CredentialEvidenceUploadSessionResponse = {
+    id: string;
+    s3_key: string;
+    url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    expires_at: string;
+    size_limit: number;
+    scan_status: string;
+};
+
+/**
+ * Credential details returned to the owner.
+ */
+export type CredentialResponse = {
+    id: string;
+    user_id: string;
+    title: string;
+    issuer: string;
+    issued_date: string;
+    expires_date: (string) | null;
+    evidence_file_keys: Array<(string)>;
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * List response for user-owned Credentials.
+ */
+export type CredentialsResponse = {
+    credentials: Array<CredentialResponse>;
+};
+
+/**
+ * Request body for updating a user-owned Credential.
+ */
+export type CredentialUpdateRequest = {
+    title?: (string) | null;
+    issuer?: (string) | null;
+    issued_date?: (string) | null;
+    expires_date?: (string) | null;
+    evidence_file_keys?: Array<(string)> | null;
+};
 
 export type CurrentUserResponse = {
     id: string;
@@ -339,8 +638,6 @@ export type ExploreArtifactSummary = {
     created_at: string;
 };
 
-export type ExploreAttestationStatus = 'pending_acceptance' | 'attested' | 'none';
-
 export type ExploreAttestationBadge = {
     id: string;
     status: 'pending_acceptance' | 'attested';
@@ -348,6 +645,10 @@ export type ExploreAttestationBadge = {
     report_key: string;
     issued_at: (string) | null;
 };
+
+export type status4 = 'pending_acceptance' | 'attested';
+
+export type ExploreAttestationStatus = 'pending_acceptance' | 'attested' | 'none';
 
 export type ExploreFrameworkCard = {
     id: string;
@@ -368,7 +669,7 @@ export type ExploreFrameworkCard = {
     license_types: Array<(string)>;
     thumbnail_key: (string) | null;
     rarity_score: (string) | null;
-    attestation_badge: (ExploreAttestationBadge) | null;
+    attestation_badge: (ExploreAttestationBadge | null);
     owned: boolean;
     published_at: (string) | null;
 };
@@ -462,7 +763,7 @@ export type FrameworkResponse = {
     published_at: (string) | null;
 };
 
-export type status4 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status5 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 export type FrameworkSector = 'private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology';
 
@@ -498,7 +799,7 @@ export type HealthResponse = {
     };
 };
 
-export type status5 = 'ok' | 'unhealthy';
+export type status6 = 'ok' | 'unhealthy';
 
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
@@ -509,7 +810,7 @@ export type InvoiceGenerationResponse = {
     status: 'generating';
 };
 
-export type status6 = 'generating';
+export type status7 = 'generating';
 
 export type KycDocumentResponse = {
     id: string;
@@ -700,8 +1001,6 @@ export type PaymentMethodDeleteResponse = {
     removed: boolean;
 };
 
-export type provider = 'stripe';
-
 export type PaymentMethodResponse = {
     id: string;
     provider: 'stripe';
@@ -782,7 +1081,7 @@ export type PayoutResponse = {
     completed_at: (string) | null;
 };
 
-export type status7 = 'pending' | 'processing' | 'completed' | 'failed';
+export type status8 = 'pending' | 'processing' | 'completed' | 'failed';
 
 export type PayoutsResponse = {
     payouts: Array<PayoutResponse>;
@@ -940,7 +1239,7 @@ export type RefundResponse = {
     status: 'refunded';
 };
 
-export type status8 = 'refunded';
+export type status9 = 'refunded';
 
 export type RegisterRequest = {
     email: string;
@@ -1030,7 +1329,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status9 = 'processed' | 'received' | 'duplicate';
+export type status10 = 'processed' | 'received' | 'duplicate';
 
 /**
  * Request body for posting a user workspace message.
@@ -1441,6 +1740,7 @@ export type SetPreviewArtifactError = (unknown);
 
 export type ListExploreFrameworksData = {
     query?: {
+        attestation_status?: (ExploreAttestationStatus | null);
         category?: (FrameworkCategory | null);
         complexity?: (number) | null;
         function?: (FrameworkFunction | null);
@@ -1456,7 +1756,6 @@ export type ListExploreFrameworksData = {
         q?: (string) | null;
         sector?: (FrameworkSector | null);
         sort?: ExploreSort;
-        attestation_status?: (ExploreAttestationStatus | null);
     };
 };
 
@@ -1598,6 +1897,221 @@ export type GetFrameworkPurchaseInvoiceData = {
 export type GetFrameworkPurchaseInvoiceResponse = (InvoiceGenerationResponse);
 
 export type GetFrameworkPurchaseInvoiceError = (string | unknown);
+
+export type ListAttestationsData = {
+    query?: {
+        role?: 'requestor' | 'attestor';
+    };
+};
+
+export type ListAttestationsResponse = (AttestationsResponse);
+
+export type ListAttestationsError = (unknown);
+
+export type RequestAttestationData = {
+    body: AttestationRequestCreateRequest;
+};
+
+export type RequestAttestationResponse = (AttestationFundingResponse);
+
+export type RequestAttestationError = (unknown);
+
+export type GetAttestationData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationResponse = (AttestationRequestResponse);
+
+export type GetAttestationError = (unknown);
+
+export type AcceptAttestationOfferData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcceptAttestationOfferResponse = (AttestationRequestResponse);
+
+export type AcceptAttestationOfferError = (unknown);
+
+export type DeclineAttestationOfferData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type DeclineAttestationOfferResponse = (AttestationRequestResponse);
+
+export type DeclineAttestationOfferError = (unknown);
+
+export type CreateAttestationReportEvidenceUploadSessionData = {
+    body: AttestationEvidenceUploadCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationReportEvidenceUploadSessionResponse = (AttestationEvidenceUploadSessionResponse);
+
+export type CreateAttestationReportEvidenceUploadSessionError = (unknown);
+
+export type SubmitAttestationReportData = {
+    body: AttestationReportSubmitRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type SubmitAttestationReportResponse = (AttestationRequestResponse);
+
+export type SubmitAttestationReportError = (unknown);
+
+export type AcceptAttestationReportData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcceptAttestationReportResponse = (AttestationRequestResponse);
+
+export type AcceptAttestationReportError = (unknown);
+
+export type CreateAttestationDisputeData = {
+    body: AttestationDisputeCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationDisputeResponse = (AttestationDisputeResponse);
+
+export type CreateAttestationDisputeError = (unknown);
+
+export type ResolveAttestationDisputeData = {
+    body: AdminAttestationDisputeResolveRequest;
+    path: {
+        dispute_id: string;
+    };
+};
+
+export type ResolveAttestationDisputeResponse = (AttestationDisputeResponse);
+
+export type ResolveAttestationDisputeError = (unknown);
+
+export type AdminAssignAttestationData = {
+    body: AdminAttestationAssignRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AdminAssignAttestationResponse = (AttestationRequestResponse);
+
+export type AdminAssignAttestationError = (unknown);
+
+export type AdminRefundAttestationData = {
+    body: AdminAttestationRefundRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AdminRefundAttestationResponse = (AttestationRequestResponse);
+
+export type AdminRefundAttestationError = (unknown);
+
+export type ListAttestorAssignmentsResponse = (AttestorAssignmentsResponse);
+
+export type ListAttestorAssignmentsError = (unknown);
+
+export type SubmitAttestorApplicationData = {
+    body: AttestorApplicationCreateRequest;
+};
+
+export type SubmitAttestorApplicationResponse = (AttestorApplicationResponse);
+
+export type SubmitAttestorApplicationError = (unknown);
+
+export type ListMyAttestorApplicationsResponse = (AttestorApplicationsResponse);
+
+export type ListMyAttestorApplicationsError = (unknown);
+
+export type WithdrawAttestorApplicationData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type WithdrawAttestorApplicationResponse = (AttestorApplicationResponse);
+
+export type WithdrawAttestorApplicationError = (unknown);
+
+export type ListAttestorApplicationsForAdminData = {
+    query?: {
+        status?: ('pending' | 'approved' | 'rejected' | 'withdrawn') | null;
+    };
+};
+
+export type ListAttestorApplicationsForAdminResponse = (AttestorApplicationsResponse);
+
+export type ListAttestorApplicationsForAdminError = (unknown);
+
+export type ReviewAttestorApplicationData = {
+    body: AttestorApplicationReviewRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type ReviewAttestorApplicationResponse = (AttestorApplicationResponse);
+
+export type ReviewAttestorApplicationError = (unknown);
+
+export type ListCredentialsResponse = (CredentialsResponse);
+
+export type ListCredentialsError = (unknown);
+
+export type CreateCredentialData = {
+    body: CredentialCreateRequest;
+};
+
+export type CreateCredentialResponse = (CredentialResponse);
+
+export type CreateCredentialError = (unknown);
+
+export type UpdateCredentialData = {
+    body: CredentialUpdateRequest;
+    path: {
+        credential_id: string;
+    };
+};
+
+export type UpdateCredentialResponse = (CredentialResponse);
+
+export type UpdateCredentialError = (unknown);
+
+export type DeleteCredentialData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type DeleteCredentialResponse = (void);
+
+export type DeleteCredentialError = (unknown);
+
+export type CreateCredentialEvidenceUploadSessionData = {
+    body: CredentialEvidenceUploadCreateRequest;
+    path: {
+        credential_id: string;
+    };
+};
+
+export type CreateCredentialEvidenceUploadSessionResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type CreateCredentialEvidenceUploadSessionError = (unknown);
 
 export type IngestStripeWebhookData = {
     body: {

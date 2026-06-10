@@ -1880,6 +1880,34 @@ paths:
         '409':
           description: Invoice is not available for unsettled purchase.
   /v1/attestations:
+    get:
+      tags:
+      - Attestation
+      operationId: listAttestations
+      summary: List Attestations
+      description: List Attestations visible to the authenticated user as requestor or assigned attestor.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: role
+        in: query
+        schema:
+          type: string
+          enum:
+          - requestor
+          - attestor
+          default: requestor
+      responses:
+        '200':
+          description: Visible Attestations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationsResponse'
+        '401':
+          description: Missing or invalid access token.
+        '422':
+          description: Unsupported Attestation list role.
     post:
       tags:
       - Attestation
@@ -2279,6 +2307,289 @@ paths:
           description: Missing or invalid access token.
         '403':
           description: Approved Attestor profile required.
+  /v1/attestor/applications:
+    post:
+      tags:
+      - Attestation
+      operationId: submitAttestorApplication
+      summary: Submit Attestor application
+      description: Submit an Attestor application as any authenticated user.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestorApplicationCreateRequest'
+      responses:
+        '201':
+          description: Attestor application submitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationResponse'
+        '401':
+          description: Missing or invalid access token.
+        '409':
+          description: Pending application already exists.
+        '422':
+          description: Invalid application payload.
+  /v1/attestor/applications/mine:
+    get:
+      tags:
+      - Attestation
+      operationId: listMyAttestorApplications
+      summary: List my Attestor applications
+      description: List the authenticated user's Attestor application history.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Attestor applications.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationsResponse'
+        '401':
+          description: Missing or invalid access token.
+  /v1/attestor/applications/{application_id}/withdraw:
+    patch:
+      tags:
+      - Attestation
+      operationId: withdrawAttestorApplication
+      summary: Withdraw Attestor application
+      description: Withdraw a pending Attestor application owned by the current user.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Attestor application withdrawn.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationResponse'
+        '401':
+          description: Missing or invalid access token.
+        '404':
+          description: Application not found.
+        '409':
+          description: Application cannot be withdrawn.
+  /v1/admin/attestor/applications:
+    get:
+      tags:
+      - Attestation
+      operationId: listAttestorApplicationsForAdmin
+      summary: List Attestor applications for admin
+      description: List Attestor applications for admin review.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type:
+          - string
+          - 'null'
+          enum:
+          - pending
+          - approved
+          - rejected
+          - withdrawn
+      responses:
+        '200':
+          description: Attestor applications.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationsResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+  /v1/admin/attestor/applications/{application_id}/review:
+    post:
+      tags:
+      - Attestation
+      operationId: reviewAttestorApplication
+      summary: Review Attestor application
+      description: Approve or reject an Attestor application as a 2FA-confirmed admin.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestorApplicationReviewRequest'
+      responses:
+        '200':
+          description: Attestor application reviewed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Application not found.
+        '409':
+          description: Application cannot be reviewed.
+        '422':
+          description: Invalid review payload.
+  /v1/credentials:
+    get:
+      tags:
+      - Attestation
+      operationId: listCredentials
+      summary: List Credentials
+      description: List Credentials owned by the authenticated user.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Credentials returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialsResponse'
+        '401':
+          description: Missing or invalid access token.
+    post:
+      tags:
+      - Attestation
+      operationId: createCredential
+      summary: Create Credential
+      description: Create a user-owned professional Credential.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialCreateRequest'
+      responses:
+        '201':
+          description: Credential created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResponse'
+        '401':
+          description: Missing or invalid access token.
+        '422':
+          description: Invalid credential payload.
+  /v1/credentials/{credential_id}:
+    patch:
+      tags:
+      - Attestation
+      operationId: updateCredential
+      summary: Update Credential
+      description: Update a user-owned Credential.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialUpdateRequest'
+      responses:
+        '200':
+          description: Credential updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResponse'
+        '401':
+          description: Missing or invalid access token.
+        '404':
+          description: Credential not found.
+        '422':
+          description: Invalid credential payload.
+    delete:
+      tags:
+      - Attestation
+      operationId: deleteCredential
+      summary: Delete Credential
+      description: Delete a user-owned Credential.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Credential deleted.
+        '401':
+          description: Missing or invalid access token.
+        '404':
+          description: Credential not found.
+  /v1/credentials/{credential_id}/uploads:
+    post:
+      tags:
+      - Attestation
+      operationId: createCredentialEvidenceUploadSession
+      summary: Create Credential evidence upload session
+      description: Create a presigned POST upload session for Credential evidence.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialEvidenceUploadCreateRequest'
+      responses:
+        '201':
+          description: Credential evidence upload session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+        '401':
+          description: Missing or invalid access token.
+        '404':
+          description: Credential not found.
+        '413':
+          description: Credential evidence upload is too large.
+        '422':
+          description: Invalid upload payload.
   /v1/webhooks/stripe:
     post:
       tags:
@@ -4007,6 +4318,284 @@ components:
           - infected
           - error
       description: Presigned POST response for private Attestation report evidence.
+    AttestorApplicationCreateRequest:
+      type: object
+      required:
+      - specializations
+      - jurisdictions
+      - credentials_summary
+      - professional_references
+      properties:
+        specializations:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+        jurisdictions:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+        credentials_summary:
+          type: string
+          minLength: 10
+          maxLength: 5000
+        sample_work:
+          type: object
+          additionalProperties: true
+        professional_references:
+          type: string
+          minLength: 3
+          maxLength: 5000
+      description: Request body for submitting an Attestor role application.
+    AttestorApplicationResponse:
+      type: object
+      required:
+      - id
+      - user_id
+      - status
+      - specializations
+      - jurisdictions
+      - credentials_summary
+      - sample_work
+      - professional_references
+      - admin_feedback
+      - reviewed_by
+      - reviewed_at
+      - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        specializations:
+          type: array
+          items:
+            type: string
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        credentials_summary:
+          type: string
+        sample_work:
+          type: object
+          additionalProperties: true
+        professional_references:
+          type: string
+        admin_feedback:
+          type:
+          - string
+          - 'null'
+        reviewed_by:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        reviewed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      description: Attestor application details visible to its owner and admins.
+    AttestorApplicationsResponse:
+      type: object
+      required:
+      - applications
+      properties:
+        applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttestorApplicationResponse'
+      description: List response for Attestor applications.
+    AttestorApplicationReviewRequest:
+      type: object
+      required:
+      - decision
+      - totp_code
+      properties:
+        decision:
+          type: string
+          enum:
+          - approved
+          - rejected
+        feedback:
+          type:
+          - string
+          - 'null'
+          maxLength: 5000
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+      description: Admin request body for approving or rejecting an Attestor application.
+    CredentialCreateRequest:
+      type: object
+      required:
+      - title
+      - issuer
+      - issued_date
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        issuer:
+          type: string
+          minLength: 1
+          maxLength: 255
+        issued_date:
+          type: string
+          format: date
+        expires_date:
+          type:
+          - string
+          - 'null'
+          format: date
+      description: Request body for creating a user-owned Credential.
+    CredentialUpdateRequest:
+      type: object
+      properties:
+        title:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 255
+        issuer:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 255
+        issued_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        expires_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        evidence_file_keys:
+          type:
+          - array
+          - 'null'
+          maxItems: 20
+          items:
+            type: string
+      description: Request body for updating a user-owned Credential.
+    CredentialResponse:
+      type: object
+      required:
+      - id
+      - user_id
+      - title
+      - issuer
+      - issued_date
+      - expires_date
+      - evidence_file_keys
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        issuer:
+          type: string
+        issued_date:
+          type: string
+          format: date
+        expires_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        evidence_file_keys:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      description: Credential details returned to the owner.
+    CredentialsResponse:
+      type: object
+      required:
+      - credentials
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/CredentialResponse'
+      description: List response for user-owned Credentials.
+    CredentialEvidenceUploadCreateRequest:
+      type: object
+      required:
+      - file_name
+      - content_type
+      - size_bytes
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content_type:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          exclusiveMinimum: 0
+      description: Request body for creating a Credential evidence upload session.
+    CredentialEvidenceUploadSessionResponse:
+      type: object
+      required:
+      - id
+      - s3_key
+      - url
+      - fields
+      - expires_at
+      - size_limit
+      - scan_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        s3_key:
+          type: string
+        url:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+        size_limit:
+          type: integer
+        scan_status:
+          type: string
+      description: Presigned POST response for a Credential evidence upload.
     AttestationReportSubmitRequest:
       type: object
       required:
@@ -4277,6 +4866,16 @@ components:
           type: string
           format: date-time
       description: Attestation request details visible to requestor and assigned Attestor.
+    AttestationsResponse:
+      type: object
+      required:
+      - attestations
+      properties:
+        attestations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttestationRequestResponse'
+      description: List response for Attestations visible to the authenticated user.
     AttestorAssignmentResponse:
       type: object
       required:

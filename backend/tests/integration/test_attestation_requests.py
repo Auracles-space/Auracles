@@ -162,6 +162,65 @@ async def create_credential(owner_id: UUID) -> UUID:
             return credential.id
 
 
+async def create_attestation_row(
+    *,
+    requestor_id: UUID,
+    target_id: UUID,
+    status: str = "matching",
+) -> UUID:
+    """Create one Attestation row for requestor list endpoint tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="credential",
+                target_id=target_id,
+                requestor_id=requestor_id,
+                status=status,
+                requested_specializations=["governance"],
+                requested_jurisdictions=["US"],
+                fee_amount=Decimal("100.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            return attestation.id
+
+
+async def test_requestor_lists_only_their_attestations(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+) -> None:
+    """Requestors can list their own Attestation history through the API."""
+    del migrated_database, attestation_context
+    operator_id = await create_user("requestor-list@auracles.space", ["operator"])
+    other_operator_id = await create_user(
+        "other-requestor-list@auracles.space",
+        ["operator"],
+    )
+    credential_id = await create_credential(operator_id)
+    other_credential_id = await create_credential(other_operator_id)
+    attestation_id = await create_attestation_row(
+        requestor_id=operator_id,
+        target_id=credential_id,
+    )
+    await create_attestation_row(
+        requestor_id=other_operator_id,
+        target_id=other_credential_id,
+    )
+
+    response = await client.get(
+        "/v1/attestations",
+        params={"role": "requestor"},
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["attestations"]] == [str(attestation_id)]
+    assert body["attestations"][0]["requestor_id"] == str(operator_id)
+
+
 async def test_operator_requests_credential_attestation_with_stripe_escrow(
     client: AsyncClient,
     migrated_database: None,
