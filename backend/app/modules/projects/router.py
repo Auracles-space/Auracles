@@ -14,10 +14,14 @@ from app.core.dependencies import (
     require_role,
 )
 from app.modules.auth.models import User
-from app.modules.projects import service
+from app.modules.projects import milestone_service, service
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     AmendmentResponse,
+    MilestoneCreateRequest,
+    MilestoneResponse,
+    MilestonesResponse,
+    MilestoneUpdateRequest,
     ProjectCreateRequest,
     ProjectResponse,
     ProjectsResponse,
@@ -153,6 +157,97 @@ async def list_my_project_proposals(
         db=db,
         contributor=contributor,
         project_id=project_id,
+    )
+
+
+@router.post(
+    "/{project_id}/milestones",
+    response_model=MilestoneResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_milestone(
+    project_id: UUID,
+    payload: MilestoneCreateRequest,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> MilestoneResponse:
+    """Create a draft Milestone as the accepted Contributor."""
+    milestone = await milestone_service.create_milestone(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+        payload=payload,
+    )
+    return MilestoneResponse.model_validate(milestone)
+
+
+@router.get("/{project_id}/milestones", response_model=MilestonesResponse)
+async def list_milestones(
+    project_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> MilestonesResponse:
+    """List Milestones for a Project workspace member."""
+    return await milestone_service.list_milestones(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+    )
+
+
+@router.post("/{project_id}/milestones/finalize", response_model=ProjectResponse)
+async def finalize_milestone_plan(
+    project_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Finalize the Milestone plan once budgets match the accepted Proposal."""
+    project = await milestone_service.finalize_milestone_plan(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+    )
+    return ProjectResponse.model_validate(project)
+
+
+@router.patch(
+    "/{project_id}/milestones/{milestone_id}",
+    response_model=MilestoneResponse,
+)
+async def update_milestone(
+    project_id: UUID,
+    milestone_id: UUID,
+    payload: MilestoneUpdateRequest,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> MilestoneResponse:
+    """Update a draft Milestone as the accepted Contributor."""
+    milestone = await milestone_service.update_milestone(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        payload=payload,
+    )
+    return MilestoneResponse.model_validate(milestone)
+
+
+@router.delete(
+    "/{project_id}/milestones/{milestone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_milestone(
+    project_id: UUID,
+    milestone_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> None:
+    """Delete a draft Milestone as the accepted Contributor."""
+    await milestone_service.delete_milestone(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+        milestone_id=milestone_id,
     )
 
 

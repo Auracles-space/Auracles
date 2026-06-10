@@ -117,6 +117,67 @@ class AmendmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MilestoneCreateRequest(BaseModel):
+    """Accepted Contributor request body for drafting a Project Milestone."""
+
+    sequence: int = Field(gt=0, le=100)
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=4000)
+    budget: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    due_date: date | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def currency_must_be_usd(cls, value: str) -> str:
+        """Reject non-USD Milestone drafting during the MVP currency lock."""
+        if value.upper() != "USD":
+            raise ValueError("Milestone currency must be USD.")
+        return value.upper()
+
+
+class MilestoneUpdateRequest(BaseModel):
+    """Accepted Contributor request body for editing a draft Milestone."""
+
+    sequence: int | None = Field(default=None, gt=0, le=100)
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, min_length=1, max_length=4000)
+    budget: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    due_date: date | None = None
+
+
+class MilestoneResponse(BaseModel):
+    """Milestone response returned to Project members."""
+
+    id: UUID
+    project_id: UUID
+    escrow_id: UUID | None
+    sequence: int
+    name: str
+    description: str
+    budget: Decimal
+    currency: str
+    due_date: date | None
+    status: str
+    funded_at: datetime | None
+    submitted_at: datetime | None
+    approved_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MilestonesResponse(BaseModel):
+    """List response for Project Milestones."""
+
+    milestones: list[MilestoneResponse]
+
+
 class ProjectResponse(BaseModel):
     """Project response returned by CRUD and assignment endpoints."""
 

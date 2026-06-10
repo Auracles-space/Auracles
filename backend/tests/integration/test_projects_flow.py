@@ -17,7 +17,7 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
-from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.projects.models import Milestone, Project, Proposal, ProposalAmendment
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 
@@ -47,6 +47,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
+            await session.execute(delete(Milestone))
             await session.execute(delete(ProposalAmendment))
             await session.execute(delete(Project))
             await session.execute(delete(Proposal))
@@ -311,3 +312,116 @@ async def test_project_member_proposes_and_counterparty_accepts_amendment(
         "amendment_proposed",
         "amendment_accepted",
     ]
+
+
+async def test_accepted_contributor_manages_draft_milestones_and_finalizes_plan(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Accepted Contributor can draft milestones; exact budget sum finalizes."""
+    operator_id = await create_user("milestone-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "milestone-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+
+    first = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Discovery",
+            "description": "Map current procurement workflows.",
+            "budget": "1000.00",
+            "currency": "USD",
+        },
+    )
+    first_id = first.json()["id"]
+    listed = await client.get(
+        f"/v1/projects/{project_id}/milestones",
+        headers=operator_headers,
+    )
+    finalize_too_low = await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+    second = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 2,
+            "name": "Temporary",
+            "description": "A milestone we will remove before finalizing.",
+            "budget": "100.00",
+            "currency": "USD",
+        },
+    )
+    deleted = await client.delete(
+        f"/v1/projects/{project_id}/milestones/{second.json()['id']}",
+        headers=contributor_headers,
+    )
+    updated = await client.patch(
+        f"/v1/projects/{project_id}/milestones/{first_id}",
+        headers=contributor_headers,
+        json={"budget": "1500.00"},
+    )
+    finalized = await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+    edit_after_finalize = await client.patch(
+        f"/v1/projects/{project_id}/milestones/{first_id}",
+        headers=contributor_headers,
+        json={"name": "Locked"},
+    )
+
+    async with async_session_factory() as session:
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        milestones = (
+            (
+                await session.execute(
+                    select(Milestone)
+                    .where(Milestone.project_id == UUID(project_id))
+                    .order_by(Milestone.sequence)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert first.status_code == 201
+    assert listed.status_code == 200
+    assert [item["name"] for item in listed.json()["milestones"]] == ["Discovery"]
+    assert finalize_too_low.status_code == 422
+    assert second.status_code == 201
+    assert deleted.status_code == 204
+    assert updated.status_code == 200
+    assert updated.json()["budget"] == "1500.00"
+    assert finalized.status_code == 200
+    assert finalized.json()["milestone_plan_status"] == "finalized"
+    assert edit_after_finalize.status_code == 409
+    assert project is not None
+    assert project.milestone_plan_status == "finalized"
+    assert len(milestones) == 1
+    assert milestones[0].sequence == 1
+    assert str(milestones[0].budget) == "1500.00"
