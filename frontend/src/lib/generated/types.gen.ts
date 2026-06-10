@@ -36,6 +36,19 @@ export type AdminConfigUpdateItem = {
 
 export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours';
 
+/**
+ * Request body for resolving a Project dispute.
+ */
+export type AdminDisputeResolveRequest = {
+    resolution_type: 'release' | 'refund' | 'split';
+    release_amount?: (number | string | null);
+    refund_amount?: (number | string | null);
+    resolution_notes: string;
+    totp_code: string;
+};
+
+export type resolution_type = 'release' | 'refund' | 'split';
+
 export type AdminEscrowOverrideRequest = {
     reason: string;
     totp_code: string;
@@ -112,6 +125,41 @@ export type AdminRoleAssignmentResponse = {
     approved: boolean;
 };
 
+/**
+ * Project member request body for proposing a Proposal amendment.
+ */
+export type AmendmentCreateRequest = {
+    change_type: 'scope' | 'budget' | 'timeline' | 'combo';
+    after: {
+        [key: string]: unknown;
+    };
+    reason: string;
+};
+
+export type change_type = 'scope' | 'budget' | 'timeline' | 'combo';
+
+/**
+ * Proposal amendment response returned to Project members.
+ */
+export type AmendmentResponse = {
+    id: string;
+    proposal_id: string;
+    proposed_by: string;
+    change_type: string;
+    before: {
+        [key: string]: unknown;
+    };
+    after: {
+        [key: string]: unknown;
+    };
+    reason: string;
+    status: string;
+    responded_at: (string | null);
+    responded_by: (string | null);
+    expires_at: string;
+    created_at: string;
+};
+
 export type ArtifactConfirmRequest = {
     artifact_id: string;
 };
@@ -186,6 +234,83 @@ export type CurrentUserResponse = {
     email_verified: boolean;
     kyc_status: string;
     deactivated_at: (string) | null;
+};
+
+/**
+ * Deliverable response returned to Project members.
+ */
+export type DeliverableResponse = {
+    id: string;
+    milestone_id: string;
+    contributor_id: string;
+    name: string;
+    description: string;
+    file_keys: Array<(string)>;
+    revision_notes: (string | null);
+    status: string;
+    submitted_at: string;
+    approved_at: (string | null);
+    auto_approved: boolean;
+    created_at: string;
+};
+
+/**
+ * Operator request body for sending a Deliverable back for revision.
+ */
+export type DeliverableRevisionRequest = {
+    revision_notes: string;
+};
+
+/**
+ * Small deliverable description embedded in Project and Proposal payloads.
+ */
+export type DeliverableSpec = {
+    name: string;
+    description: string;
+};
+
+/**
+ * Accepted Contributor request body for submitting Milestone work.
+ */
+export type DeliverableSubmitRequest = {
+    name: string;
+    description: string;
+    file_keys: Array<(string)>;
+};
+
+/**
+ * Project member request body for raising a Milestone dispute.
+ */
+export type DisputeCreateRequest = {
+    milestone_id: string;
+    reason: string;
+};
+
+/**
+ * Dispute response returned to Project members and Admins.
+ */
+export type DisputeResponse = {
+    id: string;
+    project_id: string;
+    milestone_id: string;
+    raised_by: string;
+    reason: string;
+    status: string;
+    resolution_type: (string | null);
+    release_amount: (string | null);
+    refund_amount: (string | null);
+    admin_id: (string | null);
+    resolution_notes: (string | null);
+    escalated_at: (string | null);
+    resolved_at: (string | null);
+    created_at: string;
+};
+
+/**
+ * List response for Project Disputes.
+ */
+export type DisputesResponse = {
+    disputes: Array<DisputeResponse>;
 };
 
 export type EarningsResponse = {
@@ -291,6 +416,18 @@ export type FrameworkListItem = {
     updated_at: string;
 };
 
+/**
+ * Framework draft prefill data derived from an approved Deliverable.
+ */
+export type FrameworkPrefillResponse = {
+    title: string;
+    description: string;
+    file_keys: Array<(string)>;
+    tags?: Array<(string)>;
+    source_project_id: string;
+    source_deliverable_id: string;
+};
+
 export type FrameworkResponse = {
     id: string;
     contributor_id: string;
@@ -341,7 +478,7 @@ export type FrameworkVersionCreate = {
     };
 };
 
-export type change_type = 'fix' | 'improvement' | 'major';
+export type change_type2 = 'fix' | 'improvement' | 'major';
 
 export type HealthResponse = {
     status: 'ok' | 'unhealthy';
@@ -351,6 +488,10 @@ export type HealthResponse = {
 };
 
 export type status5 = 'ok' | 'unhealthy';
+
+export type HTTPValidationError = {
+    detail?: Array<ValidationError>;
+};
 
 export type InvoiceGenerationResponse = {
     transaction_id: string;
@@ -442,6 +583,99 @@ export type LoginResponse = {
 };
 
 export type token_type = 'bearer';
+
+/**
+ * Count of notifications changed by a read-all request.
+ */
+export type MarkAllReadResponse = {
+    updated_count: number;
+};
+
+/**
+ * Accepted Contributor request body for drafting a Project Milestone.
+ */
+export type MilestoneCreateRequest = {
+    sequence: number;
+    name: string;
+    description: string;
+    budget: (number | string);
+    currency?: string;
+    due_date?: (string | null);
+};
+
+/**
+ * Stripe PaymentIntent data needed to fund a Project Milestone.
+ */
+export type MilestoneFundingResponse = {
+    transaction_id: string;
+    provider: "stripe";
+    client_secret: string;
+};
+
+/**
+ * Milestone response returned to Project members.
+ */
+export type MilestoneResponse = {
+    id: string;
+    project_id: string;
+    escrow_id: (string | null);
+    sequence: number;
+    name: string;
+    description: string;
+    budget: string;
+    currency: string;
+    due_date: (string | null);
+    status: string;
+    funded_at: (string | null);
+    submitted_at: (string | null);
+    approved_at: (string | null);
+    created_at: string;
+};
+
+/**
+ * List response for Project Milestones.
+ */
+export type MilestonesResponse = {
+    milestones: Array<MilestoneResponse>;
+};
+
+/**
+ * Accepted Contributor request body for editing a draft Milestone.
+ */
+export type MilestoneUpdateRequest = {
+    sequence?: (number | null);
+    name?: (string | null);
+    description?: (string | null);
+    budget?: (number | string | null);
+    due_date?: (string | null);
+};
+
+/**
+ * Serializable notification row returned to the owning user.
+ */
+export type NotificationItem = {
+    id: string;
+    type: string;
+    title: string;
+    body: string;
+    link: (string | null);
+    payload: ({
+    [key: string]: unknown;
+} | null);
+    read_at: (string | null);
+    created_at: string;
+};
+
+/**
+ * Paginated notification list plus unread badge count.
+ */
+export type NotificationsResponse = {
+    notifications: Array<NotificationItem>;
+    unread_count: number;
+    total: number;
+    page: number;
+    page_size: number;
+};
 
 export type OrgSize = 'startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise';
 
@@ -555,6 +789,107 @@ export type PricingConfig = {
     usage_restrictions?: (string) | null;
 };
 
+/**
+ * Operator request body for creating a Project.
+ */
+export type ProjectCreateRequest = {
+    title: string;
+    description: string;
+    category: string;
+    required_deliverables: Array<DeliverableSpec>;
+    budget_min: (number | string);
+    budget_max: (number | string);
+    currency?: string;
+    deadline?: (string | null);
+};
+
+/**
+ * Project response returned by CRUD and assignment endpoints.
+ */
+export type ProjectResponse = {
+    id: string;
+    operator_id: string;
+    title: string;
+    description: string;
+    category: string;
+    required_deliverables: Array<{
+        [key: string]: unknown;
+    }>;
+    budget_min: string;
+    budget_max: string;
+    currency: string;
+    deadline: (string | null);
+    status: string;
+    milestone_plan_status: string;
+    expires_at: string;
+    accepted_proposal_id: (string | null);
+    delivered_at: (string | null);
+    closed_at: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Paginated Project list response.
+ */
+export type ProjectsResponse = {
+    projects: Array<ProjectResponse>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * Operator request body for editing an open Project.
+ */
+export type ProjectUpdateRequest = {
+    title?: (string | null);
+    description?: (string | null);
+    category?: (string | null);
+    required_deliverables?: (Array<DeliverableSpec> | null);
+    budget_min?: (number | string | null);
+    budget_max?: (number | string | null);
+    deadline?: (string | null);
+};
+
+/**
+ * Contributor request body for submitting a Proposal.
+ */
+export type ProposalCreateRequest = {
+    scope: string;
+    budget: (number | string);
+    currency?: string;
+    timeline_days: number;
+    deliverables: Array<DeliverableSpec>;
+};
+
+/**
+ * Proposal response returned to authors and Project owners.
+ */
+export type ProposalResponse = {
+    id: string;
+    project_id: string;
+    contributor_id: string;
+    scope: string;
+    budget: string;
+    currency: string;
+    timeline_days: number;
+    deliverables: Array<{
+        [key: string]: unknown;
+    }>;
+    status: string;
+    withdrawn_at: (string | null);
+    accepted_at: (string | null);
+    created_at: string;
+};
+
+/**
+ * List response for Project proposals.
+ */
+export type ProposalsResponse = {
+    proposals: Array<ProposalResponse>;
+};
+
 export type PurchaseHistoryItem = {
     transaction_id: string;
     framework_id: string;
@@ -665,6 +1000,16 @@ export type TotpStatusResponse = {
     totp_enabled: boolean;
 };
 
+export type ValidationError = {
+    loc: Array<(string | number)>;
+    msg: string;
+    type: string;
+    input?: unknown;
+    ctx?: {
+        [key: string]: unknown;
+    };
+};
+
 export type VerifyEmailRequest = {
     token: string;
 };
@@ -675,6 +1020,61 @@ export type WebhookIngestResponse = {
 };
 
 export type status9 = 'processed' | 'received' | 'duplicate';
+
+/**
+ * Request body for posting a user workspace message.
+ */
+export type WorkspaceMessageCreateRequest = {
+    body?: (string | null);
+    file_keys?: (Array<(string)> | null);
+};
+
+/**
+ * Workspace message response returned to Project members.
+ */
+export type WorkspaceMessageResponse = {
+    id: string;
+    project_id: string;
+    sender_id: (string | null);
+    body: (string | null);
+    file_keys: (Array<(string)> | null);
+    scan_status: string;
+    system_event: (string | null);
+    system_payload: ({
+    [key: string]: unknown;
+} | null);
+    created_at: string;
+};
+
+/**
+ * List response for Project workspace messages.
+ */
+export type WorkspaceMessagesResponse = {
+    messages: Array<WorkspaceMessageResponse>;
+};
+
+/**
+ * Request body for creating a workspace presigned upload session.
+ */
+export type WorkspaceUploadCreateRequest = {
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+
+/**
+ * Presigned POST response for a single workspace file upload.
+ */
+export type WorkspaceUploadSessionResponse = {
+    id: string;
+    s3_key: string;
+    url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    expires_at: string;
+    size_limit: number;
+};
 
 export type RegisterUserData = {
     body: RegisterRequest;
@@ -1265,3 +1665,374 @@ export type DeactivateAccountError = (unknown);
 export type GetHealthResponse = (HealthResponse);
 
 export type GetHealthError = (HealthResponse);
+
+export type ResolveProjectDisputeData = {
+    body: AdminDisputeResolveRequest;
+    path: {
+        dispute_id: string;
+    };
+};
+
+export type ResolveProjectDisputeResponse = (DisputeResponse);
+
+export type ResolveProjectDisputeError = (HTTPValidationError);
+
+export type ListNotificationsData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        unread_only?: boolean;
+    };
+};
+
+export type ListNotificationsResponse = (NotificationsResponse);
+
+export type ListNotificationsError = (HTTPValidationError);
+
+export type MarkAllNotificationsReadResponse = (MarkAllReadResponse);
+
+export type MarkAllNotificationsReadError = unknown;
+
+export type MarkNotificationReadData = {
+    path: {
+        notification_id: string;
+    };
+};
+
+export type MarkNotificationReadResponse = (NotificationItem);
+
+export type MarkNotificationReadError = (HTTPValidationError);
+
+export type CreateProjectData = {
+    body: ProjectCreateRequest;
+};
+
+export type CreateProjectResponse = (ProjectResponse);
+
+export type CreateProjectError = (HTTPValidationError);
+
+export type ListProjectsData = {
+    query: {
+        page?: number;
+        page_size?: number;
+        role: 'contributor' | 'operator';
+    };
+};
+
+export type ListProjectsResponse = (ProjectsResponse);
+
+export type ListProjectsError = (HTTPValidationError);
+
+export type GetProjectData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type GetProjectResponse = (ProjectResponse);
+
+export type GetProjectError = (HTTPValidationError);
+
+export type UpdateProjectData = {
+    body: ProjectUpdateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type UpdateProjectResponse = (ProjectResponse);
+
+export type UpdateProjectError = (HTTPValidationError);
+
+export type CloseDeliveredProjectData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type CloseDeliveredProjectResponse = (ProjectResponse);
+
+export type CloseDeliveredProjectError = (HTTPValidationError);
+
+export type CreateDisputeData = {
+    body: DisputeCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateDisputeResponse = (DisputeResponse);
+
+export type CreateDisputeError = (HTTPValidationError);
+
+export type ListDisputesData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ListDisputesResponse = (DisputesResponse);
+
+export type ListDisputesError = (HTTPValidationError);
+
+export type GetDisputeData = {
+    path: {
+        dispute_id: string;
+        project_id: string;
+    };
+};
+
+export type GetDisputeResponse = (DisputeResponse);
+
+export type GetDisputeError = (HTTPValidationError);
+
+export type CreateWorkspaceMessageData = {
+    body: WorkspaceMessageCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateWorkspaceMessageResponse = (WorkspaceMessageResponse);
+
+export type CreateWorkspaceMessageError = (HTTPValidationError);
+
+export type ListWorkspaceMessagesData = {
+    path: {
+        project_id: string;
+    };
+    query?: {
+        before?: (string | null);
+        limit?: number;
+    };
+};
+
+export type ListWorkspaceMessagesResponse = (WorkspaceMessagesResponse);
+
+export type ListWorkspaceMessagesError = (HTTPValidationError);
+
+export type CreateWorkspaceUploadSessionData = {
+    body: WorkspaceUploadCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateWorkspaceUploadSessionResponse = (WorkspaceUploadSessionResponse);
+
+export type CreateWorkspaceUploadSessionError = (HTTPValidationError);
+
+export type CreateMilestoneData = {
+    body: MilestoneCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateMilestoneResponse = (MilestoneResponse);
+
+export type CreateMilestoneError = (HTTPValidationError);
+
+export type ListMilestonesData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ListMilestonesResponse = (MilestonesResponse);
+
+export type ListMilestonesError = (HTTPValidationError);
+
+export type FinalizeMilestonePlanData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type FinalizeMilestonePlanResponse = (ProjectResponse);
+
+export type FinalizeMilestonePlanError = (HTTPValidationError);
+
+export type UpdateMilestoneData = {
+    body: MilestoneUpdateRequest;
+    path: {
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type UpdateMilestoneResponse = (MilestoneResponse);
+
+export type UpdateMilestoneError = (HTTPValidationError);
+
+export type DeleteMilestoneData = {
+    path: {
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type DeleteMilestoneResponse = (void);
+
+export type DeleteMilestoneError = (HTTPValidationError);
+
+export type SubmitDeliverableData = {
+    body: DeliverableSubmitRequest;
+    path: {
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type SubmitDeliverableResponse = (DeliverableResponse);
+
+export type SubmitDeliverableError = (HTTPValidationError);
+
+export type ApproveDeliverableData = {
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type ApproveDeliverableResponse = (DeliverableResponse);
+
+export type ApproveDeliverableError = (HTTPValidationError);
+
+export type GetFrameworkPrefillFromDeliverableData = {
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type GetFrameworkPrefillFromDeliverableResponse = (FrameworkPrefillResponse);
+
+export type GetFrameworkPrefillFromDeliverableError = (HTTPValidationError);
+
+export type RequestDeliverableRevisionData = {
+    body: DeliverableRevisionRequest;
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type RequestDeliverableRevisionResponse = (DeliverableResponse);
+
+export type RequestDeliverableRevisionError = (HTTPValidationError);
+
+export type FundMilestoneData = {
+    path: {
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type FundMilestoneResponse = (MilestoneFundingResponse);
+
+export type FundMilestoneError = (HTTPValidationError);
+
+export type SubmitProposalData = {
+    body: ProposalCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type SubmitProposalResponse = (ProposalResponse);
+
+export type SubmitProposalError = (HTTPValidationError);
+
+export type ListProjectProposalsData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ListProjectProposalsResponse = (ProposalsResponse);
+
+export type ListProjectProposalsError = (HTTPValidationError);
+
+export type ListMyProjectProposalsData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ListMyProjectProposalsResponse = (ProposalsResponse);
+
+export type ListMyProjectProposalsError = (HTTPValidationError);
+
+export type AcceptProposalData = {
+    path: {
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type AcceptProposalResponse = (ProjectResponse);
+
+export type AcceptProposalError = (HTTPValidationError);
+
+export type ProposeAmendmentData = {
+    body: AmendmentCreateRequest;
+    path: {
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type ProposeAmendmentResponse = (AmendmentResponse);
+
+export type ProposeAmendmentError = (HTTPValidationError);
+
+export type AcceptAmendmentData = {
+    path: {
+        amendment_id: string;
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type AcceptAmendmentResponse = (AmendmentResponse);
+
+export type AcceptAmendmentError = (HTTPValidationError);
+
+export type RejectAmendmentData = {
+    path: {
+        amendment_id: string;
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type RejectAmendmentResponse = (AmendmentResponse);
+
+export type RejectAmendmentError = (HTTPValidationError);
+
+export type WithdrawAmendmentData = {
+    path: {
+        amendment_id: string;
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type WithdrawAmendmentResponse = (AmendmentResponse);
+
+export type WithdrawAmendmentError = (HTTPValidationError);
+
+export type WithdrawProposalData = {
+    path: {
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type WithdrawProposalResponse = (ProposalResponse);
+
+export type WithdrawProposalError = (HTTPValidationError);

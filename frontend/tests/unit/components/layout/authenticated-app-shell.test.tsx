@@ -28,6 +28,10 @@ describe("AuthenticatedAppShell", () => {
       "href",
       "/library",
     );
+    expect(within(appNav).getByRole("link", { name: /projects/i })).toHaveAttribute(
+      "href",
+      "/projects",
+    );
     expect(within(appNav).getByRole("link", { name: /settings/i })).toHaveAttribute(
       "href",
       "/settings/account",

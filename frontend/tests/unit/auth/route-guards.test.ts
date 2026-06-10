@@ -42,6 +42,9 @@ describe("auth route guards", () => {
       location:
         "/login?next=%2Fcheckout%2F00000000-0000-4000-8000-000000000013",
     });
+    expect(
+      resolveAuthRouteDecision({ hint: null, pathname: "/projects" }),
+    ).toEqual({ kind: "redirect", location: "/login?next=%2Fprojects" });
   });
 
   it("allows the 2FA challenge before a browser session exists", () => {

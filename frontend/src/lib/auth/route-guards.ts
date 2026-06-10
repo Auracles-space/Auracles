@@ -26,6 +26,7 @@ const protectedPathPrefixes = [
   "/assignments",
   "/checkout",
   "/dashboard",
+  "/projects",
   "/settings",
 ];
 
