@@ -99,6 +99,18 @@ class FakeStripeRefund:
         self.status = "succeeded"
 
 
+class FakeNotificationTask:
+    """Small stand-in for Celery notification dispatch."""
+
+    def __init__(self, calls: list[dict[str, Any]]) -> None:
+        """Store a mutable call list for assertions."""
+        self.calls = calls
+
+    def delay(self, **kwargs: Any) -> None:
+        """Record notification dispatch requests without using Redis."""
+        self.calls.append(kwargs)
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure Project tables exist for endpoint tests."""
@@ -747,6 +759,50 @@ async def create_funded_project_milestone(
     return project_id, milestone_id
 
 
+async def create_disputed_funded_project(
+    client: AsyncClient,
+    *,
+    name: str,
+) -> dict[str, Any]:
+    """Create a funded Project Milestone with one active Dispute."""
+    operator_id = await create_user(f"{name}-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        f"{name}-contributor@auracles.space",
+        ["contributor"],
+    )
+    admin_id, totp_secret = await create_admin_user()
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    raised = await client.post(
+        f"/v1/projects/{project_id}/disputes",
+        headers=operator_headers,
+        json={
+            "milestone_id": milestone_id,
+            "reason": "Submitted work does not match the agreed scope.",
+        },
+    )
+    return {
+        "operator_id": operator_id,
+        "contributor_id": contributor_id,
+        "admin_id": admin_id,
+        "totp_secret": totp_secret,
+        "operator_headers": operator_headers,
+        "contributor_headers": contributor_headers,
+        "admin_headers": auth_headers(admin_id, ["admin"]),
+        "project_id": project_id,
+        "milestone_id": milestone_id,
+        "dispute_id": raised.json()["id"],
+        "raised_status": raised.status_code,
+    }
+
+
 async def test_deliverable_revision_approval_and_manual_project_close(
     client: AsyncClient,
     migrated_database: None,
@@ -984,13 +1040,6 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
     notification_calls: list[dict[str, Any]] = []
     fake_redis = FakeRedis()
 
-    class FakeNotificationTask:
-        """Small stand-in for Celery notification dispatch."""
-
-        def delay(self, **kwargs: Any) -> None:
-            """Record notification dispatch requests without using Redis."""
-            notification_calls.append(kwargs)
-
     async def override_redis() -> FakeRedis:
         """Return Redis test double for admin TOTP verification."""
         return fake_redis
@@ -1018,7 +1067,7 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
     monkeypatch.setattr(
         dispute_service,
         "dispatch_project_notification",
-        FakeNotificationTask(),
+        FakeNotificationTask(notification_calls),
     )
 
     operator_id = await create_user("dispute-operator@auracles.space", ["operator"])
@@ -1140,4 +1189,166 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
     assert [message.system_event for message in messages] == [
         "dispute_raised",
         "dispute_resolved",
+    ]
+
+
+async def test_admin_resolves_dispute_release_to_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Release resolution awards the full Milestone escrow to Contributor."""
+    del migrated_database, project_context
+    notification_calls: list[dict[str, Any]] = []
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def unexpected_refund(**kwargs: Any) -> FakeStripeRefund:
+        """Fail if release resolution tries to call Stripe refund."""
+        raise AssertionError(f"Unexpected refund call: {kwargs}")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    context = await create_disputed_funded_project(client, name="release-dispute")
+
+    resolved = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "release",
+            "resolution_notes": "Contributor delivered enough to release escrow.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(context["project_id"]))
+        milestone = await session.get(Milestone, UUID(context["milestone_id"]))
+        dispute = await session.get(Dispute, UUID(context["dispute_id"]))
+        escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert context["raised_status"] == 201
+    assert resolved.status_code == 200
+    assert resolved.json()["resolution_type"] == "release"
+    assert project is not None
+    assert project.status == "delivered"
+    assert milestone is not None
+    assert milestone.status == "approved"
+    assert dispute is not None
+    assert dispute.status == "resolved"
+    assert dispute.release_amount is None
+    assert dispute.refund_amount is None
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert escrow.released_by == context["admin_id"]
+    assert [call["notification_type"] for call in notification_calls] == [
+        "dispute_raised",
+        "dispute_resolved_release",
+        "dispute_resolved_release",
+    ]
+
+
+async def test_admin_resolves_dispute_refund_to_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refund resolution returns the full Milestone escrow to Operator."""
+    del migrated_database, project_context
+    refund_calls: list[dict[str, Any]] = []
+    notification_calls: list[dict[str, Any]] = []
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Record the Stripe full refund request."""
+        refund_calls.append(
+            {
+                "payment_intent_id": payment_intent_id,
+                "amount": amount,
+                "currency": currency,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripeRefund("re_project_refund_123")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    context = await create_disputed_funded_project(client, name="refund-dispute")
+
+    resolved = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "refund",
+            "resolution_notes": "Operator refund approved after admin review.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(context["project_id"]))
+        milestone = await session.get(Milestone, UUID(context["milestone_id"]))
+        dispute = await session.get(Dispute, UUID(context["dispute_id"]))
+        escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+        transaction = (
+            await session.get(Transaction, escrow.transaction_id) if escrow else None
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert context["raised_status"] == 201
+    assert resolved.status_code == 200
+    assert resolved.json()["resolution_type"] == "refund"
+    assert project is not None
+    assert project.status == "delivered"
+    assert milestone is not None
+    assert milestone.status == "cancelled"
+    assert dispute is not None
+    assert dispute.status == "resolved"
+    assert dispute.release_amount is None
+    assert dispute.refund_amount is None
+    assert escrow is not None
+    assert escrow.status == "refunded"
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert refund_calls == [
+        {
+            "payment_intent_id": "pi_deliverable_123",
+            "amount": Decimal("1500.00"),
+            "currency": "USD",
+            "idempotency_key": f"escrow_dispute_refund:{escrow.id}",
+        }
+    ]
+    assert [call["notification_type"] for call in notification_calls] == [
+        "dispute_raised",
+        "dispute_resolved_refund",
+        "dispute_resolved_refund",
     ]
