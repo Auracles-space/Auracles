@@ -40,6 +40,15 @@ const filterGroups = [
     values: FRAMEWORK_CATEGORY_OPTIONS,
   },
   {
+    key: "attestation_status",
+    label: "Attestation",
+    values: [
+      { label: "Attested", value: "attested" },
+      { label: "Pending Acceptance", value: "pending_acceptance" },
+      { label: "No Attestation", value: "none" },
+    ],
+  },
+  {
     key: "license_type",
     label: "License",
     values: [

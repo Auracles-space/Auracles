@@ -8,6 +8,7 @@ import { FilterSidebar } from "@/components/modules/explore/filter-sidebar";
 import { FrameworkCard } from "@/components/modules/explore/framework-card";
 import type {
   ExploreFrameworkCard,
+  ExploreAttestationStatus,
   ExploreSort,
   FrameworkCategory,
   FrameworkFunction,
@@ -91,6 +92,26 @@ function sortParam(value: string | string[] | undefined): ExploreSort {
 }
 
 /**
+ * Parse the public Attestation badge filter.
+ *
+ * @param value - Next.js search param value.
+ * @returns Supported public Attestation status filter.
+ */
+function attestationStatusParam(
+  value: string | string[] | undefined,
+): ExploreAttestationStatus | null {
+  const param = firstParam(value);
+  if (
+    param === "attested" ||
+    param === "pending_acceptance" ||
+    param === "none"
+  ) {
+    return param;
+  }
+  return null;
+}
+
+/**
  * Render the public marketplace catalog.
  *
  * @param props - Next.js query params.
@@ -118,6 +139,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     q: firstParam(params.q) ?? null,
     sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS),
     sort: sortParam(params.sort),
+    attestation_status: attestationStatusParam(params.attestation_status),
   };
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
@@ -145,6 +167,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                   <FilterSidebar
                     active={{
                       category: query.category ?? undefined,
+                      attestation_status: query.attestation_status ?? undefined,
                       function: query.function ?? undefined,
                       industry: query.industry ?? undefined,
                       license_type: query.license_type ?? undefined,
@@ -163,6 +186,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
               <FilterSidebar
                 active={{
                   category: query.category ?? undefined,
+                  attestation_status: query.attestation_status ?? undefined,
                   function: query.function ?? undefined,
                   industry: query.industry ?? undefined,
                   license_type: query.license_type ?? undefined,

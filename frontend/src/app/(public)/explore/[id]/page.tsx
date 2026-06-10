@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AttestationBadge } from "@/components/modules/explore/framework-card";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
 import {
@@ -62,6 +63,9 @@ export default async function ExploreDetailPage({
               {framework.description}
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
+              {framework.attestation_badge ? (
+                <AttestationBadge badge={framework.attestation_badge} />
+              ) : null}
               {framework.tags.map((tag: string) => (
                 <span
                   className="rounded-[4px] border border-border-default px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted"
@@ -116,6 +120,15 @@ export default async function ExploreDetailPage({
               Trust signals
             </h2>
             <ul className="mt-4 grid gap-3 text-sm text-foreground-muted">
+              {framework.attestation_badge ? (
+                <li>
+                  Attestation outcome:{" "}
+                  {formatLabel(framework.attestation_badge.outcome)} (
+                  {formatLabel(framework.attestation_badge.status)}).
+                </li>
+              ) : (
+                <li>No public Attestation report has been attached yet.</li>
+              )}
               <li>Published version snapshot preserved for licensees.</li>
               <li>Artifact previews use short-lived read URLs.</li>
               <li>Licensed downloads require Operator role and verified KYC.</li>

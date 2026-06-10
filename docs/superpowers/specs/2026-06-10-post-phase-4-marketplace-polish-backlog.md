@@ -73,3 +73,47 @@ so Explore trust signals do not stay permanently shimmed.
 - Weighted reputation scoring from reviews.
 - Review helpfulness/upvotes.
 - Organization-level reviews.
+
+## Slice 2 — Rarity Gate Context From Reviews
+
+**Maps to:** BR-FWK-006, FR-FWK-014, FR-EXP-006.
+
+### Product behavior
+
+- Low rarity remains a publish gate because it detects similarity/plagiarism
+  risk, not market quality.
+- Once Framework reviews exist, the rarity warning should show context about the
+  nearest published match:
+  - nearest Framework title
+  - internal rarity / similarity score
+  - average review score and review count for the nearest match
+- Low review score on the similar published Framework does not bypass the gate.
+  It can support a Contributor differentiation note, but the platform still
+  records the similarity and acknowledgement.
+- Contributor acknowledgement should require a short differentiation statement
+  when the nearest match has public review data.
+
+### Backend scope
+
+- Extend rarity failure metadata to include nearest-match review aggregate when
+  available.
+- Extend `acknowledge_soft_fail` payload with optional differentiation note.
+- Persist differentiation note in audit metadata.
+- Keep current publishing behavior: soft-fail acknowledgement can unblock allowed
+  rarity failures; unresolved PII/virus/processing failures still block.
+
+### Frontend scope
+
+- Framework pipeline panel shows nearest-match review context beside the rarity
+  warning.
+- Acknowledgement form includes a concise differentiation field.
+- Copy must make clear that low-rated similar content may still be protected
+  content and cannot simply be copied.
+
+### Tests
+
+- Low-rarity framework with nearest match includes review aggregate in failure
+  metadata.
+- Low nearest-match rating does not auto-pass rarity.
+- Acknowledgement persists differentiation note and unblocks only allowed
+  rarity failures.

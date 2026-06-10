@@ -11,11 +11,15 @@ from fastapi import HTTPException, status
 from redis.asyncio import Redis
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.attestation.models import Attestation
 from app.modules.explore.schemas import (
     ExploreArtifactSummary,
+    ExploreAttestationBadge,
+    ExploreAttestationStatus,
     ExploreFrameworkCard,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
@@ -32,6 +36,7 @@ PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
 def _card_from_framework(
     framework: Framework,
     rarity_score: Decimal | None,
+    attestation_badge: ExploreAttestationBadge | None,
 ) -> ExploreFrameworkCard:
     """Map a published Framework row into a public catalog card."""
     return ExploreFrameworkCard(
@@ -53,6 +58,7 @@ def _card_from_framework(
         license_types=framework.license_types,
         thumbnail_key=framework.thumbnail_key,
         rarity_score=rarity_score,
+        attestation_badge=attestation_badge,
         owned=False,
         published_at=framework.published_at,
     )
@@ -95,6 +101,7 @@ def _apply_filters(
     jurisdiction: str | None,
     price_min: Decimal | None,
     price_max: Decimal | None,
+    attestation_status: ExploreAttestationStatus | None,
 ) -> Select[tuple[Framework]]:
     """Apply faceted Explore filters to the catalog query."""
     if q:
@@ -127,7 +134,42 @@ def _apply_filters(
         query = query.where(Framework.price >= price_min)
     if price_max is not None:
         query = query.where(Framework.price <= price_max)
+    if attestation_status is not None:
+        query = _apply_attestation_filter(query, attestation_status)
     return query
+
+
+def _public_attestation_exists(
+    *,
+    status_: str | None = None,
+) -> ColumnElement[bool]:
+    """Build an EXISTS predicate for public Framework Attestation reports."""
+    predicate = (
+        select(Attestation.id)
+        .where(
+            Attestation.target_type == "framework",
+            Attestation.target_id == Framework.id,
+            Attestation.outcome.is_not(None),
+            Attestation.report_key.is_not(None),
+            Attestation.status.in_(("report_submitted", "closed")),
+        )
+        .limit(1)
+    )
+    if status_ is not None:
+        predicate = predicate.where(Attestation.status == status_)
+    return predicate.exists()
+
+
+def _apply_attestation_filter(
+    query: Select[tuple[Framework]],
+    attestation_status: ExploreAttestationStatus,
+) -> Select[tuple[Framework]]:
+    """Apply public Attestation badge filters to the catalog query."""
+    if attestation_status == "pending_acceptance":
+        return query.where(_public_attestation_exists(status_="report_submitted"))
+    if attestation_status == "attested":
+        return query.where(_public_attestation_exists(status_="closed"))
+    return query.where(~_public_attestation_exists())
 
 
 def _apply_sort(
@@ -160,6 +202,53 @@ async def _framework_rarity_scores(
     return {framework_id: rarity_score for framework_id, rarity_score in rows.all()}
 
 
+def _public_attestation_status(status_: str) -> str:
+    """Map internal Attestation status to public badge status."""
+    if status_ == "report_submitted":
+        return "pending_acceptance"
+    return "attested"
+
+
+async def _framework_attestation_badges(
+    db: AsyncSession,
+    framework_ids: list[UUID],
+) -> dict[UUID, ExploreAttestationBadge]:
+    """Return latest public Attestation badge per Framework."""
+    if not framework_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(Attestation)
+            .where(
+                Attestation.target_type == "framework",
+                Attestation.target_id.in_(framework_ids),
+                Attestation.outcome.is_not(None),
+                Attestation.report_key.is_not(None),
+                Attestation.status.in_(("report_submitted", "closed")),
+            )
+            .order_by(
+                Attestation.target_id,
+                Attestation.issued_at.desc().nullslast(),
+                Attestation.created_at.desc(),
+            )
+        )
+    ).scalars()
+    badges: dict[UUID, ExploreAttestationBadge] = {}
+    for attestation in rows:
+        if attestation.target_id in badges:
+            continue
+        if attestation.outcome is None or attestation.report_key is None:
+            continue
+        badges[attestation.target_id] = ExploreAttestationBadge(
+            id=attestation.id,
+            status=_public_attestation_status(attestation.status),
+            outcome=attestation.outcome,
+            report_key=attestation.report_key,
+            issued_at=attestation.issued_at,
+        )
+    return badges
+
+
 async def list_catalog(
     db: AsyncSession,
     *,
@@ -179,6 +268,7 @@ async def list_catalog(
     jurisdiction: str | None,
     price_min: Decimal | None,
     price_max: Decimal | None,
+    attestation_status: ExploreAttestationStatus | None,
 ) -> ExploreFrameworkListResponse:
     """Return published Frameworks for public Explore."""
     query = _apply_filters(
@@ -195,6 +285,7 @@ async def list_catalog(
         jurisdiction=jurisdiction,
         price_min=price_min,
         price_max=price_max,
+        attestation_status=attestation_status,
     )
     count_query = select(func.count()).select_from(query.subquery())
     total = int(await db.scalar(count_query) or 0)
@@ -205,9 +296,17 @@ async def list_catalog(
         db,
         [framework.id for framework in frameworks],
     )
+    attestation_badges = await _framework_attestation_badges(
+        db,
+        [framework.id for framework in frameworks],
+    )
     return ExploreFrameworkListResponse(
         items=[
-            _card_from_framework(framework, rarity_scores.get(framework.id))
+            _card_from_framework(
+                framework,
+                rarity_scores.get(framework.id),
+                attestation_badges.get(framework.id),
+            )
             for framework in frameworks
         ],
         total=total,
@@ -278,6 +377,7 @@ async def get_detail(
     ).scalars().all()
     artifacts = list(artifact_rows)
     rarity_scores = await _framework_rarity_scores(db, [framework.id])
+    attestation_badges = await _framework_attestation_badges(db, [framework.id])
     preview_artifact = next(
         (
             artifact
@@ -286,7 +386,11 @@ async def get_detail(
         ),
         None,
     )
-    card = _card_from_framework(framework, rarity_scores.get(framework.id))
+    card = _card_from_framework(
+        framework,
+        rarity_scores.get(framework.id),
+        attestation_badges.get(framework.id),
+    )
     return ExploreFrameworkDetail(
         **card.model_dump(),
         preview_artifact_id=framework.preview_artifact_id,
@@ -353,7 +457,15 @@ async def related_frameworks(
         db,
         [framework.id for framework in ranked],
     )
+    attestation_badges = await _framework_attestation_badges(
+        db,
+        [framework.id for framework in ranked],
+    )
     return [
-        _card_from_framework(framework, rarity_scores.get(framework.id))
+        _card_from_framework(
+            framework,
+            rarity_scores.get(framework.id),
+            attestation_badges.get(framework.id),
+        )
         for framework in ranked
     ]

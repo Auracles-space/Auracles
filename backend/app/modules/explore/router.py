@@ -17,6 +17,7 @@ from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.modules.explore import service
 from app.modules.explore.schemas import (
+    ExploreAttestationStatus,
     ExploreFrameworkCard,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
@@ -64,6 +65,7 @@ async def list_frameworks(
     jurisdiction: str | None = None,
     price_min: Annotated[Decimal | None, Query(ge=0)] = None,
     price_max: Annotated[Decimal | None, Query(ge=0)] = None,
+    attestation_status: ExploreAttestationStatus | None = None,
 ) -> ExploreFrameworkListResponse:
     """Return paginated public Framework catalog results."""
     result = await service.list_catalog(
@@ -84,6 +86,7 @@ async def list_frameworks(
         jurisdiction=jurisdiction,
         price_min=price_min,
         price_max=price_max,
+        attestation_status=attestation_status,
     )
     if result.sort_shim:
         response.headers["X-Sort-Shim"] = "true"

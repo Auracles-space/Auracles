@@ -3,14 +3,49 @@
  *
  * Cards expose trust signals and pricing without leaking private artifact keys.
  */
+import { CheckCircledIcon, ClockIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 
-import type { ExploreFrameworkCard } from "@/lib/generated/types.gen";
+import type {
+  ExploreAttestationBadge,
+  ExploreFrameworkCard,
+} from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type FrameworkCardProps = {
   framework: ExploreFrameworkCard;
 };
+
+/**
+ * Render a compact public Attestation trust badge.
+ *
+ * @param props - Public badge data from the Explore API.
+ */
+export function AttestationBadge({
+  badge,
+}: {
+  badge: ExploreAttestationBadge;
+}) {
+  const isPending = badge.status === "pending_acceptance";
+  const Icon = isPending ? ClockIcon : CheckCircledIcon;
+  const className = isPending
+    ? "border-warning/30 bg-warning/10 text-warning"
+    : "border-success/30 bg-success/10 text-success";
+  const label = isPending ? "Pending acceptance" : "Attested";
+
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1",
+        "text-[11px] font-semibold uppercase tracking-[0.05em]",
+        className,
+      ].join(" ")}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {label}: {formatLabel(badge.outcome)}
+    </span>
+  );
+}
 
 /**
  * Render one marketplace catalog item.
@@ -61,17 +96,14 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
               Owned
             </span>
           )}
+          {framework.attestation_badge ? (
+            <AttestationBadge badge={framework.attestation_badge} />
+          ) : null}
         </div>
 
         {/* Footer / Meta */}
         <div className="flex items-center justify-between border-t border-border-default pt-4">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-medium text-success">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-              Verified
-            </div>
             <span className="text-xs font-medium text-foreground-muted">
               v{framework.version}
             </span>

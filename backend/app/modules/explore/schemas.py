@@ -16,6 +16,17 @@ ExploreSort = Literal[
     "price_asc",
     "price_desc",
 ]
+ExploreAttestationStatus = Literal["pending_acceptance", "attested", "none"]
+
+
+class ExploreAttestationBadge(BaseModel):
+    """Public trust badge for a Framework-target Attestation."""
+
+    id: UUID
+    status: Literal["pending_acceptance", "attested"]
+    outcome: Literal["approved", "conditional", "rejected"]
+    report_key: str
+    issued_at: datetime | None
 
 
 class ExploreFrameworkCard(BaseModel):
@@ -39,6 +50,7 @@ class ExploreFrameworkCard(BaseModel):
     license_types: list[str]
     thumbnail_key: str | None
     rarity_score: Decimal | None
+    attestation_badge: ExploreAttestationBadge | None = None
     owned: bool = False
     published_at: datetime | None
 

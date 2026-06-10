@@ -23,6 +23,12 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationDispute,
+    AttestationOffer,
+    AttestationUploadSession,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.frameworks.models import (
     Framework,
@@ -103,6 +109,10 @@ async def explore_test_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(License))
             await session.execute(delete(ArtifactRarityAudit))
             await session.execute(delete(ArtifactPiiAudit))
+            await session.execute(delete(AttestationUploadSession))
+            await session.execute(delete(AttestationOffer))
+            await session.execute(delete(AttestationDispute))
+            await session.execute(delete(Attestation))
             await session.execute(delete(FrameworkVersionArtifact))
             await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Artifact))
@@ -228,6 +238,39 @@ async def create_framework(
         return framework.id, preview_artifact_id
 
 
+async def create_framework_attestation(
+    *,
+    framework_id: UUID,
+    requestor_id: UUID,
+    attestor_id: UUID,
+    status: str = "report_submitted",
+    outcome: str = "approved",
+) -> UUID:
+    """Create a public Framework-target Attestation report for Explore tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="framework",
+                target_id=framework_id,
+                requestor_id=requestor_id,
+                attestor_id=attestor_id,
+                status=status,
+                outcome=outcome,
+                requested_specializations=["governance"],
+                requested_jurisdictions=["US"],
+                summary="Independent review completed.",
+                scope="Review of implementation method and artifacts.",
+                evidence_references={},
+                report_key=f"attestation-reports/{uuid4()}/report.pdf",
+                fee_amount=Decimal("250.00"),
+                currency="USD",
+                issued_at=datetime.now(UTC),
+            )
+            session.add(attestation)
+            await session.flush()
+            return attestation.id
+
+
 async def test_public_catalog_search_filters_and_visibility(
     client: AsyncClient,
     migrated_database: None,
@@ -277,6 +320,83 @@ async def test_public_catalog_search_filters_and_visibility(
     assert body["items"][0]["function"] == "risk_management"
     assert body["items"][0]["org_size"] == "mid_market"
     assert body["items"][0]["owned"] is False
+
+
+async def test_public_catalog_returns_and_filters_framework_attestation_badges(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Explore exposes public Framework attestation badges and filters by them."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "attested-seller@auracles.space",
+        ["contributor"],
+    )
+    requestor_id = await create_user(
+        "attestation-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "public-attestor@auracles.space",
+        ["attestor"],
+    )
+    attested_framework_id, _ = await create_framework(
+        contributor_id,
+        title="Attested Board Framework",
+    )
+    await create_framework(
+        contributor_id,
+        title="Unattested Board Framework",
+    )
+    attestation_id = await create_framework_attestation(
+        framework_id=attested_framework_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+    )
+
+    catalog_response = await client.get("/v1/explore/frameworks")
+    filtered_response = await client.get(
+        "/v1/explore/frameworks",
+        params={"attestation_status": "pending_acceptance"},
+    )
+    unattested_response = await client.get(
+        "/v1/explore/frameworks",
+        params={"attestation_status": "none"},
+    )
+    detail_response = await client.get(
+        f"/v1/explore/frameworks/{attested_framework_id}"
+    )
+
+    assert catalog_response.status_code == 200
+    catalog_items = catalog_response.json()["items"]
+    attested_item = next(
+        item for item in catalog_items if item["id"] == str(attested_framework_id)
+    )
+    unattested_item = next(
+        item for item in catalog_items if item["id"] != str(attested_framework_id)
+    )
+    assert attested_item["attestation_badge"] == {
+        "id": str(attestation_id),
+        "status": "pending_acceptance",
+        "outcome": "approved",
+        "report_key": attested_item["attestation_badge"]["report_key"],
+        "issued_at": attested_item["attestation_badge"]["issued_at"],
+    }
+    assert attested_item["attestation_badge"]["report_key"].startswith(
+        "attestation-reports/"
+    )
+    assert unattested_item["attestation_badge"] is None
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["total"] == 1
+    assert filtered_response.json()["items"][0]["id"] == str(attested_framework_id)
+    assert unattested_response.status_code == 200
+    assert unattested_response.json()["total"] == 1
+    assert unattested_response.json()["items"][0]["title"] == (
+        "Unattested Board Framework"
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["attestation_badge"]["id"] == str(attestation_id)
 
 
 async def test_authenticated_contributor_catalog_excludes_own_frameworks(

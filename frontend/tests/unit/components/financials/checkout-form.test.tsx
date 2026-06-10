@@ -31,6 +31,7 @@ vi.mock("@stripe/react-stripe-js", () => ({
 }));
 
 const framework: ExploreFrameworkDetail = {
+  attestation_badge: null,
   artifacts: [],
   category: "playbook",
   complexity: 3,

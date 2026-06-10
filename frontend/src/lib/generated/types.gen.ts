@@ -339,6 +339,16 @@ export type ExploreArtifactSummary = {
     created_at: string;
 };
 
+export type ExploreAttestationStatus = 'pending_acceptance' | 'attested' | 'none';
+
+export type ExploreAttestationBadge = {
+    id: string;
+    status: 'pending_acceptance' | 'attested';
+    outcome: 'approved' | 'conditional' | 'rejected';
+    report_key: string;
+    issued_at: (string) | null;
+};
+
 export type ExploreFrameworkCard = {
     id: string;
     title: string;
@@ -358,6 +368,7 @@ export type ExploreFrameworkCard = {
     license_types: Array<(string)>;
     thumbnail_key: (string) | null;
     rarity_score: (string) | null;
+    attestation_badge: (ExploreAttestationBadge) | null;
     owned: boolean;
     published_at: (string) | null;
 };
@@ -1445,6 +1456,7 @@ export type ListExploreFrameworksData = {
         q?: (string) | null;
         sector?: (FrameworkSector | null);
         sort?: ExploreSort;
+        attestation_status?: (ExploreAttestationStatus | null);
     };
 };
 

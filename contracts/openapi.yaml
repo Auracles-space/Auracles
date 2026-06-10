@@ -1369,6 +1369,12 @@ paths:
           - string
           - 'null'
           pattern: ^[0-9]+(\.[0-9]{1,2})?$
+      - name: attestation_status
+        in: query
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreAttestationStatus'
+          - type: 'null'
       responses:
         '200':
           description: Public Framework catalog returned.
@@ -5382,6 +5388,42 @@ components:
       - price_asc
       - price_desc
       default: newest
+    ExploreAttestationStatus:
+      type: string
+      enum:
+      - pending_acceptance
+      - attested
+      - none
+    ExploreAttestationBadge:
+      type: object
+      required:
+      - id
+      - status
+      - outcome
+      - report_key
+      - issued_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - pending_acceptance
+          - attested
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          - rejected
+        report_key:
+          type: string
+        issued_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
     FrameworkCategory:
       type: string
       enum:
@@ -5472,6 +5514,7 @@ components:
       - license_types
       - thumbnail_key
       - rarity_score
+      - attestation_badge
       - owned
       - published_at
       properties:
@@ -5536,6 +5579,10 @@ components:
           - string
           - 'null'
           pattern: ^[0-9]+(\.[0-9]{1,4})?$
+        attestation_badge:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
         owned:
           type: boolean
         published_at:
