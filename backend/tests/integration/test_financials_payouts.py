@@ -26,8 +26,16 @@ from app.core.security import (
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.projects.models import (
+    Deliverable,
+    Dispute,
+    Milestone,
+    Project,
+    Proposal,
+    ProposalAmendment,
+)
 from app.shared.models.audit_log import AuditLog
 
 
@@ -87,7 +95,14 @@ async def reset_payout_state() -> None:
         await session.execute(delete(License))
         await session.execute(delete(Payout))
         await session.execute(delete(PayoutAccount))
+        await session.execute(delete(Escrow))
         await session.execute(delete(Transaction))
+        await session.execute(delete(Dispute))
+        await session.execute(delete(Deliverable))
+        await session.execute(delete(Milestone))
+        await session.execute(delete(ProposalAmendment))
+        await session.execute(delete(Project))
+        await session.execute(delete(Proposal))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
@@ -206,6 +221,57 @@ async def create_sale(
             return transaction.id
 
 
+async def create_released_milestone_earning(
+    contributor_id: UUID,
+    *,
+    amount: Decimal,
+    created_at: datetime,
+    escrow_status: str = "released",
+) -> UUID:
+    """Create a Project Milestone transaction with its escrow release state."""
+    operator_id, _ = await create_user_with_roles(
+        f"milestone-operator-{uuid4()}@auracles.space",
+        ["operator"],
+        enable_totp=False,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=amount,
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=amount,
+                transaction_type="milestone",
+                status="completed",
+                provider="stripe",
+                provider_ref=f"pi_milestone_{uuid4()}",
+                ref_id=uuid4(),
+                ref_type="project_milestone",
+                created_at=created_at,
+            )
+            session.add(transaction)
+            await session.flush()
+            session.add(
+                Escrow(
+                    ref_id=transaction.ref_id,
+                    ref_type="project_milestone",
+                    amount=amount,
+                    currency="USD",
+                    status=escrow_status,
+                    release_conditions={
+                        "kind": "project_milestone",
+                    },
+                    transaction_id=transaction.id,
+                    released_at=(
+                        datetime.now(UTC) if escrow_status == "released" else None
+                    ),
+                )
+            )
+            return transaction.id
+
+
 async def create_verified_payout_account(contributor_id: UUID) -> UUID:
     """Create a default verified payout account for the contributor."""
     provider_account_id = f"acct_{uuid4()}"
@@ -305,6 +371,45 @@ async def test_contributor_earnings_are_refund_window_and_payout_aware(
         "gross_revenue": "180.00",
         "pending_clearance": "80.00",
         "available_balance": "75.00",
+        "commission_rate": "0.15",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_released_project_milestones_are_withdrawable_earnings(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Released Project Milestones count toward earnings and payout balance."""
+    del migrated_database, payout_context
+    contributor_id, _ = await create_user_with_roles(
+        "milestone-earnings@auracles.space",
+        ["contributor"],
+    )
+    await create_released_milestone_earning(
+        contributor_id,
+        amount=Decimal("900.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    await create_released_milestone_earning(
+        contributor_id,
+        amount=Decimal("300.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+        escrow_status="held",
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "900.00",
+        "pending_clearance": "0.00",
+        "available_balance": "765.00",
         "commission_rate": "0.15",
         "minimum_payout": "50.00",
     }

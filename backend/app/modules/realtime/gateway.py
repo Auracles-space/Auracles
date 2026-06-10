@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from uuid import UUID
 
@@ -23,6 +24,8 @@ from app.modules.realtime.pubsub import (
 from app.modules.workspace.service import is_project_member
 
 router = APIRouter(tags=["Realtime"])
+AUTH_HANDSHAKE_TIMEOUT_SECONDS = 5.0
+WS_AUTH_CLOSE_CODE = 4401
 
 
 async def _project_membership_checker(project_id: UUID, user_id: UUID) -> bool:
@@ -35,21 +38,30 @@ async def _authenticate(websocket: WebSocket) -> User | None:
     """Perform the first-message auth handshake for one WebSocket."""
     await websocket.send_json({"type": "auth_required"})
     try:
-        message = await websocket.receive_json()
+        message = await asyncio.wait_for(
+            websocket.receive_json(),
+            timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        await websocket.send_json(
+            {"type": "error", "error_code": "auth_timeout"},
+        )
+        await websocket.close(code=WS_AUTH_CLOSE_CODE)
+        return None
     except WebSocketDisconnect:
         return None
     if not isinstance(message, dict) or message.get("type") != "auth":
         await websocket.send_json(
             {"type": "error", "error_code": "auth_required"},
         )
-        await websocket.close(code=1008)
+        await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return None
     token = message.get("token")
     if not isinstance(token, str) or not token.strip():
         await websocket.send_json(
             {"type": "error", "error_code": "invalid_token"},
         )
-        await websocket.close(code=1008)
+        await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return None
 
     async with async_session_factory() as db:
@@ -58,7 +70,7 @@ async def _authenticate(websocket: WebSocket) -> User | None:
         await websocket.send_json(
             {"type": "error", "error_code": "invalid_token"},
         )
-        await websocket.close(code=1008)
+        await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return None
     await websocket.send_json({"type": "auth_ok", "user_id": str(user.id)})
     return user
@@ -168,6 +180,8 @@ async def websocket_gateway(websocket: WebSocket) -> None:
                     channel=channel,
                     subscriptions=subscriptions,
                 )
+            elif message_type == "ping":
+                await websocket.send_json({"type": "pong"})
             else:
                 await websocket.send_json(
                     {"type": "error", "error_code": "unknown_message_type"},

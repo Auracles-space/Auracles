@@ -20,6 +20,7 @@ from app.core.database import engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Escrow, Transaction
 from app.modules.projects.models import Project, Proposal
 from app.modules.realtime import gateway
 from app.shared.models.audit_log import AuditLog
@@ -31,6 +32,33 @@ class FakeSubscriptionHandle:
     async def close(self) -> None:
         """No-op close for WebSocket subscription cleanup."""
         return None
+
+
+async def never_receive_json() -> dict[str, str]:
+    """Simulate a socket that never sends the auth handshake."""
+    await asyncio.sleep(3600)
+    return {}
+
+
+class FakeAuthTimeoutWebSocket:
+    """Minimal WebSocket double for auth timeout tests."""
+
+    def __init__(self) -> None:
+        """Initialise close/send captures."""
+        self.closed_code: int | None = None
+        self.sent: list[dict[str, str]] = []
+
+    async def send_json(self, payload: dict[str, str]) -> None:
+        """Capture sent JSON payloads."""
+        self.sent.append(payload)
+
+    async def receive_json(self) -> dict[str, str]:
+        """Never return a client message."""
+        return await never_receive_json()
+
+    async def close(self, code: int) -> None:
+        """Capture the close code."""
+        self.closed_code = code
 
 
 async def dispose_async_engine() -> None:
@@ -74,6 +102,8 @@ def realtime_context(
         """Delete gateway test rows in dependency order."""
         with session_factory() as session:
             session.execute(delete(AuditLog))
+            session.execute(delete(Escrow))
+            session.execute(delete(Transaction))
             session.execute(delete(Project))
             session.execute(delete(Proposal))
             session.execute(delete(UserRole))
@@ -214,3 +244,41 @@ def test_websocket_auth_and_project_subscription_authorization(
         "channel": f"project:{project_id}",
     }
     assert subscribed == [f"user:{operator_id}", f"project:{project_id}"]
+
+
+def test_websocket_authentication_times_out_without_first_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gateway closes sockets that do not authenticate within the timeout."""
+    websocket = FakeAuthTimeoutWebSocket()
+    monkeypatch.setattr(gateway, "AUTH_HANDSHAKE_TIMEOUT_SECONDS", 0.01)
+
+    user = asyncio.run(gateway._authenticate(websocket))
+
+    assert user is None
+    assert websocket.sent == [
+        {"type": "auth_required"},
+        {"type": "error", "error_code": "auth_timeout"},
+    ]
+    assert websocket.closed_code == 4401
+
+
+def test_websocket_ping_returns_pong(
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """Authenticated realtime sockets respond to heartbeat pings."""
+    session_factory, _ = realtime_context
+    operator_id, _, _ = create_project_members(session_factory)
+    operator_token = create_access_token(operator_id, ["operator"])
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/v1/ws") as websocket:
+            assert websocket.receive_json() == {"type": "auth_required"}
+            websocket.send_json({"type": "auth", "token": operator_token})
+            assert websocket.receive_json() == {
+                "type": "auth_ok",
+                "user_id": str(operator_id),
+            }
+            websocket.send_json({"type": "ping"})
+            assert websocket.receive_json() == {"type": "pong"}

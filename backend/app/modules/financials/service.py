@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import func, select, text
+from sqlalchemy import exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials.invoices import purchase_invoice_key
 from app.modules.financials.models import (
+    Escrow,
     Payout,
     PayoutAccount,
     PlatformConfig,
@@ -177,10 +178,24 @@ async def _sum_transactions(
     before: datetime | None = None,
     after_or_at: datetime | None = None,
 ) -> Decimal:
-    """Return gross completed purchase volume for a Contributor."""
+    """Return gross completed marketplace and released Milestone earnings."""
+    released_milestone_exists = exists(
+        select(Escrow.id).where(
+            Escrow.ref_id == Transaction.ref_id,
+            Escrow.ref_type == Transaction.ref_type,
+            Escrow.status == "released",
+        )
+    )
     filters = [
         Transaction.payee_id == contributor_id,
-        Transaction.transaction_type == "purchase",
+        or_(
+            Transaction.transaction_type == "purchase",
+            (
+                (Transaction.transaction_type == "milestone")
+                & (Transaction.ref_type == "project_milestone")
+                & released_milestone_exists
+            ),
+        ),
         Transaction.status == "completed",
         Transaction.currency == currency,
     ]
@@ -994,12 +1009,16 @@ async def get_contributor_earnings(
 ) -> EarningsResponse:
     """Return refund-safe Contributor earnings balances."""
     currency = "USD"
-    gross_revenue, pending_clearance, available, _, commission_rate = (
-        await _available_payout_balance(
-            db,
-            contributor_id=contributor.id,
-            currency=currency,
-        )
+    (
+        gross_revenue,
+        pending_clearance,
+        available,
+        _,
+        commission_rate,
+    ) = await _available_payout_balance(
+        db,
+        contributor_id=contributor.id,
+        currency=currency,
     )
     return EarningsResponse(
         currency=currency,
@@ -1134,12 +1153,16 @@ async def list_payouts(
 ) -> PayoutsResponse:
     """List payout history for the Contributor."""
     payouts = (
-        await db.execute(
-            select(Payout)
-            .where(Payout.contributor_id == contributor.id)
-            .order_by(Payout.initiated_at.desc())
+        (
+            await db.execute(
+                select(Payout)
+                .where(Payout.contributor_id == contributor.id)
+                .order_by(Payout.initiated_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return PayoutsResponse(payouts=[_payout_response(payout) for payout in payouts])
 
 
@@ -1230,15 +1253,19 @@ async def list_payout_accounts(
 ) -> PayoutAccountsResponse:
     """List active payout accounts for the authenticated Contributor."""
     payout_accounts = (
-        await db.execute(
-            select(PayoutAccount)
-            .where(
-                PayoutAccount.user_id == contributor.id,
-                PayoutAccount.deleted_at.is_(None),
+        (
+            await db.execute(
+                select(PayoutAccount)
+                .where(
+                    PayoutAccount.user_id == contributor.id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+                .order_by(PayoutAccount.created_at.desc())
             )
-            .order_by(PayoutAccount.created_at.desc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return PayoutAccountsResponse(
         payout_accounts=[
             _payout_account_response(payout_account)

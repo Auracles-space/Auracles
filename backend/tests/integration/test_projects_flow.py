@@ -1275,6 +1275,15 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
         milestone = await session.get(Milestone, UUID(milestone_id))
         dispute = await session.get(Dispute, UUID(dispute_id))
         escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+        transactions = (
+            (
+                await session.execute(
+                    select(Transaction).order_by(Transaction.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
         messages = (
             (
                 await session.execute(
@@ -1309,6 +1318,16 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
     assert escrow is not None
     assert escrow.status == "released"
     assert escrow.released_by == admin_id
+    assert sorted(
+        (transaction.transaction_type, transaction.amount, transaction.status)
+        for transaction in transactions
+    ) == sorted(
+        [
+            ("milestone", Decimal("1500.00"), "refunded"),
+            ("milestone", Decimal("900.00"), "completed"),
+            ("refund", Decimal("600.00"), "refunded"),
+        ]
+    )
     assert refund_calls == [
         {
             "payment_intent_id": "pi_deliverable_123",

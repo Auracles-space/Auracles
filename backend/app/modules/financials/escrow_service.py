@@ -277,6 +277,48 @@ async def split(
     escrow.status = "released"
     escrow.released_at = datetime.now(UTC)
     escrow.released_by = actor_id
+    escrow.release_conditions = {
+        **(escrow.release_conditions or {}),
+        "split": {
+            "refund_amount": str(normalized_refund),
+            "refund_ref": refund_result.id,
+            "release_amount": str(normalized_release),
+        },
+    }
+    transaction.status = "refunded"
+    db.add(
+        Transaction(
+            payer_id=transaction.payer_id,
+            payee_id=transaction.payee_id,
+            amount=normalized_release,
+            currency=transaction.currency.upper(),
+            platform_commission=Decimal("0.00"),
+            net_amount=normalized_release,
+            transaction_type=transaction.transaction_type,
+            status="completed",
+            provider=transaction.provider,
+            provider_ref=transaction.provider_ref,
+            ref_id=transaction.ref_id,
+            ref_type=transaction.ref_type,
+        )
+    )
+    db.add(
+        Transaction(
+            payer_id=transaction.payer_id,
+            payee_id=None,
+            amount=normalized_refund,
+            currency=transaction.currency.upper(),
+            platform_commission=Decimal("0.00"),
+            net_amount=Decimal("0.00"),
+            transaction_type="refund",
+            status="refunded",
+            provider="stripe",
+            provider_ref=refund_result.id,
+            ref_id=transaction.ref_id,
+            ref_type=transaction.ref_type,
+        )
+    )
+    await db.flush()
     await write_audit(
         db=db,
         actor_id=actor_id,
