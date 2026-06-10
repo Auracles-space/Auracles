@@ -1,0 +1,482 @@
+"""SQLAlchemy models for Phase 4b Attestation records.
+
+Slice 1 is schema-only: these models define Attestor applications, profiles,
+credentials, attestation requests, offers, disputes, and upload sessions before
+the lifecycle services and API endpoints are added in later slices.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+from app.shared.models.base import CreatedAtMixin, UpdatedAtMixin
+
+ATTESTOR_APPLICATION_STATUS_ENUM = ENUM(
+    "pending",
+    "approved",
+    "rejected",
+    "withdrawn",
+    name="attestor_application_status_enum",
+    create_type=False,
+)
+ATTESTATION_TARGET_ENUM = ENUM(
+    "framework",
+    "contributor",
+    "operator",
+    "credential",
+    name="attestation_target_enum",
+    create_type=False,
+)
+ATTESTATION_STATUS_ENUM = ENUM(
+    "pending_fee",
+    "matching",
+    "offered",
+    "accepted",
+    "report_submitted",
+    "released",
+    "disputed",
+    "resolved",
+    "needs_admin",
+    "refunded",
+    "closed",
+    "cancelled",
+    name="attestation_status_enum",
+    create_type=False,
+)
+ATTESTATION_OUTCOME_ENUM = ENUM(
+    "approved",
+    "conditional",
+    "rejected",
+    name="attestation_outcome_enum",
+    create_type=False,
+)
+ATTESTATION_OFFER_STATUS_ENUM = ENUM(
+    "offered",
+    "accepted",
+    "declined",
+    "expired",
+    "superseded",
+    name="attestation_offer_status_enum",
+    create_type=False,
+)
+ATTESTATION_DISPUTE_STATUS_ENUM = ENUM(
+    "open",
+    "under_review",
+    "resolved",
+    name="attestation_dispute_status_enum",
+    create_type=False,
+)
+ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
+    "release",
+    "refund",
+    "split",
+    name="attestation_dispute_resolution_enum",
+    create_type=False,
+)
+ATTESTATION_UPLOAD_PURPOSE_ENUM = ENUM(
+    "report_evidence",
+    "credential_evidence",
+    name="attestation_upload_purpose_enum",
+    create_type=False,
+)
+
+
+class AttestorApplication(CreatedAtMixin, Base):
+    """Submitted Attestor role application awaiting admin review."""
+
+    __tablename__ = "attestor_applications"
+    __table_args__ = (
+        Index("idx_attestor_applications_user_status", "user_id", "status"),
+        Index(
+            "uq_attestor_applications_user_pending",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        ATTESTOR_APPLICATION_STATUS_ENUM,
+        nullable=False,
+        server_default="pending",
+    )
+    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    credentials_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    sample_work: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    professional_references: Mapped[str] = mapped_column(Text, nullable=False)
+    admin_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class AttestorProfile(UpdatedAtMixin, Base):
+    """Approved Attestor matching profile copied from an accepted application."""
+
+    __tablename__ = "attestor_profiles"
+    __table_args__ = (
+        Index(
+            "idx_attestor_profiles_specializations_gin",
+            "specializations",
+            postgresql_using="gin",
+        ),
+        Index(
+            "idx_attestor_profiles_jurisdictions_gin",
+            "jurisdictions",
+            postgresql_using="gin",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class Credential(UpdatedAtMixin, Base):
+    """User-owned professional credential that can be attested."""
+
+    __tablename__ = "credentials"
+    __table_args__ = (Index("idx_credentials_user", "user_id"),)
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    issuer: Mapped[str] = mapped_column(Text, nullable=False)
+    issued_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expires_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    evidence_file_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+
+
+class Attestation(UpdatedAtMixin, Base):
+    """Escrow-funded request for an independent trust report on a target."""
+
+    __tablename__ = "attestations"
+    __table_args__ = (
+        CheckConstraint("currency = 'USD'", name="ck_attestations_currency_usd"),
+        CheckConstraint("fee_amount > 0", name="ck_attestations_fee_amount_positive"),
+        Index("idx_attestations_target", "target_type", "target_id"),
+        Index("idx_attestations_attestor_status", "attestor_id", "status"),
+        Index(
+            "idx_attestations_status_dispute_window",
+            "status",
+            "dispute_window_ends_at",
+        ),
+        Index("idx_attestations_status_completion_due", "status", "completion_due_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    target_type: Mapped[str] = mapped_column(ATTESTATION_TARGET_ENUM, nullable=False)
+    target_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    requestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    attestor_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        ATTESTATION_STATUS_ENUM,
+        nullable=False,
+        server_default="pending_fee",
+    )
+    outcome: Mapped[str | None] = mapped_column(ATTESTATION_OUTCOME_ENUM, nullable=True)
+    requested_specializations: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    requested_jurisdictions: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_references: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    report_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    escrow_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("escrows.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    fee_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        server_default="USD",
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    completion_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    issued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    dispute_window_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class AttestationOffer(Base):
+    """Per-attestor cohort offer and response audit trail."""
+
+    __tablename__ = "attestation_offers"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id",
+            "attestor_id",
+            name="uq_attestation_offers_attestation_attestor",
+        ),
+        Index("idx_attestation_offers_status_expires_at", "status", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    cohort_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        ATTESTATION_OFFER_STATUS_ENUM,
+        nullable=False,
+        server_default="offered",
+    )
+    offered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class AttestationDispute(CreatedAtMixin, Base):
+    """Requestor-raised challenge to an attestation report."""
+
+    __tablename__ = "attestation_disputes"
+    __table_args__ = (
+        CheckConstraint(
+            "resolution_type != 'split' "
+            "OR (release_amount IS NOT NULL AND refund_amount IS NOT NULL)",
+            name="ck_attestation_disputes_split_has_amounts",
+        ),
+        Index("idx_attestation_disputes_status_created_at", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    raised_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        ATTESTATION_DISPUTE_STATUS_ENUM,
+        nullable=False,
+        server_default="open",
+    )
+    resolution_type: Mapped[str | None] = mapped_column(
+        ATTESTATION_DISPUTE_RESOLUTION_ENUM,
+        nullable=True,
+    )
+    release_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+    refund_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+    admin_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class AttestationUploadSession(CreatedAtMixin, Base):
+    """Server-issued permission for one private attestation evidence upload."""
+
+    __tablename__ = "attestation_upload_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "(attestation_id IS NOT NULL AND credential_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NOT NULL)",
+            name="ck_attestation_upload_sessions_single_parent",
+        ),
+        UniqueConstraint("s3_key", name="uq_attestation_upload_sessions_s3_key"),
+        Index(
+            "idx_attestation_upload_sessions_attestation_user_consumed",
+            "attestation_id",
+            "user_id",
+            "consumed_at",
+        ),
+        Index(
+            "idx_attestation_upload_sessions_credential_user_consumed",
+            "credential_id",
+            "user_id",
+            "consumed_at",
+        ),
+        Index("idx_attestation_upload_sessions_expires_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    credential_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("credentials.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    purpose: Mapped[str] = mapped_column(
+        ATTESTATION_UPLOAD_PURPOSE_ENUM,
+        nullable=False,
+    )
+    s3_key: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )

@@ -26,12 +26,38 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "commission_rate",
     "min_payout_usd",
     "refund_window_hours",
+    "attestation_fee_framework",
+    "attestation_fee_contributor",
+    "attestation_fee_operator",
+    "attestation_fee_credential",
+    "attestation_cohort_size",
+    "attestation_completion_sla_days_framework",
+    "attestation_completion_sla_days_contributor",
+    "attestation_completion_sla_days_operator",
+    "attestation_completion_sla_days_credential",
+    "attestation_offer_accept_hours",
+    "attestation_dispute_window_days",
 }
 COMMISSION_RATE_MAX = Decimal("0.50")
 MIN_PAYOUT_USD_MIN = Decimal("1.00")
 MIN_PAYOUT_USD_MAX = Decimal("100000.00")
 REFUND_WINDOW_HOURS_MIN = 0
 REFUND_WINDOW_HOURS_MAX = 720
+ATTESTATION_FEE_RANGES = {
+    "attestation_fee_framework": (Decimal("25.00"), Decimal("100000.00")),
+    "attestation_fee_contributor": (Decimal("25.00"), Decimal("100000.00")),
+    "attestation_fee_operator": (Decimal("25.00"), Decimal("100000.00")),
+    "attestation_fee_credential": (Decimal("10.00"), Decimal("100000.00")),
+}
+ATTESTATION_INTEGER_RANGES = {
+    "attestation_cohort_size": (1, 10),
+    "attestation_completion_sla_days_framework": (1, 30),
+    "attestation_completion_sla_days_contributor": (1, 30),
+    "attestation_completion_sla_days_operator": (1, 30),
+    "attestation_completion_sla_days_credential": (1, 30),
+    "attestation_offer_accept_hours": (1, 168),
+    "attestation_dispute_window_days": (1, 30),
+}
 
 
 async def assign_user_role(
@@ -253,6 +279,17 @@ def _parse_decimal_config(key: str, raw_value: str) -> Decimal:
         ) from exc
 
 
+def _parse_integer_config(key: str, raw_value: str) -> int:
+    """Parse a whole-number admin config value or raise a 422 API error."""
+    try:
+        return int(raw_value.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{key} must be a whole number.",
+        ) from exc
+
+
 def _normalise_platform_config_value(key: str, raw_value: str) -> str:
     """Validate and normalize an editable platform config value."""
     if key == "commission_rate":
@@ -287,6 +324,29 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
                 detail="refund_window_hours must be between 0 and 720.",
             )
         return str(hours)
+
+    if key in ATTESTATION_FEE_RANGES:
+        value = _parse_decimal_config(key, raw_value)
+        minimum, maximum = ATTESTATION_FEE_RANGES[key]
+        if value < minimum or value > maximum:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must be between {minimum} and {maximum}.",
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.01")))
+
+    if key in ATTESTATION_INTEGER_RANGES:
+        integer_value = _parse_integer_config(key, raw_value)
+        integer_minimum, integer_maximum = ATTESTATION_INTEGER_RANGES[key]
+        if integer_value < integer_minimum or integer_value > integer_maximum:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"{key} must be between "
+                    f"{integer_minimum} and {integer_maximum}."
+                ),
+            )
+        return str(integer_value)
 
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

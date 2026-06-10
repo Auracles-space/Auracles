@@ -26,6 +26,17 @@ DEFAULT_PLATFORM_CONFIG = {
     "min_payout_usd": "50",
     "min_payout_ngn": "20000",
     "refund_window_hours": "48",
+    "attestation_fee_framework": "250.00",
+    "attestation_fee_contributor": "300.00",
+    "attestation_fee_operator": "300.00",
+    "attestation_fee_credential": "100.00",
+    "attestation_cohort_size": "3",
+    "attestation_completion_sla_days_framework": "7",
+    "attestation_completion_sla_days_contributor": "7",
+    "attestation_completion_sla_days_operator": "7",
+    "attestation_completion_sla_days_credential": "7",
+    "attestation_offer_accept_hours": "48",
+    "attestation_dispute_window_days": "14",
 }
 
 
@@ -168,6 +179,10 @@ async def test_admin_can_read_platform_config(
     assert config["min_payout_usd"]["value"] == "50"
     assert config["refund_window_hours"]["value"] == "48"
     assert config["commission_rate"]["editable"] is True
+    assert config["attestation_fee_framework"]["value"] == "250.00"
+    assert config["attestation_fee_framework"]["editable"] is True
+    assert config["attestation_cohort_size"]["value"] == "3"
+    assert config["attestation_cohort_size"]["editable"] is True
     assert config["min_payout_ngn"]["editable"] is False
 
 
@@ -292,3 +307,66 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
     assert min_payout_ngn is not None
     assert min_payout_ngn.value == "20000"
     assert audit_count == 0
+
+
+async def test_admin_updates_attestation_config_with_range_validation(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """Attestation config values are admin-editable only within locked ranges."""
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    valid_update = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Tune attestation launch defaults.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {"key": "attestation_fee_framework", "value": "275"},
+                {"key": "attestation_cohort_size", "value": "5"},
+                {"key": "attestation_offer_accept_hours", "value": "72"},
+                {"key": "attestation_dispute_window_days", "value": "21"},
+            ],
+        },
+    )
+    invalid_fee = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "attestation_fee_credential", "value": "5"}],
+        },
+    )
+    invalid_integer = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "attestation_cohort_size", "value": "11"}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        config_rows = {
+            row.key: row.value
+            for row in (
+                await session.execute(select(PlatformConfig))
+            ).scalars().all()
+        }
+
+    assert valid_update.status_code == 200
+    response_config = {item["key"]: item for item in valid_update.json()["items"]}
+    assert response_config["attestation_fee_framework"]["value"] == "275"
+    assert response_config["attestation_cohort_size"]["value"] == "5"
+    assert response_config["attestation_offer_accept_hours"]["value"] == "72"
+    assert response_config["attestation_dispute_window_days"]["value"] == "21"
+    assert config_rows["attestation_fee_framework"] == "275"
+    assert config_rows["attestation_cohort_size"] == "5"
+    assert invalid_fee.status_code == 422
+    assert invalid_integer.status_code == 422
