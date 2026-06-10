@@ -18,6 +18,12 @@ async def _expire_attestation_offers() -> int:
         return await matching_service.expire_stale_offers(db)
 
 
+async def _revoke_overdue_attestations() -> int:
+    """Revoke accepted Attestations whose completion SLA has elapsed."""
+    async with async_session_factory() as db:
+        return await matching_service.revoke_overdue_attestations(db)
+
+
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def expire_attestation_offers(self: Any) -> dict[str, int]:
     """Celery wrapper for hourly Attestation offer expiry."""
@@ -29,5 +35,20 @@ def expire_attestation_offers(self: Any) -> dict[str, int]:
     log.info("task_started")
     expired_count = run_async(_expire_attestation_offers())
     result = {"expired_count": expired_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def revoke_overdue_attestations(self: Any) -> dict[str, int]:
+    """Celery wrapper for hourly overdue Attestation revocation."""
+    log = logger.bind(
+        module="attestation",
+        action="revoke_overdue_attestations",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    revoked_count = run_async(_revoke_overdue_attestations())
+    result = {"revoked_count": revoked_count}
     log.info("task_completed", result=result)
     return result

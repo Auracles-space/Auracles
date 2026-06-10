@@ -347,6 +347,77 @@ async def expire_stale_offers(
     return expired_count
 
 
+async def revoke_overdue_attestations(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Revoke accepted Attestations past SLA and advance them to matching."""
+    current_time = now or datetime.now(UTC)
+    overdue_ids = list(
+        (
+            await db.execute(
+                select(Attestation.id).where(
+                    Attestation.status == "accepted",
+                    Attestation.completion_due_at.is_not(None),
+                    Attestation.completion_due_at <= current_time,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    revoked_count = 0
+    for attestation_id in overdue_ids:
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            attestation = await _load_locked_attestation(db, attestation_id)
+            if (
+                attestation.status != "accepted"
+                or attestation.completion_due_at is None
+                or attestation.completion_due_at > current_time
+                or attestation.attestor_id is None
+            ):
+                continue
+
+            old_attestor_id = attestation.attestor_id
+            transaction = await _load_completed_fee_transaction(db, attestation.id)
+            old_offer = await _load_locked_offer(
+                db,
+                attestation_id=attestation.id,
+                attestor_id=old_attestor_id,
+            )
+            if old_offer is not None and old_offer.status == "accepted":
+                old_offer.status = "superseded"
+                old_offer.responded_at = current_time
+
+            transaction.payee_id = None
+            attestation.status = "matching"
+            attestation.attestor_id = None
+            attestation.accepted_at = None
+            attestation.completion_due_at = None
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="attestation_reassigned",
+                target_type="attestation",
+                target_id=attestation.id,
+                metadata={
+                    "reason": "completion_sla_missed",
+                    "old_attestor_id": str(old_attestor_id),
+                    "transaction_id": str(transaction.id),
+                },
+            )
+            revoked_count += 1
+            await offer_next_cohort(
+                db,
+                attestation_id=attestation.id,
+                now=current_time,
+            )
+    return revoked_count
+
+
 async def _platform_int_config(
     db: AsyncSession,
     *,
@@ -445,6 +516,29 @@ async def _load_funded_fee_transaction(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Attestation fee payee is already assigned.",
+        )
+    return transaction
+
+
+async def _load_completed_fee_transaction(
+    db: AsyncSession,
+    attestation_id: UUID,
+) -> Transaction:
+    """Load and lock a completed Attestation fee transaction."""
+    transaction = await db.scalar(
+        select(Transaction)
+        .where(
+            Transaction.ref_type == "attestation",
+            Transaction.ref_id == attestation_id,
+            Transaction.transaction_type == "attestation_fee",
+            Transaction.status == "completed",
+        )
+        .with_for_update()
+    )
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation fee is not funded.",
         )
     return transaction
 

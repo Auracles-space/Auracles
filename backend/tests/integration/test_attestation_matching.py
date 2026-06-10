@@ -495,3 +495,96 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
     assert attestation is not None
     assert attestation.status == "needs_admin"
     assert needs_admin_audit is not None
+
+
+async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Overdue accepted assignments are revoked and moved to the next cohort."""
+    del migrated_database, matching_context
+    await set_platform_config("attestation_cohort_size", "1")
+    requestor_id = await create_user("overdue-requestor@auracles.space", ["operator"])
+    first_attestor_id = await create_user("overdue-first@auracles.space", ["attestor"])
+    second_attestor_id = await create_user(
+        "overdue-second@auracles.space",
+        ["attestor"],
+    )
+    await create_attestor_profile(
+        first_attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        approved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    await create_attestor_profile(
+        second_attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        approved_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    current_time = datetime.now(UTC)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            transaction = await session.get(Transaction, transaction_id)
+            assert attestation is not None
+            assert transaction is not None
+            attestation.status = "accepted"
+            attestation.attestor_id = first_attestor_id
+            attestation.accepted_at = current_time - timedelta(days=8)
+            attestation.completion_due_at = current_time - timedelta(hours=1)
+            transaction.status = "completed"
+            transaction.payee_id = first_attestor_id
+            session.add(
+                AttestationOffer(
+                    attestation_id=attestation_id,
+                    attestor_id=first_attestor_id,
+                    cohort_index=0,
+                    status="accepted",
+                    offered_at=current_time - timedelta(days=9),
+                    responded_at=current_time - timedelta(days=8),
+                    expires_at=current_time - timedelta(days=7),
+                )
+            )
+
+    async with async_session_factory() as session:
+        revoked_count = await matching_service.revoke_overdue_attestations(
+            session,
+            now=current_time,
+        )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        offers = (
+            await session.execute(
+                select(AttestationOffer)
+                .where(AttestationOffer.attestation_id == attestation_id)
+                .order_by(AttestationOffer.cohort_index)
+            )
+        ).scalars().all()
+        reassigned_audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_reassigned",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    assert revoked_count == 1
+    assert attestation is not None
+    assert attestation.status == "offered"
+    assert attestation.attestor_id is None
+    assert attestation.accepted_at is None
+    assert attestation.completion_due_at is None
+    assert transaction is not None
+    assert transaction.payee_id is None
+    offer_states = [
+        (offer.attestor_id, offer.status, offer.cohort_index) for offer in offers
+    ]
+    assert offer_states == [
+        (first_attestor_id, "superseded", 0),
+        (second_attestor_id, "offered", 1),
+    ]
+    assert reassigned_audit is not None
