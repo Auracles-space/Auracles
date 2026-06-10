@@ -1,8 +1,13 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import engine
 from app.core.logging import RequestLoggingMiddleware, configure_logging
+from app.core.redis import close_redis
 from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.explore.router import router as explore_router
@@ -12,9 +17,21 @@ from app.modules.health.router import router as health_router
 from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.projects.router import router as projects_router
+from app.modules.realtime.gateway import router as realtime_router
 from app.modules.settings.router import router as settings_router
 from app.modules.webhooks.router import router as webhooks_router
 from app.modules.workspace.router import router as workspace_router
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Close shared async clients when the API process shuts down."""
+    del application
+    try:
+        yield
+    finally:
+        await close_redis()
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -26,6 +43,7 @@ def create_app() -> FastAPI:
         title="Auracles API",
         version="0.1.0",
         description="API for the Auracles knowledge marketplace.",
+        lifespan=lifespan,
     )
     application.add_middleware(
         CORSMiddleware,
@@ -44,6 +62,7 @@ def create_app() -> FastAPI:
     application.include_router(library_router, prefix="/v1")
     application.include_router(notifications_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
+    application.include_router(realtime_router, prefix="/v1")
     application.include_router(settings_router, prefix="/v1")
     application.include_router(webhooks_router, prefix="/v1")
     application.include_router(workspace_router, prefix="/v1")

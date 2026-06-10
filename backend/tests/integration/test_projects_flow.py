@@ -27,7 +27,8 @@ from app.modules.projects.models import (
     Proposal,
     ProposalAmendment,
 )
-from app.modules.workspace.models import WorkspaceMessage
+from app.modules.workspace import service as workspace_service
+from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.shared.models.audit_log import AuditLog
 
 
@@ -73,6 +74,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
+            await session.execute(delete(WorkspaceUploadSession))
             await session.execute(delete(Deliverable))
             await session.execute(delete(Milestone))
             await session.execute(delete(Escrow))
@@ -762,3 +764,132 @@ async def test_deliverable_revision_approval_and_manual_project_close(
         "deliverable_submitted",
         "deliverable_approved",
     ]
+
+
+async def test_workspace_message_upload_session_and_member_visibility(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project members can attach validated upload keys to workspace messages."""
+    scan_dispatches: list[str] = []
+
+    class FakePresignedPostTask:
+        """Small stand-in for Celery scan dispatch in workspace tests."""
+
+        def delay(self, message_id: str) -> None:
+            """Record the message id that would be scanned."""
+            scan_dispatches.append(message_id)
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return stable S3 POST data without contacting AWS."""
+        return {
+            "url": f"https://s3.local/{bucket}",
+            "fields": {
+                "key": key,
+                "Content-Type": mime_type,
+                "max_size": str(max_size),
+                "expires_in": str(expires_in),
+            },
+        }
+
+    monkeypatch.setattr(
+        workspace_service.s3.storage,
+        "presigned_post",
+        fake_presigned_post,
+    )
+    monkeypatch.setattr(
+        workspace_service,
+        "scan_workspace_upload",
+        FakePresignedPostTask(),
+    )
+
+    operator_id = await create_user("workspace-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "workspace-contributor@auracles.space",
+        ["contributor"],
+    )
+    outsider_id = await create_user("workspace-outsider@auracles.space", ["operator"])
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    outsider_headers = auth_headers(outsider_id, ["operator"])
+
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+
+    upload = await client.post(
+        f"/v1/projects/{project_id}/messages/uploads",
+        headers=contributor_headers,
+        json={
+            "file_name": "draft.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 1200,
+        },
+    )
+    file_key = upload.json()["s3_key"]
+    message = await client.post(
+        f"/v1/projects/{project_id}/messages",
+        headers=contributor_headers,
+        json={
+            "body": "Draft attached for review.",
+            "file_keys": [file_key],
+        },
+    )
+    contributor_messages = await client.get(
+        f"/v1/projects/{project_id}/messages",
+        headers=contributor_headers,
+    )
+    operator_messages = await client.get(
+        f"/v1/projects/{project_id}/messages",
+        headers=operator_headers,
+    )
+    outsider_messages = await client.get(
+        f"/v1/projects/{project_id}/messages",
+        headers=outsider_headers,
+    )
+
+    async with async_session_factory() as session:
+        upload_session = await session.scalar(select(WorkspaceUploadSession))
+        stored_message = await session.get(
+            WorkspaceMessage,
+            UUID(message.json()["id"]),
+        )
+
+    assert upload.status_code == 201
+    assert upload.json()["url"] == "https://s3.local/auracles-artifacts-dev"
+    assert file_key.startswith(f"workspace/{project_id}/{contributor_id}/")
+    assert message.status_code == 201
+    assert message.json()["scan_status"] == "pending_scan"
+    assert contributor_messages.status_code == 200
+    assert [item["id"] for item in contributor_messages.json()["messages"]] == [
+        message.json()["id"]
+    ]
+    assert operator_messages.status_code == 200
+    assert operator_messages.json()["messages"] == []
+    assert outsider_messages.status_code == 403
+    assert upload_session is not None
+    assert upload_session.consumed_at is not None
+    assert stored_message is not None
+    assert stored_message.file_keys == [file_key]
+    assert scan_dispatches == [message.json()["id"]]
