@@ -101,6 +101,14 @@ ATTESTATION_UPLOAD_PURPOSE_ENUM = ENUM(
     name="attestation_upload_purpose_enum",
     create_type=False,
 )
+ATTESTATION_UPLOAD_SCAN_STATUS_ENUM = ENUM(
+    "pending_scan",
+    "clean",
+    "infected",
+    "error",
+    name="attestation_upload_scan_status_enum",
+    create_type=False,
+)
 
 
 class AttestorApplication(CreatedAtMixin, Base):
@@ -443,6 +451,7 @@ class AttestationUploadSession(CreatedAtMixin, Base):
             "consumed_at",
         ),
         Index("idx_attestation_upload_sessions_expires_at", "expires_at"),
+        Index("idx_attestation_upload_sessions_scan_status", "scan_status"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -472,6 +481,11 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     s3_key: Mapped[str] = mapped_column(Text, nullable=False)
     content_type: Mapped[str] = mapped_column(Text, nullable=False)
     size_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    scan_status: Mapped[str] = mapped_column(
+        ATTESTATION_UPLOAD_SCAN_STATUS_ENUM,
+        nullable=False,
+        server_default="pending_scan",
+    )
     consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

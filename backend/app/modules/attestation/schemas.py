@@ -124,6 +124,36 @@ class CredentialEvidenceUploadSessionResponse(BaseModel):
     fields: dict[str, str]
     expires_at: datetime
     size_limit: int
+    scan_status: str
+
+
+class AttestationEvidenceUploadCreateRequest(BaseModel):
+    """Request body for creating an Attestation report evidence upload session."""
+
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class AttestationEvidenceUploadSessionResponse(BaseModel):
+    """Presigned POST response for private Attestation report evidence."""
+
+    id: UUID
+    s3_key: str
+    url: str
+    fields: dict[str, str]
+    expires_at: datetime
+    size_limit: int
+    scan_status: str
+
+
+class AttestationReportSubmitRequest(BaseModel):
+    """Structured report fields submitted by the assigned Attestor."""
+
+    outcome: Literal["approved", "conditional", "rejected"]
+    summary: str = Field(min_length=20, max_length=10000)
+    scope: str = Field(min_length=10, max_length=10000)
+    evidence_references: dict[str, Any] = Field(default_factory=dict)
 
 
 class AttestationRequestCreateRequest(BaseModel):
@@ -147,11 +177,17 @@ class AttestationRequestResponse(BaseModel):
     outcome: str | None
     requested_specializations: list[str]
     requested_jurisdictions: list[str]
+    summary: str | None = None
+    scope: str | None = None
+    evidence_references: dict[str, Any] | None = None
+    report_key: str | None = None
     fee_amount: Decimal
     currency: str
     escrow_id: UUID | None
     accepted_at: datetime | None = None
     completion_due_at: datetime | None = None
+    issued_at: datetime | None = None
+    dispute_window_ends_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

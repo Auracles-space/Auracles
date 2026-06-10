@@ -1996,6 +1996,82 @@ paths:
           description: Attestation offer not found.
         '409':
           description: Attestation offer is no longer available.
+  /v1/attestations/{attestation_id}/uploads:
+    post:
+      tags:
+      - Attestation
+      operationId: createAttestationReportEvidenceUploadSession
+      summary: Create Attestation report evidence upload session
+      description: Create a private presigned POST upload session for evidence on an assigned Attestation report.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationEvidenceUploadCreateRequest'
+      responses:
+        '201':
+          description: Report evidence upload session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationEvidenceUploadSessionResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Assigned approved Attestor required.
+        '409':
+          description: Attestation is not ready for report evidence uploads.
+        '413':
+          description: Report evidence upload is too large.
+        '422':
+          description: Invalid upload payload.
+  /v1/attestations/{attestation_id}/report:
+    post:
+      tags:
+      - Attestation
+      operationId: submitAttestationReport
+      summary: Submit Attestation report
+      description: Submit structured report fields, consume uploaded evidence, publish the pending-acceptance report, and queue PDF rendering.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationReportSubmitRequest'
+      responses:
+        '200':
+          description: Attestation report submitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Assigned approved Attestor required.
+        '409':
+          description: Attestation is not ready for report submission.
+        '422':
+          description: Invalid report payload or evidence references.
   /v1/attestor/assignments:
     get:
       tags:
@@ -3690,6 +3766,85 @@ components:
         client_secret:
           type: string
       description: PaymentIntent data needed to fund an Attestation fee escrow.
+    AttestationEvidenceUploadCreateRequest:
+      type: object
+      required:
+      - file_name
+      - content_type
+      - size_bytes
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content_type:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          exclusiveMinimum: 0
+      description: Request body for creating an Attestation report evidence upload session.
+    AttestationEvidenceUploadSessionResponse:
+      type: object
+      required:
+      - id
+      - s3_key
+      - url
+      - fields
+      - expires_at
+      - size_limit
+      - scan_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        s3_key:
+          type: string
+        url:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+        size_limit:
+          type: integer
+        scan_status:
+          type: string
+          enum:
+          - pending_scan
+          - clean
+          - infected
+          - error
+      description: Presigned POST response for private Attestation report evidence.
+    AttestationReportSubmitRequest:
+      type: object
+      required:
+      - outcome
+      - summary
+      - scope
+      properties:
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          - rejected
+        summary:
+          type: string
+          minLength: 20
+          maxLength: 10000
+        scope:
+          type: string
+          minLength: 10
+          maxLength: 10000
+        evidence_references:
+          type: object
+          additionalProperties: true
+      description: Structured report fields submitted by the assigned Attestor.
     AttestationRequestResponse:
       type: object
       required:
@@ -3738,6 +3893,23 @@ components:
           type: array
           items:
             type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        scope:
+          type:
+          - string
+          - 'null'
+        evidence_references:
+          type:
+          - object
+          - 'null'
+          additionalProperties: true
+        report_key:
+          type:
+          - string
+          - 'null'
         fee_amount:
           type: string
         currency:
@@ -3753,6 +3925,16 @@ components:
           - 'null'
           format: date-time
         completion_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        issued_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        dispute_window_ends_at:
           type:
           - string
           - 'null'

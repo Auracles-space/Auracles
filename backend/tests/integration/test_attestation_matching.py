@@ -19,6 +19,7 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.attestation import matching_service
+from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationDispute,
@@ -107,6 +108,7 @@ async def reset_matching_state() -> None:
                 "attestation_cohort_size": "2",
                 "attestation_offer_accept_hours": "48",
                 "attestation_completion_sla_days_operator": "7",
+                "attestation_dispute_window_days": "14",
             }.items():
                 row = await session.get(PlatformConfig, key)
                 if row is None:
@@ -588,3 +590,245 @@ async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
         (second_attestor_id, "offered", 1),
     ]
     assert reassigned_audit is not None
+
+
+async def test_assigned_attestor_uploads_evidence_and_submits_report(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assigned Attestors can publish structured reports with private evidence."""
+    del migrated_database, matching_context
+    requestor_id = await create_user("report-requestor@auracles.space", ["operator"])
+    attestor_id = await create_user("report-attestor@auracles.space", ["attestor"])
+    await create_attestor_profile(
+        attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    dispatched_tasks: list[str] = []
+    dispatched_scans: list[str] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return a deterministic presigned POST payload for the report test."""
+        del bucket, max_size, expires_in
+        return {
+            "url": "https://uploads.example.test",
+            "fields": {"key": key, "Content-Type": mime_type},
+        }
+
+    class FakeRenderTask:
+        """Capture queued report rendering tasks without running Celery."""
+
+        @staticmethod
+        def delay(attestation_id: str) -> None:
+            dispatched_tasks.append(attestation_id)
+
+    class FakeScanTask:
+        """Capture queued evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(
+        report_service.s3.storage,
+        "presigned_post",
+        fake_presigned_post,
+    )
+    monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
+    monkeypatch.setattr(report_service, "scan_attestation_upload", FakeScanTask)
+
+    current_time = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            transaction = await session.get(Transaction, transaction_id)
+            assert attestation is not None
+            assert transaction is not None
+            attestation.status = "accepted"
+            attestation.attestor_id = attestor_id
+            attestation.accepted_at = current_time
+            attestation.completion_due_at = current_time + timedelta(days=7)
+            transaction.status = "completed"
+            transaction.payee_id = attestor_id
+            session.add(
+                AttestationOffer(
+                    attestation_id=attestation_id,
+                    attestor_id=attestor_id,
+                    cohort_index=0,
+                    status="accepted",
+                    offered_at=current_time - timedelta(hours=2),
+                    responded_at=current_time - timedelta(hours=1),
+                    expires_at=current_time + timedelta(hours=47),
+                )
+            )
+
+    upload_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "file_name": "inspection-notes.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+    )
+    evidence_key = upload_response.json()["s3_key"]
+    pending_report_response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": "The reviewed operator evidence supports approval.",
+            "scope": "Credential, process, and sample evidence review.",
+            "evidence_references": {"file_keys": [evidence_key]},
+        },
+    )
+
+    async with async_session_factory() as session:
+        upload_session = await session.scalar(
+            select(AttestationUploadSession).where(
+                AttestationUploadSession.s3_key == evidence_key
+            )
+        )
+        assert upload_session is not None
+        upload_session_id = upload_session.id
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            upload_session = await session.scalar(
+                select(AttestationUploadSession).where(
+                    AttestationUploadSession.s3_key == evidence_key
+                )
+            )
+            assert upload_session is not None
+            upload_session.scan_status = "clean"
+
+    report_response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": "The reviewed operator evidence supports approval.",
+            "scope": "Credential, process, and sample evidence review.",
+            "evidence_references": {"file_keys": [evidence_key]},
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        upload_session = await session.scalar(
+            select(AttestationUploadSession).where(
+                AttestationUploadSession.s3_key == evidence_key
+            )
+        )
+        audits = (
+            await session.execute(
+                select(AuditLog.action).where(
+                    AuditLog.target_type == "attestation",
+                    AuditLog.target_id == attestation_id,
+                )
+            )
+        ).scalars().all()
+
+    assert upload_response.status_code == 201
+    assert upload_response.json()["fields"]["Content-Type"] == "application/pdf"
+    assert pending_report_response.status_code == 409
+    assert dispatched_scans == [str(upload_session_id)]
+    assert report_response.status_code == 200
+    assert report_response.json()["status"] == "report_submitted"
+    assert report_response.json()["outcome"] == "approved"
+    assert report_response.json()["summary"] == (
+        "The reviewed operator evidence supports approval."
+    )
+    assert report_response.json()["report_key"] == (
+        f"attestation-reports/{attestation_id}/report.pdf"
+    )
+    assert attestation is not None
+    assert attestation.status == "report_submitted"
+    assert attestation.issued_at is not None
+    assert attestation.dispute_window_ends_at is not None
+    assert attestation.dispute_window_ends_at > attestation.issued_at
+    assert upload_session is not None
+    assert upload_session.scan_status == "clean"
+    assert upload_session.consumed_at is not None
+    assert dispatched_tasks == [str(attestation_id)]
+    assert "attestation_report_submitted" in audits
+    assert "attestation_published" in audits
+
+
+async def test_unassigned_attestor_cannot_submit_report(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Approved but unassigned Attestors cannot manage another Attestor's report."""
+    del migrated_database, matching_context
+    requestor_id = await create_user(
+        "report-denied-requestor@auracles.space",
+        ["operator"],
+    )
+    assigned_attestor_id = await create_user(
+        "report-denied-assigned@auracles.space",
+        ["attestor"],
+    )
+    unassigned_attestor_id = await create_user(
+        "report-denied-unassigned@auracles.space",
+        ["attestor"],
+    )
+    await create_attestor_profile(
+        assigned_attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+    )
+    await create_attestor_profile(
+        unassigned_attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    current_time = datetime.now(UTC)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            transaction = await session.get(Transaction, transaction_id)
+            assert attestation is not None
+            assert transaction is not None
+            attestation.status = "accepted"
+            attestation.attestor_id = assigned_attestor_id
+            attestation.accepted_at = current_time
+            attestation.completion_due_at = current_time + timedelta(days=7)
+            transaction.status = "completed"
+            transaction.payee_id = assigned_attestor_id
+
+    upload_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads",
+        headers=auth_headers(unassigned_attestor_id, ["attestor"]),
+        json={
+            "file_name": "wrong-attestor.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+    )
+    report_response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=auth_headers(unassigned_attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": "This report should not be accepted by the API.",
+            "scope": "Unauthorized attestor submission attempt.",
+            "evidence_references": {},
+        },
+    )
+
+    assert upload_response.status_code == 403
+    assert report_response.status_code == 403

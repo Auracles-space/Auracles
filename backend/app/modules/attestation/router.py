@@ -17,10 +17,16 @@ from app.modules.attestation import (
     credential_service,
     matching_service,
 )
+from app.modules.attestation import (
+    report as report_service,
+)
 from app.modules.attestation import service as attestation_service
 from app.modules.attestation.dependencies import require_approved_attestor
 from app.modules.attestation.schemas import (
+    AttestationEvidenceUploadCreateRequest,
+    AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
+    AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     AttestorApplicationCreateRequest,
@@ -115,6 +121,46 @@ async def decline_attestation_offer(
         db=db,
         attestation_id=attestation_id,
         attestor=attestor,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/uploads",
+    response_model=AttestationEvidenceUploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_attestation_report_evidence_upload_session(
+    attestation_id: UUID,
+    payload: AttestationEvidenceUploadCreateRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceUploadSessionResponse:
+    """Create a presigned POST upload session for report evidence."""
+    return await report_service.create_report_evidence_upload_session(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/attestations/{attestation_id}/report",
+    response_model=AttestationRequestResponse,
+)
+async def submit_attestation_report(
+    attestation_id: UUID,
+    payload: AttestationReportSubmitRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Submit the assigned Attestor's structured report and queue PDF rendering."""
+    attestation = await report_service.submit_report(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        payload=payload,
     )
     return AttestationRequestResponse.model_validate(attestation)
 

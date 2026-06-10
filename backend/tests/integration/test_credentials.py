@@ -17,6 +17,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.integrations import s3
 from app.main import app
+from app.modules.attestation import credential_service
 from app.modules.attestation.models import AttestationUploadSession, Credential
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
@@ -180,6 +181,7 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
     """Credential evidence keys must come from owned, unexpired upload sessions."""
     del migrated_database, credential_context
     presigned_calls: list[tuple[str, str, str, int, int]] = []
+    dispatched_scans: list[str] = []
 
     def fake_presigned_post(
         bucket: str,
@@ -205,6 +207,15 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
         "presigned_post",
         fake_presigned_post,
     )
+
+    class FakeScanTask:
+        """Capture queued Credential evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(credential_service, "scan_attestation_upload", FakeScanTask)
 
     owner_id = await create_user("credential-evidence@auracles.space", ["operator"])
     owner_headers = auth_headers(owner_id, ["operator"])
@@ -232,6 +243,31 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
     assert upload.status_code == 201
 
     evidence_key = upload.json()["s3_key"]
+    pending_attachment = await client.patch(
+        f"/v1/credentials/{credential_id}",
+        headers=owner_headers,
+        json={"evidence_file_keys": [evidence_key]},
+    )
+
+    async with async_session_factory() as session:
+        upload_session = await session.scalar(
+            select(AttestationUploadSession).where(
+                AttestationUploadSession.s3_key == evidence_key
+            )
+        )
+        assert upload_session is not None
+        upload_session_id = upload_session.id
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            upload_session = await session.scalar(
+                select(AttestationUploadSession).where(
+                    AttestationUploadSession.s3_key == evidence_key
+                )
+            )
+            assert upload_session is not None
+            upload_session.scan_status = "clean"
+
     attached = await client.patch(
         f"/v1/credentials/{credential_id}",
         headers=owner_headers,
@@ -251,6 +287,8 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
     assert upload.json()["url"] == "https://s3.local/auracles-artifacts-dev"
     assert upload.json()["size_limit"] == 10 * 1024 * 1024
     assert evidence_key.startswith(f"credentials/{credential_id}/{owner_id}/")
+    assert pending_attachment.status_code == 409
+    assert dispatched_scans == [str(upload_session_id)]
     assert presigned_calls == [
         (
             "auracles-artifacts-dev",
@@ -267,6 +305,7 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
     assert upload_session.credential_id == UUID(credential_id)
     assert upload_session.attestation_id is None
     assert upload_session.purpose == "credential_evidence"
+    assert upload_session.scan_status == "clean"
     assert upload_session.consumed_at is not None
     assert stored is not None
     assert stored.evidence_file_keys == [evidence_key]

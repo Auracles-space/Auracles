@@ -46,6 +46,7 @@ ATTESTATION_ENUMS = {
     "attestation_dispute_status_enum",
     "attestation_dispute_resolution_enum",
     "attestation_upload_purpose_enum",
+    "attestation_upload_scan_status_enum",
 }
 ATTESTATION_CONFIG_SEEDS = {
     "attestation_fee_framework": "250.00",
@@ -130,6 +131,7 @@ def test_attestation_migration_creates_tables_enums_indexes_and_seed_config(
         "idx_attestation_upload_sessions_attestation_user_consumed",
         "idx_attestation_upload_sessions_credential_user_consumed",
         "idx_attestation_upload_sessions_expires_at",
+        "idx_attestation_upload_sessions_scan_status",
     }.issubset(upload_indexes)
 
 
@@ -222,3 +224,4 @@ def test_attestation_orm_models_bind_to_slice_one_tables() -> None:
     assert AttestationOffer.__tablename__ == "attestation_offers"
     assert AttestationDispute.__tablename__ == "attestation_disputes"
     assert AttestationUploadSession.__tablename__ == "attestation_upload_sessions"
+    assert "scan_status" in AttestationUploadSession.__table__.columns.keys()

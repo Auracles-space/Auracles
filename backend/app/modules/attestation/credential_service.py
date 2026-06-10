@@ -26,6 +26,7 @@ from app.modules.attestation.schemas import (
     CredentialUpdateRequest,
 )
 from app.modules.auth.models import User
+from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 
 CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS = 300
 CREDENTIAL_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
@@ -180,6 +181,7 @@ async def create_evidence_upload_session(
             s3_key=key,
             content_type=payload.content_type,
             size_limit=CREDENTIAL_EVIDENCE_MAX_BYTES,
+            scan_status="pending_scan",
             expires_at=expires_at,
         )
         db.add(upload_session)
@@ -201,6 +203,7 @@ async def create_evidence_upload_session(
         fields={str(key_): str(value) for key_, value in post["fields"].items()},
         expires_at=expires_at,
         size_limit=CREDENTIAL_EVIDENCE_MAX_BYTES,
+        scan_status=upload_session.scan_status,
     )
 
 
@@ -241,6 +244,24 @@ async def _consume_credential_evidence_sessions(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Credential contains invalid or expired evidence upload keys.",
+        )
+    pending_scan_ids = [
+        row.id for row in rows if row.scan_status == "pending_scan"
+    ]
+    for upload_session_id in pending_scan_ids:
+        scan_attestation_upload.delay(str(upload_session_id))
+    if pending_scan_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Credential evidence is still scanning. Try again shortly.",
+        )
+    unsafe_statuses = {
+        row.scan_status for row in rows if row.scan_status in {"infected", "error"}
+    }
+    if unsafe_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Credential evidence upload did not pass scanning.",
         )
     for row in rows:
         row.consumed_at = now
