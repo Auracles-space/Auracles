@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
     AttestationDispute,
@@ -91,6 +92,7 @@ async def create_dispute(
             metadata={"dispute_id": str(dispute.id)},
         )
         await db.refresh(dispute)
+    attestation_notifications.notify_dispute_raised(attestation)
     return dispute
 
 
@@ -224,6 +226,10 @@ async def resolve_dispute(
         )
         await db.flush()
         await db.refresh(dispute)
+    attestation_notifications.notify_dispute_resolved(
+        attestation,
+        resolution_type=resolution_type,
+    )
     return dispute
 
 
@@ -309,6 +315,7 @@ async def assign_needs_admin_attestation(
         )
         await db.flush()
     await db.refresh(attestation)
+    attestation_notifications.notify_manual_assignment(attestation, attestor_id)
     return attestation
 
 
@@ -365,6 +372,7 @@ async def refund_needs_admin_attestation(
         )
         await db.flush()
     await db.refresh(attestation)
+    attestation_notifications.notify_refunded(attestation, reason="needs_admin")
     return attestation
 
 

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
@@ -42,6 +43,10 @@ async def accept_report(
             reason="requestor_accept_report",
         )
     await db.refresh(attestation)
+    attestation_notifications.notify_released(
+        attestation,
+        reason="requestor_accept_report",
+    )
     return attestation
 
 
@@ -83,6 +88,10 @@ async def auto_release_attestations(
                 reason="auto_release_after_dispute_window",
             )
             released_count += 1
+        attestation_notifications.notify_released(
+            attestation,
+            reason="auto_release_after_dispute_window",
+        )
     return released_count
 
 

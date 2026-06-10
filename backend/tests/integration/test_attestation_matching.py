@@ -20,7 +20,12 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
-from app.modules.attestation import dispute_service, matching_service, release_service
+from app.modules.attestation import (
+    dispute_service,
+    matching_service,
+    notifications,
+    release_service,
+)
 from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
@@ -86,6 +91,18 @@ class FakeStripeRefund:
         """Store the provider refund id and status."""
         self.id = refund_id
         self.status = "succeeded"
+
+
+class FakeNotificationTask:
+    """Celery-task-shaped test double for attestation notifications."""
+
+    def __init__(self, calls: list[dict[str, Any]]) -> None:
+        """Store delayed notification dispatches in the provided list."""
+        self.calls = calls
+
+    def delay(self, **kwargs: Any) -> None:
+        """Capture notification dispatch parameters without Redis or email."""
+        self.calls.append(kwargs)
 
 
 @pytest.fixture
@@ -324,9 +341,16 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     client: AsyncClient,
     migrated_database: None,
     matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Funded Attestations offer a cohort and assign only the first acceptor."""
     del migrated_database
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
     requestor_id = await create_user(
         "matching-requestor@auracles.space",
         ["operator", "attestor"],
@@ -438,6 +462,18 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     }
     assert "attestation_offered" in audits
     assert "attestation_accepted" in audits
+    assert [call["notification_type"] for call in notification_calls] == [
+        "attestation_fee_funded",
+        "attestation_offer_received",
+        "attestation_offer_received",
+        "attestation_accepted",
+    ]
+    assert notification_calls[0]["user_id"] == str(requestor_id)
+    assert {call["user_id"] for call in notification_calls[1:3]} == {
+        str(first_attestor_id),
+        str(second_attestor_id),
+    }
+    assert notification_calls[3]["user_id"] == str(requestor_id)
 
 
 async def test_attestation_decline_advances_to_next_cohort(
@@ -674,6 +710,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
 ) -> None:
     """Assigned Attestors can publish structured reports with private evidence."""
     del migrated_database, matching_context
+    notification_calls: list[dict[str, Any]] = []
     requestor_id = await create_user("report-requestor@auracles.space", ["operator"])
     attestor_id = await create_user("report-attestor@auracles.space", ["attestor"])
     await create_attestor_profile(
@@ -720,6 +757,11 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
     )
     monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
     monkeypatch.setattr(report_service, "scan_attestation_upload", FakeScanTask)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
 
     current_time = datetime.now(UTC)
     async with async_session_factory() as session:
@@ -837,6 +879,12 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
     assert dispatched_tasks == [str(attestation_id)]
     assert "attestation_report_submitted" in audits
     assert "attestation_published" in audits
+    assert "attestation_outcome_recorded" in audits
+    assert [call["notification_type"] for call in notification_calls] == [
+        "attestation_report_submitted",
+    ]
+    assert notification_calls[0]["user_id"] == str(requestor_id)
+    assert notification_calls[0]["payload"]["outcome"] == "approved"
 
 
 async def test_unassigned_attestor_cannot_submit_report(
@@ -1025,9 +1073,16 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     client: AsyncClient,
     migrated_database: None,
     matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Requestors can accept a submitted report and close released escrow."""
     del migrated_database, matching_context
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
     requestor_id = await create_user("release-requestor@auracles.space", ["operator"])
     attestor_id = await create_user("release-attestor@auracles.space", ["attestor"])
     (
@@ -1068,6 +1123,10 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     assert escrow.released_by == requestor_id
     assert "escrow_released" in audits
     assert "attestation_released" in audits
+    assert [call["notification_type"] for call in notification_calls] == [
+        "attestation_released",
+    ]
+    assert notification_calls[0]["user_id"] == str(attestor_id)
 
 
 async def test_auto_release_attestations_closes_past_dispute_window_reports(
@@ -1141,9 +1200,16 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     client: AsyncClient,
     migrated_database: None,
     matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Requestors can dispute report-submitted Attestations during the window."""
     del migrated_database, matching_context
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
     requestor_id = await create_user("dispute-requestor@auracles.space", ["operator"])
     attestor_id = await create_user("dispute-attestor@auracles.space", ["attestor"])
     attestation_id, _, _ = await create_report_submitted_attestation(
@@ -1181,6 +1247,10 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert dispute.raised_by == requestor_id
     assert dispute.reason == "The public report omits evidence we submitted."
     assert audit is not None
+    assert [call["notification_type"] for call in notification_calls] == [
+        "attestation_disputed",
+    ]
+    assert notification_calls[0]["user_id"] == str(attestor_id)
 
 
 async def test_admin_resolves_attestation_dispute_with_split(
@@ -1193,6 +1263,7 @@ async def test_admin_resolves_attestation_dispute_with_split(
     del migrated_database, matching_context
     fake_redis = FakeRedis()
     refund_calls: list[dict[str, Any]] = []
+    notification_calls: list[dict[str, Any]] = []
 
     async def override_redis() -> FakeRedis:
         """Return Redis test double for admin TOTP verification."""
@@ -1218,6 +1289,11 @@ async def test_admin_resolves_attestation_dispute_with_split(
 
     app.dependency_overrides[get_redis] = override_redis
     monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
 
     requestor_id = await create_user(
         "split-dispute-requestor@auracles.space",
@@ -1338,6 +1414,15 @@ async def test_admin_resolves_attestation_dispute_with_split(
         }
     ]
     assert audit is not None
+    assert [call["notification_type"] for call in notification_calls] == [
+        "attestation_disputed",
+        "attestation_dispute_resolved",
+        "attestation_dispute_resolved",
+    ]
+    assert {call["user_id"] for call in notification_calls[1:]} == {
+        str(requestor_id),
+        str(attestor_id),
+    }
 
 
 async def test_admin_manually_assigns_needs_admin_attestation(

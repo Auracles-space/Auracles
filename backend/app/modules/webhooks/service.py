@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -24,6 +25,7 @@ from app.core.security import hash_payout_provider_account_id
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import matching_service
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
@@ -366,7 +368,7 @@ async def _mark_attestation_fee_failed(
 async def _handle_escrow_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
-) -> None:
+) -> list[Callable[[], None]]:
     """Mark an escrow funding transaction complete and hold its funds."""
     transaction_id = _purchase_transaction_id(event)
     payment_intent_id = _event_object_id(event)
@@ -382,7 +384,7 @@ async def _handle_escrow_succeeded(
         transaction_id=transaction_id,
         release_conditions=_escrow_release_conditions(event),
     )
-    await _mark_attestation_fee_funded(
+    after_commit_notifications = await _mark_attestation_fee_funded(
         db=db,
         transaction=transaction,
         escrow=escrow,
@@ -392,6 +394,7 @@ async def _handle_escrow_succeeded(
         transaction=transaction,
         escrow=escrow,
     )
+    return after_commit_notifications
 
 
 async def _mark_attestation_fee_funded(
@@ -399,10 +402,10 @@ async def _mark_attestation_fee_funded(
     db: AsyncSession,
     transaction: Transaction,
     escrow: Escrow,
-) -> None:
+) -> list[Callable[[], None]]:
     """Apply Attestation state after a fee escrow hold succeeds."""
     if transaction.ref_type != "attestation" or transaction.ref_id is None:
-        return
+        return []
     if transaction.transaction_type != "attestation_fee":
         raise WebhookProcessingError("attestation escrow transaction type mismatch")
 
@@ -414,7 +417,7 @@ async def _mark_attestation_fee_funded(
     if attestation is None:
         raise WebhookProcessingError("attestation not found for escrow funding")
     if attestation.status == "matching" and attestation.escrow_id == escrow.id:
-        return
+        return []
     if attestation.status != "pending_fee":
         raise WebhookProcessingError("attestation is not pending fee funding")
 
@@ -431,7 +434,16 @@ async def _mark_attestation_fee_funded(
             "transaction_id": str(transaction.id),
         },
     )
-    await matching_service.offer_next_cohort(db, attestation_id=attestation.id)
+    offers = await matching_service.offer_next_cohort(db, attestation_id=attestation.id)
+    return [
+        lambda: attestation_notifications.notify_fee_funded(attestation),
+        lambda: attestation_notifications.notify_offers(attestation, offers),
+        lambda: (
+            attestation_notifications.notify_needs_admin(attestation)
+            if attestation.status == "needs_admin"
+            else None
+        ),
+    ]
 
 
 async def _mark_project_milestone_funded(
@@ -569,54 +581,54 @@ async def _dispatch_verified_event(
     event_id: str,
     event_type: str,
     event: dict[str, Any],
-) -> tuple[str, UUID | None]:
-    """Dispatch a verified event and return status plus optional invoice work."""
+) -> tuple[str, UUID | None, list[Callable[[], None]]]:
+    """Dispatch a verified event and return status plus post-commit work."""
     metadata = _event_metadata(event)
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "purchase":
         invoice_transaction_id = await _handle_purchase_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", invoice_transaction_id
+        return "processed", invoice_transaction_id, []
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "escrow":
-        await _handle_escrow_succeeded(db, event)
+        after_commit_notifications = await _handle_escrow_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, after_commit_notifications
     if (
         event_type == "payment_intent.payment_failed"
         and metadata.get("kind") == "escrow"
     ):
         await _handle_escrow_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "payment_intent.payment_failed":
         await _handle_purchase_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "payment_intent.canceled" and metadata.get("kind") == "escrow":
         await _handle_escrow_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "account.updated":
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "transfer.paid":
         await _handle_transfer_event(db, event, payout_status="completed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "transfer.failed":
         await _handle_transfer_event(db, event, payout_status="failed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
     if event_type == "charge.refunded":
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None
+        return "processed", None, []
 
     logger.bind(
         module="webhooks",
         action="unknown_stripe_event",
         provider_event_id=event_id,
     ).warning("unknown_event_type")
-    return "received", None
+    return "received", None, []
 
 
 async def handle_stripe_webhook(
@@ -660,8 +672,13 @@ async def handle_stripe_webhook(
         if db.in_transaction():
             await db.rollback()
         invoice_transaction_id: UUID | None = None
+        after_commit_notifications: list[Callable[[], None]] = []
         async with db.begin():
-            event_status, invoice_transaction_id = await _dispatch_verified_event(
+            (
+                event_status,
+                invoice_transaction_id,
+                after_commit_notifications,
+            ) = await _dispatch_verified_event(
                 db,
                 event_id=event_id,
                 event_type=event_type,
@@ -688,6 +705,8 @@ async def handle_stripe_webhook(
         ) from exc
     if invoice_transaction_id is not None:
         _queue_purchase_invoice_generation(invoice_transaction_id)
+    for queue_notification in after_commit_notifications:
+        queue_notification()
 
     logger.bind(
         module="webhooks",

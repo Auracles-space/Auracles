@@ -15,6 +15,7 @@ from sqlalchemy.sql import cast as sql_cast
 from sqlalchemy.types import Text
 
 from app.core.audit import write_audit
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
@@ -238,6 +239,7 @@ async def accept_attestation_offer(
             },
         )
     await db.refresh(attestation)
+    attestation_notifications.notify_offer_accepted(attestation, attestor_id)
     return attestation
 
 
@@ -251,6 +253,7 @@ async def decline_attestation_offer(
     attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
+    next_offers: list[AttestationOffer] = []
     async with db.begin():
         current_time = datetime.now(UTC)
         attestation = await _load_locked_attestation(db, attestation_id)
@@ -281,8 +284,16 @@ async def decline_attestation_offer(
         )
         if await _current_cohort_is_exhausted(db, attestation.id, offer.cohort_index):
             attestation.status = "matching"
-            await offer_next_cohort(db, attestation_id=attestation.id, now=current_time)
+            next_offers = await offer_next_cohort(
+                db,
+                attestation_id=attestation.id,
+                now=current_time,
+            )
     await db.refresh(attestation)
+    attestation_notifications.notify_offer_declined(attestation, attestor_id)
+    attestation_notifications.notify_offers(attestation, next_offers)
+    if attestation.status == "needs_admin":
+        attestation_notifications.notify_needs_admin(attestation)
     return attestation
 
 
@@ -306,6 +317,8 @@ async def expire_stale_offers(
     for attestation_id, cohort_index in stale_cohorts:
         if db.in_transaction():
             await db.rollback()
+        expired_offers: list[AttestationOffer] = []
+        next_offers: list[AttestationOffer] = []
         async with db.begin():
             attestation = await _load_locked_attestation(db, attestation_id)
             result = await db.execute(
@@ -321,6 +334,18 @@ async def expire_stale_offers(
             )
             expired_ids = [row[0] for row in result.all()]
             expired_count += len(expired_ids)
+            if expired_ids:
+                expired_offers = list(
+                    (
+                        await db.execute(
+                            select(AttestationOffer).where(
+                                AttestationOffer.id.in_(expired_ids)
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
             for offer_id in expired_ids:
                 await write_audit(
                     db=db,
@@ -339,11 +364,16 @@ async def expire_stale_offers(
                 )
             ):
                 attestation.status = "matching"
-                await offer_next_cohort(
+                next_offers = await offer_next_cohort(
                     db,
                     attestation_id=attestation_id,
                     now=current_time,
                 )
+        for expired_offer in expired_offers:
+            attestation_notifications.notify_offer_expired(attestation, expired_offer)
+        attestation_notifications.notify_offers(attestation, next_offers)
+        if attestation.status == "needs_admin":
+            attestation_notifications.notify_needs_admin(attestation)
     return expired_count
 
 
@@ -371,6 +401,8 @@ async def revoke_overdue_attestations(
     for attestation_id in overdue_ids:
         if db.in_transaction():
             await db.rollback()
+        old_attestor_id: UUID | None = None
+        next_offers: list[AttestationOffer] = []
         async with db.begin():
             attestation = await _load_locked_attestation(db, attestation_id)
             if (
@@ -410,11 +442,19 @@ async def revoke_overdue_attestations(
                 },
             )
             revoked_count += 1
-            await offer_next_cohort(
+            next_offers = await offer_next_cohort(
                 db,
                 attestation_id=attestation.id,
                 now=current_time,
             )
+        if old_attestor_id is not None:
+            attestation_notifications.notify_reassigned(
+                attestation,
+                old_attestor_id=old_attestor_id,
+            )
+        attestation_notifications.notify_offers(attestation, next_offers)
+        if attestation.status == "needs_admin":
+            attestation_notifications.notify_needs_admin(attestation)
     return revoked_count
 
 

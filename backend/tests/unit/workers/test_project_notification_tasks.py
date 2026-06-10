@@ -195,3 +195,36 @@ def test_dispatch_project_notification_without_dedupe_key_always_inserts(
     assert notification_count == 2
     assert len(project_notification_context["published"]) == 2
     assert len(project_notification_context["email_task"].calls) == 2
+
+
+def test_dispatch_project_notification_accepts_attestation_types(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Dispatcher persists new Attestation notification enum labels."""
+    user_id = create_user("attestation-notify@auracles.space")
+    attestation_id = str(uuid4())
+
+    result = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "attestation_fee_funded",
+            "title": "Attestation fee funded",
+            "body": "Your Attestation fee is now held in escrow.",
+            "payload": {"attestation_id": attestation_id},
+            "link": f"/attestations/{attestation_id}",
+            "dedupe_key": f"attestation_fee_funded:{attestation_id}",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification = session.scalar(select(Notification))
+    sync_engine.dispose()
+
+    assert result["status"] == "dispatched"
+    assert notification is not None
+    assert notification.notification_type == "attestation_fee_funded"
+    assert project_notification_context["published"][0]["channel"] == f"user:{user_id}"

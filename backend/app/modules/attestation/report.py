@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation, AttestationUploadSession
 from app.modules.attestation.schemas import (
     AttestationEvidenceUploadCreateRequest,
@@ -172,9 +173,24 @@ async def submit_report(
             target_id=attestation.id,
             metadata={"report_key": report_key, "visibility": "pending_acceptance"},
         )
+        await write_audit(
+            db=db,
+            actor_id=attestor_id,
+            action="attestation_outcome_recorded",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "outcome": payload.outcome,
+                "target_type": attestation.target_type,
+                "target_id": str(attestation.target_id),
+                "attestor_id": str(attestor_id),
+                "requestor_id": str(attestation.requestor_id),
+            },
+        )
         await db.flush()
 
     render_attestation_report_pdf.delay(str(attestation_id))
+    attestation_notifications.notify_report_submitted(attestation)
     await db.refresh(attestation)
     return attestation
 
