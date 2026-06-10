@@ -219,6 +219,40 @@ class DeliverableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DisputeCreateRequest(BaseModel):
+    """Project member request body for raising a Milestone dispute."""
+
+    milestone_id: UUID
+    reason: str = Field(min_length=10, max_length=10000)
+
+
+class DisputeResponse(BaseModel):
+    """Dispute response returned to Project members and Admins."""
+
+    id: UUID
+    project_id: UUID
+    milestone_id: UUID
+    raised_by: UUID
+    reason: str
+    status: str
+    resolution_type: str | None
+    release_amount: Decimal | None
+    refund_amount: Decimal | None
+    admin_id: UUID | None
+    resolution_notes: str | None
+    escalated_at: datetime | None
+    resolved_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DisputesResponse(BaseModel):
+    """List response for Project Disputes."""
+
+    disputes: list[DisputeResponse]
+
+
 class ProjectResponse(BaseModel):
     """Project response returned by CRUD and assignment endpoints."""
 

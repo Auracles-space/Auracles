@@ -13,6 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.integrations import stripe
+from app.integrations.stripe import StripeProviderError
 from app.modules.financials.models import Escrow, Transaction
 
 ESCROW_REF_TYPES = {"project_milestone", "attestation"}
@@ -201,5 +203,92 @@ async def refund(
         target_type="escrow",
         target_id=escrow.id,
         metadata={"reason": reason.strip(), "admin_override": admin_override},
+    )
+    return escrow
+
+
+async def split(
+    db: AsyncSession,
+    *,
+    escrow_id: UUID,
+    actor_id: UUID,
+    release_amount: Decimal,
+    refund_amount: Decimal,
+    reason: str,
+    admin_override: bool = False,
+) -> Escrow:
+    """Release part of held escrow and refund the remainder through Stripe."""
+    normalized_release = _normalise_money(release_amount)
+    normalized_refund = _normalise_money(refund_amount)
+    if normalized_release <= 0 or normalized_refund <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Split amounts must both be positive.",
+        )
+
+    escrow = await db.get(Escrow, escrow_id, with_for_update=True)
+    if escrow is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Escrow not found.",
+        )
+    if escrow.status != "held":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only held escrow can be split.",
+        )
+    if _normalise_money(escrow.amount) != normalized_release + normalized_refund:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Split amounts must equal the escrow amount.",
+        )
+
+    transaction = await db.get(Transaction, escrow.transaction_id, with_for_update=True)
+    if transaction is None or transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Escrow funding transaction is missing provider metadata.",
+        )
+    if transaction.provider != "stripe":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unsupported escrow payment provider.",
+        )
+
+    try:
+        refund_result = await stripe.create_refund(
+            payment_intent_id=transaction.provider_ref,
+            amount=normalized_refund,
+            currency=transaction.currency,
+            idempotency_key=f"escrow_split_refund:{escrow_id}",
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="escrow_split",
+            escrow_id=escrow_id,
+            transaction_id=transaction.id,
+        ).error("stripe_escrow_split_refund_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    escrow.status = "released"
+    escrow.released_at = datetime.now(UTC)
+    escrow.released_by = actor_id
+    await write_audit(
+        db=db,
+        actor_id=actor_id,
+        action="escrow_split",
+        target_type="escrow",
+        target_id=escrow.id,
+        metadata={
+            "reason": reason.strip(),
+            "admin_override": admin_override,
+            "release_amount": str(normalized_release),
+            "refund_amount": str(normalized_refund),
+            "refund_ref": refund_result.id,
+        },
     )
     return escrow

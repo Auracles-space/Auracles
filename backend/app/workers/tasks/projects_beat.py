@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
+from app.modules.auth.models import UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow
 from app.modules.projects.models import (
@@ -23,6 +24,7 @@ from app.modules.projects.models import (
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 
 async def _withdraw_pending_proposals_for_closed_projects() -> int:
@@ -311,6 +313,76 @@ async def _auto_close_delivered_projects() -> int:
     return closed_count
 
 
+async def _escalate_disputes() -> int:
+    """Move stale open Disputes into admin review."""
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=7)
+    escalated_count = 0
+    admin_user_ids: list[str] = []
+    escalated_dispute_ids: list[str] = []
+    async with async_session_factory() as db:
+        async with db.begin():
+            disputes = (
+                (
+                    await db.execute(
+                        select(Dispute)
+                        .where(
+                            Dispute.status == "open",
+                            Dispute.created_at < cutoff,
+                        )
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if disputes:
+                admin_user_ids = [
+                    str(user_id)
+                    for user_id in (
+                        (
+                            await db.execute(
+                                select(UserRole.user_id).where(
+                                    UserRole.role == "admin",
+                                    UserRole.approved_at.is_not(None),
+                                )
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                ]
+            for dispute in disputes:
+                dispute.status = "under_review"
+                dispute.escalated_at = now
+                escalated_count += 1
+                escalated_dispute_ids.append(str(dispute.id))
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="dispute_escalated",
+                    target_type="dispute",
+                    target_id=dispute.id,
+                    metadata={
+                        "project_id": str(dispute.project_id),
+                        "milestone_id": str(dispute.milestone_id),
+                    },
+                )
+
+    for dispute_id in escalated_dispute_ids:
+        for user_id in admin_user_ids:
+            dispatch_project_notification.delay(
+                user_id=user_id,
+                notification_type="dispute_escalated",
+                title="Project dispute needs review",
+                body="A project dispute has escalated to admin review.",
+                payload={"dispute_id": dispute_id},
+                link="/admin/projects/disputes",
+                dedupe_key=f"dispute_escalated:{dispute_id}:{user_id}",
+            )
+    return escalated_count
+
+
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def expire_open_proposals(self: Any) -> dict[str, int]:
     """Withdraw pending Proposals attached to closed Projects."""
@@ -381,5 +453,20 @@ def auto_close_delivered_projects(self: Any) -> dict[str, int]:
     log.info("task_started")
     closed_count = run_async(_auto_close_delivered_projects())
     result = {"closed_count": closed_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def escalate_disputes(self: Any) -> dict[str, int]:
+    """Escalate stale open Disputes into admin review."""
+    log = logger.bind(
+        module="projects",
+        action="escalate_disputes",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    escalated_count = run_async(_escalate_disputes())
+    result = {"escalated_count": escalated_count}
     log.info("task_completed", result=result)
     return result

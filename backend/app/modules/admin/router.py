@@ -15,6 +15,7 @@ from app.modules.admin.schemas import (
     AdminConfigItem,
     AdminConfigPatchRequest,
     AdminConfigResponse,
+    AdminDisputeResolveRequest,
     AdminEscrowOverrideRequest,
     AdminEscrowResponse,
     AdminFrameworkStatusResponse,
@@ -28,6 +29,8 @@ from app.modules.admin.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
+from app.modules.projects import dispute_service
+from app.modules.projects.schemas import DisputeResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -240,3 +243,29 @@ async def refund_escrow(
         totp_code=payload.totp_code,
     )
     return _escrow_response(escrow)
+
+
+@router.post(
+    "/projects/disputes/{dispute_id}/resolve",
+    response_model=DisputeResponse,
+)
+async def resolve_project_dispute(
+    dispute_id: UUID,
+    payload: AdminDisputeResolveRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> DisputeResponse:
+    """Resolve a Project dispute through an audited 2FA-gated admin action."""
+    dispute = await dispute_service.resolve_dispute(
+        db=db,
+        redis=redis,
+        admin=admin,
+        dispute_id=dispute_id,
+        resolution_type=payload.resolution_type,
+        release_amount=payload.release_amount,
+        refund_amount=payload.refund_amount,
+        resolution_notes=payload.resolution_notes,
+        totp_code=payload.totp_code,
+    )
+    return DisputeResponse.model_validate(dispute)

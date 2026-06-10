@@ -14,13 +14,16 @@ from app.core.dependencies import (
     require_role,
 )
 from app.modules.auth.models import User
-from app.modules.projects import milestone_service, service
+from app.modules.projects import dispute_service, milestone_service, service
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     AmendmentResponse,
     DeliverableResponse,
     DeliverableRevisionRequest,
     DeliverableSubmitRequest,
+    DisputeCreateRequest,
+    DisputeResponse,
+    DisputesResponse,
     MilestoneCreateRequest,
     MilestoneFundingResponse,
     MilestoneResponse,
@@ -324,6 +327,58 @@ async def request_deliverable_revision(
         payload=payload,
     )
     return DeliverableResponse.model_validate(deliverable)
+
+
+@router.post(
+    "/{project_id}/disputes",
+    response_model=DisputeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_dispute(
+    project_id: UUID,
+    payload: DisputeCreateRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DisputeResponse:
+    """Raise a Milestone dispute as a Project workspace member."""
+    dispute = await dispute_service.create_dispute(
+        db=db,
+        actor=current_user,
+        project_id=project_id,
+        payload=payload,
+    )
+    return DisputeResponse.model_validate(dispute)
+
+
+@router.get("/{project_id}/disputes", response_model=DisputesResponse)
+async def list_disputes(
+    project_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DisputesResponse:
+    """List disputes visible to a Project workspace member."""
+    return await dispute_service.list_project_disputes(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+    )
+
+
+@router.get("/{project_id}/disputes/{dispute_id}", response_model=DisputeResponse)
+async def get_dispute(
+    project_id: UUID,
+    dispute_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DisputeResponse:
+    """Return one dispute visible to a Project workspace member."""
+    dispute = await dispute_service.get_project_dispute(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+        dispute_id=dispute_id,
+    )
+    return DisputeResponse.model_validate(dispute)
 
 
 @router.delete(

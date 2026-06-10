@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -15,13 +16,16 @@ from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
-from app.core.security import create_access_token, hash_password
+from app.core.redis import get_redis
+from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
-from app.modules.projects import milestone_service
+from app.modules.projects import dispute_service, milestone_service
 from app.modules.projects.models import (
     Deliverable,
+    Dispute,
     Milestone,
     Project,
     Proposal,
@@ -47,6 +51,52 @@ class FakeStripePaymentIntent:
         """Store the provider intent id and browser client secret."""
         self.id = payment_intent_id
         self.client_secret = client_secret
+
+
+class FakeRedis:
+    """Redis test double for TOTP-sensitive Project admin routes."""
+
+    def __init__(self) -> None:
+        """Create empty in-memory Redis state."""
+        self.values: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored value or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """Record a TTL for a key."""
+        self.ttls[key] = seconds
+
+    async def delete(self, *keys: str) -> int:
+        """Delete stored values and counters."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+            self.ttls.pop(key, None)
+        return removed
+
+
+class FakeStripeRefund:
+    """Small stand-in for a Stripe refund result."""
+
+    def __init__(self, refund_id: str) -> None:
+        """Store the provider refund id and status."""
+        self.id = refund_id
+        self.status = "succeeded"
 
 
 @pytest.fixture
@@ -75,6 +125,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
             await session.execute(delete(WorkspaceUploadSession))
+            await session.execute(delete(Dispute))
             await session.execute(delete(Deliverable))
             await session.execute(delete(Milestone))
             await session.execute(delete(Escrow))
@@ -92,6 +143,32 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
     finally:
         await cleanup()
         await engine.dispose()
+
+
+async def create_admin_user() -> tuple[UUID, str]:
+    """Create a TOTP-enabled Admin user for Project dispute resolution tests."""
+    secret = pyotp.random_base32()
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="project-dispute-admin@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="Project Dispute Admin",
+                email_verified=True,
+                kyc_status="verified",
+                totp_enabled=True,
+                totp_secret=encrypt_totp_secret(secret),
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id,
+                    role="admin",
+                    approved_at=datetime.now(UTC),
+                )
+            )
+        return user.id, secret
 
 
 async def create_user(
@@ -893,3 +970,174 @@ async def test_workspace_message_upload_session_and_member_visibility(
     assert stored_message is not None
     assert stored_message.file_keys == [file_key]
     assert scan_dispatches == [message.json()["id"]]
+
+
+async def test_project_member_raises_dispute_and_admin_resolves_split(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project member disputes a Milestone; Admin resolves by split."""
+    del migrated_database, project_context
+    refund_calls: list[dict[str, Any]] = []
+    notification_calls: list[dict[str, Any]] = []
+    fake_redis = FakeRedis()
+
+    class FakeNotificationTask:
+        """Small stand-in for Celery notification dispatch."""
+
+        def delay(self, **kwargs: Any) -> None:
+            """Record notification dispatch requests without using Redis."""
+            notification_calls.append(kwargs)
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Record the Stripe refund portion of a split resolution."""
+        refund_calls.append(
+            {
+                "payment_intent_id": payment_intent_id,
+                "amount": amount,
+                "currency": currency,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripeRefund("re_project_split_123")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask(),
+    )
+
+    operator_id = await create_user("dispute-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "dispute-contributor@auracles.space",
+        ["contributor"],
+    )
+    admin_id, totp_secret = await create_admin_user()
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    admin_headers = auth_headers(admin_id, ["admin"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+
+    raised = await client.post(
+        f"/v1/projects/{project_id}/disputes",
+        headers=operator_headers,
+        json={
+            "milestone_id": milestone_id,
+            "reason": "Submitted work does not match the agreed scope.",
+        },
+    )
+    listed = await client.get(
+        f"/v1/projects/{project_id}/disputes",
+        headers=contributor_headers,
+    )
+    dispute_id = raised.json()["id"]
+    bad_split = await client.post(
+        f"/v1/admin/projects/disputes/{dispute_id}/resolve",
+        headers=admin_headers,
+        json={
+            "resolution_type": "split",
+            "release_amount": "900.00",
+            "refund_amount": "500.00",
+            "resolution_notes": "Amounts do not match the funded milestone.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    resolved = await client.post(
+        f"/v1/admin/projects/disputes/{dispute_id}/resolve",
+        headers=admin_headers,
+        json={
+            "resolution_type": "split",
+            "release_amount": "900.00",
+            "refund_amount": "600.00",
+            "resolution_notes": "Partial delivery accepted by support.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    double_resolve = await client.post(
+        f"/v1/admin/projects/disputes/{dispute_id}/resolve",
+        headers=admin_headers,
+        json={
+            "resolution_type": "split",
+            "release_amount": "900.00",
+            "refund_amount": "600.00",
+            "resolution_notes": "Duplicate resolution should be blocked.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(project_id))
+        milestone = await session.get(Milestone, UUID(milestone_id))
+        dispute = await session.get(Dispute, UUID(dispute_id))
+        escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+        messages = (
+            (
+                await session.execute(
+                    select(WorkspaceMessage)
+                    .where(WorkspaceMessage.project_id == UUID(project_id))
+                    .order_by(WorkspaceMessage.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert raised.status_code == 201
+    assert raised.json()["status"] == "open"
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["disputes"]] == [dispute_id]
+    assert bad_split.status_code == 422
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["resolution_type"] == "split"
+    assert double_resolve.status_code == 409
+    assert project is not None
+    assert project.status == "delivered"
+    assert milestone is not None
+    assert milestone.status == "approved"
+    assert dispute is not None
+    assert dispute.status == "resolved"
+    assert dispute.release_amount == Decimal("900.00")
+    assert dispute.refund_amount == Decimal("600.00")
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert escrow.released_by == admin_id
+    assert refund_calls == [
+        {
+            "payment_intent_id": "pi_deliverable_123",
+            "amount": Decimal("600.00"),
+            "currency": "USD",
+            "idempotency_key": f"escrow_split_refund:{escrow.id}",
+        }
+    ]
+    assert [call["notification_type"] for call in notification_calls] == [
+        "dispute_raised",
+        "dispute_resolved_split",
+        "dispute_resolved_split",
+    ]
+    assert [message.system_event for message in messages] == [
+        "dispute_raised",
+        "dispute_resolved",
+    ]

@@ -19,6 +19,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.projects.models import (
     Deliverable,
+    Dispute,
     Milestone,
     Project,
     Proposal,
@@ -54,6 +55,7 @@ def projects_beat_context() -> Iterator[sessionmaker]:
         with session_factory() as session:
             session.execute(delete(AuditLog))
             session.execute(delete(WorkspaceMessage))
+            session.execute(delete(Dispute))
             session.execute(delete(Deliverable))
             session.execute(delete(Milestone))
             session.execute(delete(Escrow))
@@ -337,6 +339,81 @@ def create_delivered_project_for_auto_close(session_factory: sessionmaker) -> UU
         return project.id
 
 
+def create_stale_open_dispute(session_factory: sessionmaker) -> UUID:
+    """Create an old open Dispute that should escalate to admin review."""
+    with session_factory() as session:
+        operator = User(
+            email=f"dispute-operator-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Dispute Operator",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        contributor = User(
+            email=f"dispute-contributor-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Dispute Contributor",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        session.add_all([operator, contributor])
+        session.flush()
+        project = Project(
+            operator_id=operator.id,
+            title="Disputed Project",
+            description="Project with stale dispute.",
+            category="operations",
+            required_deliverables=[
+                {"name": "Guide", "description": "Implementation guide"}
+            ],
+            budget_min=Decimal("150.00"),
+            budget_max=Decimal("150.00"),
+            currency="USD",
+            status="disputed",
+            milestone_plan_status="finalized",
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+        session.add(project)
+        session.flush()
+        proposal = Proposal(
+            project_id=project.id,
+            contributor_id=contributor.id,
+            scope="I will complete the disputed work.",
+            budget=Decimal("150.00"),
+            currency="USD",
+            timeline_days=14,
+            deliverables=[{"name": "Guide", "description": "Guide"}],
+            status="accepted",
+            accepted_at=datetime.now(UTC),
+        )
+        session.add(proposal)
+        session.flush()
+        project.accepted_proposal_id = proposal.id
+        milestone = Milestone(
+            project_id=project.id,
+            sequence=1,
+            name="Guide",
+            description="Implementation guide.",
+            budget=Decimal("150.00"),
+            currency="USD",
+            status="disputed",
+            funded_at=datetime.now(UTC) - timedelta(days=10),
+        )
+        session.add(milestone)
+        session.flush()
+        dispute = Dispute(
+            project_id=project.id,
+            milestone_id=milestone.id,
+            raised_by=operator.id,
+            reason="Contributor did not deliver agreed scope.",
+        )
+        session.add(dispute)
+        session.flush()
+        dispute.created_at = datetime.now(UTC) - timedelta(days=8)
+        session.commit()
+        return dispute.id
+
+
 def test_close_expired_projects_closes_open_projects_and_withdraws_proposals(
     migrated_database: None,
     projects_beat_context: sessionmaker,
@@ -405,6 +482,26 @@ def test_expire_pending_amendments_marks_expired_and_writes_workspace_message(
     assert amendment is not None
     assert amendment.status == "expired"
     assert [message.system_event for message in messages] == ["amendment_expired"]
+
+
+def test_escalate_disputes_moves_stale_open_disputes_under_review(
+    migrated_database: None,
+    projects_beat_context: sessionmaker,
+) -> None:
+    """Open Disputes older than seven days escalate to admin review once."""
+    dispute_id = create_stale_open_dispute(projects_beat_context)
+
+    result = projects_beat.escalate_disputes.apply().get()
+    second_result = projects_beat.escalate_disputes.apply().get()
+
+    with projects_beat_context() as session:
+        dispute = session.get(Dispute, dispute_id)
+
+    assert result == {"escalated_count": 1}
+    assert second_result == {"escalated_count": 0}
+    assert dispute is not None
+    assert dispute.status == "under_review"
+    assert dispute.escalated_at is not None
 
 
 def test_auto_approve_deliverables_releases_escrow_and_marks_project_delivered(

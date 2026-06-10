@@ -13,6 +13,10 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.projects_beat.expire_pending_amendments",
         "schedule": 3600.0,
     },
+    "escalate-disputes-hourly": {
+        "task": "app.workers.tasks.projects_beat.escalate_disputes",
+        "schedule": 3600.0,
+    },
     "auto-approve-deliverables-hourly": {
         "task": "app.workers.tasks.projects_beat.auto_approve_deliverables",
         "schedule": 3600.0,

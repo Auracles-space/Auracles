@@ -1,6 +1,7 @@
 """Pydantic schemas for admin endpoints."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -93,6 +94,26 @@ class AdminEscrowResponse(BaseModel):
     status: str
     released_at: datetime | None
     released_by: UUID | None
+
+
+class AdminDisputeResolveRequest(BaseModel):
+    """Request body for resolving a Project dispute."""
+
+    resolution_type: Literal["release", "refund", "split"]
+    release_amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    refund_amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    resolution_notes: str = Field(min_length=5, max_length=4000)
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminConfigItem(BaseModel):
