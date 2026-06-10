@@ -272,6 +272,55 @@ async def create_released_milestone_earning(
             return transaction.id
 
 
+async def create_released_attestation_fee_earning(
+    contributor_id: UUID,
+    *,
+    amount: Decimal,
+    created_at: datetime,
+    escrow_status: str = "released",
+) -> UUID:
+    """Create an Attestation fee transaction with its escrow release state."""
+    operator_id, _ = await create_user_with_roles(
+        f"attestation-operator-{uuid4()}@auracles.space",
+        ["operator"],
+        enable_totp=False,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=amount,
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=amount,
+                transaction_type="attestation_fee",
+                status="completed",
+                provider="stripe",
+                provider_ref=f"pi_attestation_{uuid4()}",
+                ref_id=uuid4(),
+                ref_type="attestation",
+                created_at=created_at,
+            )
+            session.add(transaction)
+            await session.flush()
+            session.add(
+                Escrow(
+                    ref_id=transaction.ref_id,
+                    ref_type="attestation",
+                    amount=amount,
+                    currency="USD",
+                    status=escrow_status,
+                    release_conditions={"kind": "attestation"},
+                    transaction_id=transaction.id,
+                    released_at=(
+                        datetime.now(UTC) if escrow_status == "released" else None
+                    ),
+                )
+            )
+            return transaction.id
+
+
 async def create_verified_payout_account(contributor_id: UUID) -> UUID:
     """Create a default verified payout account for the contributor."""
     provider_account_id = f"acct_{uuid4()}"
@@ -410,6 +459,45 @@ async def test_released_project_milestones_are_withdrawable_earnings(
         "gross_revenue": "900.00",
         "pending_clearance": "0.00",
         "available_balance": "765.00",
+        "commission_rate": "0.15",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_released_attestation_fees_are_withdrawable_earnings(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Released Attestation fees count toward Attestor payout balance."""
+    del migrated_database, payout_context
+    attestor_id, _ = await create_user_with_roles(
+        "attestation-fee-earnings@auracles.space",
+        ["contributor", "attestor"],
+    )
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("600.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("200.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+        escrow_status="held",
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(attestor_id, ["contributor", "attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "600.00",
+        "pending_clearance": "0.00",
+        "available_balance": "510.00",
         "commission_rate": "0.15",
         "minimum_payout": "50.00",
     }

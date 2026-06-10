@@ -188,6 +188,7 @@ class AttestationRequestResponse(BaseModel):
     completion_due_at: datetime | None = None
     issued_at: datetime | None = None
     dispute_window_ends_at: datetime | None = None
+    closed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

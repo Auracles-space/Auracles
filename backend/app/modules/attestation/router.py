@@ -16,6 +16,7 @@ from app.modules.attestation import (
     application_service,
     credential_service,
     matching_service,
+    release_service,
 )
 from app.modules.attestation import (
     report as report_service,
@@ -161,6 +162,24 @@ async def submit_attestation_report(
         attestor=attestor,
         attestation_id=attestation_id,
         payload=payload,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/accept-report",
+    response_model=AttestationRequestResponse,
+)
+async def accept_attestation_report(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Accept a submitted Attestation report and release held escrow."""
+    attestation = await release_service.accept_report(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
     )
     return AttestationRequestResponse.model_validate(attestation)
 

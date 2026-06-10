@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, delete, select
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
-from app.modules.attestation import matching_service
+from app.modules.attestation import matching_service, release_service
 from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
@@ -832,3 +832,183 @@ async def test_unassigned_attestor_cannot_submit_report(
 
     assert upload_response.status_code == 403
     assert report_response.status_code == 403
+
+
+async def create_report_submitted_attestation(
+    requestor_id: UUID,
+    attestor_id: UUID,
+    *,
+    dispute_window_ends_at: datetime | None = None,
+) -> tuple[UUID, UUID, UUID]:
+    """Create a report-submitted Attestation with held escrow for release tests."""
+    current_time = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="operator",
+                target_id=requestor_id,
+                requestor_id=requestor_id,
+                attestor_id=attestor_id,
+                status="report_submitted",
+                outcome="approved",
+                requested_specializations=["healthcare"],
+                requested_jurisdictions=["US"],
+                summary="The reviewed operator evidence supports approval.",
+                scope="Credential, process, and sample evidence review.",
+                evidence_references={},
+                report_key=f"attestation-reports/{uuid4()}/report.pdf",
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+                accepted_at=current_time - timedelta(days=1),
+                completion_due_at=current_time + timedelta(days=6),
+                issued_at=current_time - timedelta(hours=1),
+                dispute_window_ends_at=dispute_window_ends_at
+                or current_time + timedelta(days=14),
+            )
+            session.add(attestation)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=requestor_id,
+                payee_id=attestor_id,
+                amount=Decimal("300.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("300.00"),
+                transaction_type="attestation_fee",
+                status="completed",
+                provider="stripe",
+                provider_ref=f"pi_attestation_release_{uuid4()}",
+                ref_id=attestation.id,
+                ref_type="attestation",
+            )
+            session.add(transaction)
+            await session.flush()
+            escrow = Escrow(
+                ref_id=attestation.id,
+                ref_type="attestation",
+                amount=Decimal("300.00"),
+                currency="USD",
+                status="held",
+                release_conditions={"kind": "attestation"},
+                transaction_id=transaction.id,
+            )
+            session.add(escrow)
+            await session.flush()
+            attestation.escrow_id = escrow.id
+            return attestation.id, transaction.id, escrow.id
+
+
+async def test_requestor_accepts_report_and_releases_attestation_escrow(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Requestors can accept a submitted report and close released escrow."""
+    del migrated_database, matching_context
+    requestor_id = await create_user("release-requestor@auracles.space", ["operator"])
+    attestor_id = await create_user("release-attestor@auracles.space", ["attestor"])
+    (
+        attestation_id,
+        transaction_id,
+        escrow_id,
+    ) = await create_report_submitted_attestation(requestor_id, attestor_id)
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/accept-report",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.get(Escrow, escrow_id)
+        audits = (
+            await session.execute(
+                select(AuditLog.action).where(
+                    AuditLog.target_type.in_(("attestation", "escrow")),
+                    AuditLog.target_id.in_((attestation_id, escrow_id)),
+                )
+            )
+        ).scalars().all()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+    assert response.json()["closed_at"] is not None
+    assert attestation is not None
+    assert attestation.status == "closed"
+    assert attestation.closed_at is not None
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert transaction.payee_id == attestor_id
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert escrow.released_by == requestor_id
+    assert "escrow_released" in audits
+    assert "attestation_released" in audits
+
+
+async def test_auto_release_attestations_closes_past_dispute_window_reports(
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Beat auto-releases undisputed reports after the dispute window ends."""
+    del migrated_database, matching_context
+    requestor_id = await create_user(
+        "auto-release-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "auto-release-attestor@auracles.space",
+        ["attestor"],
+    )
+    releasable_id, _, releasable_escrow_id = await create_report_submitted_attestation(
+        requestor_id,
+        attestor_id,
+        dispute_window_ends_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    disputed_id, _, disputed_escrow_id = await create_report_submitted_attestation(
+        requestor_id,
+        attestor_id,
+        dispute_window_ends_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                AttestationDispute(
+                    attestation_id=disputed_id,
+                    raised_by=requestor_id,
+                    reason="The evidence does not match the report.",
+                    status="open",
+                )
+            )
+
+    async with async_session_factory() as session:
+        released_count = await release_service.auto_release_attestations(session)
+        second_count = await release_service.auto_release_attestations(session)
+
+    async with async_session_factory() as session:
+        releasable = await session.get(Attestation, releasable_id)
+        releasable_escrow = await session.get(Escrow, releasable_escrow_id)
+        disputed = await session.get(Attestation, disputed_id)
+        disputed_escrow = await session.get(Escrow, disputed_escrow_id)
+        release_audits = (
+            await session.execute(
+                select(AuditLog.action).where(
+                    AuditLog.action == "attestation_released",
+                    AuditLog.target_id == releasable_id,
+                )
+            )
+        ).scalars().all()
+
+    assert released_count == 1
+    assert second_count == 0
+    assert releasable is not None
+    assert releasable.status == "closed"
+    assert releasable.closed_at is not None
+    assert releasable_escrow is not None
+    assert releasable_escrow.status == "released"
+    assert disputed is not None
+    assert disputed.status == "report_submitted"
+    assert disputed_escrow is not None
+    assert disputed_escrow.status == "held"
+    assert release_audits == ["attestation_released"]

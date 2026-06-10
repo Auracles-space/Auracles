@@ -2072,6 +2072,37 @@ paths:
           description: Attestation is not ready for report submission.
         '422':
           description: Invalid report payload or evidence references.
+  /v1/attestations/{attestation_id}/accept-report:
+    post:
+      tags:
+      - Attestation
+      operationId: acceptAttestationReport
+      summary: Accept Attestation report
+      description: Accept a submitted Attestation report, release held escrow, and close the Attestation.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Attestation report accepted and closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Contributor or Operator role required.
+        '404':
+          description: Attestation not found.
+        '409':
+          description: Attestation report cannot be released.
   /v1/attestor/assignments:
     get:
       tags:
@@ -3935,6 +3966,11 @@ components:
           - 'null'
           format: date-time
         dispute_window_ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        closed_at:
           type:
           - string
           - 'null'

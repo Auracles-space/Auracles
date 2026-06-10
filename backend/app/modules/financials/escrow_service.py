@@ -141,7 +141,7 @@ async def release(
     admin_override: bool = False,
 ) -> Escrow:
     """Mark held escrow funds released after workflow approval or admin override."""
-    escrow = await db.get(Escrow, escrow_id)
+    escrow = await db.get(Escrow, escrow_id, with_for_update=True)
     if escrow is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

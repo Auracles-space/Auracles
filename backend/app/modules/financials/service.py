@@ -178,8 +178,8 @@ async def _sum_transactions(
     before: datetime | None = None,
     after_or_at: datetime | None = None,
 ) -> Decimal:
-    """Return gross completed marketplace and released Milestone earnings."""
-    released_milestone_exists = exists(
+    """Return gross completed marketplace and released escrow earnings."""
+    released_escrow_exists = exists(
         select(Escrow.id).where(
             Escrow.ref_id == Transaction.ref_id,
             Escrow.ref_type == Transaction.ref_type,
@@ -193,7 +193,12 @@ async def _sum_transactions(
             (
                 (Transaction.transaction_type == "milestone")
                 & (Transaction.ref_type == "project_milestone")
-                & released_milestone_exists
+                & released_escrow_exists
+            ),
+            (
+                (Transaction.transaction_type == "attestation_fee")
+                & (Transaction.ref_type == "attestation")
+                & released_escrow_exists
             ),
         ),
         Transaction.status == "completed",
