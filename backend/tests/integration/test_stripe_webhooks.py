@@ -17,8 +17,10 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
+from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 
 
@@ -39,10 +41,14 @@ async def reset_webhook_state() -> None:
     async with async_session_factory() as session:
         await session.execute(delete(WebhookEvent))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(WorkspaceMessage))
+        await session.execute(delete(Milestone))
         await session.execute(delete(Escrow))
         await session.execute(delete(License))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
+        await session.execute(delete(Project))
+        await session.execute(delete(Proposal))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
         await session.commit()
@@ -198,6 +204,84 @@ async def create_pending_escrow_transaction() -> tuple[UUID, UUID, UUID]:
             return transaction.id, milestone_id, operator_id
 
 
+async def create_pending_project_milestone_transaction() -> tuple[
+    UUID,
+    UUID,
+    UUID,
+    UUID,
+]:
+    """Create a finalized Project Milestone and pending funding transaction."""
+    operator_id = await create_user_with_roles(
+        "project-escrow-operator@auracles.space",
+        ["operator"],
+    )
+    contributor_id = await create_user_with_roles(
+        "project-escrow-contributor@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            project = Project(
+                operator_id=operator_id,
+                title="Webhook Funded Project",
+                description="Project used by webhook milestone funding tests.",
+                category="operations",
+                required_deliverables=[
+                    {"name": "Playbook", "description": "Implementation playbook"}
+                ],
+                budget_min=Decimal("1500.00"),
+                budget_max=Decimal("1500.00"),
+                currency="USD",
+                status="assigned",
+                milestone_plan_status="finalized",
+                expires_at=datetime.now(UTC),
+            )
+            session.add(project)
+            await session.flush()
+            proposal = Proposal(
+                project_id=project.id,
+                contributor_id=contributor_id,
+                scope="I will deliver the project implementation.",
+                budget=Decimal("1500.00"),
+                currency="USD",
+                timeline_days=21,
+                deliverables=[{"name": "Playbook", "description": "Playbook"}],
+                status="accepted",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(proposal)
+            await session.flush()
+            project.accepted_proposal_id = proposal.id
+            milestone = Milestone(
+                project_id=project.id,
+                sequence=1,
+                name="Implementation",
+                description="Build the project deliverable.",
+                budget=Decimal("1500.00"),
+                currency="USD",
+                status="pending",
+            )
+            session.add(milestone)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("1500.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("1500.00"),
+                transaction_type="milestone",
+                status="pending",
+                provider="stripe",
+                provider_ref="pi_project_escrow_123",
+                ref_id=milestone.id,
+                ref_type="project_milestone",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id, project.id, milestone.id, operator_id
+
+
 def payment_intent_event(
     event_id: str,
     event_type: str,
@@ -257,10 +341,14 @@ async def test_stripe_payment_intent_success_creates_license_once(
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, transaction_id)
         licenses = (
-            await session.execute(
-                select(License).where(License.framework_id == framework_id)
+            (
+                await session.execute(
+                    select(License).where(License.framework_id == framework_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         events = (await session.execute(select(WebhookEvent))).scalars().all()
         audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "purchase_completed")
@@ -291,9 +379,12 @@ async def test_purchase_webhook_fails_duplicate_active_license_transaction(
     webhook_context: dict[str, Any],
 ) -> None:
     """A second purchase webhook cannot complete without granting a License."""
-    first_transaction_id, framework_id, operator_id, contributor_id = (
-        await create_pending_purchase()
-    )
+    (
+        first_transaction_id,
+        framework_id,
+        operator_id,
+        contributor_id,
+    ) = await create_pending_purchase()
     webhook_context["event"] = payment_intent_event(
         "evt_first_purchase_success",
         "payment_intent.succeeded",
@@ -342,10 +433,14 @@ async def test_purchase_webhook_fails_duplicate_active_license_transaction(
     async with async_session_factory() as session:
         second = await session.get(Transaction, second_transaction_id)
         licenses = (
-            await session.execute(
-                select(License).where(License.framework_id == framework_id)
+            (
+                await session.execute(
+                    select(License).where(License.framework_id == framework_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         duplicate_event = await session.scalar(
             select(WebhookEvent).where(
                 WebhookEvent.provider_event_id == "evt_duplicate_purchase_success"
@@ -368,9 +463,11 @@ async def test_stripe_payment_intent_success_funds_escrow_once(
     webhook_context: dict[str, Any],
 ) -> None:
     """A verified escrow webhook creates one held escrow ledger row."""
-    transaction_id, milestone_id, operator_id = (
-        await create_pending_escrow_transaction()
-    )
+    (
+        transaction_id,
+        milestone_id,
+        operator_id,
+    ) = await create_pending_escrow_transaction()
     webhook_context["event"] = payment_intent_event(
         "evt_escrow_success",
         "payment_intent.succeeded",
@@ -415,6 +512,71 @@ async def test_stripe_payment_intent_success_funds_escrow_once(
     assert escrows[0].transaction_id == transaction_id
     assert escrows[0].status == "held"
     assert escrows[0].release_conditions["required_event"] == "operator_approval"
+    assert audit is not None
+    assert audit.actor_id == operator_id
+
+
+async def test_stripe_escrow_webhook_marks_project_milestone_funded(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """Project Milestone escrow success moves the workspace into funded state."""
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        operator_id,
+    ) = await create_pending_project_milestone_transaction()
+    webhook_context["event"] = payment_intent_event(
+        "evt_project_escrow_success",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=milestone_id,
+        kind="escrow",
+        provider_ref="pi_project_escrow_123",
+        extra_metadata={
+            "project_id": str(project_id),
+            "milestone_id": str(milestone_id),
+            "release_conditions": (
+                "{"
+                '"kind":"project_milestone",'
+                f'"project_id":"{project_id}",'
+                f'"milestone_id":"{milestone_id}",'
+                f'"approver_user_id":"{operator_id}"'
+                "}"
+            ),
+        },
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        project = await session.get(Project, project_id)
+        milestone = await session.get(Milestone, milestone_id)
+        escrow = await session.scalar(select(Escrow))
+        message = await session.scalar(select(WorkspaceMessage))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "milestone_funded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert escrow is not None
+    assert project is not None
+    assert project.status == "in_progress"
+    assert milestone is not None
+    assert milestone.status == "funded"
+    assert milestone.funded_at is not None
+    assert milestone.escrow_id == escrow.id
+    assert message is not None
+    assert message.system_event == "milestone_funded"
     assert audit is not None
     assert audit.actor_id == operator_id
 

@@ -24,10 +24,12 @@ from app.core.security import hash_payout_provider_account_id
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.financials import escrow_service
-from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.projects.models import Milestone, Project
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.webhooks.schemas import WebhookIngestResponse
+from app.modules.workspace.models import WorkspaceMessage
 from app.workers.tasks.financials import generate_invoice_pdf
 
 
@@ -301,10 +303,75 @@ async def _handle_escrow_succeeded(
         raise WebhookProcessingError("escrow transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
         raise WebhookProcessingError("payment intent id mismatch")
-    await escrow_service.hold(
+    escrow = await escrow_service.hold(
         db,
         transaction_id=transaction_id,
         release_conditions=_escrow_release_conditions(event),
+    )
+    await _mark_project_milestone_funded(
+        db=db,
+        transaction=transaction,
+        escrow=escrow,
+    )
+
+
+async def _mark_project_milestone_funded(
+    *,
+    db: AsyncSession,
+    transaction: Transaction,
+    escrow: Escrow,
+) -> None:
+    """Apply project workspace state after a project Milestone escrow hold."""
+    if transaction.ref_type != "project_milestone" or transaction.ref_id is None:
+        return
+
+    milestone = await db.scalar(
+        select(Milestone).where(Milestone.id == transaction.ref_id).with_for_update()
+    )
+    if milestone is None:
+        # Phase 3 tests and future escrow consumers can fund escrow refs before
+        # the Projects module owns the referenced row.
+        return
+    if milestone.status == "funded" and milestone.escrow_id == escrow.id:
+        return
+    if milestone.status != "pending":
+        raise WebhookProcessingError("project milestone is not pending funding")
+
+    project = await db.scalar(
+        select(Project).where(Project.id == milestone.project_id).with_for_update()
+    )
+    if project is None:
+        raise WebhookProcessingError("project milestone parent project not found")
+
+    now = datetime.now(UTC)
+    milestone.status = "funded"
+    milestone.funded_at = now
+    milestone.escrow_id = escrow.id
+    if project.status == "assigned":
+        project.status = "in_progress"
+    db.add(
+        WorkspaceMessage(
+            project_id=project.id,
+            sender_id=None,
+            system_event="milestone_funded",
+            system_payload={
+                "milestone_id": str(milestone.id),
+                "escrow_id": str(escrow.id),
+                "transaction_id": str(transaction.id),
+            },
+        )
+    )
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="milestone_funded",
+        target_type="milestone",
+        target_id=milestone.id,
+        metadata={
+            "project_id": str(project.id),
+            "escrow_id": str(escrow.id),
+            "transaction_id": str(transaction.id),
+        },
     )
 
 
@@ -361,9 +428,7 @@ async def _handle_transfer_event(
     transfer_id = _event_object_id(event)
     if transfer_id is None:
         raise WebhookProcessingError("transfer event missing transfer id")
-    payout = await db.scalar(
-        select(Payout).where(Payout.provider_ref == transfer_id)
-    )
+    payout = await db.scalar(select(Payout).where(Payout.provider_ref == transfer_id))
     if payout is None:
         return
     payout.status = payout_status

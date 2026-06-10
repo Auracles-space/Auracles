@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -17,9 +18,28 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Escrow, Transaction
+from app.modules.projects import milestone_service
 from app.modules.projects.models import Milestone, Project, Proposal, ProposalAmendment
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
+
+
+class FakeStripeCustomer:
+    """Small stand-in for a Stripe Customer result in Project payment tests."""
+
+    def __init__(self, customer_id: str) -> None:
+        """Store the provider customer id."""
+        self.id = customer_id
+
+
+class FakeStripePaymentIntent:
+    """Small stand-in for a Stripe PaymentIntent result."""
+
+    def __init__(self, payment_intent_id: str, client_secret: str) -> None:
+        """Store the provider intent id and browser client secret."""
+        self.id = payment_intent_id
+        self.client_secret = client_secret
 
 
 @pytest.fixture
@@ -48,6 +68,8 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
             await session.execute(delete(Milestone))
+            await session.execute(delete(Escrow))
+            await session.execute(delete(Transaction))
             await session.execute(delete(ProposalAmendment))
             await session.execute(delete(Project))
             await session.execute(delete(Proposal))
@@ -425,3 +447,129 @@ async def test_accepted_contributor_manages_draft_milestones_and_finalizes_plan(
     assert len(milestones) == 1
     assert milestones[0].sequence == 1
     assert str(milestones[0].budget) == "1500.00"
+
+
+async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Funding creates a pending escrow transaction; webhook funds Milestone later."""
+    calls: dict[str, list[Any]] = {"customers": [], "payment_intents": []}
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> FakeStripeCustomer:
+        """Record Stripe Customer creation and return a stable id."""
+        calls["customers"].append(
+            {"email": email, "name": name, "idempotency_key": idempotency_key}
+        )
+        return FakeStripeCustomer("cus_project_123")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        idempotency_key: str | None = None,
+    ) -> FakeStripePaymentIntent:
+        """Record Stripe PaymentIntent creation for milestone funding."""
+        calls["payment_intents"].append(
+            {
+                "customer_id": customer_id,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripePaymentIntent("pi_milestone_123", "pi_milestone_secret")
+
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_customer",
+        fake_create_customer,
+    )
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_payment_intent",
+        fake_create_payment_intent,
+    )
+
+    operator_id = await create_user("fund-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "fund-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    milestone = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+    milestone_id = milestone.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+
+    funded = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        stored_milestone = await session.get(Milestone, UUID(milestone_id))
+
+    body = funded.json()
+    assert funded.status_code == 200
+    assert body["provider"] == "stripe"
+    assert body["client_secret"] == "pi_milestone_secret"
+    assert UUID(body["transaction_id"])
+    assert transaction is not None
+    assert transaction.payer_id == operator_id
+    assert transaction.payee_id == contributor_id
+    assert transaction.amount == Decimal("1500.00")
+    assert transaction.transaction_type == "milestone"
+    assert transaction.status == "pending"
+    assert transaction.provider == "stripe"
+    assert transaction.provider_ref == "pi_milestone_123"
+    assert transaction.ref_id == UUID(milestone_id)
+    assert transaction.ref_type == "project_milestone"
+    assert stored_milestone is not None
+    assert stored_milestone.status == "pending"
+    payment_intent = calls["payment_intents"][0]
+    assert payment_intent["amount"] == Decimal("1500.00")
+    assert payment_intent["metadata"]["kind"] == "escrow"
+    assert payment_intent["metadata"]["transaction_id"] == str(transaction.id)
+    assert payment_intent["metadata"]["project_id"] == project_id
+    assert payment_intent["metadata"]["milestone_id"] == milestone_id

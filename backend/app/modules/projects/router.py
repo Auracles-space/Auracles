@@ -19,6 +19,7 @@ from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     AmendmentResponse,
     MilestoneCreateRequest,
+    MilestoneFundingResponse,
     MilestoneResponse,
     MilestonesResponse,
     MilestoneUpdateRequest,
@@ -208,6 +209,26 @@ async def finalize_milestone_plan(
         project_id=project_id,
     )
     return ProjectResponse.model_validate(project)
+
+
+@router.post(
+    "/{project_id}/milestones/{milestone_id}/fund",
+    response_model=MilestoneFundingResponse,
+    dependencies=[Depends(require_kyc_verified)],
+)
+async def fund_milestone(
+    project_id: UUID,
+    milestone_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> MilestoneFundingResponse:
+    """Start Stripe escrow funding for a finalized Project Milestone."""
+    return await milestone_service.fund_milestone(
+        db=db,
+        operator=operator,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
 
 
 @router.patch(

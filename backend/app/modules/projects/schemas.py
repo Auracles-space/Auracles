@@ -178,6 +178,14 @@ class MilestonesResponse(BaseModel):
     milestones: list[MilestoneResponse]
 
 
+class MilestoneFundingResponse(BaseModel):
+    """Stripe PaymentIntent data needed to fund a Project Milestone."""
+
+    transaction_id: UUID
+    provider: Literal["stripe"]
+    client_secret: str
+
+
 class ProjectResponse(BaseModel):
     """Project response returned by CRUD and assignment endpoints."""
 
