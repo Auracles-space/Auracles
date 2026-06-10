@@ -156,6 +156,67 @@ class AttestationReportSubmitRequest(BaseModel):
     evidence_references: dict[str, Any] = Field(default_factory=dict)
 
 
+class AttestationDisputeCreateRequest(BaseModel):
+    """Request body for raising an Attestation report dispute."""
+
+    reason: str = Field(min_length=5, max_length=4000)
+
+
+class AttestationDisputeResponse(BaseModel):
+    """Attestation dispute details visible to requestors and admins."""
+
+    id: UUID
+    attestation_id: UUID
+    raised_by: UUID
+    reason: str
+    status: str
+    resolution_type: str | None
+    release_amount: Decimal | None
+    refund_amount: Decimal | None
+    admin_id: UUID | None
+    resolution_notes: str | None
+    escalated_at: datetime | None
+    resolved_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminAttestationDisputeResolveRequest(BaseModel):
+    """Admin request body for resolving an Attestation dispute."""
+
+    resolution_type: Literal["release", "refund", "split"]
+    release_amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    refund_amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    resolution_notes: str = Field(min_length=5, max_length=4000)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminAttestationAssignRequest(BaseModel):
+    """Admin request body for manually assigning a needs-admin Attestation."""
+
+    attestor_id: UUID
+    reason: str = Field(min_length=5, max_length=4000)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminAttestationRefundRequest(BaseModel):
+    """Admin request body for refunding a needs-admin Attestation."""
+
+    reason: str = Field(min_length=5, max_length=4000)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
 class AttestationRequestCreateRequest(BaseModel):
     """Request body for creating an escrow-funded Attestation request."""
 

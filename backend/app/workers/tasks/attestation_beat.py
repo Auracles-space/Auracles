@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 
 from app.core.database import async_session_factory
-from app.modules.attestation import matching_service, release_service
+from app.modules.attestation import dispute_service, matching_service, release_service
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -28,6 +28,12 @@ async def _auto_release_attestations() -> int:
     """Release report-submitted Attestations past their dispute window."""
     async with async_session_factory() as db:
         return await release_service.auto_release_attestations(db)
+
+
+async def _escalate_attestation_disputes() -> int:
+    """Move stale open Attestation disputes into admin review."""
+    async with async_session_factory() as db:
+        return await dispute_service.escalate_attestation_disputes(db)
 
 
 @app.task(bind=True)  # type: ignore[untyped-decorator]
@@ -71,5 +77,20 @@ def auto_release_attestations(self: Any) -> dict[str, int]:
     log.info("task_started")
     released_count = run_async(_auto_release_attestations())
     result = {"released_count": released_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def escalate_attestation_disputes(self: Any) -> dict[str, int]:
+    """Celery wrapper for hourly Attestation dispute escalation."""
+    log = logger.bind(
+        module="attestation",
+        action="escalate_attestation_disputes",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    escalated_count = run_async(_escalate_attestation_disputes())
+    result = {"escalated_count": escalated_count}
     log.info("task_completed", result=result)
     return result

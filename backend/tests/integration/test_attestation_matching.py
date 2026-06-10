@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -16,9 +17,10 @@ from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
-from app.core.security import create_access_token, hash_password
+from app.core.redis import get_redis
+from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
-from app.modules.attestation import matching_service, release_service
+from app.modules.attestation import dispute_service, matching_service, release_service
 from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
@@ -30,6 +32,7 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.projects.models import Milestone, Project, Proposal
@@ -37,6 +40,52 @@ from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
+
+
+class FakeRedis:
+    """Redis test double for TOTP-sensitive admin attestation routes."""
+
+    def __init__(self) -> None:
+        """Create empty in-memory Redis state."""
+        self.values: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored value or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """Record a TTL for a key."""
+        self.ttls[key] = seconds
+
+    async def delete(self, *keys: str) -> int:
+        """Delete stored values and counters."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+            self.ttls.pop(key, None)
+        return removed
+
+
+class FakeStripeRefund:
+    """Small stand-in for a Stripe refund result."""
+
+    def __init__(self, refund_id: str) -> None:
+        """Store the provider refund id and status."""
+        self.id = refund_id
+        self.status = "succeeded"
 
 
 @pytest.fixture
@@ -138,6 +187,31 @@ async def create_user(email: str, roles: list[str]) -> UUID:
                     )
                 )
         return user.id
+
+
+async def create_admin_user() -> tuple[UUID, str]:
+    """Create an admin user with encrypted TOTP enabled."""
+    secret = pyotp.random_base32()
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=f"attestation-admin-{uuid4()}@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="Attestation Admin",
+                email_verified=True,
+                totp_enabled=True,
+                totp_secret=encrypt_totp_secret(secret),
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id,
+                    role="admin",
+                    approved_at=datetime.now(UTC),
+                )
+            )
+        return user.id, secret
 
 
 async def create_attestor_profile(
@@ -898,6 +972,55 @@ async def create_report_submitted_attestation(
             return attestation.id, transaction.id, escrow.id
 
 
+async def create_needs_admin_attestation(
+    requestor_id: UUID,
+) -> tuple[UUID, UUID, UUID]:
+    """Create a needs-admin Attestation with held escrow for admin tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="operator",
+                target_id=requestor_id,
+                requestor_id=requestor_id,
+                status="needs_admin",
+                requested_specializations=["healthcare"],
+                requested_jurisdictions=["US"],
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=requestor_id,
+                payee_id=None,
+                amount=Decimal("300.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("300.00"),
+                transaction_type="attestation_fee",
+                status="completed",
+                provider="stripe",
+                provider_ref=f"pi_attestation_needs_admin_{uuid4()}",
+                ref_id=attestation.id,
+                ref_type="attestation",
+            )
+            session.add(transaction)
+            await session.flush()
+            escrow = Escrow(
+                ref_id=attestation.id,
+                ref_type="attestation",
+                amount=Decimal("300.00"),
+                currency="USD",
+                status="held",
+                release_conditions={"kind": "attestation"},
+                transaction_id=transaction.id,
+            )
+            session.add(escrow)
+            await session.flush()
+            attestation.escrow_id = escrow.id
+            return attestation.id, transaction.id, escrow.id
+
+
 async def test_requestor_accepts_report_and_releases_attestation_escrow(
     client: AsyncClient,
     migrated_database: None,
@@ -1012,3 +1135,418 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
     assert disputed_escrow is not None
     assert disputed_escrow.status == "held"
     assert release_audits == ["attestation_released"]
+
+
+async def test_requestor_raises_attestation_dispute_before_window_closes(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Requestors can dispute report-submitted Attestations during the window."""
+    del migrated_database, matching_context
+    requestor_id = await create_user("dispute-requestor@auracles.space", ["operator"])
+    attestor_id = await create_user("dispute-attestor@auracles.space", ["attestor"])
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id,
+        attestor_id,
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={"reason": "The public report omits evidence we submitted."},
+    )
+    duplicate = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={"reason": "Duplicate active dispute should be blocked."},
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        dispute = await session.get(AttestationDispute, UUID(response.json()["id"]))
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_disputed",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "open"
+    assert duplicate.status_code == 409
+    assert attestation is not None
+    assert attestation.status == "disputed"
+    assert dispute is not None
+    assert dispute.raised_by == requestor_id
+    assert dispute.reason == "The public report omits evidence we submitted."
+    assert audit is not None
+
+
+async def test_admin_resolves_attestation_dispute_with_split(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin split resolution releases part of an Attestation fee and refunds rest."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+    refund_calls: list[dict[str, Any]] = []
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Record the Stripe refund portion of a split resolution."""
+        refund_calls.append(
+            {
+                "payment_intent_id": payment_intent_id,
+                "amount": amount,
+                "currency": currency,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripeRefund("re_attestation_split_123")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+
+    requestor_id = await create_user(
+        "split-dispute-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "split-dispute-attestor@auracles.space",
+        ["attestor"],
+    )
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, transaction_id, escrow_id = (
+        await create_report_submitted_attestation(requestor_id, attestor_id)
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={"reason": "The report partly overstates what was verified."},
+    )
+    dispute_id = raised.json()["id"]
+    bad_split = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "resolution_type": "split",
+            "release_amount": "200.00",
+            "refund_amount": "50.00",
+            "resolution_notes": "Amounts do not match the attestation fee.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    resolved = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "resolution_type": "split",
+            "release_amount": "180.00",
+            "refund_amount": "120.00",
+            "resolution_notes": "Report partially accepted after review.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    double_resolve = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "resolution_type": "release",
+            "resolution_notes": "Duplicate resolution should be blocked.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        dispute = await session.get(AttestationDispute, UUID(dispute_id))
+        escrow = await session.get(Escrow, escrow_id)
+        transactions = (
+            (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.ref_id == attestation_id,
+                        Transaction.ref_type == "attestation",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_dispute_resolved",
+                AuditLog.target_id == UUID(dispute_id),
+            )
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert raised.status_code == 201
+    assert bad_split.status_code == 422
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["resolution_type"] == "split"
+    assert double_resolve.status_code == 409
+    assert attestation is not None
+    assert attestation.status == "closed"
+    assert attestation.closed_at is not None
+    assert dispute is not None
+    assert dispute.status == "resolved"
+    assert dispute.release_amount == Decimal("180.00")
+    assert dispute.refund_amount == Decimal("120.00")
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert escrow.released_by == admin_id
+    assert sorted(
+        (
+            transaction.id == transaction_id,
+            transaction.transaction_type,
+            transaction.amount,
+            transaction.status,
+        )
+        for transaction in transactions
+    ) == sorted(
+        [
+            (True, "attestation_fee", Decimal("300.00"), "refunded"),
+            (False, "attestation_fee", Decimal("180.00"), "completed"),
+            (False, "refund", Decimal("120.00"), "refunded"),
+        ]
+    )
+    assert refund_calls == [
+        {
+            "payment_intent_id": next(
+                transaction.provider_ref
+                for transaction in transactions
+                if transaction.id == transaction_id
+            ),
+            "amount": Decimal("120.00"),
+            "currency": "USD",
+            "idempotency_key": f"escrow_split_refund:{escrow_id}",
+        }
+    ]
+    assert audit is not None
+
+
+async def test_admin_manually_assigns_needs_admin_attestation(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Admin can manually assign a needs-admin Attestation to an approved Attestor."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    requestor_id = await create_user(
+        "manual-assign-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "manual-assign-attestor@auracles.space",
+        ["attestor"],
+    )
+    await create_attestor_profile(
+        attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+    )
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, transaction_id, _ = await create_needs_admin_attestation(
+        requestor_id
+    )
+
+    response = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/assign",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "attestor_id": str(attestor_id),
+            "reason": "Manual assignment after cohort exhaustion.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        offer = await session.scalar(
+            select(AttestationOffer).where(
+                AttestationOffer.attestation_id == attestation_id,
+                AttestationOffer.attestor_id == attestor_id,
+            )
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_accepted",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"
+    assert response.json()["attestor_id"] == str(attestor_id)
+    assert attestation is not None
+    assert attestation.status == "accepted"
+    assert attestation.accepted_at is not None
+    assert attestation.completion_due_at is not None
+    assert transaction is not None
+    assert transaction.payee_id == attestor_id
+    assert offer is not None
+    assert offer.status == "accepted"
+    assert audit is not None
+
+
+async def test_admin_refunds_needs_admin_attestation(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin can refund and close a needs-admin Attestation."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+    refund_calls: list[dict[str, Any]] = []
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Record the Stripe full refund request."""
+        refund_calls.append(
+            {
+                "payment_intent_id": payment_intent_id,
+                "amount": amount,
+                "currency": currency,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripeRefund("re_attestation_admin_refund_123")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    requestor_id = await create_user(
+        "admin-refund-requestor@auracles.space",
+        ["operator"],
+    )
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, transaction_id, escrow_id = await create_needs_admin_attestation(
+        requestor_id
+    )
+
+    response = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/refund",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "reason": "No eligible Attestor available after cohort exhaustion.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.get(Escrow, escrow_id)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_refunded",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+    assert attestation is not None
+    assert attestation.status == "closed"
+    assert attestation.closed_at is not None
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert escrow is not None
+    assert escrow.status == "refunded"
+    assert refund_calls == [
+        {
+            "payment_intent_id": transaction.provider_ref,
+            "amount": Decimal("300.00"),
+            "currency": "USD",
+            "idempotency_key": f"attestation_needs_admin_refund:{escrow_id}",
+        }
+    ]
+    assert audit is not None
+
+
+async def test_escalate_attestation_disputes_moves_stale_open_disputes_under_review(
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Open Attestation disputes older than seven days escalate once."""
+    del migrated_database, matching_context
+    requestor_id = await create_user(
+        "stale-dispute-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "stale-dispute-attestor@auracles.space",
+        ["attestor"],
+    )
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id,
+        attestor_id,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            dispute = AttestationDispute(
+                attestation_id=attestation_id,
+                raised_by=requestor_id,
+                reason="This old dispute needs admin attention.",
+                status="open",
+                created_at=datetime.now(UTC) - timedelta(days=8),
+            )
+            session.add(dispute)
+            await session.flush()
+            dispute_id = dispute.id
+
+    async with async_session_factory() as session:
+        escalated_count = await dispute_service.escalate_attestation_disputes(session)
+        second_count = await dispute_service.escalate_attestation_disputes(session)
+
+    async with async_session_factory() as session:
+        dispute = await session.get(AttestationDispute, dispute_id)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_dispute_escalated",
+                AuditLog.target_id == dispute_id,
+            )
+        )
+
+    assert escalated_count == 1
+    assert second_count == 0
+    assert dispute is not None
+    assert dispute.status == "under_review"
+    assert dispute.escalated_at is not None
+    assert audit is not None

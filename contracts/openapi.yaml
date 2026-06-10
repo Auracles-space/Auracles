@@ -2103,6 +2103,156 @@ paths:
           description: Attestation not found.
         '409':
           description: Attestation report cannot be released.
+  /v1/attestations/{attestation_id}/disputes:
+    post:
+      tags:
+      - Attestation
+      operationId: createAttestationDispute
+      summary: Create Attestation dispute
+      description: Raise a dispute against a submitted Attestation report before the dispute window closes.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationDisputeCreateRequest'
+      responses:
+        '201':
+          description: Attestation dispute raised.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationDisputeResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Contributor or Operator role required.
+        '404':
+          description: Attestation not found.
+        '409':
+          description: Attestation cannot be disputed.
+  /v1/admin/attestation-disputes/{dispute_id}/resolve:
+    post:
+      tags:
+      - Attestation
+      operationId: resolveAttestationDispute
+      summary: Resolve Attestation dispute
+      description: Resolve an Attestation dispute by release, refund, or split through a 2FA-gated admin action.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: dispute_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAttestationDisputeResolveRequest'
+      responses:
+        '200':
+          description: Attestation dispute resolved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationDisputeResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Attestation dispute not found.
+        '409':
+          description: Attestation dispute cannot be resolved.
+        '422':
+          description: Invalid resolution payload.
+  /v1/admin/attestations/{attestation_id}/assign:
+    post:
+      tags:
+      - Attestation
+      operationId: adminAssignAttestation
+      summary: Admin assign Attestation
+      description: Manually assign a needs-admin Attestation to an approved Attestor after 2FA.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAttestationAssignRequest'
+      responses:
+        '200':
+          description: Attestation manually assigned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Attestation or approved Attestor not found.
+        '409':
+          description: Attestation cannot be manually assigned.
+  /v1/admin/attestations/{attestation_id}/refund:
+    post:
+      tags:
+      - Attestation
+      operationId: adminRefundAttestation
+      summary: Admin refund Attestation
+      description: Refund and close a needs-admin Attestation after 2FA.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAttestationRefundRequest'
+      responses:
+        '200':
+          description: Attestation refunded and closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Attestation not found.
+        '409':
+          description: Attestation cannot be refunded.
   /v1/attestor/assignments:
     get:
       tags:
@@ -3876,6 +4026,145 @@ components:
           type: object
           additionalProperties: true
       description: Structured report fields submitted by the assigned Attestor.
+    AttestationDisputeCreateRequest:
+      type: object
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 4000
+      description: Request body for raising an Attestation report dispute.
+    AttestationDisputeResponse:
+      type: object
+      required:
+      - id
+      - attestation_id
+      - raised_by
+      - reason
+      - status
+      - resolution_type
+      - release_amount
+      - refund_amount
+      - admin_id
+      - resolution_notes
+      - escalated_at
+      - resolved_at
+      - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        attestation_id:
+          type: string
+          format: uuid
+        raised_by:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        status:
+          type: string
+        resolution_type:
+          type:
+          - string
+          - 'null'
+        release_amount:
+          type:
+          - string
+          - 'null'
+        refund_amount:
+          type:
+          - string
+          - 'null'
+        admin_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        resolution_notes:
+          type:
+          - string
+          - 'null'
+        escalated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        resolved_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      description: Attestation dispute details visible to requestors and admins.
+    AdminAttestationDisputeResolveRequest:
+      type: object
+      required:
+      - resolution_type
+      - resolution_notes
+      - totp_code
+      properties:
+        resolution_type:
+          type: string
+          enum:
+          - release
+          - refund
+          - split
+        release_amount:
+          type:
+          - string
+          - 'null'
+        refund_amount:
+          type:
+          - string
+          - 'null'
+        resolution_notes:
+          type: string
+          minLength: 5
+          maxLength: 4000
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+      description: Admin request body for resolving an Attestation dispute.
+    AdminAttestationAssignRequest:
+      type: object
+      required:
+      - attestor_id
+      - reason
+      - totp_code
+      properties:
+        attestor_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 4000
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+      description: Admin request body for manually assigning a needs-admin Attestation.
+    AdminAttestationRefundRequest:
+      type: object
+      required:
+      - reason
+      - totp_code
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 4000
+        totp_code:
+          type: string
+          minLength: 6
+          maxLength: 16
+      description: Admin request body for refunding a needs-admin Attestation.
     AttestationRequestResponse:
       type: object
       required:

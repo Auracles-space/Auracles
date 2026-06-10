@@ -15,6 +15,7 @@ from app.core.redis import get_redis
 from app.modules.attestation import (
     application_service,
     credential_service,
+    dispute_service,
     matching_service,
     release_service,
 )
@@ -24,6 +25,11 @@ from app.modules.attestation import (
 from app.modules.attestation import service as attestation_service
 from app.modules.attestation.dependencies import require_approved_attestor
 from app.modules.attestation.schemas import (
+    AdminAttestationAssignRequest,
+    AdminAttestationDisputeResolveRequest,
+    AdminAttestationRefundRequest,
+    AttestationDisputeCreateRequest,
+    AttestationDisputeResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
@@ -180,6 +186,100 @@ async def accept_attestation_report(
         db=db,
         requestor=requestor,
         attestation_id=attestation_id,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/disputes",
+    response_model=AttestationDisputeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_attestation_dispute(
+    attestation_id: UUID,
+    payload: AttestationDisputeCreateRequest,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationDisputeResponse:
+    """Raise a dispute against a submitted Attestation report."""
+    dispute = await dispute_service.create_dispute(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+        payload=payload,
+    )
+    return AttestationDisputeResponse.model_validate(dispute)
+
+
+@router.post(
+    "/admin/attestation-disputes/{dispute_id}/resolve",
+    response_model=AttestationDisputeResponse,
+)
+async def resolve_attestation_dispute(
+    dispute_id: UUID,
+    payload: AdminAttestationDisputeResolveRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestationDisputeResponse:
+    """Resolve an Attestation dispute through a 2FA-gated admin action."""
+    dispute = await dispute_service.resolve_dispute(
+        db=db,
+        redis=redis,
+        admin=admin,
+        dispute_id=dispute_id,
+        resolution_type=payload.resolution_type,
+        release_amount=payload.release_amount,
+        refund_amount=payload.refund_amount,
+        resolution_notes=payload.resolution_notes,
+        totp_code=payload.totp_code,
+    )
+    return AttestationDisputeResponse.model_validate(dispute)
+
+
+@router.post(
+    "/admin/attestations/{attestation_id}/assign",
+    response_model=AttestationRequestResponse,
+)
+async def admin_assign_attestation(
+    attestation_id: UUID,
+    payload: AdminAttestationAssignRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestationRequestResponse:
+    """Manually assign a needs-admin Attestation to an approved Attestor."""
+    attestation = await dispute_service.assign_needs_admin_attestation(
+        db=db,
+        redis=redis,
+        admin=admin,
+        attestation_id=attestation_id,
+        attestor_id=payload.attestor_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/admin/attestations/{attestation_id}/refund",
+    response_model=AttestationRequestResponse,
+)
+async def admin_refund_attestation(
+    attestation_id: UUID,
+    payload: AdminAttestationRefundRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestationRequestResponse:
+    """Refund and close a needs-admin Attestation."""
+    attestation = await dispute_service.refund_needs_admin_attestation(
+        db=db,
+        redis=redis,
+        admin=admin,
+        attestation_id=attestation_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
     )
     return AttestationRequestResponse.model_validate(attestation)
 

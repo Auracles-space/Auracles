@@ -41,4 +41,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.attestation_beat.auto_release_attestations",
         "schedule": 3600.0,
     },
+    "escalate-attestation-disputes-hourly": {
+        "task": "app.workers.tasks.attestation_beat.escalate_attestation_disputes",
+        "schedule": 3600.0,
+    },
 }
