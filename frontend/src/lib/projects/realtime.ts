@@ -63,7 +63,7 @@ export function useProjectRealtime(projectId: string): UseProjectRealtimeResult 
       socket.addEventListener("message", (message) => {
         const event = JSON.parse(message.data as string) as RealtimeEvent;
         setLastEvent(event);
-        if (event.type === "authenticated") {
+        if (event.type === "auth_ok" || event.type === "authenticated") {
           socket?.send(
             JSON.stringify({ channel: `project:${projectId}`, type: "subscribe" }),
           );
