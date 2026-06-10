@@ -23,6 +23,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         backend=resolved_settings.celery_result_backend,
         include=[
             "app.workers.tasks.artifacts",
+            "app.workers.tasks.attestation_beat",
             "app.workers.tasks.financials",
             "app.workers.tasks.notifications",
             "app.workers.tasks.payouts",

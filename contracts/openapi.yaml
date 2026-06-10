@@ -27,6 +27,8 @@ tags:
   description: Payment provider webhook ingestion endpoints.
 - name: Projects
   description: Project posting, proposals, milestones, deliverables, and disputes.
+- name: Attestation
+  description: Attestor matching, offers, assignments, and trust reports.
 - name: Workspace
   description: Project workspace messages and upload sessions.
 - name: Notifications
@@ -1871,6 +1873,149 @@ paths:
           description: Purchase not found for this Operator.
         '409':
           description: Invoice is not available for unsettled purchase.
+  /v1/attestations:
+    post:
+      tags:
+      - Attestation
+      operationId: requestAttestation
+      summary: Request Attestation
+      description: Create a Stripe escrow-funded Attestation request for an owned target.
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRequestCreateRequest'
+      responses:
+        '201':
+          description: Attestation fee PaymentIntent created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationFundingResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Contributor or Operator role required.
+        '404':
+          description: Attestation target not found.
+        '409':
+          description: An Attestation request for this target is already in flight.
+        '422':
+          description: Invalid Attestation payload.
+        '502':
+          description: Payment provider unavailable.
+  /v1/attestations/{attestation_id}:
+    get:
+      tags:
+      - Attestation
+      operationId: getAttestation
+      summary: Get Attestation
+      description: Return Attestation details visible to the requestor, assigned Attestor, cohort Attestor, or admin.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Attestation detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '404':
+          description: Attestation not found or not visible to this user.
+  /v1/attestations/{attestation_id}/accept:
+    post:
+      tags:
+      - Attestation
+      operationId: acceptAttestationOffer
+      summary: Accept Attestation offer
+      description: Accept an open cohort offer as an approved Attestor; first acceptor wins and becomes the fee payee.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Attestation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Approved Attestor profile required.
+        '404':
+          description: Attestation offer not found.
+        '409':
+          description: Attestation offer is no longer available.
+  /v1/attestations/{attestation_id}/decline:
+    post:
+      tags:
+      - Attestation
+      operationId: declineAttestationOffer
+      summary: Decline Attestation offer
+      description: Decline an open cohort offer as an approved Attestor and advance the request when the cohort is exhausted.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Attestation offer declined.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Approved Attestor profile required.
+        '404':
+          description: Attestation offer not found.
+        '409':
+          description: Attestation offer is no longer available.
+  /v1/attestor/assignments:
+    get:
+      tags:
+      - Attestation
+      operationId: listAttestorAssignments
+      summary: List Attestor assignments
+      description: List active offered and accepted Attestations for the approved Attestor.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Attestor assignments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorAssignmentsResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Approved Attestor profile required.
   /v1/webhooks/stripe:
     post:
       tags:
@@ -3493,6 +3638,197 @@ components:
           format: password
           minLength: 12
           maxLength: 128
+    AttestationRequestCreateRequest:
+      type: object
+      required:
+      - target_type
+      - target_id
+      - requested_specializations
+      - requested_jurisdictions
+      properties:
+        target_type:
+          type: string
+          enum:
+          - framework
+          - contributor
+          - operator
+          - credential
+        target_id:
+          type: string
+          format: uuid
+        requested_specializations:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+        requested_jurisdictions:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+      description: Request body for creating an escrow-funded Attestation request.
+    AttestationFundingResponse:
+      type: object
+      required:
+      - id
+      - transaction_id
+      - provider
+      - client_secret
+      properties:
+        id:
+          type: string
+          format: uuid
+        transaction_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+          - stripe
+        client_secret:
+          type: string
+      description: PaymentIntent data needed to fund an Attestation fee escrow.
+    AttestationRequestResponse:
+      type: object
+      required:
+      - id
+      - target_type
+      - target_id
+      - requestor_id
+      - attestor_id
+      - status
+      - outcome
+      - requested_specializations
+      - requested_jurisdictions
+      - fee_amount
+      - currency
+      - escrow_id
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        target_type:
+          type: string
+        target_id:
+          type: string
+          format: uuid
+        requestor_id:
+          type: string
+          format: uuid
+        attestor_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        status:
+          type: string
+        outcome:
+          type:
+          - string
+          - 'null'
+        requested_specializations:
+          type: array
+          items:
+            type: string
+        requested_jurisdictions:
+          type: array
+          items:
+            type: string
+        fee_amount:
+          type: string
+        currency:
+          type: string
+        escrow_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        accepted_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completion_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      description: Attestation request details visible to requestor and assigned Attestor.
+    AttestorAssignmentResponse:
+      type: object
+      required:
+      - offer_id
+      - attestation_id
+      - target_type
+      - target_id
+      - attestation_status
+      - offer_status
+      - cohort_index
+      - requested_specializations
+      - requested_jurisdictions
+      - expires_at
+      - accepted_at
+      - completion_due_at
+      properties:
+        offer_id:
+          type: string
+          format: uuid
+        attestation_id:
+          type: string
+          format: uuid
+        target_type:
+          type: string
+        target_id:
+          type: string
+          format: uuid
+        attestation_status:
+          type: string
+        offer_status:
+          type: string
+        cohort_index:
+          type: integer
+        requested_specializations:
+          type: array
+          items:
+            type: string
+        requested_jurisdictions:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completion_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      description: Attestation offer or assignment visible to an approved Attestor.
+    AttestorAssignmentsResponse:
+      type: object
+      required:
+      - assignments
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttestorAssignmentResponse'
+      description: List response for an Attestor's open offers and accepted work.
     PaymentMethodSetupRequest:
       type: object
       additionalProperties: false

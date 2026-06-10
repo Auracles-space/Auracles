@@ -12,15 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
-from app.modules.attestation import application_service, credential_service
+from app.modules.attestation import (
+    application_service,
+    credential_service,
+    matching_service,
+)
 from app.modules.attestation import service as attestation_service
+from app.modules.attestation.dependencies import require_approved_attestor
 from app.modules.attestation.schemas import (
     AttestationFundingResponse,
     AttestationRequestCreateRequest,
+    AttestationRequestResponse,
     AttestorApplicationCreateRequest,
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
     AttestorApplicationsResponse,
+    AttestorAssignmentResponse,
+    AttestorAssignmentsResponse,
     CredentialCreateRequest,
     CredentialEvidenceUploadCreateRequest,
     CredentialEvidenceUploadSessionResponse,
@@ -35,6 +43,7 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+ApprovedAttestorUser = Annotated[User, Depends(require_approved_attestor)]
 RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
 
 
@@ -53,6 +62,94 @@ async def request_attestation(
         db=db,
         requestor=requestor,
         payload=payload,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}",
+    response_model=AttestationRequestResponse,
+)
+async def get_attestation(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Return Attestation details visible to an involved user."""
+    attestation = await matching_service.get_attestation_for_user(
+        db=db,
+        attestation_id=attestation_id,
+        user=user,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/accept",
+    response_model=AttestationRequestResponse,
+)
+async def accept_attestation_offer(
+    attestation_id: UUID,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Accept an open Attestation cohort offer as an approved Attestor."""
+    attestation = await matching_service.accept_attestation_offer(
+        db=db,
+        attestation_id=attestation_id,
+        attestor=attestor,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/decline",
+    response_model=AttestationRequestResponse,
+)
+async def decline_attestation_offer(
+    attestation_id: UUID,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Decline an open Attestation cohort offer as an approved Attestor."""
+    attestation = await matching_service.decline_attestation_offer(
+        db=db,
+        attestation_id=attestation_id,
+        attestor=attestor,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.get(
+    "/attestor/assignments",
+    response_model=AttestorAssignmentsResponse,
+)
+async def list_attestor_assignments(
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestorAssignmentsResponse:
+    """List offered and accepted Attestation assignments for an Attestor."""
+    assignments = await matching_service.list_attestor_assignments(
+        db=db,
+        attestor=attestor,
+    )
+    return AttestorAssignmentsResponse(
+        assignments=[
+            AttestorAssignmentResponse(
+                offer_id=offer.id,
+                attestation_id=attestation.id,
+                target_type=attestation.target_type,
+                target_id=attestation.target_id,
+                attestation_status=attestation.status,
+                offer_status=offer.status,
+                cohort_index=offer.cohort_index,
+                requested_specializations=attestation.requested_specializations,
+                requested_jurisdictions=attestation.requested_jurisdictions,
+                expires_at=offer.expires_at,
+                accepted_at=attestation.accepted_at,
+                completion_due_at=attestation.completion_due_at,
+            )
+            for offer, attestation in assignments
+        ]
     )
 
 

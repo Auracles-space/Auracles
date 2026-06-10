@@ -570,7 +570,7 @@ async def test_stripe_attestation_fee_success_holds_escrow_and_starts_matching(
     client: AsyncClient,
     webhook_context: dict[str, Any],
 ) -> None:
-    """A verified Attestation fee webhook holds escrow and advances matching."""
+    """A verified Attestation fee webhook holds escrow and starts matching."""
     (
         transaction_id,
         attestation_id,
@@ -608,6 +608,9 @@ async def test_stripe_attestation_fee_success_holds_escrow_and_starts_matching(
         funded_audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "attestation_fee_funded")
         )
+        needs_admin_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "attestation_needs_admin")
+        )
 
     assert response.status_code == 200
     assert response.json() == {"received": True, "status": "processed"}
@@ -618,10 +621,11 @@ async def test_stripe_attestation_fee_success_holds_escrow_and_starts_matching(
     assert escrow.ref_type == "attestation"
     assert escrow.status == "held"
     assert attestation is not None
-    assert attestation.status == "matching"
+    assert attestation.status == "needs_admin"
     assert attestation.escrow_id == escrow.id
     assert funded_audit is not None
     assert funded_audit.actor_id == operator_id
+    assert needs_admin_audit is not None
 
 
 async def test_stripe_attestation_fee_failure_or_cancel_cancels_request(

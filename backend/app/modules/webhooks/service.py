@@ -23,6 +23,7 @@ from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation import matching_service
 from app.modules.attestation.models import Attestation
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
@@ -430,6 +431,7 @@ async def _mark_attestation_fee_funded(
             "transaction_id": str(transaction.id),
         },
     )
+    await matching_service.offer_next_cohort(db, attestation_id=attestation.id)
 
 
 async def _mark_project_milestone_funded(

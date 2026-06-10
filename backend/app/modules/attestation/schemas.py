@@ -150,10 +150,35 @@ class AttestationRequestResponse(BaseModel):
     fee_amount: Decimal
     currency: str
     escrow_id: UUID | None
+    accepted_at: datetime | None = None
+    completion_due_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AttestorAssignmentResponse(BaseModel):
+    """Attestation offer or assignment visible to an approved Attestor."""
+
+    offer_id: UUID
+    attestation_id: UUID
+    target_type: str
+    target_id: UUID
+    attestation_status: str
+    offer_status: str
+    cohort_index: int
+    requested_specializations: list[str]
+    requested_jurisdictions: list[str]
+    expires_at: datetime
+    accepted_at: datetime | None
+    completion_due_at: datetime | None
+
+
+class AttestorAssignmentsResponse(BaseModel):
+    """List response for an Attestor's open offers and accepted work."""
+
+    assignments: list[AttestorAssignmentResponse]
 
 
 class AttestationFundingResponse(BaseModel):

@@ -29,4 +29,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.projects_beat.auto_close_delivered_projects",
         "schedule": 86400.0,
     },
+    "expire-attestation-offers-hourly": {
+        "task": "app.workers.tasks.attestation_beat.expire_attestation_offers",
+        "schedule": 3600.0,
+    },
 }
