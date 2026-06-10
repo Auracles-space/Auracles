@@ -38,6 +38,7 @@ from app.modules.frameworks.schemas import (
     PreviewArtifactRequest,
     PricingConfig,
 )
+from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.workers.tasks.artifacts import process_artifact, scan_artifact
 from app.workers.tasks.notifications import notify_licensees_of_new_version
 from app.workers.tasks.processing.minhash_index import (
@@ -113,6 +114,7 @@ def framework_to_response(framework: Framework) -> FrameworkResponse:
     return FrameworkResponse(
         id=framework.id,
         contributor_id=framework.contributor_id,
+        source_project_id=framework.source_project_id,
         title=framework.title,
         description=framework.description,
         version=framework.version,
@@ -204,51 +206,108 @@ def _require_draft(framework: Framework) -> None:
         )
 
 
+async def _ensure_source_project_can_seed_framework(
+    *,
+    db: AsyncSession,
+    contributor_id: UUID,
+    source_project_id: UUID | None,
+) -> None:
+    """Validate that a Project source has approved work from this Contributor."""
+    if source_project_id is None:
+        return
+
+    deliverable_id = await db.scalar(
+        select(Deliverable.id)
+        .join(Milestone, Milestone.id == Deliverable.milestone_id)
+        .join(Project, Project.id == Milestone.project_id)
+        .join(Proposal, Proposal.id == Project.accepted_proposal_id)
+        .where(
+            Project.id == source_project_id,
+            Proposal.contributor_id == contributor_id,
+            Proposal.status == "accepted",
+            Deliverable.contributor_id == contributor_id,
+            Deliverable.status.in_(("approved", "auto_approved")),
+        )
+        .limit(1)
+    )
+    if deliverable_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "source_project_id must reference a Project with an approved "
+                "Deliverable from this Contributor."
+            ),
+        )
+
+
 async def create_framework(
     db: AsyncSession,
     contributor: User,
     payload: FrameworkCreate,
 ) -> FrameworkResponse:
     """Create a draft Framework owned by the verified Contributor."""
+    contributor_id = contributor.id
     pricing = payload.pricing
-    framework = Framework(
-        contributor_id=contributor.id,
-        title=payload.title.strip(),
-        description=payload.description.strip(),
-        category=payload.category.strip(),
-        sector=payload.sector.strip() if payload.sector else None,
-        industry=payload.industry.strip() if payload.industry else None,
-        business_function=payload.function.strip() if payload.function else None,
-        tags=payload.tags,
-        tags_text=_tags_text(payload.tags),
-        jurisdiction=payload.jurisdiction.strip() if payload.jurisdiction else None,
-        complexity=payload.complexity,
-        org_size=payload.org_size,
-        lifecycle_stage=(
-            payload.lifecycle_stage.strip() if payload.lifecycle_stage else None
-        ),
-        price=pricing.price,
-        currency=pricing.currency,
-        license_types=list(pricing.license_types),
-        commercial_rights=pricing.commercial_rights,
-        usage_restrictions=pricing.usage_restrictions,
-    )
-    db.add(framework)
-    await db.flush()
-    await write_audit(
-        db=db,
-        actor_id=contributor.id,
-        action="framework_created",
-        target_type="framework",
-        target_id=framework.id,
-        metadata={"status": framework.status},
-    )
-    await db.commit()
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        await _ensure_source_project_can_seed_framework(
+            db=db,
+            contributor_id=contributor_id,
+            source_project_id=payload.source_project_id,
+        )
+        framework = Framework(
+            contributor_id=contributor_id,
+            source_project_id=payload.source_project_id,
+            title=payload.title.strip(),
+            description=payload.description.strip(),
+            category=payload.category.strip(),
+            sector=payload.sector.strip() if payload.sector else None,
+            industry=payload.industry.strip() if payload.industry else None,
+            business_function=payload.function.strip() if payload.function else None,
+            tags=payload.tags,
+            tags_text=_tags_text(payload.tags),
+            jurisdiction=payload.jurisdiction.strip() if payload.jurisdiction else None,
+            complexity=payload.complexity,
+            org_size=payload.org_size,
+            lifecycle_stage=(
+                payload.lifecycle_stage.strip() if payload.lifecycle_stage else None
+            ),
+            price=pricing.price,
+            currency=pricing.currency,
+            license_types=list(pricing.license_types),
+            commercial_rights=pricing.commercial_rights,
+            usage_restrictions=pricing.usage_restrictions,
+        )
+        db.add(framework)
+        await db.flush()
+        audit_metadata = {"status": framework.status}
+        if framework.source_project_id is not None:
+            audit_metadata["source_project_id"] = str(framework.source_project_id)
+        await write_audit(
+            db=db,
+            actor_id=contributor_id,
+            action="framework_created",
+            target_type="framework",
+            target_id=framework.id,
+            metadata=audit_metadata,
+        )
+        if framework.source_project_id is not None:
+            await write_audit(
+                db=db,
+                actor_id=contributor_id,
+                action="framework_published_from_project",
+                target_type="framework",
+                target_id=framework.id,
+                metadata={"source_project_id": str(framework.source_project_id)},
+            )
+        await db.flush()
     await db.refresh(framework)
     logger.bind(
         module="frameworks",
         action="create_framework",
-        user_id=contributor.id,
+        user_id=contributor_id,
         framework_id=framework.id,
     ).info("framework_created")
     return framework_to_response(framework)
@@ -270,12 +329,16 @@ async def list_contributor_frameworks(
 ) -> list[FrameworkListItem]:
     """Return Frameworks owned by the current Contributor."""
     frameworks = (
-        await db.execute(
-            select(Framework)
-            .where(Framework.contributor_id == contributor.id)
-            .order_by(desc(Framework.created_at))
+        (
+            await db.execute(
+                select(Framework)
+                .where(Framework.contributor_id == contributor.id)
+                .order_by(desc(Framework.created_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_framework_to_list_item(framework) for framework in frameworks]
 
 
@@ -429,15 +492,19 @@ async def submit_framework(
         )
 
     artifacts = (
-        await db.execute(
-            select(Artifact)
-            .where(
-                Artifact.framework_id == framework.id,
-                Artifact.current_for_framework.is_(True),
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
             )
-            .order_by(Artifact.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not artifacts:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -565,15 +632,19 @@ async def list_artifacts(
     """Return Artifacts attached to an owned Framework."""
     framework = await _load_owned_framework(db, contributor, framework_id)
     artifacts = (
-        await db.execute(
-            select(Artifact)
-            .where(
-                Artifact.framework_id == framework.id,
-                Artifact.current_for_framework.is_(True),
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
             )
-            .order_by(Artifact.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_artifact_to_response(artifact) for artifact in artifacts]
 
 
@@ -804,13 +875,17 @@ async def acknowledge_soft_fail(
             )
 
         artifacts = (
-            await db.execute(
-                select(Artifact).where(
-                    Artifact.framework_id == framework.id,
-                    Artifact.current_for_framework.is_(True),
+            (
+                await db.execute(
+                    select(Artifact).where(
+                        Artifact.framework_id == framework.id,
+                        Artifact.current_for_framework.is_(True),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for artifact in artifacts:
             audit = await db.scalar(
                 select(ArtifactRarityAudit).where(
@@ -980,15 +1055,19 @@ async def publish_framework(
                 detail="Framework must pass pipeline checks before publish.",
             )
         current_artifacts = (
-            await db.execute(
-                select(Artifact)
-                .where(
-                    Artifact.framework_id == framework.id,
-                    Artifact.current_for_framework.is_(True),
+            (
+                await db.execute(
+                    select(Artifact)
+                    .where(
+                        Artifact.framework_id == framework.id,
+                        Artifact.current_for_framework.is_(True),
+                    )
+                    .order_by(Artifact.created_at)
                 )
-                .order_by(Artifact.created_at)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not current_artifacts:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

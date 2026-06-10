@@ -219,6 +219,17 @@ class DeliverableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FrameworkPrefillResponse(BaseModel):
+    """Framework draft prefill data derived from an approved Deliverable."""
+
+    title: str
+    description: str
+    file_keys: list[str]
+    tags: list[str] = Field(default_factory=lambda: ["project-deliverable"])
+    source_project_id: UUID
+    source_deliverable_id: UUID
+
+
 class DisputeCreateRequest(BaseModel):
     """Project member request body for raising a Milestone dispute."""
 

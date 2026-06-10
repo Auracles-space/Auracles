@@ -8,7 +8,10 @@
  */
 import { useRouter } from "next/navigation";
 
-import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
+import {
+  FrameworkForm,
+  type FrameworkDraftPrefill,
+} from "@/components/modules/frameworks/framework-form";
 import { createFramework } from "@/lib/generated/sdk.gen";
 import type { FrameworkCreate } from "@/lib/generated/types.gen";
 import {
@@ -17,16 +20,36 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 
+type FrameworkCreateWithProjectSource = FrameworkCreate & {
+  source_project_id?: string;
+};
+
+export type ProjectDeliverablePrefill = FrameworkDraftPrefill & {
+  sourceProjectId?: string;
+};
+
+type CreateFrameworkPanelProps = {
+  prefill?: ProjectDeliverablePrefill;
+};
+
 /**
  * Render create form for Contributor drafts.
+ *
+ * @param props - Optional Project deliverable prefill values.
  */
-export function CreateFrameworkPanel() {
+export function CreateFrameworkPanel({ prefill = {} }: CreateFrameworkPanelProps) {
   const router = useRouter();
 
   async function handleCreate(payload: FrameworkCreate) {
     configureBrowserClient();
+    const body: FrameworkCreateWithProjectSource = {
+      ...payload,
+      ...(prefill.sourceProjectId
+        ? { source_project_id: prefill.sourceProjectId }
+        : {}),
+    };
     const result = await createFramework({
-      body: payload,
+      body,
       headers: getAccessTokenHeaders(),
     });
 
@@ -37,5 +60,11 @@ export function CreateFrameworkPanel() {
     router.push(`/dashboard/frameworks/${result.data.id}`);
   }
 
-  return <FrameworkForm onSubmit={handleCreate} submitLabel="Create draft" />;
+  return (
+    <FrameworkForm
+      onSubmit={handleCreate}
+      prefill={prefill}
+      submitLabel="Create draft"
+    />
+  );
 }

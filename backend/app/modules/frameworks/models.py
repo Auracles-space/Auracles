@@ -101,6 +101,7 @@ class Framework(UpdatedAtMixin, Base):
         Index("idx_frameworks_sector", "sector"),
         Index("idx_frameworks_price", "price"),
         Index("idx_frameworks_tags", "tags", postgresql_using="gin"),
+        Index("idx_frameworks_source_project_id", "source_project_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -112,6 +113,11 @@ class Framework(UpdatedAtMixin, Base):
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False,
+    )
+    source_project_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)

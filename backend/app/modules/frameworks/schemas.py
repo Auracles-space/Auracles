@@ -61,6 +61,7 @@ class FrameworkCreate(BaseModel):
 
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1)
+    source_project_id: UUID | None = None
     category: FrameworkCategory
     sector: FrameworkSector | None = None
     industry: FrameworkIndustry | None = None
@@ -111,6 +112,7 @@ class FrameworkResponse(BaseModel):
 
     id: UUID
     contributor_id: UUID
+    source_project_id: UUID | None
     title: str
     description: str
     version: str

@@ -1,12 +1,59 @@
 /**
  * Contributor Framework creation route.
  */
-import { CreateFrameworkPanel } from "@/components/modules/frameworks/create-framework-panel";
+import {
+  CreateFrameworkPanel,
+  type ProjectDeliverablePrefill,
+} from "@/components/modules/frameworks/create-framework-panel";
+
+type NewFrameworkPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+/**
+ * Return all values for a query key regardless of single or repeated encoding.
+ *
+ * @param value - Next.js search param value.
+ */
+function toArray(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+  return value ? [value] : [];
+}
+
+/**
+ * Decode Project deliverable query params for the client create panel.
+ *
+ * @param params - Resolved route search params.
+ */
+function buildPrefill(
+  params: Record<string, string | string[] | undefined>,
+): ProjectDeliverablePrefill {
+  const tags = toArray(params.tags);
+  return {
+    description:
+      typeof params.description === "string" ? params.description : undefined,
+    fileKeys: toArray(params.file_keys),
+    sourceProjectId:
+      typeof params.source_project_id === "string"
+        ? params.source_project_id
+        : undefined,
+    tags: tags.length ? tags : ["project-deliverable"],
+    title: typeof params.title === "string" ? params.title : undefined,
+  };
+}
 
 /**
  * Render the new Framework wizard.
+ *
+ * @param props - Next.js route props including optional prefill params.
  */
-export default function NewFrameworkPage() {
+export default async function NewFrameworkPage({
+  searchParams,
+}: NewFrameworkPageProps) {
+  const prefill = buildPrefill((await searchParams) ?? {});
+
   return (
     <main className="min-h-[calc(100vh-72px)] bg-background px-4 py-12 text-foreground md:px-8">
       <div className="mx-auto max-w-5xl">
@@ -22,7 +69,7 @@ export default function NewFrameworkPage() {
               Complete the initial metadata to create your draft. You&apos;ll be able to upload your artifacts, configure the pricing model in detail, and submit it to the processing pipeline in the next steps.
             </p>
             
-            <div className="mt-8 rounded-xl bg-surface-2 p-5 border border-border-default">
+            <div className="mt-8 rounded-xl bg-surface-2 p-5 border border-border-default shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <svg className="h-4 w-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -37,7 +84,7 @@ export default function NewFrameworkPage() {
           
           <div>
             <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
-              <CreateFrameworkPanel />
+              <CreateFrameworkPanel prefill={prefill} />
             </section>
           </div>
         </div>

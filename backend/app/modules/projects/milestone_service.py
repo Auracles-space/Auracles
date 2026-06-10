@@ -29,6 +29,7 @@ from app.modules.projects.models import (
 from app.modules.projects.schemas import (
     DeliverableRevisionRequest,
     DeliverableSubmitRequest,
+    FrameworkPrefillResponse,
     MilestoneCreateRequest,
     MilestoneFundingResponse,
     MilestonesResponse,
@@ -952,6 +953,49 @@ async def approve_deliverable(
         await db.flush()
         await db.refresh(deliverable)
     return deliverable
+
+
+async def build_framework_prefill_from_deliverable(
+    *,
+    db: AsyncSession,
+    contributor: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+) -> FrameworkPrefillResponse:
+    """Build Framework form prefill data from an approved Project Deliverable."""
+    project, proposal, milestone = await _load_project_milestone_for_workspace_action(
+        db=db,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        lock_project=False,
+        lock_milestone=False,
+    )
+    _ensure_accepted_contributor(proposal, contributor.id)
+    deliverable = await db.scalar(
+        select(Deliverable).where(
+            Deliverable.id == deliverable_id,
+            Deliverable.milestone_id == milestone.id,
+            Deliverable.contributor_id == contributor.id,
+        )
+    )
+    if deliverable is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deliverable not found.",
+        )
+    if deliverable.status not in {"approved", "auto_approved"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only approved Deliverables can prefill Framework drafts.",
+        )
+    return FrameworkPrefillResponse(
+        title=deliverable.name,
+        description=deliverable.description,
+        file_keys=deliverable.file_keys,
+        source_project_id=project.id,
+        source_deliverable_id=deliverable.id,
+    )
 
 
 async def close_delivered_project(

@@ -22,6 +22,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
+from app.modules.frameworks.models import Framework
 from app.modules.projects import dispute_service, milestone_service
 from app.modules.projects.models import (
     Deliverable,
@@ -143,6 +144,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(ProposalAmendment))
+            await session.execute(delete(Framework))
             await session.execute(delete(Project))
             await session.execute(delete(Proposal))
             await session.execute(delete(UserRole))
@@ -897,6 +899,140 @@ async def test_deliverable_revision_approval_and_manual_project_close(
         "deliverable_submitted",
         "deliverable_approved",
     ]
+
+
+async def test_approved_deliverable_prefills_framework_draft(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Contributor can turn an approved Project Deliverable into a draft Framework."""
+    operator_id = await create_user("publish-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "publish-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    submitted = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Procurement control playbook",
+            "description": "Approved procurement control model and rollout guide.",
+            "file_keys": ["workspace/project/procurement-playbook.pdf"],
+        },
+    )
+    deliverable_id = submitted.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/approve",
+        headers=operator_headers,
+    )
+
+    prefill = await client.get(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/framework-prefill",
+        headers=contributor_headers,
+    )
+    created = await client.post(
+        "/v1/frameworks",
+        headers=contributor_headers,
+        json={
+            "title": prefill.json()["title"],
+            "description": prefill.json()["description"],
+            "category": "framework",
+            "sector": "financial_services",
+            "industry": "fund_management",
+            "function": "operations",
+            "tags": prefill.json()["tags"],
+            "source_project_id": prefill.json()["source_project_id"],
+            "pricing": {
+                "price": "499.00",
+                "currency": "USD",
+                "license_types": ["single_user", "team"],
+            },
+        },
+    )
+
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(created.json()["id"]))
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "framework_published_from_project"
+            )
+        )
+
+    assert prefill.status_code == 200
+    assert prefill.json() == {
+        "title": "Procurement control playbook",
+        "description": "Approved procurement control model and rollout guide.",
+        "file_keys": ["workspace/project/procurement-playbook.pdf"],
+        "tags": ["project-deliverable"],
+        "source_project_id": project_id,
+        "source_deliverable_id": deliverable_id,
+    }
+    assert created.status_code == 201
+    assert framework is not None
+    assert framework.source_project_id == UUID(project_id)
+    assert audit is not None
+    assert audit.actor_id == contributor_id
+    assert audit.target_id == framework.id
+
+
+async def test_operator_cannot_build_framework_prefill_from_contributor_deliverable(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Project Operators cannot reuse Contributor deliverables as Framework drafts."""
+    operator_id = await create_user(
+        "publish-denied-operator@auracles.space",
+        ["operator"],
+    )
+    contributor_id = await create_user(
+        "publish-denied-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    submitted = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Private delivery pack",
+            "description": "A confidential delivery pack owned by the Contributor.",
+            "file_keys": ["workspace/project/private-pack.pdf"],
+        },
+    )
+    deliverable_id = submitted.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/approve",
+        headers=operator_headers,
+    )
+
+    denied = await client.get(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/framework-prefill",
+        headers=operator_headers,
+    )
+
+    assert denied.status_code == 403
 
 
 async def test_workspace_message_upload_session_and_member_visibility(

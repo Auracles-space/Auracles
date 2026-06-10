@@ -24,6 +24,7 @@ from app.modules.projects.schemas import (
     DisputeCreateRequest,
     DisputeResponse,
     DisputesResponse,
+    FrameworkPrefillResponse,
     MilestoneCreateRequest,
     MilestoneFundingResponse,
     MilestoneResponse,
@@ -327,6 +328,28 @@ async def request_deliverable_revision(
         payload=payload,
     )
     return DeliverableResponse.model_validate(deliverable)
+
+
+@router.get(
+    "/{project_id}/milestones/{milestone_id}/deliverables/"
+    "{deliverable_id}/framework-prefill",
+    response_model=FrameworkPrefillResponse,
+)
+async def get_framework_prefill_from_deliverable(
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> FrameworkPrefillResponse:
+    """Return draft Framework prefill data for an approved Deliverable."""
+    return await milestone_service.build_framework_prefill_from_deliverable(
+        db=db,
+        contributor=contributor,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+    )
 
 
 @router.post(

@@ -24,8 +24,16 @@ import {
 
 type FrameworkFormProps = {
   framework?: FrameworkResponse;
+  prefill?: FrameworkDraftPrefill;
   onSubmit: (payload: FrameworkCreate) => Promise<void>;
   submitLabel?: string;
+};
+
+export type FrameworkDraftPrefill = {
+  description?: string;
+  fileKeys?: string[];
+  tags?: string[];
+  title?: string;
 };
 
 type FrameworkFormState = {
@@ -61,6 +69,7 @@ function coerceTaxonomyValue<TValue extends string>(
  */
 export function FrameworkForm({
   framework,
+  prefill,
   onSubmit,
   submitLabel = "Save framework",
 }: FrameworkFormProps) {
@@ -68,14 +77,14 @@ export function FrameworkForm({
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FrameworkFormState>({
     category: coerceTaxonomyValue(framework?.category, FRAMEWORK_CATEGORY_OPTIONS),
-    description: framework?.description ?? "",
+    description: framework?.description ?? prefill?.description ?? "",
     function: coerceTaxonomyValue(framework?.function, FUNCTION_OPTIONS),
     industry: coerceTaxonomyValue(framework?.industry, INDUSTRY_OPTIONS),
     orgSize: coerceTaxonomyValue(framework?.org_size, ORG_SIZE_OPTIONS),
     price: framework?.pricing.price ?? "250",
     sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
-    tags: framework?.tags.join(", ") ?? "",
-    title: framework?.title ?? "",
+    tags: framework?.tags.join(", ") ?? prefill?.tags?.join(", ") ?? "",
+    title: framework?.title ?? prefill?.title ?? "",
   });
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -218,6 +227,19 @@ export function FrameworkForm({
         helperText="Add up to 5 tags to help index your framework in the marketplace."
       />
 
+      {prefill?.fileKeys?.length ? (
+        <div className="rounded-lg border border-border-default bg-surface-2 p-4 text-sm text-foreground">
+          <p className="font-semibold">Source files</p>
+          <ul className="mt-2 grid gap-1 text-xs text-foreground-muted">
+            {prefill.fileKeys.map((fileKey) => (
+              <li className="truncate" key={fileKey}>
+                {fileKey}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-lg bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
           <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -229,7 +251,7 @@ export function FrameworkForm({
       
       <div className="mt-4 pt-6 border-t border-border-default flex items-center justify-end">
         <button
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="inline-flex h-11 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
           disabled={saving}
           type="submit"
         >
