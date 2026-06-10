@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -123,3 +124,42 @@ class CredentialEvidenceUploadSessionResponse(BaseModel):
     fields: dict[str, str]
     expires_at: datetime
     size_limit: int
+
+
+class AttestationRequestCreateRequest(BaseModel):
+    """Request body for creating an escrow-funded Attestation request."""
+
+    target_type: Literal["framework", "contributor", "operator", "credential"]
+    target_id: UUID
+    requested_specializations: list[str] = Field(min_length=1, max_length=25)
+    requested_jurisdictions: list[str] = Field(min_length=1, max_length=25)
+
+
+class AttestationRequestResponse(BaseModel):
+    """Attestation request details visible to requestor and assigned Attestor."""
+
+    id: UUID
+    target_type: str
+    target_id: UUID
+    requestor_id: UUID
+    attestor_id: UUID | None
+    status: str
+    outcome: str | None
+    requested_specializations: list[str]
+    requested_jurisdictions: list[str]
+    fee_amount: Decimal
+    currency: str
+    escrow_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AttestationFundingResponse(BaseModel):
+    """PaymentIntent data needed to fund an Attestation fee escrow."""
+
+    id: UUID
+    transaction_id: UUID
+    provider: Literal["stripe"]
+    client_secret: str

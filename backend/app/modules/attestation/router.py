@@ -13,7 +13,10 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.attestation import application_service, credential_service
+from app.modules.attestation import service as attestation_service
 from app.modules.attestation.schemas import (
+    AttestationFundingResponse,
+    AttestationRequestCreateRequest,
     AttestorApplicationCreateRequest,
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
@@ -32,6 +35,25 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
+
+
+@router.post(
+    "/attestations",
+    response_model=AttestationFundingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_attestation(
+    payload: AttestationRequestCreateRequest,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationFundingResponse:
+    """Create an escrow-funded Attestation request for an owned target."""
+    return await attestation_service.request_attestation(
+        db=db,
+        requestor=requestor,
+        payload=payload,
+    )
 
 
 @router.post(

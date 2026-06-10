@@ -14,6 +14,12 @@ from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationDispute,
+    AttestationOffer,
+    AttestationUploadSession,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -42,6 +48,10 @@ async def reset_webhook_state() -> None:
         await session.execute(delete(WebhookEvent))
         await session.execute(delete(AuditLog))
         await session.execute(delete(WorkspaceMessage))
+        await session.execute(delete(AttestationUploadSession))
+        await session.execute(delete(AttestationOffer))
+        await session.execute(delete(AttestationDispute))
+        await session.execute(delete(Attestation))
         await session.execute(delete(Milestone))
         await session.execute(delete(Escrow))
         await session.execute(delete(License))
@@ -202,6 +212,46 @@ async def create_pending_escrow_transaction() -> tuple[UUID, UUID, UUID]:
             session.add(transaction)
             await session.flush()
             return transaction.id, milestone_id, operator_id
+
+
+async def create_pending_attestation_fee_transaction(
+    *,
+    email: str = "attestation-escrow-operator@auracles.space",
+    provider_ref: str = "pi_attestation_escrow_123",
+) -> tuple[UUID, UUID, UUID]:
+    """Create a pending Attestation fee transaction for escrow webhook tests."""
+    operator_id = await create_user_with_roles(email, ["operator"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="operator",
+                target_id=operator_id,
+                requestor_id=operator_id,
+                status="pending_fee",
+                requested_specializations=["operations"],
+                requested_jurisdictions=["US"],
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=None,
+                amount=Decimal("300.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("300.00"),
+                transaction_type="attestation_fee",
+                status="pending",
+                provider="stripe",
+                provider_ref=provider_ref,
+                ref_id=attestation.id,
+                ref_type="attestation",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id, attestation.id, operator_id
 
 
 async def create_pending_project_milestone_transaction() -> tuple[
@@ -514,6 +564,153 @@ async def test_stripe_payment_intent_success_funds_escrow_once(
     assert escrows[0].release_conditions["required_event"] == "operator_approval"
     assert audit is not None
     assert audit.actor_id == operator_id
+
+
+async def test_stripe_attestation_fee_success_holds_escrow_and_starts_matching(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A verified Attestation fee webhook holds escrow and advances matching."""
+    (
+        transaction_id,
+        attestation_id,
+        operator_id,
+    ) = await create_pending_attestation_fee_transaction()
+    webhook_context["event"] = payment_intent_event(
+        "evt_attestation_escrow_success",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=attestation_id,
+        kind="escrow",
+        provider_ref="pi_attestation_escrow_123",
+        extra_metadata={
+            "attestation_id": str(attestation_id),
+            "release_conditions": (
+                "{"
+                '"kind":"attestation",'
+                f'"attestation_id":"{attestation_id}",'
+                f'"requestor_user_id":"{operator_id}"'
+                "}"
+            ),
+        },
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        attestation = await session.get(Attestation, attestation_id)
+        escrow = await session.scalar(select(Escrow))
+        funded_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "attestation_fee_funded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert escrow is not None
+    assert escrow.ref_id == attestation_id
+    assert escrow.ref_type == "attestation"
+    assert escrow.status == "held"
+    assert attestation is not None
+    assert attestation.status == "matching"
+    assert attestation.escrow_id == escrow.id
+    assert funded_audit is not None
+    assert funded_audit.actor_id == operator_id
+
+
+async def test_stripe_attestation_fee_failure_or_cancel_cancels_request(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """Failed or cancelled Attestation fee webhooks cancel the request."""
+    (
+        failed_transaction_id,
+        failed_attestation_id,
+        _,
+    ) = await create_pending_attestation_fee_transaction(
+        email="attestation-failed-operator@auracles.space",
+        provider_ref="pi_attestation_failed_123",
+    )
+    webhook_context["event"] = payment_intent_event(
+        "evt_attestation_escrow_failed",
+        "payment_intent.payment_failed",
+        transaction_id=failed_transaction_id,
+        framework_id=failed_attestation_id,
+        kind="escrow",
+        provider_ref="pi_attestation_failed_123",
+        extra_metadata={"attestation_id": str(failed_attestation_id)},
+    )
+
+    failed = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    (
+        cancelled_transaction_id,
+        cancelled_attestation_id,
+        _,
+    ) = await create_pending_attestation_fee_transaction(
+        email="attestation-cancelled-operator@auracles.space",
+        provider_ref="pi_attestation_cancelled_123",
+    )
+    webhook_context["event"] = payment_intent_event(
+        "evt_attestation_escrow_cancelled",
+        "payment_intent.canceled",
+        transaction_id=cancelled_transaction_id,
+        framework_id=cancelled_attestation_id,
+        kind="escrow",
+        provider_ref="pi_attestation_cancelled_123",
+        extra_metadata={"attestation_id": str(cancelled_attestation_id)},
+    )
+
+    cancelled = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        failed_transaction = await session.get(Transaction, failed_transaction_id)
+        failed_attestation = await session.get(Attestation, failed_attestation_id)
+        cancelled_transaction = await session.get(
+            Transaction,
+            cancelled_transaction_id,
+        )
+        cancelled_attestation = await session.get(
+            Attestation,
+            cancelled_attestation_id,
+        )
+        audits = (
+            await session.execute(
+                select(AuditLog).where(AuditLog.action == "attestation_fee_failed")
+            )
+        ).scalars().all()
+        purchase_failed_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "purchase_failed")
+        )
+
+    assert failed.status_code == 200
+    assert failed.json() == {"received": True, "status": "processed"}
+    assert cancelled.status_code == 200
+    assert cancelled.json() == {"received": True, "status": "processed"}
+    assert failed_transaction is not None
+    assert failed_transaction.status == "failed"
+    assert failed_attestation is not None
+    assert failed_attestation.status == "cancelled"
+    assert cancelled_transaction is not None
+    assert cancelled_transaction.status == "failed"
+    assert cancelled_attestation is not None
+    assert cancelled_attestation.status == "cancelled"
+    assert len(audits) == 2
+    assert purchase_failed_audit is None
 
 
 async def test_stripe_escrow_webhook_marks_project_milestone_funded(

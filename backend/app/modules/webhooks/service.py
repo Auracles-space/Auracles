@@ -23,6 +23,7 @@ from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation.models import Attestation
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -289,6 +290,78 @@ async def _handle_purchase_failed(
     )
 
 
+async def _handle_escrow_failed(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Mark an escrow funding transaction failed after provider failure/cancel."""
+    transaction_id = _purchase_transaction_id(event)
+    payment_intent_id = _event_object_id(event)
+    event_type = _required_event_field(event, "type")
+    transaction = await db.get(Transaction, transaction_id)
+    if transaction is None:
+        raise WebhookProcessingError("escrow transaction not found")
+    if transaction.provider != "stripe":
+        raise WebhookProcessingError("escrow transaction provider mismatch")
+    if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
+        raise WebhookProcessingError("payment intent id mismatch")
+
+    if transaction.ref_type == "attestation":
+        await _mark_attestation_fee_failed(
+            db=db,
+            transaction=transaction,
+            reason=event_type,
+        )
+        return
+
+    transaction.status = "failed"
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="escrow_funding_failed",
+        target_type="transaction",
+        target_id=transaction.id,
+        metadata={"provider": "stripe", "reason": event_type},
+    )
+
+
+async def _mark_attestation_fee_failed(
+    *,
+    db: AsyncSession,
+    transaction: Transaction,
+    reason: str,
+) -> None:
+    """Cancel an Attestation when fee escrow funding fails before hold."""
+    if transaction.transaction_type != "attestation_fee" or transaction.ref_id is None:
+        raise WebhookProcessingError("attestation fee transaction mismatch")
+    attestation = await db.scalar(
+        select(Attestation)
+        .where(Attestation.id == transaction.ref_id)
+        .with_for_update()
+    )
+    if attestation is None:
+        raise WebhookProcessingError("attestation not found for funding failure")
+    if transaction.status == "failed" and attestation.status == "cancelled":
+        return
+    if attestation.status != "pending_fee":
+        raise WebhookProcessingError("attestation is not pending fee funding")
+
+    transaction.status = "failed"
+    attestation.status = "cancelled"
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="attestation_fee_failed",
+        target_type="attestation",
+        target_id=attestation.id,
+        metadata={
+            "provider": "stripe",
+            "reason": reason,
+            "transaction_id": str(transaction.id),
+        },
+    )
+
+
 async def _handle_escrow_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
@@ -308,10 +381,54 @@ async def _handle_escrow_succeeded(
         transaction_id=transaction_id,
         release_conditions=_escrow_release_conditions(event),
     )
+    await _mark_attestation_fee_funded(
+        db=db,
+        transaction=transaction,
+        escrow=escrow,
+    )
     await _mark_project_milestone_funded(
         db=db,
         transaction=transaction,
         escrow=escrow,
+    )
+
+
+async def _mark_attestation_fee_funded(
+    *,
+    db: AsyncSession,
+    transaction: Transaction,
+    escrow: Escrow,
+) -> None:
+    """Apply Attestation state after a fee escrow hold succeeds."""
+    if transaction.ref_type != "attestation" or transaction.ref_id is None:
+        return
+    if transaction.transaction_type != "attestation_fee":
+        raise WebhookProcessingError("attestation escrow transaction type mismatch")
+
+    attestation = await db.scalar(
+        select(Attestation)
+        .where(Attestation.id == transaction.ref_id)
+        .with_for_update()
+    )
+    if attestation is None:
+        raise WebhookProcessingError("attestation not found for escrow funding")
+    if attestation.status == "matching" and attestation.escrow_id == escrow.id:
+        return
+    if attestation.status != "pending_fee":
+        raise WebhookProcessingError("attestation is not pending fee funding")
+
+    attestation.status = "matching"
+    attestation.escrow_id = escrow.id
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="attestation_fee_funded",
+        target_type="attestation",
+        target_id=attestation.id,
+        metadata={
+            "escrow_id": str(escrow.id),
+            "transaction_id": str(transaction.id),
+        },
     )
 
 
@@ -461,8 +578,19 @@ async def _dispatch_verified_event(
         await _handle_escrow_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None
+    if (
+        event_type == "payment_intent.payment_failed"
+        and metadata.get("kind") == "escrow"
+    ):
+        await _handle_escrow_failed(db, event)
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", None
     if event_type == "payment_intent.payment_failed":
         await _handle_purchase_failed(db, event)
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", None
+    if event_type == "payment_intent.canceled" and metadata.get("kind") == "escrow":
+        await _handle_escrow_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None
     if event_type == "account.updated":
