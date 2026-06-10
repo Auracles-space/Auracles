@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AttestorApplicationCreateRequest(BaseModel):
@@ -50,3 +50,76 @@ class AttestorApplicationReviewRequest(BaseModel):
     decision: Literal["approved", "rejected"]
     feedback: str | None = Field(default=None, max_length=5000)
     totp_code: str = Field(min_length=6, max_length=16)
+
+
+class CredentialCreateRequest(BaseModel):
+    """Request body for creating a user-owned Credential."""
+
+    title: str = Field(min_length=1, max_length=255)
+    issuer: str = Field(min_length=1, max_length=255)
+    issued_date: date
+    expires_date: date | None = None
+
+    @field_validator("expires_date")
+    @classmethod
+    def expiry_must_follow_issue_date(
+        cls,
+        value: date | None,
+        info: Any,
+    ) -> date | None:
+        """Reject credentials whose expiry date predates the issued date."""
+        issued_date = info.data.get("issued_date")
+        if value is not None and issued_date is not None and value < issued_date:
+            raise ValueError("expires_date must be after issued_date.")
+        return value
+
+
+class CredentialUpdateRequest(BaseModel):
+    """Request body for updating a user-owned Credential."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    issuer: str | None = Field(default=None, min_length=1, max_length=255)
+    issued_date: date | None = None
+    expires_date: date | None = None
+    evidence_file_keys: list[str] | None = Field(default=None, max_length=20)
+
+
+class CredentialResponse(BaseModel):
+    """Credential details returned to the owner."""
+
+    id: UUID
+    user_id: UUID
+    title: str
+    issuer: str
+    issued_date: date
+    expires_date: date | None
+    evidence_file_keys: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CredentialsResponse(BaseModel):
+    """List response for user-owned Credentials."""
+
+    credentials: list[CredentialResponse]
+
+
+class CredentialEvidenceUploadCreateRequest(BaseModel):
+    """Request body for creating a Credential evidence upload session."""
+
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class CredentialEvidenceUploadSessionResponse(BaseModel):
+    """Presigned POST response for a Credential evidence upload."""
+
+    id: UUID
+    s3_key: str
+    url: str
+    fields: dict[str, str]
+    expires_at: datetime
+    size_limit: int

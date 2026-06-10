@@ -12,12 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
-from app.modules.attestation import application_service
+from app.modules.attestation import application_service, credential_service
 from app.modules.attestation.schemas import (
     AttestorApplicationCreateRequest,
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
     AttestorApplicationsResponse,
+    CredentialCreateRequest,
+    CredentialEvidenceUploadCreateRequest,
+    CredentialEvidenceUploadSessionResponse,
+    CredentialResponse,
+    CredentialsResponse,
+    CredentialUpdateRequest,
 )
 from app.modules.auth.models import User
 
@@ -132,3 +138,88 @@ async def review_attestor_application(
         payload=payload,
     )
     return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/credentials",
+    response_model=CredentialResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_credential(
+    payload: CredentialCreateRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialResponse:
+    """Create a user-owned professional Credential."""
+    credential = await credential_service.create_credential(
+        db=db,
+        user=user,
+        payload=payload,
+    )
+    return CredentialResponse.model_validate(credential)
+
+
+@router.get("/credentials", response_model=CredentialsResponse)
+async def list_credentials(
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialsResponse:
+    """List Credentials owned by the authenticated user."""
+    credentials = await credential_service.list_credentials(db=db, user=user)
+    return CredentialsResponse(
+        credentials=[
+            CredentialResponse.model_validate(credential)
+            for credential in credentials
+        ]
+    )
+
+
+@router.patch("/credentials/{credential_id}", response_model=CredentialResponse)
+async def update_credential(
+    credential_id: UUID,
+    payload: CredentialUpdateRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialResponse:
+    """Update a user-owned Credential."""
+    credential = await credential_service.update_credential(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        payload=payload,
+    )
+    return CredentialResponse.model_validate(credential)
+
+
+@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_credential(
+    credential_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> None:
+    """Delete a user-owned Credential."""
+    await credential_service.delete_credential(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+    )
+
+
+@router.post(
+    "/credentials/{credential_id}/uploads",
+    response_model=CredentialEvidenceUploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_credential_evidence_upload_session(
+    credential_id: UUID,
+    payload: CredentialEvidenceUploadCreateRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned POST upload session for Credential evidence."""
+    return await credential_service.create_evidence_upload_session(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        payload=payload,
+    )
