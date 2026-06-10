@@ -341,8 +341,8 @@ class License(CreatedAtMixin, Base):
 class Review(UpdatedAtMixin, Base):
     """Operator review for a licensed Framework.
 
-    The write flow is deferred to Phase 3 because BR-FWK-004 depends on active
-    licenses created by the purchase flow.
+    The write flow is tracked in the post-Phase-4 marketplace polish backlog
+    because BR-FWK-004 depends on active licenses created by the purchase flow.
     """
 
     __tablename__ = "reviews"

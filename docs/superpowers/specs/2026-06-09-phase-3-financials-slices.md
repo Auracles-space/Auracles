@@ -214,7 +214,7 @@ All other events: insert `webhook_events(status=received)` and return 200. Unkno
 
 ## 10. Out of scope (later phases)
 
-- Reviews submission flow (FR-FWK-014) — schema dormant, wired in a later polish phase.
+- Reviews submission flow (FR-FWK-014) — schema dormant, wired in `2026-06-10-post-phase-4-marketplace-polish-backlog.md`.
 - White-label licensing — requires contract terms, resale/rebrand rights, admin approval/quote flow, and stronger rights audit.
 - Partner / Developer Platform commissions & tier upgrades — Phase 5 (FR-DEV-017..030).
 - Projects + Attestation modules — Phase 4 (consumes `EscrowService` shipped here).

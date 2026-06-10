@@ -525,7 +525,7 @@ After each slice the agent:
 
 ## Out of scope (later phases)
 
-- **Reviews flow** (FR-FWK-014) — schema only Slice 1; full flow Phase 3 after first license can exist.
+- **Reviews flow** (FR-FWK-014) — schema only Slice 1; Phase 3 deferred it again. Track implementation in `2026-06-10-post-phase-4-marketplace-polish-backlog.md`.
 - **Watchlist** (FR-EXP-010) — Phase 5 Collections.
 - **Purchase + payment flow** — Phase 3 (FR-FIN-*).
 - **Stripe / Paystack webhooks** — Phase 3.
