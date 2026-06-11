@@ -9,17 +9,19 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation.models import Attestation
+from app.modules.auth.models import User, UserRole
 from app.modules.explore.schemas import (
     ExploreArtifactSummary,
     ExploreAttestationBadge,
     ExploreAttestationStatus,
+    ExploreContributorProfile,
     ExploreFrameworkCard,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
@@ -32,6 +34,7 @@ PREVIEW_URL_TTL_SECONDS = 900
 PREVIEW_RATE_LIMIT = 60
 PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
 PUBLIC_POSITIVE_ATTESTATION_OUTCOMES = ("approved", "conditional")
+PUBLIC_ATTESTATION_REPORT_STATUSES = ("report_submitted", "closed")
 
 
 def _card_from_framework(
@@ -39,11 +42,14 @@ def _card_from_framework(
     rarity_score: Decimal | None,
     attestation_badge: ExploreAttestationBadge | None,
     review_aggregate: tuple[Decimal | None, int] | None,
+    contributor_name: str,
 ) -> ExploreFrameworkCard:
     """Map a published Framework row into a public catalog card."""
     average_review_score, review_count = review_aggregate or (None, 0)
     return ExploreFrameworkCard(
         id=framework.id,
+        contributor_id=framework.contributor_id,
+        contributor_name=contributor_name,
         title=framework.title,
         description=framework.description,
         version=framework.version,
@@ -147,6 +153,7 @@ def _apply_filters(
 def _public_attestation_exists(
     *,
     status_: str | None = None,
+    outcome: str | None = None,
 ) -> ColumnElement[bool]:
     """Build an EXISTS predicate for public Framework Attestation reports."""
     predicate = (
@@ -158,12 +165,14 @@ def _public_attestation_exists(
             # available to future report views but must not render as attested.
             Attestation.outcome.in_(PUBLIC_POSITIVE_ATTESTATION_OUTCOMES),
             Attestation.report_key.is_not(None),
-            Attestation.status.in_(("report_submitted", "closed")),
+            Attestation.status.in_(PUBLIC_ATTESTATION_REPORT_STATUSES),
         )
         .limit(1)
     )
     if status_ is not None:
         predicate = predicate.where(Attestation.status == status_)
+    if outcome is not None:
+        predicate = predicate.where(Attestation.outcome == outcome)
     return predicate.exists()
 
 
@@ -175,7 +184,13 @@ def _apply_attestation_filter(
     if attestation_status == "pending_acceptance":
         return query.where(_public_attestation_exists(status_="report_submitted"))
     if attestation_status == "attested":
-        return query.where(_public_attestation_exists(status_="closed"))
+        return query.where(
+            _public_attestation_exists(status_="closed", outcome="approved")
+        )
+    if attestation_status == "conditionally_attested":
+        return query.where(
+            _public_attestation_exists(status_="closed", outcome="conditional")
+        )
     return query.where(~_public_attestation_exists())
 
 
@@ -255,50 +270,122 @@ async def _framework_review_aggregates(
     return aggregates
 
 
-def _public_attestation_status(status_: str) -> str:
-    """Map internal Attestation status to public badge status."""
+async def _user_display_names(
+    db: AsyncSession,
+    user_ids: list[UUID],
+) -> dict[UUID, str]:
+    """Return public display names keyed by user id."""
+    if not user_ids:
+        return {}
+    rows = await db.execute(
+        select(User.id, User.display_name).where(User.id.in_(user_ids))
+    )
+    return {user_id: display_name for user_id, display_name in rows.all()}
+
+
+def _public_attestation_status(status_: str, outcome: str | None) -> str | None:
+    """Map an internal Attestation report to a positive public badge status."""
+    if outcome not in PUBLIC_POSITIVE_ATTESTATION_OUTCOMES:
+        return None
     if status_ == "report_submitted":
         return "pending_acceptance"
-    return "attested"
+    if status_ == "closed" and outcome == "approved":
+        return "attested"
+    if status_ == "closed" and outcome == "conditional":
+        return "conditionally_attested"
+    return None
+
+
+def _public_attestation_rank(status_: str, outcome: str | None) -> int | None:
+    """Return lower-is-better public badge ranking for one Attestation."""
+    public_status = _public_attestation_status(status_, outcome)
+    if public_status == "attested":
+        return 0
+    if public_status == "conditionally_attested":
+        return 1
+    if public_status == "pending_acceptance" and outcome == "approved":
+        return 2
+    if public_status == "pending_acceptance" and outcome == "conditional":
+        return 3
+    return None
+
+
+def _attestation_is_better(
+    candidate: tuple[int, Attestation],
+    current: tuple[int, Attestation],
+) -> bool:
+    """Return whether candidate should replace current selected public badge."""
+    candidate_rank, candidate_attestation = candidate
+    current_rank, current_attestation = current
+    if candidate_rank != current_rank:
+        return candidate_rank < current_rank
+    candidate_time = candidate_attestation.issued_at or candidate_attestation.created_at
+    current_time = current_attestation.issued_at or current_attestation.created_at
+    return candidate_time > current_time
+
+
+async def _public_attestation_badges(
+    db: AsyncSession,
+    *,
+    target_type: str,
+    target_ids: list[UUID],
+) -> tuple[dict[UUID, ExploreAttestationBadge], dict[UUID, int]]:
+    """Return best public Attestation badge and report count per target."""
+    if not target_ids:
+        return {}, {}
+    rows = (
+        await db.execute(
+            select(Attestation)
+            .where(
+                Attestation.target_type == target_type,
+                Attestation.target_id.in_(target_ids),
+                Attestation.outcome.is_not(None),
+                Attestation.report_key.is_not(None),
+                Attestation.status.in_(PUBLIC_ATTESTATION_REPORT_STATUSES),
+            )
+        )
+    ).scalars()
+    selected: dict[UUID, tuple[int, Attestation]] = {}
+    counts: dict[UUID, int] = {}
+    for attestation in rows:
+        counts[attestation.target_id] = counts.get(attestation.target_id, 0) + 1
+        rank = _public_attestation_rank(attestation.status, attestation.outcome)
+        if rank is None:
+            continue
+        current = selected.get(attestation.target_id)
+        candidate = (rank, attestation)
+        if current is None or _attestation_is_better(candidate, current):
+            selected[attestation.target_id] = candidate
+
+    badges: dict[UUID, ExploreAttestationBadge] = {}
+    for target_id, (_, attestation) in selected.items():
+        public_status = _public_attestation_status(
+            attestation.status,
+            attestation.outcome,
+        )
+        if public_status is None:
+            continue
+        badges[target_id] = ExploreAttestationBadge(
+            id=attestation.id,
+            status=public_status,
+            outcome=attestation.outcome,
+            report_key=attestation.report_key,
+            issued_at=attestation.issued_at,
+            attestation_count=counts.get(target_id, 0),
+        )
+    return badges, counts
 
 
 async def _framework_attestation_badges(
     db: AsyncSession,
     framework_ids: list[UUID],
 ) -> dict[UUID, ExploreAttestationBadge]:
-    """Return latest public Attestation badge per Framework."""
-    if not framework_ids:
-        return {}
-    rows = (
-        await db.execute(
-            select(Attestation)
-            .where(
-                Attestation.target_type == "framework",
-                Attestation.target_id.in_(framework_ids),
-                Attestation.outcome.in_(PUBLIC_POSITIVE_ATTESTATION_OUTCOMES),
-                Attestation.report_key.is_not(None),
-                Attestation.status.in_(("report_submitted", "closed")),
-            )
-            .order_by(
-                Attestation.target_id,
-                Attestation.issued_at.desc().nullslast(),
-                Attestation.created_at.desc(),
-            )
-        )
-    ).scalars()
-    badges: dict[UUID, ExploreAttestationBadge] = {}
-    for attestation in rows:
-        if attestation.target_id in badges:
-            continue
-        if attestation.outcome is None or attestation.report_key is None:
-            continue
-        badges[attestation.target_id] = ExploreAttestationBadge(
-            id=attestation.id,
-            status=_public_attestation_status(attestation.status),
-            outcome=attestation.outcome,
-            report_key=attestation.report_key,
-            issued_at=attestation.issued_at,
-        )
+    """Return best public Attestation badge per Framework."""
+    badges, _ = await _public_attestation_badges(
+        db,
+        target_type="framework",
+        target_ids=framework_ids,
+    )
     return badges
 
 
@@ -357,6 +444,10 @@ async def list_catalog(
         db,
         [framework.id for framework in frameworks],
     )
+    contributor_names = await _user_display_names(
+        db,
+        [framework.contributor_id for framework in frameworks],
+    )
     return ExploreFrameworkListResponse(
         items=[
             _card_from_framework(
@@ -364,6 +455,7 @@ async def list_catalog(
                 rarity_scores.get(framework.id),
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
+                contributor_names.get(framework.contributor_id, "Contributor"),
             )
             for framework in frameworks
         ],
@@ -437,6 +529,7 @@ async def get_detail(
     rarity_scores = await _framework_rarity_scores(db, [framework.id])
     attestation_badges = await _framework_attestation_badges(db, [framework.id])
     review_aggregates = await _framework_review_aggregates(db, [framework.id])
+    contributor_names = await _user_display_names(db, [framework.contributor_id])
     preview_artifact = next(
         (
             artifact
@@ -450,6 +543,7 @@ async def get_detail(
         rarity_scores.get(framework.id),
         attestation_badges.get(framework.id),
         review_aggregates.get(framework.id),
+        contributor_names.get(framework.contributor_id, "Contributor"),
     )
     return ExploreFrameworkDetail(
         **card.model_dump(),
@@ -525,12 +619,96 @@ async def related_frameworks(
         db,
         [framework.id for framework in ranked],
     )
+    contributor_names = await _user_display_names(
+        db,
+        [framework.contributor_id for framework in ranked],
+    )
     return [
         _card_from_framework(
             framework,
             rarity_scores.get(framework.id),
             attestation_badges.get(framework.id),
             review_aggregates.get(framework.id),
+            contributor_names.get(framework.contributor_id, "Contributor"),
         )
         for framework in ranked
     ]
+
+
+async def get_contributor_profile(
+    db: AsyncSession,
+    *,
+    contributor_id: UUID,
+) -> ExploreContributorProfile:
+    """Return a public Contributor profile with published Framework cards."""
+    contributor = await db.scalar(
+        select(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .where(
+            User.id == contributor_id,
+            UserRole.role == "contributor",
+        )
+    )
+    if contributor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contributor not found.",
+        )
+
+    published_count = int(
+        await db.scalar(
+            select(func.count(Framework.id)).where(
+                Framework.contributor_id == contributor_id,
+                Framework.status == "published",
+            )
+        )
+        or 0
+    )
+    if published_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contributor not found.",
+        )
+
+    rows = await db.execute(
+        select(Framework)
+        .where(
+            Framework.contributor_id == contributor_id,
+            Framework.status == "published",
+        )
+        .order_by(desc(Framework.published_at).nullslast(), Framework.created_at.desc())
+        .limit(12)
+    )
+    frameworks = list(rows.scalars().all())
+    framework_ids = [framework.id for framework in frameworks]
+    rarity_scores = await _framework_rarity_scores(db, framework_ids)
+    attestation_badges = await _framework_attestation_badges(db, framework_ids)
+    review_aggregates = await _framework_review_aggregates(db, framework_ids)
+    contributor_badges, contributor_badge_counts = await _public_attestation_badges(
+        db,
+        target_type="contributor",
+        target_ids=[contributor_id],
+    )
+
+    return ExploreContributorProfile(
+        id=contributor.id,
+        display_name=contributor.display_name,
+        avatar_url=contributor.avatar_url,
+        bio=contributor.bio,
+        location=contributor.location,
+        website=contributor.website,
+        attestation_badge=contributor_badges.get(contributor_id),
+        attestation_count=contributor_badge_counts.get(contributor_id, 0),
+        is_deactivated=contributor.deactivated_at is not None,
+        published_framework_count=published_count,
+        published_frameworks=[
+            _card_from_framework(
+                framework,
+                rarity_scores.get(framework.id),
+                attestation_badges.get(framework.id),
+                review_aggregates.get(framework.id),
+                contributor.display_name,
+            )
+            for framework in frameworks
+        ],
+    )

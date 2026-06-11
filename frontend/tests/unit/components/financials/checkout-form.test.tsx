@@ -36,6 +36,8 @@ const framework: ExploreFrameworkDetail = {
   average_review_score: null,
   category: "playbook",
   complexity: 3,
+  contributor_id: "00000000-0000-4000-8000-000000000014",
+  contributor_name: "Mara Okafor",
   currency: "USD",
   description: "Operator-ready controls for diligence workstreams.",
   function: "governance",

@@ -213,6 +213,12 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
 
 **Maps to:** FR-ATT-011, FR-ATT-008, FR-EXP-006.
 
+**Status:** Implemented in backlog Slice 3. Explore now exposes public
+Contributor profile detail pages, links Contributor names from Framework cards
+and detail pages, returns safe public profile fields with a capped newest
+Framework list, and uses outcome-driven public Attestation badges with
+`conditionally_attested`, report counts, and rejected-report suppression.
+
 ### Product behavior
 
 - Public Explore exposes a Contributor profile page at
@@ -276,10 +282,11 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
 - **Enumeration guard:** `GET /v1/explore/contributors/{id}` must return **404
   unless the target is a Contributor with ≥1 published Framework**. A public,
   unauthenticated endpoint must not confirm the existence of arbitrary user ids
-  (operators, attestors, admins, banned accounts, or contributors with no
-  published Frameworks). Do **not** 404 solely because the Contributor is
-  deactivated if they still have published Frameworks; return the limited
-  read-only public profile instead.
+  (operators, attestors, admins, or contributors with no published Frameworks).
+  Do **not** 404 solely because the Contributor is deactivated if they still have
+  published Frameworks; return the limited read-only public profile instead.
+  Admin-driven user suspension/banning is deferred to Phase 5 user management
+  (`FR-ADMIN-004`) because no separate `suspended_at`/ban state exists yet.
 - Return only published (not suspended/unpublished) Frameworks on the profile.
 - Keep this as a public read endpoint; no KYC/profile gate.
 
@@ -328,9 +335,10 @@ exposing private report details.
   Finding 1 — assert for both framework and contributor badges).
 - Multiple attestations on one target: best public outcome wins; a newer
   rejected/conditional does not hide an older approved; count surfaced.
-- `GET /v1/explore/contributors/{id}` returns 404 for a non-contributor id, a
-  contributor with zero published Frameworks, and a banned account (enumeration
-  guard).
+- `GET /v1/explore/contributors/{id}` returns 404 for a non-contributor id and a
+  contributor with zero published Frameworks (enumeration guard). Suspended or
+  banned account behavior is covered by Phase 5 user management once
+  `FR-ADMIN-004` adds a distinct admin suspension state.
 - Deactivated Contributor with published Frameworks returns 200 with a limited
   read-only public profile and no private account metadata.
 - Contributor profile returns at most 12 newest published Frameworks while

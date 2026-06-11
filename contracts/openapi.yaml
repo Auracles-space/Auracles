@@ -1572,6 +1572,32 @@ paths:
                 $ref: '#/components/schemas/ExploreFrameworkListResponse'
         '422':
           description: Invalid filter or pagination parameters.
+  /v1/explore/contributors/{contributor_id}:
+    get:
+      tags:
+      - Explore
+      operationId: getExploreContributorProfile
+      summary: Get public Contributor profile
+      description: Returns safe public Contributor identity fields, public Attestation badge context, and the first 12 newest published Frameworks.
+      security:
+      - bearerAuth: []
+      - {}
+      parameters:
+      - name: contributor_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Public Contributor profile returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreContributorProfile'
+        '404':
+          description: Contributor not found or has no published Frameworks.
   /v1/explore/frameworks/{framework_id}:
     get:
       tags:
@@ -6184,6 +6210,7 @@ components:
       enum:
       - pending_acceptance
       - attested
+      - conditionally_attested
       - none
     ExploreAttestationBadge:
       type: object
@@ -6193,6 +6220,7 @@ components:
       - outcome
       - report_key
       - issued_at
+      - attestation_count
       properties:
         id:
           type: string
@@ -6202,6 +6230,7 @@ components:
           enum:
           - pending_acceptance
           - attested
+          - conditionally_attested
         outcome:
           type: string
           enum:
@@ -6215,6 +6244,9 @@ components:
           - string
           - 'null'
           format: date-time
+        attestation_count:
+          type: integer
+          default: 1
     FrameworkCategory:
       type: string
       enum:
@@ -6288,6 +6320,8 @@ components:
       type: object
       required:
       - id
+      - contributor_id
+      - contributor_name
       - title
       - description
       - version
@@ -6314,6 +6348,11 @@ components:
         id:
           type: string
           format: uuid
+        contributor_id:
+          type: string
+          format: uuid
+        contributor_name:
+          type: string
         title:
           type: string
         description:
@@ -6461,6 +6500,58 @@ components:
             type: array
             items:
               $ref: '#/components/schemas/ExploreArtifactSummary'
+    ExploreContributorProfile:
+      type: object
+      required:
+      - id
+      - display_name
+      - avatar_url
+      - bio
+      - location
+      - website
+      - attestation_badge
+      - attestation_count
+      - is_deactivated
+      - published_framework_count
+      - published_frameworks
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        avatar_url:
+          type:
+          - string
+          - 'null'
+        bio:
+          type:
+          - string
+          - 'null'
+        location:
+          type:
+          - string
+          - 'null'
+        website:
+          type:
+          - string
+          - 'null'
+        attestation_badge:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
+        attestation_count:
+          type: integer
+          default: 0
+        is_deactivated:
+          type: boolean
+          default: false
+        published_framework_count:
+          type: integer
+        published_frameworks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExploreFrameworkCard'
     LibraryItem:
       type: object
       required:

@@ -16,23 +16,31 @@ ExploreSort = Literal[
     "price_asc",
     "price_desc",
 ]
-ExploreAttestationStatus = Literal["pending_acceptance", "attested", "none"]
+ExploreAttestationStatus = Literal[
+    "pending_acceptance",
+    "attested",
+    "conditionally_attested",
+    "none",
+]
 
 
 class ExploreAttestationBadge(BaseModel):
-    """Public trust badge for a Framework-target Attestation."""
+    """Public trust badge for a Framework or Contributor-target Attestation."""
 
     id: UUID
-    status: Literal["pending_acceptance", "attested"]
+    status: Literal["pending_acceptance", "attested", "conditionally_attested"]
     outcome: Literal["approved", "conditional", "rejected"]
     report_key: str
     issued_at: datetime | None
+    attestation_count: int = 1
 
 
 class ExploreFrameworkCard(BaseModel):
     """Public catalog card for one published Framework."""
 
     id: UUID
+    contributor_id: UUID
+    contributor_name: str
     title: str
     description: str
     version: str
@@ -84,3 +92,19 @@ class ExploreFrameworkDetail(ExploreFrameworkCard):
     preview_artifact_id: UUID | None
     preview_url: str | None
     artifacts: list[ExploreArtifactSummary]
+
+
+class ExploreContributorProfile(BaseModel):
+    """Public Contributor profile for Explore discovery."""
+
+    id: UUID
+    display_name: str
+    avatar_url: str | None
+    bio: str | None
+    location: str | None
+    website: str | None
+    attestation_badge: ExploreAttestationBadge | None = None
+    attestation_count: int = 0
+    is_deactivated: bool = False
+    published_framework_count: int
+    published_frameworks: list[ExploreFrameworkCard]

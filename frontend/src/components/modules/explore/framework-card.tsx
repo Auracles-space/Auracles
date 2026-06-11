@@ -6,6 +6,7 @@
 import {
   CheckCircledIcon,
   ClockIcon,
+  InfoCircledIcon,
   StarFilledIcon,
 } from "@radix-ui/react-icons";
 import Link from "next/link";
@@ -30,23 +31,38 @@ export function AttestationBadge({
 }: {
   badge: ExploreAttestationBadge;
 }) {
-  const isPending = badge.status === "pending_acceptance";
-  const Icon = isPending ? ClockIcon : CheckCircledIcon;
-  const className = isPending
-    ? "border-warning/30 bg-warning/10 text-warning"
-    : "border-success/30 bg-success/10 text-success";
-  const label = isPending ? "Pending acceptance" : "Attested";
+  const statusConfig = {
+    attested: {
+      className: "border-success/30 bg-success/10 text-success",
+      icon: CheckCircledIcon,
+      label: "Attested",
+    },
+    conditionally_attested: {
+      className: "border-info/30 bg-info/10 text-info",
+      icon: InfoCircledIcon,
+      label: "Conditional",
+    },
+    pending_acceptance: {
+      className: "border-warning/30 bg-warning/10 text-warning",
+      icon: ClockIcon,
+      label: "Pending acceptance",
+    },
+  }[badge.status];
+  const Icon = statusConfig.icon;
+  const reportLabel =
+    badge.attestation_count > 1 ? ` · ${badge.attestation_count} reports` : "";
 
   return (
     <span
       className={[
         "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1",
         "text-[11px] font-semibold uppercase tracking-[0.05em]",
-        className,
+        statusConfig.className,
       ].join(" ")}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {label}: {formatLabel(badge.outcome)}
+      {statusConfig.label}: {formatLabel(badge.outcome)}
+      {reportLabel}
     </span>
   );
 }
@@ -86,8 +102,10 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
       <div>
         <div className="mb-3 flex items-start justify-between gap-4">
           <h2 className="font-heading text-lg font-semibold leading-tight text-foreground group-hover:text-accent transition-colors">
-            <Link href={`/explore/${framework.id}`} className="focus:outline-none">
-              <span className="absolute inset-0" aria-hidden="true" />
+            <Link
+              href={`/explore/${framework.id}`}
+              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
               {framework.title}
             </Link>
           </h2>
@@ -100,6 +118,12 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
         <p className="line-clamp-2 text-sm leading-6 text-foreground-muted">
           {framework.description}
         </p>
+        <Link
+          className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
+          href={`/explore/contributors/${framework.contributor_id}`}
+        >
+          {framework.contributor_name}
+        </Link>
         <div className="mt-3">
           <ReviewSummary
             averageScore={framework.average_review_score}

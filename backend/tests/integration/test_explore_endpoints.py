@@ -140,6 +140,11 @@ async def create_user(
     *,
     kyc_status: str = "verified",
     display_name: str | None = None,
+    avatar_url: str | None = None,
+    bio: str | None = None,
+    location: str | None = None,
+    website: str | None = None,
+    deactivated_at: datetime | None = None,
 ) -> UUID:
     """Create an email-verified user for Explore tests."""
     async with async_session_factory() as session:
@@ -150,6 +155,11 @@ async def create_user(
                 display_name=(
                     display_name if display_name is not None else email.split("@")[0]
                 ),
+                avatar_url=avatar_url,
+                bio=bio,
+                location=location,
+                website=website,
+                deactivated_at=deactivated_at,
                 email_verified=True,
                 kyc_status=kyc_status,
             )
@@ -245,6 +255,7 @@ async def create_framework_attestation(
     attestor_id: UUID,
     status: str = "report_submitted",
     outcome: str = "approved",
+    issued_at: datetime | None = None,
 ) -> UUID:
     """Create a public Framework-target Attestation report for Explore tests."""
     async with async_session_factory() as session:
@@ -264,7 +275,41 @@ async def create_framework_attestation(
                 report_key=f"attestation-reports/{uuid4()}/report.pdf",
                 fee_amount=Decimal("250.00"),
                 currency="USD",
-                issued_at=datetime.now(UTC),
+                issued_at=issued_at or datetime.now(UTC),
+            )
+            session.add(attestation)
+            await session.flush()
+            return attestation.id
+
+
+async def create_contributor_attestation(
+    *,
+    contributor_id: UUID,
+    requestor_id: UUID,
+    attestor_id: UUID,
+    status: str = "closed",
+    outcome: str = "approved",
+    issued_at: datetime | None = None,
+) -> UUID:
+    """Create a public Contributor-target Attestation report for Explore tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="contributor",
+                target_id=contributor_id,
+                requestor_id=requestor_id,
+                attestor_id=attestor_id,
+                status=status,
+                outcome=outcome,
+                requested_specializations=["governance"],
+                requested_jurisdictions=["US"],
+                summary="Contributor profile review completed.",
+                scope="Review of contributor expertise and published work.",
+                evidence_references={},
+                report_key=f"attestation-reports/{uuid4()}/report.pdf",
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+                issued_at=issued_at or datetime.now(UTC),
             )
             session.add(attestation)
             await session.flush()
@@ -314,6 +359,8 @@ async def test_public_catalog_search_filters_and_visibility(
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["title"] == "Board Risk Operating System"
+    assert body["items"][0]["contributor_id"] == str(contributor_id)
+    assert body["items"][0]["contributor_name"] == "seller"
     assert body["items"][0]["category"] == "framework"
     assert body["items"][0]["sector"] == "financial_services"
     assert body["items"][0]["industry"] == "fund_management"
@@ -382,6 +429,7 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
         "outcome": "approved",
         "report_key": attested_item["attestation_badge"]["report_key"],
         "issued_at": attested_item["attestation_badge"]["issued_at"],
+        "attestation_count": 1,
     }
     assert attested_item["attestation_badge"]["report_key"].startswith(
         "attestation-reports/"
@@ -397,6 +445,8 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
     )
     assert detail_response.status_code == 200
     assert detail_response.json()["attestation_badge"]["id"] == str(attestation_id)
+    assert detail_response.json()["contributor_id"] == str(contributor_id)
+    assert detail_response.json()["contributor_name"] == "attested-seller"
 
 
 async def test_rejected_framework_attestation_does_not_render_positive_badge(
@@ -451,6 +501,216 @@ async def test_rejected_framework_attestation_does_not_render_positive_badge(
     assert none_response.json()["total"] == 1
     assert detail_response.status_code == 200
     assert detail_response.json()["attestation_badge"] is None
+
+
+async def test_conditionally_attested_framework_filter_and_badge(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Conditional closed reports render and filter as conditionally attested."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "conditional-attestation-seller@auracles.space",
+        ["contributor"],
+    )
+    requestor_id = await create_user(
+        "conditional-attestation-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "conditional-public-attestor@auracles.space",
+        ["attestor"],
+    )
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Conditional Attestation Framework",
+    )
+    attestation_id = await create_framework_attestation(
+        framework_id=framework_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+        status="closed",
+        outcome="conditional",
+    )
+
+    filtered_response = await client.get(
+        "/v1/explore/frameworks",
+        params={"attestation_status": "conditionally_attested"},
+    )
+    detail_response = await client.get(f"/v1/explore/frameworks/{framework_id}")
+
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["total"] == 1
+    item = filtered_response.json()["items"][0]
+    assert item["id"] == str(framework_id)
+    assert item["attestation_badge"]["id"] == str(attestation_id)
+    assert item["attestation_badge"]["status"] == "conditionally_attested"
+    assert item["attestation_badge"]["outcome"] == "conditional"
+    assert detail_response.status_code == 200
+    assert detail_response.json()["attestation_badge"]["status"] == (
+        "conditionally_attested"
+    )
+
+
+async def test_public_contributor_profile_returns_safe_fields_and_frameworks(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Public Contributor profiles expose safe fields and published Frameworks."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "public-contributor@auracles.space",
+        ["contributor"],
+        display_name="Mara Okafor",
+        avatar_url="https://cdn.auracles.test/avatars/mara.png",
+        bio="Builds governance and operating model Frameworks.",
+        location="Lagos, NG",
+        website="https://mara.example",
+    )
+    await create_framework(contributor_id, title="Published Governance System")
+    await create_framework(
+        contributor_id,
+        title="Draft Governance System",
+        status="draft",
+    )
+
+    response = await client.get(f"/v1/explore/contributors/{contributor_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(contributor_id)
+    assert body["display_name"] == "Mara Okafor"
+    assert body["avatar_url"] == "https://cdn.auracles.test/avatars/mara.png"
+    assert body["bio"] == "Builds governance and operating model Frameworks."
+    assert body["location"] == "Lagos, NG"
+    assert body["website"] == "https://mara.example"
+    assert body["is_deactivated"] is False
+    assert body["attestation_badge"] is None
+    assert body["attestation_count"] == 0
+    assert body["published_framework_count"] == 1
+    assert [item["title"] for item in body["published_frameworks"]] == [
+        "Published Governance System"
+    ]
+    assert "email" not in body
+    assert "kyc_status" not in body
+    assert "roles" not in body
+    assert "payout" not in body
+
+
+async def test_public_contributor_profile_uses_best_attestation_badge(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Contributor profile badges prefer the best public outcome and count reports."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "attested-contributor@auracles.space",
+        ["contributor"],
+        display_name="Ife Adeyemi",
+    )
+    requestor_id = await create_user(
+        "contributor-attestation-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "contributor-public-attestor@auracles.space",
+        ["attestor"],
+    )
+    await create_framework(contributor_id, title="Attested Contributor Framework")
+    approved_id = await create_contributor_attestation(
+        contributor_id=contributor_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+        status="closed",
+        outcome="approved",
+        issued_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    await create_contributor_attestation(
+        contributor_id=contributor_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+        status="closed",
+        outcome="rejected",
+        issued_at=datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    await create_contributor_attestation(
+        contributor_id=contributor_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+        status="closed",
+        outcome="conditional",
+        issued_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    response = await client.get(f"/v1/explore/contributors/{contributor_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["attestation_count"] == 3
+    assert body["attestation_badge"] == {
+        "id": str(approved_id),
+        "status": "attested",
+        "outcome": "approved",
+        "report_key": body["attestation_badge"]["report_key"],
+        "issued_at": body["attestation_badge"]["issued_at"],
+        "attestation_count": 3,
+    }
+
+
+async def test_public_contributor_profile_visibility_guards_and_limit(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Contributor profiles avoid enumeration and cap published Framework cards."""
+    del migrated_database, explore_test_context
+    operator_id = await create_user("profile-operator@auracles.space", ["operator"])
+    empty_contributor_id = await create_user(
+        "empty-contributor@auracles.space",
+        ["contributor"],
+    )
+    deactivated_contributor_id = await create_user(
+        "deactivated-contributor@auracles.space",
+        ["contributor"],
+        display_name="Deactivated Contributor",
+        deactivated_at=datetime.now(UTC),
+    )
+    await create_framework(
+        deactivated_contributor_id,
+        title="Deactivated Public Framework",
+    )
+    prolific_contributor_id = await create_user(
+        "prolific-contributor@auracles.space",
+        ["contributor"],
+    )
+    for index in range(14):
+        await create_framework(
+            prolific_contributor_id,
+            title=f"Public Framework {index:02d}",
+        )
+
+    operator_response = await client.get(f"/v1/explore/contributors/{operator_id}")
+    empty_response = await client.get(
+        f"/v1/explore/contributors/{empty_contributor_id}"
+    )
+    deactivated_response = await client.get(
+        f"/v1/explore/contributors/{deactivated_contributor_id}"
+    )
+    prolific_response = await client.get(
+        f"/v1/explore/contributors/{prolific_contributor_id}"
+    )
+
+    assert operator_response.status_code == 404
+    assert empty_response.status_code == 404
+    assert deactivated_response.status_code == 200
+    assert deactivated_response.json()["is_deactivated"] is True
+    assert deactivated_response.json()["published_framework_count"] == 1
+    assert prolific_response.status_code == 200
+    assert prolific_response.json()["published_framework_count"] == 14
+    assert len(prolific_response.json()["published_frameworks"]) == 12
 
 
 async def test_authenticated_contributor_catalog_excludes_own_frameworks(

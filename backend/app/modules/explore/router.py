@@ -18,6 +18,7 @@ from app.core.security import decode_access_token
 from app.modules.explore import service
 from app.modules.explore.schemas import (
     ExploreAttestationStatus,
+    ExploreContributorProfile,
     ExploreFrameworkCard,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
@@ -91,6 +92,21 @@ async def list_frameworks(
     if result.sort_shim:
         response.headers["X-Sort-Shim"] = "true"
     return result
+
+
+@router.get(
+    "/contributors/{contributor_id}",
+    response_model=ExploreContributorProfile,
+)
+async def get_contributor_profile(
+    contributor_id: UUID,
+    db: DatabaseSession,
+) -> ExploreContributorProfile:
+    """Return a public Contributor profile and published Frameworks."""
+    return await service.get_contributor_profile(
+        db,
+        contributor_id=contributor_id,
+    )
 
 
 @router.get("/frameworks/{framework_id}", response_model=ExploreFrameworkDetail)

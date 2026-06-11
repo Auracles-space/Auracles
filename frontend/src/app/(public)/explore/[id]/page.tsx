@@ -65,6 +65,12 @@ export default async function ExploreDetailPage({
             <p className="mt-4 max-w-3xl text-base leading-7 text-foreground-muted">
               {framework.description}
             </p>
+            <Link
+              className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
+              href={`/explore/contributors/${framework.contributor_id}`}
+            >
+              {framework.contributor_name}
+            </Link>
             <div className="mt-6 flex flex-wrap gap-2">
               {framework.attestation_badge ? (
                 <AttestationBadge badge={framework.attestation_badge} />

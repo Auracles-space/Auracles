@@ -646,18 +646,35 @@ export type ExploreArtifactSummary = {
 
 export type ExploreAttestationBadge = {
     id: string;
-    status: 'pending_acceptance' | 'attested';
+    status: 'pending_acceptance' | 'attested' | 'conditionally_attested';
     outcome: 'approved' | 'conditional' | 'rejected';
     report_key: string;
     issued_at: (string) | null;
+    attestation_count: number;
 };
 
-export type status4 = 'pending_acceptance' | 'attested';
+export type status4 = 'pending_acceptance' | 'attested' | 'conditionally_attested';
 
-export type ExploreAttestationStatus = 'pending_acceptance' | 'attested' | 'none';
+export type ExploreAttestationStatus = 'pending_acceptance' | 'attested' | 'conditionally_attested' | 'none';
+
+export type ExploreContributorProfile = {
+    id: string;
+    display_name: string;
+    avatar_url: (string) | null;
+    bio: (string) | null;
+    location: (string) | null;
+    website: (string) | null;
+    attestation_badge: (ExploreAttestationBadge | null);
+    attestation_count: number;
+    is_deactivated: boolean;
+    published_framework_count: number;
+    published_frameworks: Array<ExploreFrameworkCard>;
+};
 
 export type ExploreFrameworkCard = {
     id: string;
+    contributor_id: string;
+    contributor_name: string;
     title: string;
     description: string;
     version: string;
@@ -1863,6 +1880,16 @@ export type ListExploreFrameworksData = {
 export type ListExploreFrameworksResponse = (ExploreFrameworkListResponse);
 
 export type ListExploreFrameworksError = (unknown);
+
+export type GetExploreContributorProfileData = {
+    path: {
+        contributor_id: string;
+    };
+};
+
+export type GetExploreContributorProfileResponse = (ExploreContributorProfile);
+
+export type GetExploreContributorProfileError = (unknown);
 
 export type GetExploreFrameworkDetailData = {
     path: {

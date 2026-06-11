@@ -103,6 +103,7 @@ function attestationStatusParam(
   const param = firstParam(value);
   if (
     param === "attested" ||
+    param === "conditionally_attested" ||
     param === "pending_acceptance" ||
     param === "none"
   ) {

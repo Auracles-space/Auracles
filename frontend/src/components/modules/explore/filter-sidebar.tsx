@@ -44,6 +44,7 @@ const filterGroups = [
     label: "Attestation",
     values: [
       { label: "Attested", value: "attested" },
+      { label: "Conditionally Attested", value: "conditionally_attested" },
       { label: "Pending Acceptance", value: "pending_acceptance" },
       { label: "No Attestation", value: "none" },
     ],
