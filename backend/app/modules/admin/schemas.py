@@ -51,6 +51,12 @@ class AdminFrameworkStatusResponse(BaseModel):
     reason: str | None = None
 
 
+class AdminRarityBlockOverrideRequest(BaseModel):
+    """Request body for overriding a near-duplicate rarity hard block."""
+
+    reason: str = Field(min_length=5, max_length=1000)
+
+
 class AdminLicenseGrantRequest(BaseModel):
     """Request body for admin-mediated license grants."""
 

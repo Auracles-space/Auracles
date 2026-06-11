@@ -141,6 +141,10 @@ export type AdminLicenseGrantResponse = {
     expires_at: (string) | null;
 };
 
+export type AdminRarityBlockOverrideRequest = {
+    reason: string;
+};
+
 export type AdminRoleAssignmentRequest = {
     role: 'contributor' | 'operator' | 'attestor' | 'admin';
 };
@@ -215,6 +219,8 @@ export type ArtifactResponse = {
     redaction_status: (string) | null;
     redaction_accepted: boolean;
     rarity_score: (string) | null;
+    near_duplicate_blocked: boolean;
+    similarity_notice: (SimilarityNotice | null);
     created_at: string;
 };
 
@@ -1308,6 +1314,19 @@ export type SessionsResponse = {
     sessions: Array<SessionResponse>;
 };
 
+export type SimilarityNotice = {
+    jaccard: string;
+    nearest_match_artifact_id: (string) | null;
+    nearest_match_framework_id: (string) | null;
+    nearest_match_title: (string) | null;
+    average_review_score: (string) | null;
+    review_count: number;
+};
+
+export type SimilarityNoticeAcknowledgementRequest = {
+    differentiation_note: string;
+};
+
 export type TotpCodeRequest = {
     code: string;
 };
@@ -1523,6 +1542,17 @@ export type SuspendFrameworkResponse = (AdminFrameworkStatusResponse);
 
 export type SuspendFrameworkError = (unknown);
 
+export type OverrideRarityBlockData = {
+    body: AdminRarityBlockOverrideRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type OverrideRarityBlockResponse = (AdminFrameworkStatusResponse);
+
+export type OverrideRarityBlockError = (unknown);
+
 export type GrantLicenseData = {
     body: AdminLicenseGrantRequest;
 };
@@ -1668,6 +1698,17 @@ export type AcknowledgeFrameworkSoftFailData = {
 export type AcknowledgeFrameworkSoftFailResponse = (FrameworkResponse);
 
 export type AcknowledgeFrameworkSoftFailError = (unknown);
+
+export type AcknowledgeSimilarityNoticeData = {
+    body: SimilarityNoticeAcknowledgementRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AcknowledgeSimilarityNoticeResponse = (FrameworkResponse);
+
+export type AcknowledgeSimilarityNoticeError = (unknown);
 
 export type PublishFrameworkData = {
     path: {

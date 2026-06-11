@@ -194,6 +194,29 @@ class PreviewArtifactRequest(BaseModel):
     artifact_id: UUID
 
 
+class SimilarityNoticeAcknowledgementRequest(BaseModel):
+    """Request body for acknowledging a non-blocking similarity notice."""
+
+    differentiation_note: str = Field(min_length=5, max_length=1000)
+
+    @field_validator("differentiation_note")
+    @classmethod
+    def differentiation_note_is_trimmed(cls, value: str) -> str:
+        """Trim Contributor explanation before writing audit metadata."""
+        return value.strip()
+
+
+class SimilarityNotice(BaseModel):
+    """Non-blocking internal similarity notice for a processed Artifact."""
+
+    jaccard: Decimal = Field(decimal_places=4)
+    nearest_match_artifact_id: UUID | None = None
+    nearest_match_framework_id: UUID | None = None
+    nearest_match_title: str | None = None
+    average_review_score: Decimal | None = Field(default=None, decimal_places=2)
+    review_count: int = 0
+
+
 class FrameworkVersionCreate(BaseModel):
     """Request body for starting a new draft version of a Framework."""
 
@@ -221,6 +244,8 @@ class ArtifactResponse(BaseModel):
     redaction_status: str | None
     redaction_accepted: bool
     rarity_score: Decimal | None
+    near_duplicate_blocked: bool = False
+    similarity_notice: SimilarityNotice | None = None
     created_at: datetime
 
 

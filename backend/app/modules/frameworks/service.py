@@ -44,6 +44,8 @@ from app.modules.frameworks.schemas import (
     FrameworkVersionCreate,
     PreviewArtifactRequest,
     PricingConfig,
+    SimilarityNotice,
+    SimilarityNoticeAcknowledgementRequest,
 )
 from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.workers.tasks.artifacts import process_artifact, scan_artifact
@@ -78,6 +80,12 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
     """Map an Artifact row to the contributor-facing status response."""
     metadata = artifact.metadata_vector or {}
     redaction = metadata.get("redaction") or {}
+    raw_similarity_notice = metadata.get("similarity_notice")
+    similarity_notice = (
+        SimilarityNotice.model_validate(raw_similarity_notice)
+        if isinstance(raw_similarity_notice, dict)
+        else None
+    )
     return ArtifactResponse(
         id=artifact.id,
         framework_id=artifact.framework_id,
@@ -95,6 +103,8 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
         ),
         redaction_accepted=bool(redaction.get("accepted")),
         rarity_score=artifact.rarity_score,
+        near_duplicate_blocked=bool(metadata.get("near_duplicate_blocked")),
+        similarity_notice=similarity_notice,
         created_at=artifact.created_at,
     )
 
@@ -1131,6 +1141,65 @@ async def acknowledge_soft_fail(
             metadata={"ip_address": ip_address},
         )
         await evaluate_framework_pipeline(db, framework, force=True)
+    await db.refresh(framework)
+    return framework_to_response(framework)
+
+
+async def acknowledge_similarity_notice(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: SimilarityNoticeAcknowledgementRequest,
+) -> FrameworkResponse:
+    """Record Contributor context for a non-blocking similarity notice."""
+    contributor_id = contributor.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await _load_owned_framework_by_user_id(
+            db,
+            contributor_id,
+            framework_id,
+        )
+        artifacts = (
+            (
+                await db.execute(
+                    select(Artifact).where(
+                        Artifact.framework_id == framework.id,
+                        Artifact.current_for_framework.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        notices = [
+            {
+                "artifact_id": str(artifact.id),
+                "notice": (artifact.metadata_vector or {}).get("similarity_notice"),
+            }
+            for artifact in artifacts
+            if isinstance(
+                (artifact.metadata_vector or {}).get("similarity_notice"),
+                dict,
+            )
+        ]
+        if not notices:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Framework has no similarity notice to acknowledge.",
+            )
+        await write_audit(
+            db=db,
+            actor_id=contributor_id,
+            action="similarity_notice_acknowledged",
+            target_type="framework",
+            target_id=framework.id,
+            metadata={
+                "differentiation_note": payload.differentiation_note,
+                "notices": notices,
+            },
+        )
     await db.refresh(framework)
     return framework_to_response(framework)
 

@@ -449,6 +449,45 @@ paths:
           description: Only published Frameworks can be suspended.
         '422':
           description: Invalid suspend payload.
+  /v1/admin/frameworks/{framework_id}/rarity-block/override:
+    post:
+      tags:
+      - Admin
+      operationId: overrideRarityBlock
+      summary: Override a near-duplicate rarity block
+      description: Admin-only endpoint that records durable override state for near-duplicate rarity hard blocks and re-evaluates the Framework pipeline gate.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRarityBlockOverrideRequest'
+      responses:
+        '200':
+          description: Rarity block overridden and pipeline gate re-evaluated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFrameworkStatusResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Admin role required.
+        '404':
+          description: Framework not found.
+        '409':
+          description: Framework has no active near-duplicate rarity block.
+        '422':
+          description: Invalid override payload.
   /v1/admin/licenses:
     post:
       tags:
@@ -937,6 +976,45 @@ paths:
           description: Framework not found.
         '409':
           description: Only failed pipeline checks can be acknowledged.
+  /v1/frameworks/{framework_id}/similarity-notice/acknowledge:
+    post:
+      tags:
+      - Frameworks
+      operationId: acknowledgeSimilarityNotice
+      summary: Acknowledge similarity notice
+      description: Records Contributor differentiation context for a non-blocking similarity notice without changing publish eligibility.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimilarityNoticeAcknowledgementRequest'
+      responses:
+        '200':
+          description: Similarity notice acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Contributor role, completed profile, or verified KYC required.
+        '404':
+          description: Framework not found.
+        '409':
+          description: Framework has no similarity notice to acknowledge.
+        '422':
+          description: Invalid acknowledgement payload.
   /v1/frameworks/{framework_id}/publish:
     post:
       tags:
@@ -5750,6 +5828,15 @@ components:
           type:
           - string
           - 'null'
+    AdminRarityBlockOverrideRequest:
+      type: object
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
     AdminLicenseGrantRequest:
       type: object
       required:
@@ -6892,6 +6979,50 @@ components:
         artifact_id:
           type: string
           format: uuid
+    SimilarityNoticeAcknowledgementRequest:
+      type: object
+      required:
+      - differentiation_note
+      properties:
+        differentiation_note:
+          type: string
+          minLength: 5
+          maxLength: 1000
+    SimilarityNotice:
+      type: object
+      required:
+      - jaccard
+      - nearest_match_artifact_id
+      - nearest_match_framework_id
+      - nearest_match_title
+      - average_review_score
+      - review_count
+      properties:
+        jaccard:
+          type: string
+          pattern: ^[0-9]+(\.[0-9]{1,4})?$
+        nearest_match_artifact_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        nearest_match_framework_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        nearest_match_title:
+          type:
+          - string
+          - 'null'
+        average_review_score:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        review_count:
+          type: integer
+          default: 0
     ArtifactResponse:
       type: object
       required:
@@ -6909,6 +7040,8 @@ components:
       - redaction_status
       - redaction_accepted
       - rarity_score
+      - near_duplicate_blocked
+      - similarity_notice
       - created_at
       properties:
         id:
@@ -6957,6 +7090,13 @@ components:
           type:
           - string
           - 'null'
+        near_duplicate_blocked:
+          type: boolean
+          default: false
+        similarity_notice:
+          anyOf:
+          - $ref: '#/components/schemas/SimilarityNotice'
+          - type: 'null'
         created_at:
           type: string
           format: date-time

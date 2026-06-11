@@ -1342,6 +1342,339 @@ async def test_external_rarity_soft_fail_requires_acknowledgement_before_publish
     assert acknowledged.json()["status"] == "pipeline_passed"
 
 
+async def test_similarity_notice_band_passes_pipeline_and_exposes_context(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A same-topic similarity notice does not block Contributor publish."""
+    contributor_id = await create_user_with_roles(
+        "similarity-notice@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        internal_rarity=Decimal("0.2000"),
+    )
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == artifact.id
+            )
+        )
+        assert audit is not None
+        audit.internal_jaccard = Decimal("0.8000")
+        await session.commit()
+
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_passed"
+    assert listed.status_code == 200
+    notice = listed.json()[0]["similarity_notice"]
+    assert notice["jaccard"] == "0.8000"
+    assert notice["nearest_match_title"] is None
+
+
+async def test_similarity_notice_acknowledgement_persists_differentiation_note(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Contributor notice acknowledgement is audited without gating publish."""
+    contributor_id = await create_user_with_roles(
+        "notice-ack@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        internal_rarity=Decimal("0.2000"),
+    )
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        assert audit is not None
+        audit.internal_jaccard = Decimal("0.8000")
+        await session.commit()
+    headers = auth_headers(contributor_id, ["contributor"])
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=headers,
+    )
+    acknowledged = await client.post(
+        f"/v1/frameworks/{framework_id}/similarity-notice/acknowledge",
+        json={
+            "differentiation_note": (
+                "This version adds implementation controls and jurisdiction "
+                "mapping absent from the similar Framework."
+            )
+        },
+        headers=headers,
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_passed"
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["status"] == "pipeline_passed"
+    async with async_session_factory() as session:
+        audit_log = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "similarity_notice_acknowledged"
+            )
+        )
+        assert audit_log is not None
+        assert audit_log.metadata_["differentiation_note"].startswith(
+            "This version adds implementation controls"
+        )
+        assert audit_log.metadata_["notices"][0]["artifact_id"] == artifact_id
+
+
+async def test_similarity_notice_includes_nearest_match_review_context(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Similarity notices include nearest published Framework review context."""
+    contributor_id = await create_user_with_roles(
+        "notice-context@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "notice-reviewer@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            nearest_framework = Framework(
+                contributor_id=contributor_id,
+                title="Published Risk Controls Framework",
+                description="Published controls for operational risk teams.",
+                version="1.0.0",
+                status="published",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["risk", "controls"],
+                tags_text="risk controls",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("499.00"),
+                currency="USD",
+                license_types=["single_user"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(nearest_framework)
+            await session.flush()
+            nearest_artifact = Artifact(
+                framework_id=nearest_framework.id,
+                name="published.pdf",
+                file_key=f"frameworks/{nearest_framework.id}/published.pdf",
+                file_size=2048,
+                mime_type="application/pdf",
+                scan_status="clean",
+                processing_status="processed",
+                current_for_framework=True,
+            )
+            session.add(nearest_artifact)
+            await session.flush()
+            license_row = License(
+                framework_id=nearest_framework.id,
+                operator_id=operator_id,
+                license_type="single_user",
+                status="active",
+                version_at_grant="1.0.0",
+            )
+            session.add(license_row)
+            await session.flush()
+            session.add(
+                Review(
+                    framework_id=nearest_framework.id,
+                    operator_id=operator_id,
+                    license_id=license_row.id,
+                    score=5,
+                    body="Strong operational controls.",
+                )
+            )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        internal_rarity=Decimal("0.2000"),
+    )
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        assert audit is not None
+        audit.internal_jaccard = Decimal("0.8000")
+        audit.nearest_match_id = nearest_artifact.id
+        await session.commit()
+
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_passed"
+    notice = listed.json()[0]["similarity_notice"]
+    assert notice["nearest_match_title"] == "Published Risk Controls Framework"
+    assert notice["average_review_score"] == "5.00"
+    assert notice["review_count"] == 1
+
+
+async def test_near_duplicate_band_hard_blocks_pipeline(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A near-duplicate Jaccard match remains a hard pipeline failure."""
+    contributor_id = await create_user_with_roles(
+        "near-duplicate@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        internal_rarity=Decimal("0.0500"),
+    )
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        assert audit is not None
+        audit.internal_jaccard = Decimal("0.9500")
+        await session.commit()
+
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_failed"
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.pipeline_failure_reasons == {
+            "internal_rarity": [artifact_id]
+        }
+
+
+async def test_admin_override_unblocks_near_duplicate_hard_band(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Admin rarity override writes durable state and unblocks re-evaluation."""
+    contributor_id = await create_user_with_roles(
+        "override-seller@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles(
+        "rarity-admin@auracles.space",
+        ["admin"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        internal_rarity=Decimal("0.0500"),
+    )
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        assert audit is not None
+        audit.internal_jaccard = Decimal("0.9500")
+        await session.commit()
+
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    override = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/rarity-block/override",
+        json={"reason": "Contributor supplied reuse license evidence."},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pipeline_failed"
+    assert override.status_code == 200
+    assert override.json()["status"] == "pipeline_passed"
+    async with async_session_factory() as session:
+        rarity_audit = await session.scalar(
+            select(ArtifactRarityAudit).where(
+                ArtifactRarityAudit.artifact_id == UUID(artifact_id)
+            )
+        )
+        audit_log = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "rarity_block_overridden")
+        )
+        assert rarity_audit is not None
+        assert rarity_audit.near_duplicate_overridden_by == admin_id
+        assert rarity_audit.near_duplicate_override_reason == (
+            "Contributor supplied reuse license evidence."
+        )
+        assert audit_log is not None
+
+
 async def test_resolve_pii_review_resets_artifact_and_reruns_scan(
     monkeypatch: pytest.MonkeyPatch,
     client: AsyncClient,

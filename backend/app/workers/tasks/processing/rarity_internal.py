@@ -1,4 +1,10 @@
-"""Internal rarity scoring for Artifact processing."""
+"""Internal MinHash-Jaccard scoring for Artifact copy-risk checks.
+
+The stored `internal_rarity` remains `1 - max_jaccard` for backward
+compatibility, but the publish gate now interprets the underlying Jaccard bands:
+only near-duplicate overlap hard-blocks, while same-topic similarity becomes a
+non-blocking notice.
+"""
 
 from __future__ import annotations
 
@@ -48,7 +54,7 @@ async def _published_candidates(
 
 
 async def _compute_internal_rarity_impl(artifact_id: str) -> dict[str, Any]:
-    """Compare an Artifact against published signatures and persist rarity."""
+    """Compare an Artifact against published signatures and persist Jaccard."""
     parsed_artifact_id = UUID(artifact_id)
     async with async_session_factory() as db:
         artifact = await db.get(Artifact, parsed_artifact_id)

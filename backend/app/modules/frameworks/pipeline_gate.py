@@ -12,14 +12,15 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, Review
 from app.modules.frameworks.models_artifact import Artifact, ArtifactRarityAudit
 
-INTERNAL_RARITY_HARD_FAIL_THRESHOLD = Decimal("0.3000")
+NEAR_DUPLICATE_JACCARD_THRESHOLD = Decimal("0.9000")
+SIMILARITY_NOTICE_JACCARD_THRESHOLD = Decimal("0.7000")
 EXTERNAL_RARITY_SOFT_FAIL_THRESHOLD = Decimal("0.3000")
 GATED_FRAMEWORK_STATUSES = {"submitted", "processing", "pipeline_failed"}
 
@@ -33,6 +34,104 @@ async def _soft_fail_acknowledged(db: AsyncSession, artifact_id: UUID) -> bool:
         )
     )
     return audit is not None
+
+
+async def _rarity_audit(
+    db: AsyncSession,
+    artifact_id: UUID,
+) -> ArtifactRarityAudit | None:
+    """Return the rarity audit row for one Artifact when present."""
+    audit: ArtifactRarityAudit | None = await db.scalar(
+        select(ArtifactRarityAudit).where(
+            ArtifactRarityAudit.artifact_id == artifact_id
+        )
+    )
+    return audit
+
+
+def _internal_jaccard(
+    artifact: Artifact,
+    audit: ArtifactRarityAudit | None,
+) -> Decimal | None:
+    """Return copy-oriented internal Jaccard for band evaluation."""
+    if audit is not None and audit.internal_jaccard is not None:
+        return audit.internal_jaccard
+    if artifact.internal_rarity is None:
+        return None
+    return Decimal("1.0000") - artifact.internal_rarity
+
+
+async def _similarity_notice(
+    db: AsyncSession,
+    audit: ArtifactRarityAudit | None,
+    jaccard: Decimal,
+) -> dict[str, Any]:
+    """Build public, non-blocking similarity context for an Artifact."""
+    nearest_match_artifact_id = None
+    nearest_match_framework_id = None
+    nearest_match_title = None
+    average_review_score = None
+    review_count = 0
+    if audit is not None and audit.nearest_match_id is not None:
+        nearest_match_artifact_id = audit.nearest_match_id
+        nearest = await db.execute(
+            select(Artifact, Framework)
+            .join(Framework, Framework.id == Artifact.framework_id)
+            .where(Artifact.id == audit.nearest_match_id)
+        )
+        nearest_row = nearest.first()
+        if nearest_row is not None:
+            _, nearest_framework = nearest_row
+            nearest_match_framework_id = nearest_framework.id
+            nearest_match_title = nearest_framework.title
+            aggregate = await db.execute(
+                select(func.avg(Review.score), func.count(Review.id)).where(
+                    Review.framework_id == nearest_framework.id
+                )
+            )
+            average_score, count = aggregate.one()
+            review_count = int(count or 0)
+            if average_score is not None:
+                average_review_score = str(
+                    Decimal(average_score).quantize(Decimal("0.01"))
+                )
+    return {
+        "jaccard": str(jaccard.quantize(Decimal("0.0001"))),
+        "nearest_match_artifact_id": (
+            str(nearest_match_artifact_id) if nearest_match_artifact_id else None
+        ),
+        "nearest_match_framework_id": (
+            str(nearest_match_framework_id) if nearest_match_framework_id else None
+        ),
+        "nearest_match_title": nearest_match_title,
+        "average_review_score": average_review_score,
+        "review_count": review_count,
+    }
+
+
+async def _apply_similarity_band(
+    db: AsyncSession,
+    artifact: Artifact,
+    audit: ArtifactRarityAudit | None,
+    failure_reasons: dict[str, Any],
+) -> None:
+    """Apply near-duplicate hard block or non-blocking notice to an Artifact."""
+    metadata = dict(artifact.metadata_vector or {})
+    metadata.pop("similarity_notice", None)
+    metadata.pop("near_duplicate_blocked", None)
+    jaccard = _internal_jaccard(artifact, audit)
+    if jaccard is None:
+        artifact.metadata_vector = metadata
+        return
+    overridden = (
+        audit is not None and audit.near_duplicate_overridden_at is not None
+    )
+    if jaccard >= NEAR_DUPLICATE_JACCARD_THRESHOLD and not overridden:
+        failure_reasons.setdefault("internal_rarity", []).append(str(artifact.id))
+        metadata["near_duplicate_blocked"] = True
+    elif jaccard >= SIMILARITY_NOTICE_JACCARD_THRESHOLD:
+        metadata["similarity_notice"] = await _similarity_notice(db, audit, jaccard)
+    artifact.metadata_vector = metadata
 
 
 async def evaluate_framework_pipeline(
@@ -82,11 +181,8 @@ async def evaluate_framework_pipeline(
 
         if artifact.pii_review_needed:
             failure_reasons.setdefault("pii", []).append(artifact_key)
-        if (
-            artifact.internal_rarity is not None
-            and artifact.internal_rarity < INTERNAL_RARITY_HARD_FAIL_THRESHOLD
-        ):
-            failure_reasons.setdefault("internal_rarity", []).append(artifact_key)
+        rarity_audit = await _rarity_audit(db, artifact.id)
+        await _apply_similarity_band(db, artifact, rarity_audit, failure_reasons)
         if (
             artifact.external_rarity is not None
             and artifact.external_rarity < EXTERNAL_RARITY_SOFT_FAIL_THRESHOLD

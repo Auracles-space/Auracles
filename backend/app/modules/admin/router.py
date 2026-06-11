@@ -24,6 +24,7 @@ from app.modules.admin.schemas import (
     AdminKycReviewResponse,
     AdminLicenseGrantRequest,
     AdminLicenseGrantResponse,
+    AdminRarityBlockOverrideRequest,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
 )
@@ -163,6 +164,30 @@ async def suspend_framework(
         framework_id=framework.id,
         status=framework.status,
         reason=framework.rejection_reason,
+    )
+
+
+@router.post(
+    "/frameworks/{framework_id}/rarity-block/override",
+    response_model=AdminFrameworkStatusResponse,
+)
+async def override_rarity_block(
+    framework_id: UUID,
+    payload: AdminRarityBlockOverrideRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminFrameworkStatusResponse:
+    """Override a near-duplicate rarity hard block after admin review."""
+    framework = await service.override_rarity_block(
+        db=db,
+        admin=admin,
+        framework_id=framework_id,
+        reason=payload.reason,
+    )
+    return AdminFrameworkStatusResponse(
+        framework_id=framework.id,
+        status=framework.status,
+        reason=payload.reason,
     )
 
 

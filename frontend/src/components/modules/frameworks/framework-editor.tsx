@@ -169,6 +169,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         />
         <PipelineStatusPanel
           artifacts={artifacts}
+          frameworkId={framework.id}
           frameworkStatus={framework.status}
         />
         <PiiReviewResolution artifacts={artifacts} frameworkId={framework.id} />

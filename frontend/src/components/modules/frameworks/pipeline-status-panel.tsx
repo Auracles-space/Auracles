@@ -1,20 +1,31 @@
+"use client";
+
 /**
  * Contributor pipeline status panel.
  *
  * Converts backend Artifact status fields into human-readable gate checks for
  * publish readiness. The backend remains the source of truth for enforcement.
  */
+import { FormEvent, useState } from "react";
+
+import { acknowledgeSimilarityNotice } from "@/lib/generated/sdk.gen";
 import type { ArtifactResponse, FrameworkResponse } from "@/lib/generated/types.gen";
+import {
+  configureBrowserClient,
+  describeGeneratedError,
+  getAccessTokenHeaders,
+} from "@/lib/auth/form-client";
 
 type PipelineStatusPanelProps = {
   artifacts: ArtifactResponse[];
+  frameworkId: string;
   frameworkStatus: FrameworkResponse["status"];
 };
 
 type PipelineCheck = {
   description: string;
   label: string;
-  state: "pass" | "pending" | "fail";
+  state: "pass" | "pending" | "fail" | "notice";
   value: string;
 };
 
@@ -37,8 +48,11 @@ export function buildPipelineChecks(
   const allProcessed =
     hasArtifacts &&
     artifacts.every((artifact) => artifact.processing_status === "processed");
-  const anyRarityFail = artifacts.some(
-    (artifact) => artifact.processing_status === "flagged_rarity",
+  const anyNearDuplicate = artifacts.some(
+    (artifact) => artifact.near_duplicate_blocked,
+  );
+  const hasSimilarityNotice = artifacts.some(
+    (artifact) => artifact.similarity_notice,
   );
   const allGreen = frameworkStatus === "pipeline_passed";
 
@@ -60,12 +74,26 @@ export function buildPipelineChecks(
       value: anyPiiReview ? "Review required" : allProcessed || allGreen ? "No review needed" : "Pending",
     },
     {
-      description: anyRarityFail
-        ? "External rarity concerns need acknowledgement before publish."
-        : "Rarity checks reduce low-originality submissions.",
-      label: "Rarity",
-      state: anyRarityFail ? "fail" : allProcessed || allGreen ? "pass" : "pending",
-      value: anyRarityFail ? "Soft fail" : allProcessed || allGreen ? "Passed" : "Pending",
+      description: anyNearDuplicate
+        ? "This artifact appears to be a near-duplicate. Admin review is required before publishing."
+        : hasSimilarityNotice
+          ? "A similar published Framework was found. This notice does not block publishing."
+          : "Similarity checks block only near-duplicate submissions.",
+      label: "Similarity",
+      state: anyNearDuplicate
+        ? "fail"
+        : hasSimilarityNotice
+          ? "notice"
+          : allProcessed || allGreen
+            ? "pass"
+            : "pending",
+      value: anyNearDuplicate
+        ? "Near duplicate"
+        : hasSimilarityNotice
+          ? "Notice"
+          : allProcessed || allGreen
+            ? "Passed"
+            : "Pending",
     },
   ];
 }
@@ -77,12 +105,38 @@ export function buildPipelineChecks(
  */
 export function PipelineStatusPanel({
   artifacts,
+  frameworkId,
   frameworkStatus,
 }: PipelineStatusPanelProps) {
   const checks = buildPipelineChecks(artifacts, frameworkStatus);
+  const notices = artifacts.filter((artifact) => artifact.similarity_notice);
+  const [differentiationNote, setDifferentiationNote] = useState("");
+  const [noticeError, setNoticeError] = useState<string | null>(null);
+  const [noticeSaved, setNoticeSaved] = useState(false);
+  const [savingNotice, setSavingNotice] = useState(false);
+
+  async function handleNoticeAcknowledgement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNoticeError(null);
+    setNoticeSaved(false);
+    setSavingNotice(true);
+    configureBrowserClient();
+    const result = await acknowledgeSimilarityNotice({
+      body: { differentiation_note: differentiationNote },
+      headers: getAccessTokenHeaders(),
+      path: { framework_id: frameworkId },
+    });
+    if (!result.response.ok || !result.data) {
+      setNoticeError(describeGeneratedError(result.error));
+      setSavingNotice(false);
+      return;
+    }
+    setNoticeSaved(true);
+    setSavingNotice(false);
+  }
 
   return (
-    <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
+    <section className="rounded-[8px] border border-border-default bg-surface-1 p-6 sm:p-8">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-lg font-bold text-foreground">
@@ -99,7 +153,7 @@ export function PipelineStatusPanel({
       <div className="grid gap-4">
         {checks.map((check) => (
           <div
-            className="rounded-xl border border-border-default bg-background p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all hover:shadow-[0_4px_12px_-2px_rgba(0,0,0,0.08)]"
+            className="rounded-[8px] border border-border-default bg-background p-5 transition-all hover:bg-surface-2"
             key={check.label}
           >
             <div className="flex items-center justify-between gap-3">
@@ -112,6 +166,61 @@ export function PipelineStatusPanel({
           </div>
         ))}
       </div>
+      {notices.length > 0 ? (
+        <div className="mt-5 rounded-[8px] border border-info/30 bg-info/10 p-4">
+          <p className="text-sm font-semibold text-info">
+            Similar published Framework found
+          </p>
+          <div className="mt-3 grid gap-3">
+            {notices.map((artifact) => {
+              const notice = artifact.similarity_notice;
+              if (!notice) {
+                return null;
+              }
+              const reviewText = notice.average_review_score
+                ? `${notice.average_review_score} average from ${notice.review_count} review${
+                    notice.review_count === 1 ? "" : "s"
+                  }`
+                : "No reviews yet";
+              return (
+                <div className="text-sm text-foreground-muted" key={artifact.id}>
+                  <p>
+                    {artifact.name} is similar to{" "}
+                    {notice.nearest_match_title ?? "another published Framework"}.
+                  </p>
+                  <p className="mt-1">
+                    Jaccard {notice.jaccard}. {reviewText}.
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <form className="mt-4 grid gap-3" onSubmit={handleNoticeAcknowledgement}>
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Differentiation note
+              <textarea
+                className="min-h-28 rounded-[6px] border border-border-default bg-background px-3 py-2 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                maxLength={1000}
+                minLength={5}
+                onChange={(event) => setDifferentiationNote(event.target.value)}
+                placeholder="Explain how this Framework differs in approach, scope, jurisdiction, or implementation detail."
+                value={differentiationNote}
+              />
+            </label>
+            {noticeError ? <p className="text-sm text-error">{noticeError}</p> : null}
+            {noticeSaved ? (
+              <p className="text-sm text-success">Similarity notice acknowledged.</p>
+            ) : null}
+            <button
+              className="min-h-11 rounded-[6px] bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={savingNotice}
+              type="submit"
+            >
+              {savingNotice ? "Saving" : "Acknowledge notice"}
+            </button>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -123,10 +232,13 @@ export function PipelineStatusPanel({
  */
 function badgeClass(state: PipelineCheck["state"]): string {
   if (state === "pass") {
-    return "rounded-lg border border-success/20 bg-success/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-success";
+    return "rounded-[4px] border border-success/20 bg-success/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-success";
   }
   if (state === "fail") {
-    return "rounded-lg border border-error/20 bg-error/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-error";
+    return "rounded-[4px] border border-error/20 bg-error/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-error";
   }
-  return "rounded-lg border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-warning";
+  if (state === "notice") {
+    return "rounded-[4px] border border-info/20 bg-info/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-info";
+  }
+  return "rounded-[4px] border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-warning";
 }

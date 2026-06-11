@@ -37,6 +37,7 @@ const baseArtifact: ArtifactResponse = {
   id: "art_123",
   mime_type: "application/pdf",
   name: "Operating Model.pdf",
+  near_duplicate_blocked: false,
   pii_detected: true,
   pii_review_needed: true,
   processing_status: "flagged_pii",
@@ -45,6 +46,7 @@ const baseArtifact: ArtifactResponse = {
   redaction_available: true,
   redaction_status: "generated",
   scan_status: "clean",
+  similarity_notice: null,
 };
 
 describe("PiiReviewResolution", () => {

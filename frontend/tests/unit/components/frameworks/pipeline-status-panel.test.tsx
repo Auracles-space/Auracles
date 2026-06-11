@@ -16,10 +16,12 @@ const baseArtifact: ArtifactResponse = {
   pii_review_needed: false,
   processing_status: "processed",
   rarity_score: "0.91",
+  near_duplicate_blocked: false,
   redaction_accepted: false,
   redaction_available: false,
   redaction_status: null,
   scan_status: "clean",
+  similarity_notice: null,
 };
 
 describe("PipelineStatusPanel", () => {
@@ -27,6 +29,7 @@ describe("PipelineStatusPanel", () => {
     render(
       <PipelineStatusPanel
         artifacts={[baseArtifact]}
+        frameworkId="fw_123"
         frameworkStatus="pipeline_passed"
       />,
     );
@@ -35,7 +38,7 @@ describe("PipelineStatusPanel", () => {
     expect(screen.getByText("Clean")).toBeInTheDocument();
     expect(screen.getByText("PII review")).toBeInTheDocument();
     expect(screen.getByText("No review needed")).toBeInTheDocument();
-    expect(screen.getByText("Rarity")).toBeInTheDocument();
+    expect(screen.getByText("Similarity")).toBeInTheDocument();
     expect(screen.getByText("Passed")).toBeInTheDocument();
   });
 
@@ -50,6 +53,7 @@ describe("PipelineStatusPanel", () => {
             processing_status: "flagged_pii",
           },
         ]}
+        frameworkId="fw_123"
         frameworkStatus="pipeline_failed"
       />,
     );
@@ -57,6 +61,53 @@ describe("PipelineStatusPanel", () => {
     expect(screen.getByText("Review required")).toBeInTheDocument();
     expect(
       screen.getByText(/replace or resolve the flagged artifact/i),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a near-duplicate as an admin-reviewed hard block", () => {
+    render(
+      <PipelineStatusPanel
+        artifacts={[
+          {
+            ...baseArtifact,
+            near_duplicate_blocked: true,
+          },
+        ]}
+        frameworkId="fw_123"
+        frameworkStatus="pipeline_failed"
+      />,
+    );
+
+    expect(screen.getByText("Near duplicate")).toBeInTheDocument();
+    expect(screen.getByText(/admin review is required/i)).toBeInTheDocument();
+  });
+
+  it("shows non-blocking similarity notices with review context", () => {
+    render(
+      <PipelineStatusPanel
+        artifacts={[
+          {
+            ...baseArtifact,
+            similarity_notice: {
+              average_review_score: "4.50",
+              jaccard: "0.8000",
+              nearest_match_artifact_id: "art_999",
+              nearest_match_framework_id: "fw_999",
+              nearest_match_title: "Published Risk Framework",
+              review_count: 2,
+            },
+          },
+        ]}
+        frameworkId="fw_123"
+        frameworkStatus="pipeline_passed"
+      />,
+    );
+
+    expect(screen.getByText("Notice")).toBeInTheDocument();
+    expect(screen.getByText(/published risk framework/i)).toBeInTheDocument();
+    expect(screen.getByText(/4.50 average from 2 reviews/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Acknowledge notice" }),
     ).toBeInTheDocument();
   });
 });

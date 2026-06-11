@@ -32,6 +32,7 @@ from app.modules.frameworks.schemas import (
     FrameworkUpdate,
     FrameworkVersionCreate,
     PreviewArtifactRequest,
+    SimilarityNoticeAcknowledgementRequest,
 )
 
 router = APIRouter(prefix="/frameworks", tags=["Frameworks"])
@@ -256,6 +257,27 @@ async def acknowledge_soft_fail(
         contributor=contributor,
         framework_id=framework_id,
         ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post(
+    "/{framework_id}/similarity-notice/acknowledge",
+    response_model=FrameworkResponse,
+)
+async def acknowledge_similarity_notice(
+    framework_id: UUID,
+    payload: SimilarityNoticeAcknowledgementRequest,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Record Contributor context for a non-blocking similarity notice."""
+    return await service.acknowledge_similarity_notice(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        payload=payload,
     )
 
 

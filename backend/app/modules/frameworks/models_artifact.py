@@ -275,6 +275,19 @@ class ArtifactRarityAudit(CreatedAtMixin, Base):
         nullable=True,
     )
     acknowledged_ip: Mapped[str | None] = mapped_column(INET, nullable=True)
+    near_duplicate_overridden_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    near_duplicate_overridden_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    near_duplicate_override_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
 
     artifact: Mapped[Artifact] = relationship(
         back_populates="rarity_audits",

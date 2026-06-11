@@ -1478,18 +1478,17 @@ UPLOAD → S3 (auracles-artifacts-{env})
     │  Output: vector(1536) stored in artifact_fingerprints
     │  Also stores: SHA-256 text hash, char_count
     ▼
-[5] Celery: compute_rarity_score
-    │  Query: pgvector cosine similarity against all stored embeddings
-    │         SELECT 1 - (embedding <=> $new_vector) AS similarity
-    │         ORDER BY similarity DESC LIMIT 1
-    │  rarity_score = 1.0 - max_similarity (higher = more unique)
-    │  nearest_match_id = most similar artifact's id
-    │  Stored on artifact: rarity_score, nearest_match_id
+[5] Celery: compute_internal_rarity
+    │  Query: MinHash-Jaccard against published Artifact signatures
+    │  internal_rarity = 1.0 - max_jaccard (legacy stored score)
+    │  nearest_match_id = highest-Jaccard Artifact id
+    │  Stored on artifact: internal_rarity, nearest_match_id
+    │  Stored in artifact_rarity_audit: internal_jaccard, nearest_match_id
     │
-    │  Rarity policy:
-    │    score ≥ 0.70 → PASS (sufficiently unique)
-    │    score 0.40–0.69 → WARN (contributor warned, can still submit)
-    │    score < 0.40 → FLAG (processing_status = 'flagged_rarity', admin review required)
+    │  Copy-risk policy:
+    │    jaccard ≥ 0.90 → HARD BLOCK (near-duplicate / likely copy)
+    │    0.70 ≤ jaccard < 0.90 → NOTICE (similar topic, non-blocking)
+    │    jaccard < 0.70 → PASS
     ▼
 [6] Celery: generate_thumbnail
     │  PDF → pdf2image → first page → JPEG → S3 (auracles-avatars bucket)
@@ -1505,15 +1504,17 @@ UPLOAD → S3 (auracles-artifacts-{env})
     Notify contributor: artifact ready / any flags to review
 ```
 
-### Rarity Score Policy
+### Internal Similarity Policy
 
-| Score Range | Label | Action |
+| Jaccard Range | Label | Action |
 |---|---|---|
-| 0.70 – 1.00 | Unique | Pipeline continues normally |
-| 0.40 – 0.69 | Similar | Contributor warned; framework can still be submitted |
-| 0.00 – 0.39 | Near-duplicate | `flagged_rarity`; blocked from submission; admin review required |
+| 0.90 – 1.00 | Near-duplicate | Pipeline hard-blocks until admin override |
+| 0.70 – 0.89 | Similar | Non-blocking similarity notice; publish remains available after other gates pass |
+| 0.00 – 0.69 | Clear | Pipeline continues normally |
 
-Rarity score is **never shown publicly** — internal signal only. Contributes to `reputation_scores.components.rarity`.
+The gate targets copy-risk, not marketplace quality. Review scores and
+Attestation carry quality context; Jaccard only distinguishes near-duplicate
+overlap from same-topic similarity.
 
 ### Fingerprint Versioning
 

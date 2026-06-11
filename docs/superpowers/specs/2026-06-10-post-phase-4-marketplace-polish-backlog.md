@@ -84,6 +84,14 @@ review form, and Contributor analytics reads the real review aggregate.
 
 **Maps to:** BR-FWK-006 (semantics change — see below), FR-FWK-014, FR-EXP-006.
 
+**Status:** Implemented in backlog Slice 2. Internal MinHash-Jaccard now uses
+explicit near-duplicate and notice bands. Near-duplicate matches hard-block until
+admin override writes durable audit state; notice-band matches reach
+`pipeline_passed`, publish remains Contributor-controlled, and
+`ArtifactResponse` exposes typed similarity notice context with review aggregate
+data. Contributors can acknowledge notices with a differentiation note that is
+audited but never gating.
+
 ### Problem with the current gate
 
 Internal rarity = `1.0 − max_jaccard`, where `max_jaccard` is the MinHash-Jaccard
@@ -214,12 +222,22 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
 - The profile shows only public identity/profile fields, published Frameworks,
   and public trust signals. It must not expose email, KYC status, private role
   metadata, payout state, or private evidence files.
-- Contributor-target Attestations show as the same public badge pattern used by
-  Framework badges:
-  - `report_submitted` → `pending_acceptance`
-  - `closed` → `attested`
+- Contributor-target Attestations show the public badge. The badge label is
+  derived from **outcome**, not status alone (see Finding 1 below):
+  - `outcome = approved` + `status = closed` → `attested`
+  - `outcome = conditional` + `status = closed` → `conditionally_attested`
+  - `outcome = rejected` → **no positive badge** (suppress, or show a neutral
+    "reviewed — did not pass"; never `attested`)
+  - `status = report_submitted` (any non-rejected outcome) → `pending_acceptance`
 - Public report links remain labelled `pending_acceptance` until the Attestation
   closes, so the UI does not overstate trust before release/closure.
+- **Multiple attestations per target (BR-ATT-004):** do not blindly show the
+  latest. Pick the **best public outcome** (approved > conditional), and surface a
+  count ("N attestations") rather than letting a newer rejected/conditional hide
+  an older approved.
+- No public contributor **directory/listing** page exists today; this slice ships
+  the detail page only, reachable via contributor-name links on Framework cards.
+  A browsable directory is a separate decision (see Discovery note).
 
 ### Backend scope
 
@@ -235,14 +253,31 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
   - `published_framework_count`
   - `published_frameworks`
 - Extend Explore Framework card/detail responses with `contributor_id` and
-  `contributor_name`.
-- Reuse the existing public badge criteria:
+  `contributor_name` (public `display_name` only — never email/handle).
+- Badge query for contributor targets: the existing `_framework_attestation_badges`
+  hardcodes `target_type == "framework"`, so this needs a **parameterized/parallel
+  query** (`target_type = "contributor"`) — net-new code, not pure reuse. Criteria:
   - `target_type = "contributor"`
-  - `outcome IS NOT NULL`
   - `report_key IS NOT NULL`
   - `status IN ("report_submitted", "closed")`
-- Return only published Frameworks on the profile.
+  - **label derived from `outcome`** (approved/conditional/rejected) per the badge
+    rules above — `outcome IS NOT NULL` alone is insufficient (Finding 1).
+- **Enumeration guard:** `GET /v1/explore/contributors/{id}` must return **404
+  unless the target is a Contributor with ≥1 published Framework**. A public,
+  unauthenticated endpoint must not confirm the existence of arbitrary user ids
+  (operators, attestors, admins, deactivated/banned accounts).
+- Return only published (not suspended/unpublished) Frameworks on the profile.
 - Keep this as a public read endpoint; no KYC/profile gate.
+
+### Live 4b bug to fix alongside (or before) this slice
+
+**Finding 1 already ships in production framework badges.** `_public_attestation_status`
+(`explore/service.py:255`) maps `closed → attested` on **status only**, and
+`_framework_attestation_badges` accepts `outcome IS NOT NULL`. A **rejected**
+framework attestation (which still gets paid, closed, and has a `report_key`)
+therefore renders as `attested` on Explore cards/detail today. Fix the shared
+badge mapper to derive the label from `outcome` — this corrects both the existing
+framework badge and the new contributor badge in one place.
 
 ### Frontend scope
 
@@ -259,11 +294,27 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
   Frameworks.
 - Response does not include email, KYC status, payout details, or private
   evidence keys.
-- Contributor badge maps `report_submitted` to `pending_acceptance` and `closed`
-  to `attested`.
+- Badge label is outcome-driven: `approved`→`attested`, `conditional`→
+  `conditionally_attested`, `rejected`→ no positive badge; `report_submitted`→
+  `pending_acceptance`.
+- **Rejected attestation never renders `attested`** (regression guard for
+  Finding 1 — assert for both framework and contributor badges).
+- Multiple attestations on one target: best public outcome wins; a newer
+  rejected/conditional does not hide an older approved; count surfaced.
+- `GET /v1/explore/contributors/{id}` returns 404 for a non-contributor id, a
+  contributor with zero published Frameworks, and a deactivated account
+  (enumeration guard).
 - Framework card/detail responses include contributor id/name.
 - Frontend profile page renders badge and published Frameworks.
 - Framework cards/detail link to `/explore/contributors/{id}`.
+
+### Discovery (open decision)
+
+No contributor directory/listing exists. This slice ships the detail page only;
+contributors are reachable solely via name links on Framework cards. A browsable
+`/explore/contributors` directory (search/filter by specialization, attestation,
+framework count) is **deferred pending a product decision** — pull into its own
+slice if contributor discovery is wanted.
 
 ### Out of scope
 
@@ -271,3 +322,5 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
 - Contributor reputation scoring.
 - Organization membership/affiliation display.
 - Public credential gallery beyond attested credential badges.
+- Browsable contributor directory/listing (see Discovery note — deferred, not
+  designed here).

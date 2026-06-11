@@ -18,6 +18,11 @@ from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.frameworks.models_artifact import Artifact, ArtifactRarityAudit
+from app.modules.frameworks.pipeline_gate import (
+    NEAR_DUPLICATE_JACCARD_THRESHOLD,
+    evaluate_framework_pipeline,
+)
 from app.workers.tasks.processing.minhash_index import (
     remove_framework_artifacts_from_index,
 )
@@ -183,6 +188,76 @@ async def suspend_framework(
             user_id=admin.id,
             framework_id=framework.id,
         ).error("artifact_lsh_remove_failed", error=str(exc))
+    return framework
+
+
+async def override_rarity_block(
+    db: AsyncSession,
+    admin: User,
+    framework_id: UUID,
+    reason: str,
+) -> Framework:
+    """Override near-duplicate rarity hard blocks for one Framework."""
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await db.scalar(
+            select(Framework).where(Framework.id == framework_id)
+        )
+        if framework is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        artifact_rows = (
+            await db.execute(
+                select(Artifact, ArtifactRarityAudit)
+                .join(
+                    ArtifactRarityAudit,
+                    ArtifactRarityAudit.artifact_id == Artifact.id,
+                )
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                    ArtifactRarityAudit.internal_jaccard
+                    >= NEAR_DUPLICATE_JACCARD_THRESHOLD,
+                    ArtifactRarityAudit.near_duplicate_overridden_at.is_(None),
+                )
+            )
+        ).all()
+        if not artifact_rows:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Framework has no active near-duplicate rarity block.",
+            )
+        now = datetime.now(UTC)
+        normalized_reason = reason.strip()
+        overridden_artifact_ids: list[str] = []
+        for artifact, audit in artifact_rows:
+            audit.near_duplicate_overridden_at = now
+            audit.near_duplicate_overridden_by = admin_id
+            audit.near_duplicate_override_reason = normalized_reason
+            overridden_artifact_ids.append(str(artifact.id))
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="rarity_block_overridden",
+            target_type="framework",
+            target_id=framework.id,
+            metadata={
+                "artifact_ids": overridden_artifact_ids,
+                "reason": normalized_reason,
+            },
+        )
+        await evaluate_framework_pipeline(db, framework, force=True)
+    await db.refresh(framework)
+    logger.bind(
+        module="admin",
+        action="override_rarity_block",
+        user_id=admin_id,
+        framework_id=framework.id,
+    ).info("rarity_block_overridden")
     return framework
 
 
