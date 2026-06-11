@@ -25,6 +25,7 @@ from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.developer.models import PartnerCommission
 from app.modules.financials.invoices import purchase_invoice_key
 from app.modules.financials.models import (
     Escrow,
@@ -932,6 +933,42 @@ async def _load_refundable_purchase(
     return transaction, license_row
 
 
+async def _void_partner_commission_for_refund(
+    db: AsyncSession,
+    *,
+    transaction_id: UUID,
+    operator_id: UUID,
+) -> None:
+    """Void pending/cleared Partner commission tied to a refunded purchase."""
+    commission = await db.scalar(
+        select(PartnerCommission).where(
+            PartnerCommission.transaction_id == transaction_id
+        )
+    )
+    if commission is None or commission.status == "voided":
+        return
+    if commission.status == "paid":
+        logger.bind(
+            module="financials",
+            action="void_partner_commission_for_refund",
+            transaction_id=transaction_id,
+        ).critical("paid_partner_commission_refund_detected")
+        return
+
+    commission.status = "voided"
+    await write_audit(
+        db=db,
+        actor_id=operator_id,
+        action="partner_commission_voided",
+        target_type="partner_commission",
+        target_id=commission.id,
+        metadata={
+            "transaction_id": str(transaction_id),
+            "reason": "purchase_refunded",
+        },
+    )
+
+
 async def refund_framework_purchase(
     db: AsyncSession,
     operator: User,
@@ -981,6 +1018,11 @@ async def refund_framework_purchase(
             )
         transaction.status = "refunded"
         license_row.status = "revoked"
+        await _void_partner_commission_for_refund(
+            db,
+            transaction_id=transaction.id,
+            operator_id=operator_id,
+        )
         await write_audit(
             db=db,
             actor_id=operator_id,

@@ -16,6 +16,12 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
+from app.modules.developer.models import (
+    ApiKey,
+    DeveloperAccount,
+    DeveloperApplication,
+    PartnerCommission,
+)
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -39,8 +45,12 @@ async def reset_refund_state() -> None:
         await session.execute(delete(ArtifactDownload))
         await session.execute(delete(Artifact))
         await session.execute(delete(License))
+        await session.execute(delete(PartnerCommission))
         await session.execute(delete(Payout))
         await session.execute(delete(PayoutAccount))
+        await session.execute(delete(ApiKey))
+        await session.execute(delete(DeveloperAccount))
+        await session.execute(delete(DeveloperApplication))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
@@ -195,6 +205,63 @@ async def create_completed_purchase(
             return transaction.id, license_row.id
 
 
+async def create_pending_partner_commission(
+    *,
+    transaction_id: UUID,
+    framework_id: UUID,
+) -> UUID:
+    """Create a pending Partner commission linked to a completed purchase."""
+    developer_id = await create_user_with_roles(
+        f"refund-developer-{uuid4()}@auracles.space",
+        ["developer"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            application = DeveloperApplication(
+                user_id=developer_id,
+                company_name="Refund Partner",
+                website="https://refund-partner.example.com",
+                use_case="Verify partner commission refund voiding behavior.",
+                status="approved",
+                reviewed_at=datetime.now(UTC),
+            )
+            session.add(application)
+            await session.flush()
+            account = DeveloperAccount(
+                user_id=developer_id,
+                application_id=application.id,
+                company_name=application.company_name,
+                commission_tier=1,
+                tier_rate=Decimal("0.0500"),
+            )
+            session.add(account)
+            await session.flush()
+            api_key = ApiKey(
+                developer_account_id=account.id,
+                name="Refund key",
+                key_prefix="ak_refund",
+                key_hash=f"refund-hash-{uuid4()}",
+                scopes=["purchase:write"],
+            )
+            session.add(api_key)
+            await session.flush()
+            commission = PartnerCommission(
+                api_key_id=api_key.id,
+                developer_account_id=account.id,
+                transaction_id=transaction_id,
+                framework_id=framework_id,
+                sale_amount=Decimal("149.00"),
+                currency="USD",
+                tier_at_sale=1,
+                tier_rate=Decimal("0.0500"),
+                commission_amount=Decimal("7.45"),
+                status="pending",
+            )
+            session.add(commission)
+            await session.flush()
+            return commission.id
+
+
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -246,6 +313,45 @@ async def test_operator_can_refund_completed_purchase_before_download(
     assert audit is not None
     assert audit.target_id == transaction_id
     assert audit.metadata_["refund_ref"] == "****_123"
+
+
+async def test_refund_voids_pending_partner_commission(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+) -> None:
+    """Refunding an attributed purchase voids the pending Partner commission."""
+    operator_id = await create_user_with_roles(
+        "refund-partner-operator@auracles.space",
+        ["operator"],
+    )
+    transaction_id, _license_id = await create_completed_purchase(operator_id)
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        assert transaction is not None
+        assert transaction.ref_id is not None
+        framework_id = transaction.ref_id
+    commission_id = await create_pending_partner_commission(
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        commission = await session.get(PartnerCommission, commission_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "partner_commission_voided")
+        )
+
+    assert response.status_code == 200
+    assert commission is not None
+    assert commission.status == "voided"
+    assert audit is not None
+    assert audit.target_id == commission_id
+    assert audit.metadata_["transaction_id"] == str(transaction_id)
 
 
 async def test_refund_rejects_downloaded_or_expired_purchases(

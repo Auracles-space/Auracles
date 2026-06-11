@@ -21,6 +21,13 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.developer.models import (
+    ApiKey,
+    DeveloperAccount,
+    DeveloperApplication,
+    PartnerCommission,
+    PartnerPurchaseAttribution,
+)
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.projects.models import Milestone, Project, Proposal
@@ -47,6 +54,8 @@ async def reset_webhook_state() -> None:
     async with async_session_factory() as session:
         await session.execute(delete(WebhookEvent))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(PartnerCommission))
+        await session.execute(delete(PartnerPurchaseAttribution))
         await session.execute(delete(WorkspaceMessage))
         await session.execute(delete(AttestationUploadSession))
         await session.execute(delete(AttestationOffer))
@@ -55,6 +64,9 @@ async def reset_webhook_state() -> None:
         await session.execute(delete(Milestone))
         await session.execute(delete(Escrow))
         await session.execute(delete(License))
+        await session.execute(delete(ApiKey))
+        await session.execute(delete(DeveloperAccount))
+        await session.execute(delete(DeveloperApplication))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
         await session.execute(delete(Project))
@@ -180,6 +192,63 @@ async def create_pending_purchase() -> tuple[UUID, UUID, UUID, UUID]:
             session.add(transaction)
             await session.flush()
             return transaction.id, framework.id, operator_id, contributor_id
+
+
+async def create_partner_attribution(
+    *,
+    transaction_id: UUID,
+    framework_id: UUID,
+    buyer_user_id: UUID,
+    tier_rate: Decimal = Decimal("0.0800"),
+) -> UUID:
+    """Create a Developer account, API key, and purchase attribution row."""
+    developer_id = await create_user_with_roles(
+        "webhook-developer@auracles.space",
+        ["developer"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            application = DeveloperApplication(
+                user_id=developer_id,
+                company_name="Webhook Partner",
+                website="https://webhook-partner.example.com",
+                use_case="Attribute purchase webhooks to partner commissions.",
+                status="approved",
+                reviewed_at=datetime.now(UTC),
+            )
+            session.add(application)
+            await session.flush()
+            account = DeveloperAccount(
+                user_id=developer_id,
+                application_id=application.id,
+                company_name=application.company_name,
+                commission_tier=2,
+                tier_rate=tier_rate,
+            )
+            session.add(account)
+            await session.flush()
+            api_key = ApiKey(
+                developer_account_id=account.id,
+                name="Webhook attribution key",
+                key_prefix="ak_webhook",
+                key_hash="webhook-test-hash",
+                scopes=["purchase:write"],
+            )
+            session.add(api_key)
+            await session.flush()
+            attribution = PartnerPurchaseAttribution(
+                api_key_id=api_key.id,
+                developer_account_id=account.id,
+                transaction_id=transaction_id,
+                framework_id=framework_id,
+                buyer_user_id=buyer_user_id,
+                license_type="team",
+                tier_at_sale=2,
+                tier_rate=tier_rate,
+            )
+            session.add(attribution)
+            await session.flush()
+            return api_key.id
 
 
 async def create_pending_escrow_transaction() -> tuple[UUID, UUID, UUID]:
@@ -422,6 +491,72 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert audit.target_id == transaction_id
     invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
     assert invoice_task.dispatched == [str(transaction_id)]
+
+
+async def test_stripe_purchase_success_creates_partner_commission_once(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """Partner-attributed purchase success creates one pending commission."""
+    transaction_id, framework_id, operator_id, _ = await create_pending_purchase()
+    api_key_id = await create_partner_attribution(
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+        buyer_user_id=operator_id,
+        tier_rate=Decimal("0.0800"),
+    )
+    webhook_context["event"] = payment_intent_event(
+        "evt_partner_purchase_success",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+        extra_metadata={
+            "api_key_id": str(api_key_id),
+            "tier_rate": "0.0800",
+        },
+    )
+
+    first = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+    replay = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        commissions = (
+            (
+                await session.execute(
+                    select(PartnerCommission).where(
+                        PartnerCommission.transaction_id == transaction_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "partner_commission_created")
+        )
+
+    assert first.status_code == 200
+    assert first.json() == {"received": True, "status": "processed"}
+    assert replay.status_code == 200
+    assert replay.json() == {"received": True, "status": "duplicate"}
+    assert len(commissions) == 1
+    assert commissions[0].api_key_id == api_key_id
+    assert commissions[0].framework_id == framework_id
+    assert commissions[0].sale_amount == Decimal("149.00")
+    assert commissions[0].tier_at_sale == 2
+    assert commissions[0].tier_rate == Decimal("0.0800")
+    assert commissions[0].commission_amount == Decimal("11.92")
+    assert commissions[0].status == "pending"
+    assert audit is not None
+    assert audit.target_id == commissions[0].id
 
 
 async def test_purchase_webhook_fails_duplicate_active_license_transaction(

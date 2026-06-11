@@ -11,6 +11,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -27,6 +28,11 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
+from app.modules.developer.models import (
+    DeveloperAccount,
+    PartnerCommission,
+    PartnerPurchaseAttribution,
+)
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -39,6 +45,11 @@ from app.workers.tasks.financials import generate_invoice_pdf
 
 class WebhookProcessingError(RuntimeError):
     """Raised when a verified provider event cannot be safely applied."""
+
+
+def _normalise_money(amount: Decimal) -> Decimal:
+    """Return a two-decimal money value for webhook-created ledger rows."""
+    return amount.quantize(Decimal("0.01"))
 
 
 def _event_object(event: dict[str, Any]) -> dict[str, Any]:
@@ -255,7 +266,74 @@ async def _handle_purchase_succeeded(
             "license_type": license_type,
         },
     )
+    await _create_partner_commission_if_attributed(
+        db=db,
+        transaction=transaction,
+        framework_id=framework.id,
+    )
     return transaction.id
+
+
+async def _create_partner_commission_if_attributed(
+    *,
+    db: AsyncSession,
+    transaction: Transaction,
+    framework_id: UUID,
+) -> None:
+    """Create a pending partner commission when a purchase has attribution."""
+    attribution = await db.scalar(
+        select(PartnerPurchaseAttribution).where(
+            PartnerPurchaseAttribution.transaction_id == transaction.id
+        )
+    )
+    if attribution is None:
+        return
+
+    existing_commission = await db.scalar(
+        select(PartnerCommission).where(
+            PartnerCommission.transaction_id == transaction.id
+        )
+    )
+    if existing_commission is not None:
+        return
+
+    developer_account = await db.get(
+        DeveloperAccount,
+        attribution.developer_account_id,
+    )
+    if developer_account is None:
+        raise WebhookProcessingError("partner attribution missing developer account")
+
+    commission_amount = _normalise_money(transaction.amount * attribution.tier_rate)
+    commission = PartnerCommission(
+        api_key_id=attribution.api_key_id,
+        developer_account_id=attribution.developer_account_id,
+        transaction_id=transaction.id,
+        framework_id=framework_id,
+        sale_amount=transaction.amount,
+        currency=transaction.currency,
+        tier_at_sale=attribution.tier_at_sale,
+        tier_rate=attribution.tier_rate,
+        commission_amount=commission_amount,
+        status="pending",
+    )
+    db.add(commission)
+    await db.flush()
+    await write_audit(
+        db=db,
+        actor_id=developer_account.user_id,
+        action="partner_commission_created",
+        target_type="partner_commission",
+        target_id=commission.id,
+        metadata={
+            "api_key_id": str(attribution.api_key_id),
+            "transaction_id": str(transaction.id),
+            "framework_id": str(framework_id),
+            "sale_amount": str(transaction.amount),
+            "tier_rate": str(attribution.tier_rate),
+            "commission_amount": str(commission_amount),
+        },
+    )
 
 
 def _queue_purchase_invoice_generation(transaction_id: UUID) -> None:
