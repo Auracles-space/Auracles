@@ -18,6 +18,9 @@ from app.modules.developer.schemas import (
     PartnerAttestationsResponse,
     PartnerFrameworkDetailResponse,
     PartnerPreviewArtifactResponse,
+    PartnerPurchaseRequest,
+    PartnerPurchaseResponse,
+    PartnerPurchaseStatusResponse,
 )
 from app.modules.explore.schemas import (
     ExploreAttestationStatus,
@@ -39,6 +42,10 @@ PreviewReadContext = Annotated[
 AttestationsReadContext = Annotated[
     PartnerApiContext,
     Depends(require_api_key_scope("attestations:read")),
+]
+PurchaseWriteContext = Annotated[
+    PartnerApiContext,
+    Depends(require_api_key_scope("purchase:write")),
 ]
 
 
@@ -134,3 +141,41 @@ async def list_partner_framework_attestations(
     """Return public Attestation report metadata for one published Framework."""
     del context
     return await partner_service.list_attestations(db, framework_id=framework_id)
+
+
+@router.post(
+    "/frameworks/{framework_id}/purchase",
+    response_model=PartnerPurchaseResponse,
+)
+async def initiate_partner_framework_purchase(
+    framework_id: UUID,
+    payload: PartnerPurchaseRequest,
+    db: DatabaseSession,
+    redis: RedisClient,
+    context: PurchaseWriteContext,
+) -> PartnerPurchaseResponse:
+    """Start Stripe checkout for a Partner-attributed Framework purchase."""
+    return await partner_service.initiate_purchase(
+        db,
+        redis,
+        context=context,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/purchases/{transaction_id}",
+    response_model=PartnerPurchaseStatusResponse,
+)
+async def get_partner_purchase_status(
+    transaction_id: UUID,
+    db: DatabaseSession,
+    context: PurchaseWriteContext,
+) -> PartnerPurchaseStatusResponse:
+    """Return status for a purchase created by the same Partner API key."""
+    return await partner_service.get_purchase_status(
+        db,
+        context=context,
+        transaction_id=transaction_id,
+    )

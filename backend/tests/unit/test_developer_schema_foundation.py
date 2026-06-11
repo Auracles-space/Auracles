@@ -24,6 +24,7 @@ from app.modules.developer.models import (
     DeveloperApplication,
     PartnerCommission,
     PartnerPayout,
+    PartnerPurchaseAttribution,
     PartnerWebhook,
     PartnerWebhookDelivery,
 )
@@ -36,6 +37,7 @@ DEVELOPER_TABLES = {
     "api_keys",
     "api_request_logs",
     "partner_commissions",
+    "partner_purchase_attributions",
     "partner_payouts",
     "partner_webhooks",
     "partner_webhook_deliveries",
@@ -128,6 +130,12 @@ def test_developer_migration_preserves_partner_integrity_constraints(
         constraint["name"]
         for constraint in inspector.get_unique_constraints("partner_commissions")
     }
+    attribution_uniques = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "partner_purchase_attributions"
+        )
+    }
     payout_checks = {
         constraint["name"]
         for constraint in inspector.get_check_constraints("partner_payouts")
@@ -142,6 +150,7 @@ def test_developer_migration_preserves_partner_integrity_constraints(
         api_key_indexes
     )
     assert "uq_partner_commissions_transaction" in commission_uniques
+    assert "uq_partner_purchase_attr_transaction" in attribution_uniques
     assert "ck_partner_payouts_amount_positive" in payout_checks
     assert {
         "ck_partner_commissions_sale_amount_positive",
@@ -203,6 +212,10 @@ def test_developer_orm_models_bind_to_slice_one_tables() -> None:
     assert PartnerCommission.__tablename__ == "partner_commissions"
     assert {"tier_at_sale", "tier_rate", "commission_amount"}.issubset(
         PartnerCommission.__table__.columns.keys()
+    )
+    assert PartnerPurchaseAttribution.__tablename__ == "partner_purchase_attributions"
+    assert {"license_type", "tier_at_sale", "tier_rate"}.issubset(
+        PartnerPurchaseAttribution.__table__.columns.keys()
     )
     assert PartnerPayout.__tablename__ == "partner_payouts"
     assert PartnerWebhook.__tablename__ == "partner_webhooks"

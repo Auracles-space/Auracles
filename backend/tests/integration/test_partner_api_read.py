@@ -13,12 +13,13 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, update
+from sqlalchemy import create_engine, delete, select, update
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import hash_password
+from app.integrations import stripe
 from app.main import app
 from app.modules.attestation.models import (
     Attestation,
@@ -27,12 +28,15 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.developer import partner_service
 from app.modules.developer.models import (
     ApiKey,
     ApiRequestLog,
     DeveloperAccount,
     DeveloperApplication,
+    PartnerPurchaseAttribution,
 )
+from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import (
     Framework,
     FrameworkVersion,
@@ -140,6 +144,23 @@ class FakePartnerStorage:
         return f"https://s3.test/{bucket}/{key}?signature=fake"
 
 
+class FakeStripeCustomer:
+    """Small stand-in for a Stripe customer creation result."""
+
+    def __init__(self, customer_id: str) -> None:
+        """Store the fake Stripe customer id."""
+        self.id = customer_id
+
+
+class FakeStripePaymentIntent:
+    """Small stand-in for a Stripe PaymentIntent result."""
+
+    def __init__(self, payment_intent_id: str, client_secret: str) -> None:
+        """Store fake PaymentIntent fields returned by the Stripe adapter."""
+        self.id = payment_intent_id
+        self.client_secret = client_secret
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure marketplace and Developer tables exist for Partner API tests."""
@@ -168,6 +189,7 @@ async def partner_read_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(update(Framework).values(preview_artifact_id=None))
             await session.execute(delete(ApiRequestLog))
             await session.execute(delete(Notification))
+            await session.execute(delete(PartnerPurchaseAttribution))
             await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
             await session.execute(delete(DeveloperApplication))
@@ -185,6 +207,7 @@ async def partner_read_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Artifact))
             await session.execute(delete(Framework))
+            await session.execute(delete(Transaction))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
             await session.commit()
@@ -521,3 +544,223 @@ async def test_partner_preview_requires_preview_scope(
     )
 
     assert response.status_code == 403
+
+
+async def test_partner_purchase_initiates_checkout_for_existing_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    partner_read_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Partner purchase creates a pending Stripe checkout for an existing buyer."""
+    del migrated_database, partner_read_context
+    raw_key = "ak_partner_purchase"
+    api_key_id = await create_partner_key(raw_key, ["purchase:write"])
+    contributor_id = await create_user(
+        "partner-purchase-seller@auracles.space",
+        ["contributor"],
+    )
+    buyer_id = await create_user("partner-buyer@auracles.space", ["operator"])
+    framework_id, _preview_id = await create_framework(
+        contributor_id,
+        title="Partner Purchasable Framework",
+    )
+    stripe_calls: dict[str, list[dict[str, Any]]] = {
+        "customers": [],
+        "payment_intents": [],
+    }
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str,
+        idempotency_key: str,
+    ) -> FakeStripeCustomer:
+        """Record Stripe customer creation and return a fake customer."""
+        stripe_calls["customers"].append(
+            {"email": email, "name": name, "idempotency_key": idempotency_key}
+        )
+        return FakeStripeCustomer("cus_partner_existing")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        idempotency_key: str,
+    ) -> FakeStripePaymentIntent:
+        """Record Stripe PaymentIntent creation and return a fake secret."""
+        stripe_calls["payment_intents"].append(
+            {
+                "customer_id": customer_id,
+                "amount": amount,
+                "currency": currency,
+                "metadata": metadata,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return FakeStripePaymentIntent("pi_partner_existing", "secret_partner")
+
+    monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
+    monkeypatch.setattr(stripe, "create_payment_intent", fake_create_payment_intent)
+
+    response = await client.post(
+        f"/v1/partner/frameworks/{framework_id}/purchase",
+        headers=api_key_headers(raw_key),
+        json={"buyer_email": "partner-buyer@auracles.space", "license_type": "team"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    transaction_id = UUID(body["transaction_id"])
+    assert body == {
+        "transaction_id": str(transaction_id),
+        "provider": "stripe",
+        "client_secret": "secret_partner",
+    }
+    assert stripe_calls["customers"][0]["email"] == "partner-buyer@auracles.space"
+    payment_intent = stripe_calls["payment_intents"][0]
+    assert payment_intent["amount"] == Decimal("499.00")
+    assert payment_intent["currency"] == "USD"
+    assert payment_intent["idempotency_key"] == f"partner_purchase:{transaction_id}"
+    assert payment_intent["metadata"]["kind"] == "purchase"
+    assert payment_intent["metadata"]["transaction_id"] == str(transaction_id)
+    assert payment_intent["metadata"]["api_key_id"] == str(api_key_id)
+    assert payment_intent["metadata"]["tier_rate"] == "0.0500"
+    assert payment_intent["metadata"]["license_type"] == "team"
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        attribution = await session.scalar(
+            select(PartnerPurchaseAttribution).where(
+                PartnerPurchaseAttribution.transaction_id == transaction_id
+            )
+        )
+        buyer = await session.get(User, buyer_id)
+
+    assert transaction is not None
+    assert transaction.payer_id == buyer_id
+    assert transaction.payee_id == contributor_id
+    assert transaction.status == "pending"
+    assert transaction.provider_ref == "pi_partner_existing"
+    assert attribution is not None
+    assert attribution.api_key_id == api_key_id
+    assert attribution.framework_id == framework_id
+    assert attribution.buyer_user_id == buyer_id
+    assert attribution.license_type == "team"
+    assert buyer is not None
+    assert buyer.stripe_customer_id == "cus_partner_existing"
+
+
+async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
+    client: AsyncClient,
+    migrated_database: None,
+    partner_read_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown Partner purchase buyer is invited and status is key-scoped."""
+    del migrated_database
+    raw_key = "ak_partner_invite"
+    other_raw_key = "ak_partner_other"
+    await create_partner_key(raw_key, ["purchase:write"])
+    await create_partner_key(other_raw_key, ["purchase:write"])
+    contributor_id = await create_user(
+        "partner-invite-seller@auracles.space",
+        ["contributor"],
+    )
+    framework_id, _preview_id = await create_framework(
+        contributor_id,
+        title="Partner Invite Framework",
+    )
+    sent_invites: list[tuple[str, str]] = []
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str,
+        idempotency_key: str,
+    ) -> FakeStripeCustomer:
+        """Return a fake Stripe customer for the invited buyer."""
+        assert email == "new-buyer@auracles.space"
+        assert name == "New-Buyer"
+        assert idempotency_key.startswith("partner_stripe_customer:")
+        return FakeStripeCustomer("cus_partner_invited")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        idempotency_key: str,
+    ) -> FakeStripePaymentIntent:
+        """Return a fake PaymentIntent for the invited buyer."""
+        assert customer_id == "cus_partner_invited"
+        assert amount == Decimal("499.00")
+        assert currency == "USD"
+        assert metadata["license_type"] == "single_user"
+        assert idempotency_key.startswith("partner_purchase:")
+        return FakeStripePaymentIntent("pi_partner_invited", "secret_invited")
+
+    def fake_delay(email: str, token: str) -> None:
+        """Record invited buyer verification emails without hitting Celery."""
+        sent_invites.append((email, token))
+
+    monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
+    monkeypatch.setattr(stripe, "create_payment_intent", fake_create_payment_intent)
+    monkeypatch.setattr(partner_service.send_verification_email, "delay", fake_delay)
+
+    purchase = await client.post(
+        f"/v1/partner/frameworks/{framework_id}/purchase",
+        headers=api_key_headers(raw_key),
+        json={
+            "buyer_email": "new-buyer@auracles.space",
+            "license_type": "single_user",
+        },
+    )
+
+    assert purchase.status_code == 200
+    transaction_id = UUID(purchase.json()["transaction_id"])
+    status_response = await client.get(
+        f"/v1/partner/purchases/{transaction_id}",
+        headers=api_key_headers(raw_key),
+    )
+    other_key_status = await client.get(
+        f"/v1/partner/purchases/{transaction_id}",
+        headers=api_key_headers(other_raw_key),
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json() == {
+        "transaction_id": str(transaction_id),
+        "status": "pending",
+        "provider": "stripe",
+        "framework_id": str(framework_id),
+        "buyer_email": "new-buyer@auracles.space",
+        "license_type": "single_user",
+        "amount": "499.00",
+        "currency": "USD",
+    }
+    assert other_key_status.status_code == 404
+    assert sent_invites[0][0] == "new-buyer@auracles.space"
+    fake_redis = partner_read_context["redis"]
+    assert any(key.startswith("email_verify:") for key in fake_redis.values)
+
+    async with async_session_factory() as session:
+        buyer = await session.scalar(
+            select(User).where(User.email == "new-buyer@auracles.space")
+        )
+        assert buyer is not None
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == buyer.id,
+                UserRole.role == "operator",
+            )
+        )
+
+    assert buyer.password_hash is None
+    assert buyer.email_verified is False
+    assert buyer.stripe_customer_id == "cus_partner_invited"
+    assert role is not None
+    assert role.approved_at is not None

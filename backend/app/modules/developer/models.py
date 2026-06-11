@@ -2,7 +2,8 @@
 
 Slice 1 is schema-only: these models define Developer applications, accounts,
 API keys, partner-attributed commissions, partner payouts, outbound webhooks,
-and API request logs before lifecycle services and endpoints are added.
+API request logs, and purchase attribution before lifecycle services and
+endpoints are added.
 """
 
 from __future__ import annotations
@@ -236,6 +237,9 @@ class ApiKey(CreatedAtMixin, Base):
         back_populates="api_keys",
     )
     request_logs: Mapped[list[ApiRequestLog]] = relationship(back_populates="api_key")
+    purchase_attributions: Mapped[list[PartnerPurchaseAttribution]] = relationship(
+        back_populates="api_key",
+    )
     commissions: Mapped[list[PartnerCommission]] = relationship(
         back_populates="api_key",
     )
@@ -271,6 +275,61 @@ class ApiRequestLog(Base):
     )
 
     api_key: Mapped[ApiKey] = relationship(back_populates="request_logs")
+
+
+class PartnerPurchaseAttribution(CreatedAtMixin, Base):
+    """Pending purchase attribution from a Partner API key to a transaction."""
+
+    __tablename__ = "partner_purchase_attributions"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", name="uq_partner_purchase_attr_transaction"),
+        Index(
+            "idx_partner_purchase_attr_key_transaction",
+            "api_key_id",
+            "transaction_id",
+        ),
+        Index(
+            "idx_partner_purchase_attr_developer",
+            "developer_account_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    api_key_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("api_keys.id"),
+        nullable=False,
+    )
+    developer_account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("developer_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    transaction_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("transactions.id"),
+        nullable=False,
+    )
+    framework_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("frameworks.id"),
+        nullable=False,
+    )
+    buyer_user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    license_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    tier_at_sale: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    tier_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+
+    api_key: Mapped[ApiKey] = relationship(back_populates="purchase_attributions")
 
 
 class PartnerPayout(Base):

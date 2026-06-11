@@ -7,9 +7,10 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
 
 from app.modules.developer.constants import VALID_API_KEY_SCOPES
+from app.modules.financials.schemas import SelfServeLicenseType
 
 
 class DeveloperApplicationCreateRequest(BaseModel):
@@ -159,3 +160,33 @@ class PartnerAttestationsResponse(BaseModel):
     """List response for public Partner Attestation report metadata."""
 
     attestations: list[PartnerAttestationReportResponse]
+
+
+class PartnerPurchaseRequest(BaseModel):
+    """Partner request body for initiating checkout for a buyer email."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    buyer_email: EmailStr
+    license_type: SelfServeLicenseType
+
+
+class PartnerPurchaseResponse(BaseModel):
+    """Stripe checkout data returned to a Partner API purchase request."""
+
+    transaction_id: UUID
+    provider: Literal["stripe"]
+    client_secret: str
+
+
+class PartnerPurchaseStatusResponse(BaseModel):
+    """Partner-visible purchase status without licensed artifact access."""
+
+    transaction_id: UUID
+    status: str
+    provider: Literal["stripe"]
+    framework_id: UUID
+    buyer_email: EmailStr
+    license_type: str
+    amount: Decimal
+    currency: str
