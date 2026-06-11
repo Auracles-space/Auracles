@@ -54,8 +54,8 @@ export default async function ExploreDetailPage({
         <Link className="text-sm font-semibold text-accent" href="/explore">
           Back to Explore
         </Link>
-        <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px]">
-          <section>
+        <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start">
+          <section className="rounded-2xl border border-border-default bg-surface-1 p-6 md:p-10 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
               {formatLabel(framework.category)}
             </p>
@@ -77,7 +77,7 @@ export default async function ExploreDetailPage({
               ) : null}
               {framework.tags.map((tag: string) => (
                 <span
-                  className="rounded-[4px] border border-border-default px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted"
+                  className="rounded-md border border-border-default px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted"
                   key={tag}
                 >
                   {tag}
@@ -85,46 +85,42 @@ export default async function ExploreDetailPage({
               ))}
             </div>
           </section>
-          <aside className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+          <aside className="sticky top-8 rounded-2xl border border-border-default bg-surface-2 p-6 shadow-sm">
             <p className="text-sm text-foreground-muted">Starting price</p>
-            <p className="mt-1 font-heading text-3xl font-bold text-foreground">
+            <p className="mt-1 font-heading text-4xl font-bold text-foreground">
               {formatMoney(framework.price, framework.currency)}
             </p>
-            <dl className="mt-5 grid gap-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-foreground-muted">Version</dt>
-                <dd className="font-semibold text-foreground">{framework.version}</dd>
+            
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border-default bg-surface-1 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Version</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{framework.version}</p>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-foreground-muted">Organization</dt>
-                <dd className="font-semibold text-foreground">
-                  {formatLabel(framework.org_size)}
-                </dd>
+              <div className="rounded-xl border border-border-default bg-surface-1 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Complexity</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{framework.complexity ?? "Not set"}</p>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-foreground-muted">Complexity</dt>
-                <dd className="font-semibold text-foreground">
-                  {framework.complexity ?? "Not set"}
-                </dd>
+              <div className="rounded-xl border border-border-default bg-surface-1 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Rarity</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{framework.rarity_score ?? "Pending"}</p>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-foreground-muted">Rarity</dt>
-                <dd className="font-semibold text-foreground">
-                  {framework.rarity_score ?? "Pending"}
-                </dd>
+              <div className="rounded-xl border border-border-default bg-surface-1 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Organization</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{formatLabel(framework.org_size)}</p>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-foreground-muted">Reviews</dt>
-                <dd className="font-semibold text-foreground">
+              <div className="col-span-2 flex items-center justify-between rounded-xl border border-border-default bg-surface-1 p-3">
+                <span className="text-[11px] uppercase tracking-wider text-foreground-muted">Reviews</span>
+                <span className="text-sm font-semibold text-foreground">
                   <ReviewSummary
-                    averageScore={framework.average_review_score}
-                    reviewCount={framework.review_count}
+                    averageScore={framework.average_review_score ?? null}
+                    reviewCount={framework.review_count ?? 0}
                   />
-                </dd>
+                </span>
               </div>
-            </dl>
+            </div>
+            
             <Link
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
+              className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-bold tracking-wide text-white shadow-[0_4px_14px_0_rgba(199,70,52,0.39)] outline-none transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               href={`/checkout/${framework.id}`}
             >
               License Framework

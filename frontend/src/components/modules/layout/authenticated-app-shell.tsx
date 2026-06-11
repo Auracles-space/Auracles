@@ -25,6 +25,7 @@ const appLinks = [
   { href: "/dashboard/frameworks", label: "Frameworks" },
   { href: "/dashboard/earnings", label: "Earnings" },
   { href: "/dashboard/payouts", label: "Payouts" },
+  { href: "/dashboard/developer", label: "Developer" },
   { href: "/library", label: "Library" },
   { href: "/settings/credentials", label: "Credentials" },
   { href: "/admin/attestations", label: "Admin" },
@@ -119,7 +120,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
               <ThemeToggle />
               {/* Native HTML details/summary for simple zero-JS mobile menu */}
               <details className="group relative">
-                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-border-default outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
                   <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
@@ -130,7 +131,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                     {appLinks.map((link) => (
                       <Link
                         className={[
-                          "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          "rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                           pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore")
                             ? "bg-surface-2 text-foreground"
                             : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
@@ -142,7 +143,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                       </Link>
                     ))}
                     <div className="my-2 h-px bg-border-default" />
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted outline-none transition-all hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent text-left">
+                    <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted outline-none transition-all hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent text-left">
                       Sign out
                     </button>
                   </nav>

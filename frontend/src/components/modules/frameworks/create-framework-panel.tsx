@@ -21,7 +21,7 @@ import {
 } from "@/lib/auth/form-client";
 
 type FrameworkCreateWithProjectSource = FrameworkCreate & {
-  source_project_id?: string;
+  source_project_id?: string | null;
 };
 
 export type ProjectDeliverablePrefill = FrameworkDraftPrefill & {

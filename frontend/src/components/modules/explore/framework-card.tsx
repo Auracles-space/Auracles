@@ -49,8 +49,9 @@ export function AttestationBadge({
     },
   }[badge.status];
   const Icon = statusConfig.icon;
+  const attestationCount = badge.attestation_count ?? 0;
   const reportLabel =
-    badge.attestation_count > 1 ? ` · ${badge.attestation_count} reports` : "";
+    attestationCount > 1 ? ` · ${attestationCount} reports` : "";
 
   return (
     <span
@@ -126,8 +127,8 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
         </Link>
         <div className="mt-3">
           <ReviewSummary
-            averageScore={framework.average_review_score}
-            reviewCount={framework.review_count}
+            averageScore={framework.average_review_score ?? null}
+            reviewCount={framework.review_count ?? 0}
           />
         </div>
       </div>
