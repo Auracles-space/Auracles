@@ -12,6 +12,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.attestation.router import router as attestation_router
 from app.modules.auth.router import router as auth_router
 from app.modules.developer.auth import PartnerApiRequestLoggingMiddleware
+from app.modules.developer.partner_router import router as partner_router
 from app.modules.developer.router import router as developer_router
 from app.modules.explore.router import router as explore_router
 from app.modules.financials.router import router as financials_router
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     application.include_router(library_router, prefix="/v1")
     application.include_router(notifications_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
+    application.include_router(partner_router, prefix="/v1")
     application.include_router(realtime_router, prefix="/v1")
     application.include_router(settings_router, prefix="/v1")
     application.include_router(webhooks_router, prefix="/v1")

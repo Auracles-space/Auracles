@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -101,3 +102,60 @@ class ApiKeysResponse(BaseModel):
     """List response for API key metadata."""
 
     api_keys: list[ApiKeyResponse]
+
+
+class PartnerFrameworkDetailResponse(BaseModel):
+    """Partner-safe public Framework detail without full artifact inventory."""
+
+    id: UUID
+    contributor_id: UUID
+    contributor_name: str
+    title: str
+    description: str
+    version: str
+    category: str
+    sector: str | None
+    industry: str | None
+    function: str | None
+    tags: list[str]
+    jurisdiction: str | None
+    complexity: int | None
+    org_size: str | None
+    lifecycle_stage: str | None
+    price: Decimal
+    currency: str
+    license_types: list[str]
+    thumbnail_key: str | None
+    rarity_score: Decimal | None
+    average_review_score: Decimal | None = None
+    review_count: int = 0
+    attestation_badge: dict[str, object] | None = None
+    published_at: datetime | None
+    preview_artifact_id: UUID | None
+
+
+class PartnerPreviewArtifactResponse(BaseModel):
+    """Partner-safe preview Artifact payload with a temporary preview URL."""
+
+    id: UUID
+    name: str
+    file_size: int
+    mime_type: str
+    preview_url: str
+    created_at: datetime
+
+
+class PartnerAttestationReportResponse(BaseModel):
+    """Public Attestation report metadata exposed through Partner API."""
+
+    id: UUID
+    status: str
+    outcome: str
+    report_key: str
+    issued_at: datetime | None
+
+
+class PartnerAttestationsResponse(BaseModel):
+    """List response for public Partner Attestation report metadata."""
+
+    attestations: list[PartnerAttestationReportResponse]
