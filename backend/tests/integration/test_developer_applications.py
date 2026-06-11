@@ -17,7 +17,13 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, encrypt_totp_secret, hash_password
+from app.core.security import (
+    create_access_token,
+    decrypt_partner_webhook_secret,
+    encrypt_partner_webhook_secret,
+    encrypt_totp_secret,
+    hash_password,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import (
@@ -25,6 +31,8 @@ from app.modules.developer.models import (
     DeveloperAccount,
     DeveloperApplication,
     PartnerCommission,
+    PartnerWebhook,
+    PartnerWebhookDelivery,
 )
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework
@@ -91,6 +99,8 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
     async with async_session_factory() as session:
         async with session.begin():
             await session.execute(delete(PartnerCommission))
+            await session.execute(delete(PartnerWebhookDelivery))
+            await session.execute(delete(PartnerWebhook))
             await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
             await session.execute(delete(DeveloperApplication))
@@ -108,6 +118,8 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
         async with async_session_factory() as session:
             async with session.begin():
                 await session.execute(delete(PartnerCommission))
+                await session.execute(delete(PartnerWebhookDelivery))
+                await session.execute(delete(PartnerWebhook))
                 await session.execute(delete(ApiKey))
                 await session.execute(delete(DeveloperAccount))
                 await session.execute(delete(DeveloperApplication))
@@ -723,3 +735,121 @@ async def test_developer_reads_tier_progress(
         {"tier": 2, "min_sales": 100, "max_sales": 499, "rate": "0.0800"},
         {"tier": 3, "min_sales": 500, "max_sales": None, "rate": "0.1200"},
     ]
+
+
+async def test_developer_registers_webhook_secret_raw_once_and_lists_metadata(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developers can register outbound webhooks without exposing stored secrets."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("webhooks@auracles.space")
+    headers = auth_headers(user_id, ["developer"])
+
+    created = await client.post(
+        "/v1/developer/webhooks",
+        headers=headers,
+        json={
+            "url": "https://partners.example.com/auracles/webhooks",
+            "events": ["purchase.confirmed", "commission.cleared"],
+        },
+    )
+    listed = await client.get("/v1/developer/webhooks", headers=headers)
+
+    assert created.status_code == 201
+    created_body = created.json()
+    raw_secret = created_body["secret"]
+    assert raw_secret.startswith("whsec_")
+    assert created_body["events"] == ["purchase.confirmed", "commission.cleared"]
+    assert created_body["active"] is True
+    assert listed.status_code == 200
+    assert listed.json()["webhooks"] == [
+        {
+            "id": created_body["id"],
+            "url": "https://partners.example.com/auracles/webhooks",
+            "events": ["purchase.confirmed", "commission.cleared"],
+            "active": True,
+            "created_at": created_body["created_at"],
+        }
+    ]
+    assert "secret" not in listed.text
+
+    async with async_session_factory() as session:
+        webhook = await session.get(PartnerWebhook, UUID(created_body["id"]))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "partner_webhook_created")
+        )
+
+    assert webhook is not None
+    assert webhook.developer_account_id == account_id
+    assert webhook.secret_encrypted != raw_secret
+    assert decrypt_partner_webhook_secret(webhook.secret_encrypted) == raw_secret
+    assert audit is not None
+
+
+async def create_dead_partner_webhook_delivery(account_id: UUID) -> UUID:
+    """Create a dead Partner webhook delivery owned by a Developer account."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            webhook = PartnerWebhook(
+                developer_account_id=account_id,
+                url="https://partners.example.com/auracles/webhooks",
+                secret_encrypted=encrypt_partner_webhook_secret("whsec_retry_test"),
+                events=["purchase.confirmed"],
+                active=True,
+            )
+            session.add(webhook)
+            await session.flush()
+            delivery = PartnerWebhookDelivery(
+                partner_webhook_id=webhook.id,
+                event_type="purchase.confirmed",
+                payload={"event": "purchase.confirmed"},
+                status="dead",
+                attempts=5,
+                response_code=500,
+            )
+            session.add(delivery)
+            await session.flush()
+            return delivery.id
+
+
+async def test_developer_manually_retries_own_dead_webhook_delivery(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Developers can reset and queue their own dead webhook deliveries."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user(
+        "webhook-retry@auracles.space"
+    )
+    delivery_id = await create_dead_partner_webhook_delivery(account_id)
+    queued: list[str] = []
+
+    monkeypatch.setattr(
+        "app.modules.developer.webhooks_service.deliver_partner_webhook.delay",
+        lambda value: queued.append(value),
+    )
+
+    response = await client.post(
+        f"/v1/developer/webhooks/deliveries/{delivery_id}/retry",
+        headers=auth_headers(user_id, ["developer"]),
+    )
+
+    async with async_session_factory() as session:
+        delivery = await session.get(PartnerWebhookDelivery, delivery_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "partner_webhook_retry_queued")
+        )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(delivery_id)
+    assert response.json()["status"] == "pending"
+    assert queued == [str(delivery_id)]
+    assert delivery is not None
+    assert delivery.status == "pending"
+    assert delivery.attempts == 0
+    assert delivery.response_code is None
+    assert audit is not None

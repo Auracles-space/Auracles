@@ -28,6 +28,7 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
+from app.modules.developer import webhooks_service as developer_webhooks_service
 from app.modules.developer.models import (
     DeveloperAccount,
     PartnerCommission,
@@ -192,7 +193,7 @@ async def _mark_event_status(
 async def _handle_purchase_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
-) -> UUID:
+) -> tuple[UUID, list[Callable[[], None]]]:
     """Mark a purchase complete and grant its Framework License."""
     transaction_id = _purchase_transaction_id(event)
     payment_intent_id = _event_object_id(event)
@@ -266,12 +267,12 @@ async def _handle_purchase_succeeded(
             "license_type": license_type,
         },
     )
-    await _create_partner_commission_if_attributed(
+    after_commit_work = await _create_partner_commission_if_attributed(
         db=db,
         transaction=transaction,
         framework_id=framework.id,
     )
-    return transaction.id
+    return transaction.id, after_commit_work
 
 
 async def _create_partner_commission_if_attributed(
@@ -279,7 +280,7 @@ async def _create_partner_commission_if_attributed(
     db: AsyncSession,
     transaction: Transaction,
     framework_id: UUID,
-) -> None:
+) -> list[Callable[[], None]]:
     """Create a pending partner commission when a purchase has attribution."""
     attribution = await db.scalar(
         select(PartnerPurchaseAttribution).where(
@@ -287,7 +288,7 @@ async def _create_partner_commission_if_attributed(
         )
     )
     if attribution is None:
-        return
+        return []
 
     existing_commission = await db.scalar(
         select(PartnerCommission).where(
@@ -295,7 +296,7 @@ async def _create_partner_commission_if_attributed(
         )
     )
     if existing_commission is not None:
-        return
+        return []
 
     developer_account = await db.get(
         DeveloperAccount,
@@ -334,6 +335,28 @@ async def _create_partner_commission_if_attributed(
             "commission_amount": str(commission_amount),
         },
     )
+    delivery_ids = await developer_webhooks_service.enqueue_partner_webhook_deliveries(
+        db,
+        developer_account_id=developer_account.id,
+        event_type="purchase.confirmed",
+        payload={
+            "event": "purchase.confirmed",
+            "commission_id": str(commission.id),
+            "transaction_id": str(transaction.id),
+            "framework_id": str(framework_id),
+            "sale_amount": str(transaction.amount),
+            "currency": transaction.currency,
+            "commission_amount": str(commission_amount),
+            "status": commission.status,
+        },
+    )
+    if not delivery_ids:
+        return []
+    return [
+        lambda delivery_ids=delivery_ids: (
+            developer_webhooks_service.queue_partner_webhook_deliveries(delivery_ids)
+        )
+    ]
 
 
 def _queue_purchase_invoice_generation(transaction_id: UUID) -> None:
@@ -663,9 +686,11 @@ async def _dispatch_verified_event(
     """Dispatch a verified event and return status plus post-commit work."""
     metadata = _event_metadata(event)
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "purchase":
-        invoice_transaction_id = await _handle_purchase_succeeded(db, event)
+        invoice_transaction_id, after_commit_notifications = (
+            await _handle_purchase_succeeded(db, event)
+        )
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", invoice_transaction_id, []
+        return "processed", invoice_transaction_id, after_commit_notifications
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "escrow":
         after_commit_notifications = await _handle_escrow_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")

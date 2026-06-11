@@ -20,6 +20,7 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
 
     assert "app.workers.tasks.developer_beat" in celery_app.conf.include
     assert "app.workers.tasks.developer_payouts" in celery_app.conf.include
+    assert "app.workers.tasks.partner_webhooks" in celery_app.conf.include
     assert celery_app.conf.beat_schedule["clear-partner-commissions-hourly"] == {
         "task": "app.workers.tasks.developer_beat.clear_partner_commissions",
         "schedule": 3600.0,
@@ -27,4 +28,8 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
     assert celery_app.conf.beat_schedule["recompute-partner-tiers-monthly"] == {
         "task": "app.workers.tasks.developer_beat.recompute_partner_tiers",
         "schedule": 2592000.0,
+    }
+    assert celery_app.conf.beat_schedule["retry-partner-webhooks-minutely"] == {
+        "task": "app.workers.tasks.partner_webhooks.retry_due_partner_webhooks",
+        "schedule": 60.0,
     }

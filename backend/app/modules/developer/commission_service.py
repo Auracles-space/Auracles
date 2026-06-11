@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.developer import webhooks_service
 from app.modules.developer.models import (
     DeveloperAccount,
     PartnerCommission,
@@ -56,7 +57,7 @@ class PartnerTier:
     rate: Decimal
 
 
-async def clear_partner_commissions(db: AsyncSession) -> dict[str, int]:
+async def clear_partner_commissions(db: AsyncSession) -> dict[str, object]:
     """Clear mature Partner commissions and void refunded-sale commissions.
 
     Pending commissions become `cleared` only after the 48-hour refund window
@@ -67,6 +68,7 @@ async def clear_partner_commissions(db: AsyncSession) -> dict[str, int]:
     cutoff = now - COMMISSION_CLEARING_DELAY
     cleared_count = 0
     voided_count = 0
+    webhook_delivery_ids: list[str] = []
 
     rows = (
         await db.execute(
@@ -109,8 +111,30 @@ async def clear_partner_commissions(db: AsyncSession) -> dict[str, int]:
                     "cleared_after_hours": 48,
                 },
             )
+            delivery_ids = await webhooks_service.enqueue_partner_webhook_deliveries(
+                db,
+                developer_account_id=commission.developer_account_id,
+                event_type="commission.cleared",
+                payload={
+                    "event": "commission.cleared",
+                    "commission_id": str(commission.id),
+                    "transaction_id": str(transaction.id),
+                    "framework_id": str(commission.framework_id),
+                    "commission_amount": str(commission.commission_amount),
+                    "currency": commission.currency,
+                    "cleared_at": now.isoformat(),
+                    "status": commission.status,
+                },
+            )
+            webhook_delivery_ids.extend(
+                str(delivery_id) for delivery_id in delivery_ids
+            )
 
-    return {"cleared_count": cleared_count, "voided_count": voided_count}
+    return {
+        "cleared_count": cleared_count,
+        "voided_count": voided_count,
+        "webhook_delivery_ids": webhook_delivery_ids,
+    }
 
 
 def _normalise_rate(rate: Decimal) -> Decimal:

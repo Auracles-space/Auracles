@@ -9,7 +9,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
 
-from app.modules.developer.constants import VALID_API_KEY_SCOPES
+from app.modules.developer.constants import (
+    VALID_API_KEY_SCOPES,
+    VALID_PARTNER_WEBHOOK_EVENTS,
+)
 from app.modules.financials.schemas import SelfServeLicenseType
 
 
@@ -156,6 +159,74 @@ class PartnerPayoutsResponse(BaseModel):
     """Response body for Partner payout history."""
 
     payouts: list[PartnerPayoutResponse]
+
+
+class PartnerWebhookCreateRequest(BaseModel):
+    """Request body for registering a Partner outbound webhook endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: HttpUrl
+    events: list[str] = Field(min_length=1, max_length=20)
+
+    @field_validator("url")
+    @classmethod
+    def webhook_url_is_https(cls, value: HttpUrl) -> HttpUrl:
+        """Require HTTPS webhook endpoints before storing Partner URLs."""
+        if value.scheme != "https":
+            raise ValueError("Webhook URL must use https.")
+        return value
+
+    @field_validator("events")
+    @classmethod
+    def events_are_known_and_unique(cls, value: list[str]) -> list[str]:
+        """Reject duplicate or unknown Partner webhook event names."""
+        if len(set(value)) != len(value):
+            raise ValueError("Webhook events must be unique.")
+        unknown = sorted(set(value) - VALID_PARTNER_WEBHOOK_EVENTS)
+        if unknown:
+            raise ValueError(f"Unknown webhook events: {', '.join(unknown)}.")
+        return value
+
+
+class PartnerWebhookResponse(BaseModel):
+    """Partner webhook endpoint metadata without the raw signing secret."""
+
+    id: UUID
+    url: str
+    events: list[str]
+    active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PartnerWebhookCreateResponse(PartnerWebhookResponse):
+    """Webhook creation response that includes the raw secret exactly once."""
+
+    secret: str
+
+
+class PartnerWebhooksResponse(BaseModel):
+    """List response for Partner webhook endpoint metadata."""
+
+    webhooks: list[PartnerWebhookResponse]
+
+
+class PartnerWebhookDeliveryResponse(BaseModel):
+    """Developer-facing outbound webhook delivery state."""
+
+    id: UUID
+    partner_webhook_id: UUID
+    event_type: str
+    status: str
+    attempts: int
+    response_code: int | None
+    last_attempt_at: datetime | None
+    next_attempt_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PartnerFrameworkDetailResponse(BaseModel):

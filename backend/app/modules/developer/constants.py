@@ -9,3 +9,11 @@ VALID_API_KEY_SCOPES = frozenset(
         "purchases:read",
     }
 )
+
+VALID_PARTNER_WEBHOOK_EVENTS = frozenset(
+    {
+        "purchase.confirmed",
+        "commission.cleared",
+        "framework.updated",
+    }
+)

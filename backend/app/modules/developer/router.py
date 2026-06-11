@@ -13,7 +13,12 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_kyc_verified, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.developer import application_service, commission_service, keys_service
+from app.modules.developer import (
+    application_service,
+    commission_service,
+    keys_service,
+    webhooks_service,
+)
 from app.modules.developer.dependencies import require_active_developer_account
 from app.modules.developer.models import DeveloperAccount
 from app.modules.developer.schemas import (
@@ -30,6 +35,11 @@ from app.modules.developer.schemas import (
     PartnerPayoutRequest,
     PartnerPayoutResponse,
     PartnerPayoutsResponse,
+    PartnerWebhookCreateRequest,
+    PartnerWebhookCreateResponse,
+    PartnerWebhookDeliveryResponse,
+    PartnerWebhookResponse,
+    PartnerWebhooksResponse,
 )
 
 router = APIRouter(tags=["Developer"])
@@ -228,6 +238,81 @@ async def list_partner_payouts(
         db,
         developer_account=developer_account,
     )
+
+
+@router.post(
+    "/developer/webhooks",
+    response_model=PartnerWebhookCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_partner_webhook(
+    payload: PartnerWebhookCreateRequest,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> PartnerWebhookCreateResponse:
+    """Register a Partner outbound webhook and return its raw secret once."""
+    webhook, raw_secret = await webhooks_service.create_partner_webhook(
+        db=db,
+        developer_account=developer_account,
+        payload=payload,
+    )
+    return PartnerWebhookCreateResponse(
+        **PartnerWebhookResponse.model_validate(webhook).model_dump(),
+        secret=raw_secret,
+    )
+
+
+@router.get("/developer/webhooks", response_model=PartnerWebhooksResponse)
+async def list_partner_webhooks(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> PartnerWebhooksResponse:
+    """List Partner outbound webhook metadata for the active Developer."""
+    webhooks = await webhooks_service.list_partner_webhooks(
+        db=db,
+        developer_account=developer_account,
+    )
+    return PartnerWebhooksResponse(
+        webhooks=[
+            PartnerWebhookResponse.model_validate(webhook) for webhook in webhooks
+        ]
+    )
+
+
+@router.delete(
+    "/developer/webhooks/{webhook_id}",
+    response_model=PartnerWebhookResponse,
+)
+async def delete_partner_webhook(
+    webhook_id: UUID,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> PartnerWebhookResponse:
+    """Deactivate a Partner webhook endpoint owned by the active Developer."""
+    webhook = await webhooks_service.delete_partner_webhook(
+        db=db,
+        developer_account=developer_account,
+        webhook_id=webhook_id,
+    )
+    return PartnerWebhookResponse.model_validate(webhook)
+
+
+@router.post(
+    "/developer/webhooks/deliveries/{delivery_id}/retry",
+    response_model=PartnerWebhookDeliveryResponse,
+)
+async def retry_partner_webhook_delivery(
+    delivery_id: UUID,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> PartnerWebhookDeliveryResponse:
+    """Manually retry a failed or dead Partner webhook delivery."""
+    delivery = await webhooks_service.retry_partner_webhook_delivery(
+        db=db,
+        developer_account=developer_account,
+        delivery_id=delivery_id,
+    )
+    return PartnerWebhookDeliveryResponse.model_validate(delivery)
 
 
 @router.patch(

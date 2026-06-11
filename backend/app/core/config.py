@@ -17,8 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
 PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
+PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 DEV_SECRET_KEY = "dev-only-change-me"
 PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
 PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
@@ -71,6 +73,10 @@ class Settings(BaseSettings):
     payout_account_encryption_key: SecretStr = Field(
         default=SecretStr(DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY),
         alias="PAYOUT_ACCOUNT_ENCRYPTION_KEY",
+    )
+    partner_webhook_encryption_key: SecretStr = Field(
+        default=SecretStr(DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY),
+        alias="PARTNER_WEBHOOK_ENCRYPTION_KEY",
     )
     cors_allowed_origins: str = Field(
         default="http://localhost:3000",
@@ -185,6 +191,31 @@ class Settings(BaseSettings):
             }
         ):
             raise ValueError("PAYOUT_ACCOUNT_ENCRYPTION_KEY must be set outside local.")
+        return self
+
+    @model_validator(mode="after")
+    def production_partner_webhook_key_is_not_placeholder(self) -> Self:
+        """Reject the dev partner-webhook encryption key outside local environments."""
+        raw_key = self.partner_webhook_encryption_key.get_secret_value()
+        if (
+            self.environment == "local"
+            and raw_key == PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY
+        ):
+            self.partner_webhook_encryption_key = SecretStr(
+                DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY
+            )
+            return self
+        if (
+            self.environment != "local"
+            and raw_key
+            in {
+                DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY,
+                PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY,
+            }
+        ):
+            raise ValueError(
+                "PARTNER_WEBHOOK_ENCRYPTION_KEY must be set outside local."
+            )
         return self
 
     @model_validator(mode="after")

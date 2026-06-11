@@ -102,6 +102,16 @@ def _payout_account_cipher() -> Fernet:
     return Fernet(key)
 
 
+def _partner_webhook_cipher() -> Fernet:
+    """Build the Fernet cipher used for Partner webhook signing secrets."""
+    key = (
+        get_settings()
+        .partner_webhook_encryption_key.get_secret_value()
+        .encode("utf-8")
+    )
+    return Fernet(key)
+
+
 def encrypt_totp_secret(secret: str) -> str:
     """Encrypt a TOTP shared secret before database persistence."""
     return _totp_cipher().encrypt(secret.encode("utf-8")).decode("utf-8")
@@ -138,6 +148,20 @@ def hash_payout_provider_account_id(provider_account_id: str) -> str:
         provider_account_id.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+
+
+def encrypt_partner_webhook_secret(secret: str) -> str:
+    """Encrypt a Partner webhook HMAC secret before database persistence."""
+    return _partner_webhook_cipher().encrypt(secret.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_partner_webhook_secret(encrypted_secret: str) -> str:
+    """Decrypt a stored Partner webhook HMAC secret for outbound signing."""
+    return (
+        _partner_webhook_cipher()
+        .decrypt(encrypted_secret.encode("utf-8"))
+        .decode("utf-8")
+    )
 
 
 def generate_backup_codes(n: int = 10) -> list[str]:

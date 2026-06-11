@@ -11,16 +11,26 @@ from typing import Any
 from loguru import logger
 
 from app.core.database import async_session_factory
-from app.modules.developer import commission_service
+from app.modules.developer import commission_service, webhooks_service
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 
 async def _clear_partner_commissions() -> dict[str, int]:
     """Run Partner commission clearing inside one database transaction."""
+    webhook_delivery_ids: list[str] = []
     async with async_session_factory() as db:
         async with db.begin():
-            return await commission_service.clear_partner_commissions(db)
+            result = await commission_service.clear_partner_commissions(db)
+            webhook_delivery_ids = [
+                str(delivery_id)
+                for delivery_id in result.pop("webhook_delivery_ids", [])
+            ]
+    webhooks_service.queue_partner_webhook_deliveries(webhook_delivery_ids)
+    return {
+        "cleared_count": int(result["cleared_count"]),
+        "voided_count": int(result["voided_count"]),
+    }
 
 
 async def _recompute_partner_tiers() -> dict[str, int]:
