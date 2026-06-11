@@ -68,6 +68,12 @@ LICENSE_STATUS_ENUM = ENUM(
     name="license_status_enum",
     create_type=False,
 )
+LICENSE_SOURCE_ENUM = ENUM(
+    "individual",
+    "collection",
+    name="license_source_enum",
+    create_type=False,
+)
 CHANGE_TYPE_ENUM = ENUM(
     "fix",
     "improvement",
@@ -289,6 +295,7 @@ class License(CreatedAtMixin, Base):
         UniqueConstraint("framework_id", "operator_id", name="uq_licenses_owner"),
         Index("idx_licenses_operator", "operator_id"),
         Index("idx_licenses_framework", "framework_id"),
+        Index("idx_licenses_collection", "collection_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -309,6 +316,16 @@ class License(CreatedAtMixin, Base):
     transaction_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("transactions.id"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(
+        LICENSE_SOURCE_ENUM,
+        nullable=False,
+        server_default="individual",
+    )
+    collection_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("framework_collections.id"),
         nullable=True,
     )
     license_type: Mapped[str] = mapped_column(
