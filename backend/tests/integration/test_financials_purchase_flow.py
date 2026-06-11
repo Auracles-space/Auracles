@@ -19,6 +19,11 @@ from app.core.security import create_access_token, hash_password
 from app.integrations.stripe import StripeProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import (
+    CollectionFramework,
+    CollectionPurchaseSnapshot,
+    FrameworkCollection,
+)
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework, License
@@ -46,8 +51,11 @@ async def reset_purchase_state() -> None:
     """Remove purchase-flow rows in foreign-key-safe order."""
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(CollectionPurchaseSnapshot))
         await session.execute(delete(License))
         await session.execute(delete(Transaction))
+        await session.execute(delete(CollectionFramework))
+        await session.execute(delete(FrameworkCollection))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
@@ -184,6 +192,35 @@ async def create_published_framework(
             return framework.id
 
 
+async def create_published_collection(
+    contributor_id: UUID,
+    *,
+    framework_ids: list[UUID],
+    bundle_price: Decimal = Decimal("600.00"),
+) -> UUID:
+    """Create a published Collection with the supplied member Frameworks."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            collection = FrameworkCollection(
+                contributor_id=contributor_id,
+                title="Risk Operations Bundle",
+                description="A discounted set of risk operations Frameworks.",
+                bundle_price=bundle_price,
+                currency="USD",
+                status="published",
+            )
+            session.add(collection)
+            await session.flush()
+            for framework_id in framework_ids:
+                session.add(
+                    CollectionFramework(
+                        collection_id=collection.id,
+                        framework_id=framework_id,
+                    )
+                )
+            return collection.id
+
+
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -266,6 +303,195 @@ async def test_operator_can_start_stripe_purchase_without_license_grant(
             "idempotency_key": f"purchase:{transaction.id}",
         }
     ]
+
+
+async def test_operator_can_start_collection_purchase_with_member_snapshot(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Collection checkout snapshots all members and mints no new Licenses."""
+    contributor_id = await create_user_with_roles(
+        "collection-purchase-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "collection-purchase-operator@auracles.space",
+        ["operator"],
+    )
+    first_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("400.00"),
+        license_types=["single_user", "team"],
+    )
+    second_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("500.00"),
+        license_types=["single_user", "team"],
+    )
+    collection_id = await create_published_collection(
+        contributor_id,
+        framework_ids=[first_framework_id, second_framework_id],
+        bundle_price=Decimal("700.00"),
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                License(
+                    framework_id=first_framework_id,
+                    operator_id=operator_id,
+                    license_type="team",
+                    status="active",
+                    version_at_grant="1.0.0",
+                )
+            )
+
+    response = await client.post(
+        f"/v1/financials/collections/{collection_id}/purchase",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    async with async_session_factory() as session:
+        operator = await session.get(User, operator_id)
+        transaction = await session.scalar(
+            select(Transaction).where(Transaction.ref_type == "collection")
+        )
+        snapshots = (
+            (
+                await session.execute(
+                    select(CollectionPurchaseSnapshot).order_by(
+                        CollectionPurchaseSnapshot.framework_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        licenses = (
+            (
+                await session.execute(
+                    select(License).where(License.operator_id == operator_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "collection_purchase_initiated")
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "stripe"
+    assert body["client_secret"] == "pi_secret_123"
+    assert UUID(body["transaction_id"])
+    assert operator is not None
+    assert operator.stripe_customer_id == "cus_purchase_123"
+    assert transaction is not None
+    assert transaction.id == UUID(body["transaction_id"])
+    assert transaction.payer_id == operator_id
+    assert transaction.payee_id == contributor_id
+    assert transaction.amount == Decimal("700.00")
+    assert transaction.transaction_type == "purchase"
+    assert transaction.status == "pending"
+    assert transaction.provider == "stripe"
+    assert transaction.provider_ref == "pi_purchase_123"
+    assert transaction.ref_id == collection_id
+    assert transaction.ref_type == "collection"
+    assert len(snapshots) == 2
+    assert {snapshot.framework_id for snapshot in snapshots} == {
+        first_framework_id,
+        second_framework_id,
+    }
+    assert {
+        snapshot.framework_id: snapshot.already_owned for snapshot in snapshots
+    } == {first_framework_id: True, second_framework_id: False}
+    assert {license_row.framework_id for license_row in licenses} == {
+        first_framework_id
+    }
+    assert audit is not None
+    assert audit.target_id == transaction.id
+    assert audit.metadata_["collection_id"] == str(collection_id)
+    assert audit.metadata_["missing_member_count"] == 1
+    assert purchase_context["payment_intents"] == [
+        {
+            "customer_id": "cus_purchase_123",
+            "amount": Decimal("700.00"),
+            "currency": "USD",
+            "metadata": {
+                "kind": "collection",
+                "transaction_id": str(transaction.id),
+                "collection_id": str(collection_id),
+            },
+            "idempotency_key": f"collection_purchase:{transaction.id}",
+        }
+    ]
+
+
+async def test_collection_purchase_rejects_invalid_or_fully_owned_bundle(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Collection checkout revalidates bundle rules before charging."""
+    del purchase_context
+    contributor_id = await create_user_with_roles(
+        "collection-reject-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "collection-reject-operator@auracles.space",
+        ["operator"],
+    )
+    first_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("400.00"),
+        license_types=["single_user"],
+    )
+    second_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("500.00"),
+        license_types=["single_user"],
+    )
+    collection_id = await create_published_collection(
+        contributor_id,
+        framework_ids=[first_framework_id, second_framework_id],
+        bundle_price=Decimal("700.00"),
+    )
+
+    self_purchase = await client.post(
+        f"/v1/financials/collections/{collection_id}/purchase",
+        headers=auth_headers(contributor_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+    unsupported_license = await client.post(
+        f"/v1/financials/collections/{collection_id}/purchase",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            for framework_id in [first_framework_id, second_framework_id]:
+                session.add(
+                    License(
+                        framework_id=framework_id,
+                        operator_id=operator_id,
+                        license_type="single_user",
+                        status="active",
+                        version_at_grant="1.0.0",
+                    )
+                )
+    fully_owned = await client.post(
+        f"/v1/financials/collections/{collection_id}/purchase",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert self_purchase.status_code == 409
+    assert unsupported_license.status_code == 422
+    assert fully_owned.status_code == 409
+    assert fully_owned.json()["detail"] == "Collection is already fully licensed."
 
 
 async def test_purchase_rejects_non_self_serve_and_unavailable_frameworks(

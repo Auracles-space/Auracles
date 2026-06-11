@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_kyc_verified, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
+from app.modules.collections import service as collections_service
 from app.modules.financials import service
 from app.modules.financials.schemas import (
     EarningsResponse,
@@ -115,6 +116,22 @@ async def create_framework_purchase(
         db=db,
         operator=operator,
         framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@router.post("/collections/{collection_id}/purchase", response_model=PurchaseResponse)
+async def create_collection_purchase(
+    collection_id: UUID,
+    payload: PurchaseRequest,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> PurchaseResponse:
+    """Start Stripe checkout for a published Collection bundle."""
+    return await collections_service.create_collection_purchase(
+        db=db,
+        operator=operator,
+        collection_id=collection_id,
         payload=payload,
     )
 
