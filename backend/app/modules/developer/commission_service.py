@@ -13,19 +13,32 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from loguru import logger
+from redis.asyncio import Redis
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.modules.developer.models import DeveloperAccount, PartnerCommission
+from app.modules.auth import service as auth_service
+from app.modules.auth.models import User
+from app.modules.developer.models import (
+    DeveloperAccount,
+    PartnerCommission,
+    PartnerPayout,
+)
 from app.modules.developer.schemas import (
     DeveloperTierProgressResponse,
+    PartnerPayoutRequest,
+    PartnerPayoutResponse,
+    PartnerPayoutsResponse,
     PartnerTierResponse,
 )
-from app.modules.financials.models import PlatformConfig, Transaction
+from app.modules.financials.models import PayoutAccount, PlatformConfig, Transaction
+from app.workers.tasks.developer_payouts import process_partner_payout
 
 COMMISSION_CLEARING_DELAY = timedelta(hours=48)
 TIER_RECOMPUTE_WINDOW = timedelta(days=30)
+PARTNER_PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
 DEFAULT_PARTNER_TIER_THRESHOLDS = {
     "1": {"min": 0, "max": 99, "rate": "0.0500"},
     "2": {"min": 100, "max": 499, "rate": "0.0800"},
@@ -103,6 +116,11 @@ async def clear_partner_commissions(db: AsyncSession) -> dict[str, int]:
 def _normalise_rate(rate: Decimal) -> Decimal:
     """Return a four-decimal commission rate."""
     return rate.quantize(Decimal("0.0001"))
+
+
+def _normalise_money(amount: Decimal) -> Decimal:
+    """Return a two-decimal money value for Partner payout calculations."""
+    return amount.quantize(Decimal("0.01"))
 
 
 def _parse_decimal(value: object, *, field_name: str) -> Decimal:
@@ -349,4 +367,252 @@ async def get_tier_progress(
             )
             for tier in sorted_tiers
         ],
+    )
+
+
+async def _partner_minimum_payout(db: AsyncSession, currency: str) -> Decimal:
+    """Return the configured Partner minimum payout for a currency."""
+    if currency.upper() != "USD":
+        return Decimal("0.00")
+    configured = await db.scalar(
+        select(PlatformConfig.value).where(
+            PlatformConfig.key == "partner_min_payout_usd"
+        )
+    )
+    if configured is None:
+        return Decimal("50.00")
+    try:
+        return _normalise_money(Decimal(configured))
+    except InvalidOperation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="partner_min_payout_usd configuration is invalid.",
+        ) from exc
+
+
+async def _lock_developer_commissions(
+    db: AsyncSession,
+    *,
+    developer_account_id: UUID,
+) -> None:
+    """Serialize Partner payout balance mutations for one Developer account."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"partner-payout:{developer_account_id}"},
+    )
+
+
+async def partner_available_balance(
+    db: AsyncSession,
+    *,
+    developer_account_id: UUID,
+    currency: str,
+) -> Decimal:
+    """Return cleared Partner commission balance not already claimed."""
+    cleared = await db.scalar(
+        select(func.coalesce(func.sum(PartnerCommission.commission_amount), 0)).where(
+            PartnerCommission.developer_account_id == developer_account_id,
+            PartnerCommission.currency == currency,
+            PartnerCommission.status == "cleared",
+            PartnerCommission.payout_id.is_(None),
+        )
+    )
+    claimed = await db.scalar(
+        select(func.coalesce(func.sum(PartnerPayout.amount), 0)).where(
+            PartnerPayout.developer_account_id == developer_account_id,
+            PartnerPayout.currency == currency,
+            PartnerPayout.status.in_(PARTNER_PAYOUT_CLAIM_STATUSES),
+        )
+    )
+    # Most claims are represented by commission.payout_id, but subtracting
+    # payout rows preserves safety if older rows predate that link.
+    return max(
+        _normalise_money(Decimal(cleared or "0") - Decimal(claimed or "0")),
+        Decimal("0.00"),
+    )
+
+
+def _partner_payout_response(payout: PartnerPayout) -> PartnerPayoutResponse:
+    """Map a Partner payout row into the API response schema."""
+    return PartnerPayoutResponse(
+        id=payout.id,
+        payout_account_id=payout.payout_account_id,
+        amount=payout.amount,
+        currency=payout.currency,
+        status=payout.status,
+        provider_ref=payout.provider_ref,
+        initiated_at=payout.initiated_at,
+        completed_at=payout.completed_at,
+    )
+
+
+async def request_partner_payout(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    developer_account: DeveloperAccount,
+    user: User,
+    payload: PartnerPayoutRequest,
+) -> PartnerPayoutResponse:
+    """Create a pending Partner payout from cleared commission balance."""
+    developer_account_id = developer_account.id
+    user_id = user.id
+    currency = payload.currency.upper()
+    if currency != "USD":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only USD Partner payouts are supported.",
+        )
+
+    requested_amount = _normalise_money(payload.amount)
+    minimum = await _partner_minimum_payout(db, currency)
+    if requested_amount < minimum:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Minimum Partner payout is ${minimum}.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await _lock_developer_commissions(
+            db,
+            developer_account_id=developer_account_id,
+        )
+        payout_account = await db.scalar(
+            select(PayoutAccount)
+            .where(
+                PayoutAccount.id == payload.payout_account_id,
+                PayoutAccount.user_id == user_id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if payout_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payout account not found.",
+            )
+        if payout_account.verified_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payout account is not verified.",
+            )
+
+        available = await partner_available_balance(
+            db,
+            developer_account_id=developer_account_id,
+            currency=currency,
+        )
+        if requested_amount != available:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Partner payout amount must equal available balance.",
+            )
+
+        developer_user = await db.get(User, user_id, with_for_update=True)
+        if developer_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=developer_user,
+            code=payload.totp_code,
+        )
+
+        commissions = (
+            (
+                await db.execute(
+                    select(PartnerCommission)
+                    .where(
+                        PartnerCommission.developer_account_id
+                        == developer_account_id,
+                        PartnerCommission.currency == currency,
+                        PartnerCommission.status == "cleared",
+                        PartnerCommission.payout_id.is_(None),
+                    )
+                    .order_by(PartnerCommission.cleared_at, PartnerCommission.id)
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        commission_total = _normalise_money(
+            sum(
+                (commission.commission_amount for commission in commissions),
+                Decimal("0.00"),
+            )
+        )
+        if commission_total != requested_amount:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Partner payout balance changed. Please retry.",
+            )
+
+        payout = PartnerPayout(
+            developer_account_id=developer_account_id,
+            payout_account_id=payload.payout_account_id,
+            amount=requested_amount,
+            currency=currency,
+            status="pending",
+        )
+        db.add(payout)
+        await db.flush()
+        for commission in commissions:
+            commission.payout_id = payout.id
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="partner_payout_requested",
+            target_type="partner_payout",
+            target_id=payout.id,
+            metadata={
+                "currency": currency,
+                "amount": str(requested_amount),
+                "commission_count": len(commissions),
+            },
+        )
+
+    try:
+        process_partner_payout.delay(str(payout.id))
+    except Exception as exc:
+        logger.bind(
+            module="developer",
+            action="request_partner_payout",
+            user_id=user_id,
+            payout_id=payout.id,
+        ).error("partner_payout_task_dispatch_failed", error=str(exc))
+
+    logger.bind(
+        module="developer",
+        action="request_partner_payout",
+        user_id=user_id,
+        payout_id=payout.id,
+    ).info("partner_payout_requested")
+    return _partner_payout_response(payout)
+
+
+async def list_partner_payouts(
+    db: AsyncSession,
+    *,
+    developer_account: DeveloperAccount,
+) -> PartnerPayoutsResponse:
+    """List Partner payout history for one Developer account."""
+    rows = (
+        (
+            await db.execute(
+                select(PartnerPayout)
+                .where(PartnerPayout.developer_account_id == developer_account.id)
+                .order_by(PartnerPayout.initiated_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return PartnerPayoutsResponse(
+        payouts=[_partner_payout_response(payout) for payout in rows]
     )

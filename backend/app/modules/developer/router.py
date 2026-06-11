@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_user, require_kyc_verified, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.developer import application_service, commission_service, keys_service
@@ -27,6 +27,9 @@ from app.modules.developer.schemas import (
     DeveloperApplicationReviewRequest,
     DeveloperApplicationsResponse,
     DeveloperTierProgressResponse,
+    PartnerPayoutRequest,
+    PartnerPayoutResponse,
+    PartnerPayoutsResponse,
 )
 
 router = APIRouter(tags=["Developer"])
@@ -34,6 +37,7 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 ActiveDeveloperAccount = Annotated[
     DeveloperAccount,
     Depends(require_active_developer_account),
@@ -190,6 +194,37 @@ async def get_developer_tier_progress(
 ) -> DeveloperTierProgressResponse:
     """Return Partner commission tier and next-tier progress."""
     return await commission_service.get_tier_progress(
+        db,
+        developer_account=developer_account,
+    )
+
+
+@router.post("/developer/payouts", response_model=PartnerPayoutResponse)
+async def request_partner_payout(
+    payload: PartnerPayoutRequest,
+    user: CurrentUser,
+    _: KycVerifiedUser,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> PartnerPayoutResponse:
+    """Request withdrawal of cleared Partner commission balance."""
+    return await commission_service.request_partner_payout(
+        db,
+        redis,
+        developer_account=developer_account,
+        user=user,
+        payload=payload,
+    )
+
+
+@router.get("/developer/payouts", response_model=PartnerPayoutsResponse)
+async def list_partner_payouts(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> PartnerPayoutsResponse:
+    """List Partner payout history for the active Developer account."""
+    return await commission_service.list_partner_payouts(
         db,
         developer_account=developer_account,
     )

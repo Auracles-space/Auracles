@@ -27,6 +27,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.attestation_pdf",
             "app.workers.tasks.attestation_upload_scan",
             "app.workers.tasks.developer_beat",
+            "app.workers.tasks.developer_payouts",
             "app.workers.tasks.financials",
             "app.workers.tasks.notifications",
             "app.workers.tasks.payouts",

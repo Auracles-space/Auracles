@@ -126,6 +126,38 @@ class DeveloperTierProgressResponse(BaseModel):
     tiers: list[PartnerTierResponse]
 
 
+class PartnerPayoutRequest(BaseModel):
+    """Request body for withdrawing cleared Partner commissions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    payout_account_id: UUID
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class PartnerPayoutResponse(BaseModel):
+    """Developer-facing Partner payout request and processing status."""
+
+    id: UUID
+    payout_account_id: UUID
+    amount: Decimal
+    currency: str
+    status: str
+    provider_ref: str | None
+    initiated_at: datetime
+    completed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PartnerPayoutsResponse(BaseModel):
+    """Response body for Partner payout history."""
+
+    payouts: list[PartnerPayoutResponse]
+
+
 class PartnerFrameworkDetailResponse(BaseModel):
     """Partner-safe public Framework detail without full artifact inventory."""
 

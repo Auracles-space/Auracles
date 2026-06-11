@@ -19,6 +19,7 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
     celery_app = create_celery_app(settings)
 
     assert "app.workers.tasks.developer_beat" in celery_app.conf.include
+    assert "app.workers.tasks.developer_payouts" in celery_app.conf.include
     assert celery_app.conf.beat_schedule["clear-partner-commissions-hourly"] == {
         "task": "app.workers.tasks.developer_beat.clear_partner_commissions",
         "schedule": 3600.0,
