@@ -47,6 +47,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.projects_beat",
             "app.workers.tasks.reputation",
             "app.workers.tasks.scheduled",
+            "app.workers.tasks.saved_searches_beat",
             "app.workers.tasks.workspace_scan",
         ],
     )

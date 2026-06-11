@@ -17,6 +17,10 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.partner_webhooks.retry_due_partner_webhooks",
         "schedule": 60.0,
     },
+    "dispatch-saved-search-alerts-daily": {
+        "task": "app.workers.tasks.saved_searches_beat.dispatch_saved_search_alerts",
+        "schedule": 86400.0,
+    },
     "expire-open-proposals-hourly": {
         "task": "app.workers.tasks.projects_beat.expire_open_proposals",
         "schedule": 3600.0,

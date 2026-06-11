@@ -129,6 +129,41 @@ def send_project_notification_email(
     log.info("task_completed")
 
 
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def send_saved_search_alert_email(
+    self: Any,
+    *,
+    email: str,
+    saved_search_name: str,
+    matches: list[dict[str, str]],
+    link: str | None = None,
+) -> None:
+    """Send a saved-search digest email through the generic notification template."""
+    log = logger.bind(
+        module="notifications",
+        action="send_saved_search_alert_email",
+        task_id=self.request.id,
+    )
+    log.info("task_started", match_count=len(matches))
+    try:
+        match_lines = "\n".join(
+            f"- {match['title']}: {match['link']}" for match in matches
+        )
+        send_project_notification_via_resend(
+            email=email,
+            title=f"New Auracles matches for {saved_search_name}",
+            body=(
+                "New Frameworks match your saved search.\n"
+                f"\nSaved search: {saved_search_name}\n{match_lines}"
+            ),
+            link=link,
+        )
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed")
+
+
 async def _notify_licensees_of_new_version_impl(
     framework_id: str,
     new_version: str,
