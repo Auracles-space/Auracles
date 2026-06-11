@@ -16,6 +16,12 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import (
+    CollectionEarningAllocation,
+    CollectionFramework,
+    CollectionPurchaseSnapshot,
+    FrameworkCollection,
+)
 from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
@@ -44,6 +50,8 @@ async def reset_refund_state() -> None:
         await session.execute(delete(AuditLog))
         await session.execute(delete(ArtifactDownload))
         await session.execute(delete(Artifact))
+        await session.execute(delete(CollectionEarningAllocation))
+        await session.execute(delete(CollectionPurchaseSnapshot))
         await session.execute(delete(License))
         await session.execute(delete(PartnerCommission))
         await session.execute(delete(Payout))
@@ -52,6 +60,8 @@ async def reset_refund_state() -> None:
         await session.execute(delete(DeveloperAccount))
         await session.execute(delete(DeveloperApplication))
         await session.execute(delete(Transaction))
+        await session.execute(delete(CollectionFramework))
+        await session.execute(delete(FrameworkCollection))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
@@ -205,6 +215,139 @@ async def create_completed_purchase(
             return transaction.id, license_row.id
 
 
+async def create_completed_collection_purchase(
+    operator_id: UUID,
+    *,
+    with_download: bool = False,
+) -> tuple[UUID, list[UUID], list[UUID]]:
+    """Create a completed collection purchase with two minted member licenses."""
+    contributor_id = await create_user_with_roles(
+        f"refund-collection-contributor-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            frameworks: list[Framework] = []
+            for index, price in enumerate((Decimal("400.00"), Decimal("500.00"))):
+                framework = Framework(
+                    contributor_id=contributor_id,
+                    title=f"Refundable Collection Member {index + 1}",
+                    description="Framework used by collection refund tests.",
+                    status="published",
+                    category="operations",
+                    sector="technology",
+                    industry="software",
+                    business_function="revenue_operations",
+                    tags=["refund", "collection"],
+                    price=price,
+                    currency="USD",
+                    license_types=["single_user", "team"],
+                    published_at=datetime.now(UTC),
+                )
+                session.add(framework)
+                frameworks.append(framework)
+            await session.flush()
+
+            collection = FrameworkCollection(
+                contributor_id=contributor_id,
+                title="Refundable Collection",
+                description="A collection used by refund tests.",
+                bundle_price=Decimal("700.00"),
+                currency="USD",
+                status="published",
+            )
+            session.add(collection)
+            await session.flush()
+            for framework in frameworks:
+                session.add(
+                    CollectionFramework(
+                        collection_id=collection.id,
+                        framework_id=framework.id,
+                    )
+                )
+
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("700.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("700.00"),
+                transaction_type="purchase",
+                status="completed",
+                provider="stripe",
+                provider_ref="pi_collection_refund_123",
+                ref_id=collection.id,
+                ref_type="collection",
+            )
+            session.add(transaction)
+            await session.flush()
+
+            license_ids: list[UUID] = []
+            framework_ids: list[UUID] = []
+            for framework in frameworks:
+                session.add(
+                    CollectionPurchaseSnapshot(
+                        transaction_id=transaction.id,
+                        collection_id=collection.id,
+                        framework_id=framework.id,
+                        list_price_at_purchase=framework.price,
+                        license_type="team",
+                        already_owned=False,
+                    )
+                )
+                license_row = License(
+                    framework_id=framework.id,
+                    operator_id=operator_id,
+                    transaction_id=transaction.id,
+                    source="collection",
+                    collection_id=collection.id,
+                    license_type="team",
+                    status="active",
+                    version_at_grant=framework.version,
+                    seats_used=1,
+                    seats_total=10,
+                )
+                session.add(license_row)
+                await session.flush()
+                session.add(
+                    CollectionEarningAllocation(
+                        transaction_id=transaction.id,
+                        collection_id=collection.id,
+                        framework_id=framework.id,
+                        allocated_amount=Decimal("350.00"),
+                    )
+                )
+                license_ids.append(license_row.id)
+                framework_ids.append(framework.id)
+
+            if with_download:
+                artifact = Artifact(
+                    framework_id=frameworks[0].id,
+                    name="downloaded-collection.pdf",
+                    file_key=(
+                        f"frameworks/{frameworks[0].id}/artifacts/"
+                        "downloaded-collection.pdf"
+                    ),
+                    file_size=1024,
+                    mime_type="application/pdf",
+                    scan_status="clean",
+                    processing_status="processed",
+                    current_for_framework=True,
+                )
+                session.add(artifact)
+                await session.flush()
+                session.add(
+                    ArtifactDownload(
+                        license_id=license_ids[0],
+                        artifact_id=artifact.id,
+                        user_id=operator_id,
+                        ip_address="127.0.0.1",
+                    )
+                )
+            return transaction.id, license_ids, framework_ids
+
+
 async def create_pending_partner_commission(
     *,
     transaction_id: UUID,
@@ -352,6 +495,108 @@ async def test_refund_voids_pending_partner_commission(
     assert audit is not None
     assert audit.target_id == commission_id
     assert audit.metadata_["transaction_id"] == str(transaction_id)
+
+
+async def test_operator_can_refund_completed_collection_purchase(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+) -> None:
+    """Eligible collection refunds revoke all minted licenses and allocations."""
+    operator_id = await create_user_with_roles(
+        "refund-collection-operator@auracles.space",
+        ["operator"],
+    )
+    transaction_id, license_ids, framework_ids = (
+        await create_completed_collection_purchase(operator_id)
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        licenses = (
+            await session.execute(
+                select(License).where(License.id.in_(license_ids)).order_by(License.id)
+            )
+        ).scalars().all()
+        allocations = (
+            await session.execute(
+                select(CollectionEarningAllocation)
+                .where(
+                    CollectionEarningAllocation.transaction_id == transaction_id,
+                )
+                .order_by(CollectionEarningAllocation.framework_id)
+            )
+        ).scalars().all()
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "collection_refunded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "transaction_id": str(transaction_id),
+        "provider": "stripe",
+        "refund_id": "re_refund_123",
+        "status": "refunded",
+    }
+    assert refund_context["refunds"] == [
+        {
+            "payment_intent_id": "pi_collection_refund_123",
+            "amount": Decimal("700.00"),
+            "currency": "USD",
+            "idempotency_key": f"refund:{transaction_id}",
+        }
+    ]
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert {license_row.status for license_row in licenses} == {"revoked"}
+    assert len(licenses) == 2
+    assert allocations == []
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert audit.metadata_["license_ids"] == [
+        str(license_id) for license_id in license_ids
+    ]
+    assert audit.metadata_["framework_ids"] == [
+        str(framework_id) for framework_id in framework_ids
+    ]
+
+
+async def test_collection_refund_rejects_when_any_member_was_downloaded(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+) -> None:
+    """Collection refunds are all-or-nothing once any minted member is used."""
+    operator_id = await create_user_with_roles(
+        "refund-downloaded-collection@auracles.space",
+        ["operator"],
+    )
+    transaction_id, license_ids, _framework_ids = (
+        await create_completed_collection_purchase(operator_id, with_download=True)
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        licenses = (
+            await session.execute(select(License).where(License.id.in_(license_ids)))
+        ).scalars().all()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Purchases with artifact downloads cannot be refunded."
+    )
+    assert refund_context["refunds"] == []
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert {license_row.status for license_row in licenses} == {"active"}
 
 
 async def test_refund_rejects_downloaded_or_expired_purchases(

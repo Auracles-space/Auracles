@@ -25,6 +25,7 @@ from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
 from app.modules.financials.invoices import purchase_invoice_key
 from app.modules.financials.models import (
@@ -933,6 +934,95 @@ async def _load_refundable_purchase(
     return transaction, license_row
 
 
+async def _count_collection_license_downloads(
+    db: AsyncSession,
+    *,
+    license_ids: list[UUID],
+) -> int:
+    """Return artifact download count across all minted Collection licenses."""
+    if not license_ids:
+        return 0
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(ArtifactDownload)
+            .where(ArtifactDownload.license_id.in_(license_ids))
+        )
+        or 0
+    )
+
+
+async def _load_refundable_collection_purchase(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    transaction: Transaction,
+) -> list[License]:
+    """Load and validate a collection purchase for all-or-nothing refund."""
+    if transaction.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only completed purchases can be refunded.",
+        )
+    if transaction.provider != "stripe" or transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Purchase is missing refundable provider metadata.",
+        )
+    if transaction.ref_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Collection purchase is missing collection metadata.",
+        )
+
+    refund_window_hours = await _refund_window_hours(db)
+    if datetime.now(UTC) - transaction.created_at > timedelta(
+        hours=refund_window_hours
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Refund window has expired.",
+        )
+
+    licenses = list(
+        (
+            await db.execute(
+                select(License)
+                .where(
+                    License.transaction_id == transaction.id,
+                    License.operator_id == operator_id,
+                    License.status == "active",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not licenses:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active collection purchase licenses not found.",
+        )
+    if any(
+        license_row.source != "collection"
+        or license_row.collection_id != transaction.ref_id
+        for license_row in licenses
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Collection purchase licenses are inconsistent.",
+        )
+
+    license_ids = [license_row.id for license_row in licenses]
+    if await _count_collection_license_downloads(db, license_ids=license_ids) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Purchases with artifact downloads cannot be refunded.",
+        )
+    return licenses
+
+
 async def _void_partner_commission_for_refund(
     db: AsyncSession,
     *,
@@ -975,11 +1065,117 @@ async def refund_framework_purchase(
     *,
     transaction_id: UUID,
 ) -> RefundResponse:
-    """Refund an eligible Framework purchase and revoke its License."""
+    """Refund an eligible Framework or Collection purchase."""
     operator_id = operator.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        collection_transaction = await db.scalar(
+            select(Transaction)
+            .where(
+                Transaction.id == transaction_id,
+                Transaction.payer_id == operator_id,
+                Transaction.transaction_type == "purchase",
+                Transaction.ref_type == "collection",
+            )
+            .with_for_update()
+        )
+        if collection_transaction is not None:
+            licenses = await _load_refundable_collection_purchase(
+                db=db,
+                operator_id=operator_id,
+                transaction=collection_transaction,
+            )
+            assert collection_transaction.provider_ref is not None
+            try:
+                refund = await stripe.create_refund(
+                    payment_intent_id=collection_transaction.provider_ref,
+                    amount=_normalise_money(collection_transaction.amount),
+                    currency=collection_transaction.currency.upper(),
+                    idempotency_key=f"refund:{transaction_id}",
+                )
+            except StripeProviderError as exc:
+                logger.bind(
+                    module="financials",
+                    action="refund_collection_purchase",
+                    user_id=operator_id,
+                    transaction_id=transaction_id,
+                ).error("stripe_refund_failed", error=str(exc))
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Payment provider is unavailable.",
+                ) from exc
+
+            license_ids = [license_row.id for license_row in licenses]
+            if (
+                await _count_collection_license_downloads(
+                    db,
+                    license_ids=license_ids,
+                )
+                > 0
+            ):
+                logger.bind(
+                    module="financials",
+                    action="refund_collection_purchase",
+                    user_id=operator_id,
+                    transaction_id=transaction_id,
+                ).critical("refund_download_race_after_provider_refund")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Refund provider call completed but a download was "
+                        "recorded."
+                    ),
+                )
+
+            collection_transaction.status = "refunded"
+            for license_row in licenses:
+                license_row.status = "revoked"
+            allocations = list(
+                (
+                    await db.execute(
+                        select(CollectionEarningAllocation)
+                        .where(
+                            CollectionEarningAllocation.transaction_id
+                            == collection_transaction.id
+                        )
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for allocation in allocations:
+                await db.delete(allocation)
+            await write_audit(
+                db=db,
+                actor_id=operator_id,
+                action="collection_refunded",
+                target_type="transaction",
+                target_id=collection_transaction.id,
+                metadata={
+                    "provider": "stripe",
+                    "refund_ref": _masked_provider_ref(refund.id),
+                    "collection_id": str(collection_transaction.ref_id),
+                    "license_ids": [str(license_id) for license_id in license_ids],
+                    "framework_ids": [
+                        str(license_row.framework_id) for license_row in licenses
+                    ],
+                },
+            )
+            logger.bind(
+                module="financials",
+                action="refund_collection_purchase",
+                user_id=operator_id,
+                transaction_id=transaction_id,
+            ).info("collection_refunded")
+            return RefundResponse(
+                transaction_id=transaction_id,
+                provider="stripe",
+                refund_id=refund.id,
+                status="refunded",
+            )
+
         transaction, license_row = await _load_refundable_purchase(
             db=db,
             operator_id=operator_id,

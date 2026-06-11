@@ -145,7 +145,7 @@ async def refund_framework_purchase(
     operator: OperatorUser,
     db: DatabaseSession,
 ) -> RefundResponse:
-    """Refund an eligible completed Framework purchase for the Operator."""
+    """Refund an eligible completed Framework or Collection purchase."""
     return await service.refund_framework_purchase(
         db=db,
         operator=operator,
