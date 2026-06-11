@@ -105,6 +105,27 @@ class ApiKeysResponse(BaseModel):
     api_keys: list[ApiKeyResponse]
 
 
+class PartnerTierResponse(BaseModel):
+    """Configured Partner tier range and commission rate."""
+
+    tier: int
+    min_sales: int
+    max_sales: int | None
+    rate: Decimal
+
+
+class DeveloperTierProgressResponse(BaseModel):
+    """Developer-facing current commission tier and next-tier progress."""
+
+    current_tier: int
+    current_rate: Decimal
+    prior_30d_sales_count: int
+    next_tier: int | None
+    next_tier_sales_required: int | None
+    tier_recalculated_at: datetime | None
+    tiers: list[PartnerTierResponse]
+
+
 class PartnerFrameworkDetailResponse(BaseModel):
     """Partner-safe public Framework detail without full artifact inventory."""
 

@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.developer import application_service, keys_service
+from app.modules.developer import application_service, commission_service, keys_service
 from app.modules.developer.dependencies import require_active_developer_account
 from app.modules.developer.models import DeveloperAccount
 from app.modules.developer.schemas import (
@@ -26,6 +26,7 @@ from app.modules.developer.schemas import (
     DeveloperApplicationResponse,
     DeveloperApplicationReviewRequest,
     DeveloperApplicationsResponse,
+    DeveloperTierProgressResponse,
 )
 
 router = APIRouter(tags=["Developer"])
@@ -179,6 +180,18 @@ async def list_api_keys(
     )
     return ApiKeysResponse(
         api_keys=[ApiKeyResponse.model_validate(api_key) for api_key in api_keys]
+    )
+
+
+@router.get("/developer/tier", response_model=DeveloperTierProgressResponse)
+async def get_developer_tier_progress(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> DeveloperTierProgressResponse:
+    """Return Partner commission tier and next-tier progress."""
+    return await commission_service.get_tier_progress(
+        db,
+        developer_account=developer_account,
     )
 
 

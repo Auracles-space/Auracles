@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 import pyotp
 import pytest
@@ -19,7 +20,14 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
-from app.modules.developer.models import ApiKey, DeveloperAccount, DeveloperApplication
+from app.modules.developer.models import (
+    ApiKey,
+    DeveloperAccount,
+    DeveloperApplication,
+    PartnerCommission,
+)
+from app.modules.financials.models import Transaction
+from app.modules.frameworks.models import Framework
 from app.shared.models.audit_log import AuditLog
 
 
@@ -82,10 +90,13 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
     await engine.dispose()
     async with async_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(PartnerCommission))
             await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
             await session.execute(delete(DeveloperApplication))
             await session.execute(delete(AuditLog))
+            await session.execute(delete(Transaction))
+            await session.execute(delete(Framework))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
 
@@ -96,10 +107,13 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
         app.dependency_overrides.pop(get_redis, None)
         async with async_session_factory() as session:
             async with session.begin():
+                await session.execute(delete(PartnerCommission))
                 await session.execute(delete(ApiKey))
                 await session.execute(delete(DeveloperAccount))
                 await session.execute(delete(DeveloperApplication))
                 await session.execute(delete(AuditLog))
+                await session.execute(delete(Transaction))
+                await session.execute(delete(Framework))
                 await session.execute(delete(UserRole))
                 await session.execute(delete(User))
         await engine.dispose()
@@ -190,6 +204,74 @@ async def create_developer_user(email: str) -> tuple[UUID, UUID]:
             session.add(account)
             await session.flush()
             return user.id, account.id
+
+
+async def create_recent_partner_sales(account_id: UUID, count: int) -> None:
+    """Create recent non-voided Partner commission rows for tier progress."""
+    contributor_id = await create_user(
+        f"tier-progress-contributor-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user(
+        f"tier-progress-operator-{uuid4()}@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            api_key = ApiKey(
+                developer_account_id=account_id,
+                name="Tier progress key",
+                key_prefix="ak_tierprog",
+                key_hash=f"tier-progress-hash-{uuid4()}",
+                scopes=["purchase:write"],
+            )
+            session.add(api_key)
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Tier Progress Framework",
+                description="Framework used by Developer tier endpoint tests.",
+                status="published",
+                category="operations",
+                tags=["tier"],
+                tags_text="tier",
+                price=Decimal("100.00"),
+                currency="USD",
+                license_types=["team"],
+            )
+            session.add(framework)
+            await session.flush()
+            for index in range(count):
+                transaction = Transaction(
+                    payer_id=operator_id,
+                    payee_id=contributor_id,
+                    amount=Decimal("100.00"),
+                    currency="USD",
+                    platform_commission=Decimal("0.00"),
+                    net_amount=Decimal("100.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    provider="stripe",
+                    provider_ref=f"pi_tier_progress_{index}_{uuid4()}",
+                    ref_id=framework.id,
+                    ref_type="framework",
+                )
+                session.add(transaction)
+                await session.flush()
+                session.add(
+                    PartnerCommission(
+                        api_key_id=api_key.id,
+                        developer_account_id=account_id,
+                        transaction_id=transaction.id,
+                        framework_id=framework.id,
+                        sale_amount=Decimal("100.00"),
+                        currency="USD",
+                        tier_at_sale=1,
+                        tier_rate=Decimal("0.0500"),
+                        commission_amount=Decimal("5.00"),
+                        status="cleared",
+                        created_at=datetime.now(UTC) - timedelta(days=1),
+                    )
+                )
 
 
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
@@ -611,3 +693,33 @@ async def test_developer_cannot_manage_another_developers_api_key(
     assert api_key is not None
     assert api_key.name == "Production CRM integration"
     assert api_key.status == "active"
+
+
+async def test_developer_reads_tier_progress(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developers can read current commission tier and next-tier progress."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("tier-progress@auracles.space")
+    await create_recent_partner_sales(account_id, 99)
+
+    response = await client.get(
+        "/v1/developer/tier",
+        headers=auth_headers(user_id, ["developer"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_tier"] == 1
+    assert body["current_rate"] == "0.0500"
+    assert body["prior_30d_sales_count"] == 99
+    assert body["next_tier"] == 2
+    assert body["next_tier_sales_required"] == 1
+    assert body["tier_recalculated_at"] is None
+    assert body["tiers"] == [
+        {"tier": 1, "min_sales": 0, "max_sales": 99, "rate": "0.0500"},
+        {"tier": 2, "min_sales": 100, "max_sales": 499, "rate": "0.0800"},
+        {"tier": 3, "min_sales": 500, "max_sales": None, "rate": "0.1200"},
+    ]

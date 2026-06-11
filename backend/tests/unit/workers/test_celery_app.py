@@ -23,3 +23,7 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
         "task": "app.workers.tasks.developer_beat.clear_partner_commissions",
         "schedule": 3600.0,
     }
+    assert celery_app.conf.beat_schedule["recompute-partner-tiers-monthly"] == {
+        "task": "app.workers.tasks.developer_beat.recompute_partner_tiers",
+        "schedule": 2592000.0,
+    }

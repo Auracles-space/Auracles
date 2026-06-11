@@ -9,6 +9,10 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.developer_beat.clear_partner_commissions",
         "schedule": 3600.0,
     },
+    "recompute-partner-tiers-monthly": {
+        "task": "app.workers.tasks.developer_beat.recompute_partner_tiers",
+        "schedule": 2592000.0,
+    },
     "expire-open-proposals-hourly": {
         "task": "app.workers.tasks.projects_beat.expire_open_proposals",
         "schedule": 3600.0,

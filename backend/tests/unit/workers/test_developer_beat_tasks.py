@@ -244,3 +244,157 @@ def test_clear_partner_commissions_clears_old_sales_and_voids_refunds(
     assert recent.status == "pending"
     assert cleared_audits == 1
     assert voided_audits == 1
+
+
+def create_tier_recompute_account() -> UUID:
+    """Create one Developer account with prior-30-day attributed sales."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    now = datetime.now(UTC)
+    with session_factory() as session:
+        contributor = User(
+            email=f"tier-contributor-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Tier Contributor",
+            email_verified=True,
+        )
+        operator = User(
+            email=f"tier-operator-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Tier Operator",
+            email_verified=True,
+        )
+        developer = User(
+            email=f"tier-developer-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Tier Developer",
+            email_verified=True,
+        )
+        session.add_all([contributor, operator, developer])
+        session.flush()
+        session.add_all(
+            [
+                UserRole(user_id=contributor.id, role="contributor", approved_at=now),
+                UserRole(user_id=operator.id, role="operator", approved_at=now),
+                UserRole(user_id=developer.id, role="developer", approved_at=now),
+            ]
+        )
+        application = DeveloperApplication(
+            user_id=developer.id,
+            company_name="Tier Partner",
+            website="https://tier-partner.example.com",
+            use_case="Verify monthly partner tier recomputation.",
+            status="approved",
+            reviewed_at=now,
+        )
+        session.add(application)
+        session.flush()
+        account = DeveloperAccount(
+            user_id=developer.id,
+            application_id=application.id,
+            company_name=application.company_name,
+            commission_tier=1,
+            tier_rate=Decimal("0.0500"),
+            tier_sales_count=0,
+        )
+        session.add(account)
+        session.flush()
+        api_key = ApiKey(
+            developer_account_id=account.id,
+            name="Tier key",
+            key_prefix="ak_tier",
+            key_hash=f"tier-hash-{uuid4()}",
+            scopes=["purchase:write"],
+        )
+        session.add(api_key)
+        framework = Framework(
+            contributor_id=contributor.id,
+            title="Tier Framework",
+            description="Framework used by tier recompute task tests.",
+            status="published",
+            category="operations",
+            tags=["tier"],
+            tags_text="tier",
+            price=Decimal("100.00"),
+            currency="USD",
+            license_types=["team"],
+        )
+        session.add(framework)
+        session.flush()
+
+        def add_commission(
+            *,
+            status: str = "cleared",
+            created_at: datetime = now - timedelta(days=1),
+        ) -> None:
+            """Create one attributed sale row for tier counting."""
+            transaction = Transaction(
+                payer_id=operator.id,
+                payee_id=contributor.id,
+                amount=Decimal("100.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("100.00"),
+                transaction_type="purchase",
+                status="completed",
+                provider="stripe",
+                provider_ref=f"pi_tier_{uuid4()}",
+                ref_id=framework.id,
+                ref_type="framework",
+            )
+            session.add(transaction)
+            session.flush()
+            commission = PartnerCommission(
+                api_key_id=api_key.id,
+                developer_account_id=account.id,
+                transaction_id=transaction.id,
+                framework_id=framework.id,
+                sale_amount=Decimal("100.00"),
+                currency="USD",
+                tier_at_sale=1,
+                tier_rate=Decimal("0.0500"),
+                commission_amount=Decimal("5.00"),
+                status=status,
+                created_at=created_at,
+            )
+            session.add(commission)
+
+        for _ in range(100):
+            add_commission()
+        add_commission(status="voided")
+        add_commission(created_at=now - timedelta(days=40))
+        account_id = account.id
+        session.commit()
+    sync_engine.dispose()
+    return account_id
+
+
+def test_recompute_partner_tiers_uses_recent_nonvoided_sale_count(
+    migrated_database: None,
+    developer_beat_context: None,
+) -> None:
+    """Monthly tier recompute updates future-sale tier from recent sales count."""
+    del migrated_database, developer_beat_context
+    account_id = create_tier_recompute_account()
+
+    first = developer_beat.recompute_partner_tiers.apply().get()
+    second = developer_beat.recompute_partner_tiers.apply().get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        account = session.get(DeveloperAccount, account_id)
+        audit_count = (
+            session.query(AuditLog).filter_by(action="partner_tier_recomputed").count()
+        )
+    sync_engine.dispose()
+
+    assert first == {"processed_count": 1, "updated_count": 1}
+    assert second == {"processed_count": 1, "updated_count": 0}
+    assert account.commission_tier == 2
+    assert account.tier_rate == Decimal("0.0800")
+    assert account.tier_sales_count == 100
+    assert account.tier_recalculated_at is not None
+    assert audit_count == 1
