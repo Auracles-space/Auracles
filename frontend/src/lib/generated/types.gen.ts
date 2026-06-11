@@ -1157,6 +1157,29 @@ export type ExploreFrameworkListResponse = {
 };
 
 /**
+ * Validated Explore filter blob persisted by saved searches.
+ *
+ * Pagination is intentionally excluded so a saved search captures query intent,
+ * not one temporary result page.
+ */
+export type ExploreSearchFilters = {
+    q?: (string | null);
+    category?: (string | null);
+    sector?: (string | null);
+    industry?: (string | null);
+    function?: (string | null);
+    jurisdiction?: (string | null);
+    complexity?: (number | null);
+    org_size?: (string | null);
+    lifecycle_stage?: (string | null);
+    license_type?: (string | null);
+    price_min?: (number | string | null);
+    price_max?: (number | string | null);
+    attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
+    sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+};
+
+/**
  * Request body for starting password reset without enumeration.
  */
 export type ForgotPasswordRequest = {
@@ -2071,6 +2094,49 @@ export type RoleAssignmentResponse = {
     user_id: string;
     role: string;
     approved: boolean;
+};
+
+/**
+ * Operator request body for creating a saved Explore search.
+ */
+export type SavedSearchCreateRequest = {
+    name: string;
+    filters?: ExploreSearchFilters;
+    alert_enabled?: boolean;
+};
+
+/**
+ * List response for Operator-owned saved searches.
+ */
+export type SavedSearchListResponse = {
+    saved_searches: Array<SavedSearchResponse>;
+};
+
+/**
+ * Operator-facing saved-search response.
+ */
+export type SavedSearchResponse = {
+    id: string;
+    user_id: string;
+    name: string;
+    filters: {
+        [key: string]: unknown;
+    };
+    filter_version: number;
+    alert_enabled: boolean;
+    last_alerted_at: (string | null);
+    last_alerted_framework_id: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Operator request body for editing an owned saved search.
+ */
+export type SavedSearchUpdateRequest = {
+    name?: (string | null);
+    filters?: (ExploreSearchFilters | null);
+    alert_enabled?: (boolean | null);
 };
 
 /**
@@ -3711,6 +3777,53 @@ export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetData = {
 export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetResponse = (PartnerPurchaseStatusResponse);
 
 export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetError = (HTTPValidationError);
+
+export type ListSavedSearchesV1SavedSearchesGetResponse = (SavedSearchListResponse);
+
+export type ListSavedSearchesV1SavedSearchesGetError = unknown;
+
+export type CreateSavedSearchV1SavedSearchesPostData = {
+    body: SavedSearchCreateRequest;
+};
+
+export type CreateSavedSearchV1SavedSearchesPostResponse = (SavedSearchResponse);
+
+export type CreateSavedSearchV1SavedSearchesPostError = (HTTPValidationError);
+
+export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetData = {
+    path: {
+        saved_search_id: string;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetResponse = (ExploreFrameworkListResponse);
+
+export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetError = (HTTPValidationError);
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchData = {
+    body: SavedSearchUpdateRequest;
+    path: {
+        saved_search_id: string;
+    };
+};
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchResponse = (SavedSearchResponse);
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchError = (HTTPValidationError);
+
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteData = {
+    path: {
+        saved_search_id: string;
+    };
+};
+
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteResponse = (void);
+
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPValidationError);
 
 export type RequestKycUploadUrlV1SettingsKycUploadUrlPostData = {
     body: KycUploadUrlRequest;

@@ -9,9 +9,11 @@ import {
   CollectionCard,
   FrameworkCard,
 } from "@/components/modules/explore/framework-card";
+import { ExploreSaveSearchAction } from "@/components/modules/explore/save-search-action";
 import type {
   ExploreAttestationStatus,
   ExploreCatalogResponse,
+  ExploreSearchFilters,
   ExploreSort,
   FrameworkCategory,
   FrameworkFunction,
@@ -29,6 +31,7 @@ import {
   SECTOR_OPTIONS,
   type MarketplaceOption,
 } from "@/lib/marketplace/taxonomy";
+import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
 
 type ExplorePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -148,6 +151,10 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS) ?? undefined,
     sort: query.sort,
   };
+  const savedSearchFilters: ExploreSearchFilters = {
+    sort: query.sort,
+    ...filtersFromExploreSearchParams(params),
+  };
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
 
@@ -200,6 +207,9 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                   </svg>
                 </button>
               </div>
+            </div>
+            <div className="mb-6">
+              <ExploreSaveSearchAction filters={savedSearchFilters} />
             </div>
             
             {unavailable ? (

@@ -5118,6 +5118,157 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/saved-searches:
+    get:
+      tags:
+      - Saved Searches
+      summary: List Saved Searches
+      description: List saved searches owned by the authenticated Operator.
+      operationId: list_saved_searches_v1_saved_searches_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedSearchListResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Saved Searches
+      summary: Create Saved Search
+      description: Create an Operator-owned saved Explore search.
+      operationId: create_saved_search_v1_saved_searches_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedSearchCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/saved-searches/{saved_search_id}/run:
+    get:
+      tags:
+      - Saved Searches
+      summary: Run Saved Search
+      description: Execute an owned saved search against current Explore Frameworks.
+      operationId: run_saved_search_v1_saved_searches__saved_search_id__run_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: saved_search_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Saved Search Id
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreFrameworkListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/saved-searches/{saved_search_id}:
+    patch:
+      tags:
+      - Saved Searches
+      summary: Update Saved Search
+      description: Edit an Operator-owned saved search.
+      operationId: update_saved_search_v1_saved_searches__saved_search_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: saved_search_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Saved Search Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedSearchUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Saved Searches
+      summary: Delete Saved Search
+      description: Delete an Operator-owned saved search.
+      operationId: delete_saved_search_v1_saved_searches__saved_search_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: saved_search_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Saved Search Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/settings/kyc/upload-url:
     post:
       tags:
@@ -9015,6 +9166,106 @@ components:
       - sort
       title: ExploreFrameworkListResponse
       description: Paginated public catalog response.
+    ExploreSearchFilters:
+      properties:
+        q:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Q
+        category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+        sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sector
+        industry:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Industry
+        function:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Function
+        jurisdiction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jurisdiction
+        complexity:
+          anyOf:
+          - type: integer
+            maximum: 5.0
+            minimum: 1.0
+          - type: 'null'
+          title: Complexity
+        org_size:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Size
+        lifecycle_stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lifecycle Stage
+        license_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: License Type
+        price_min:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Min
+        price_max:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Max
+        attestation_status:
+          anyOf:
+          - type: string
+            enum:
+            - pending_acceptance
+            - attested
+            - conditionally_attested
+            - none
+          - type: 'null'
+          title: Attestation Status
+        sort:
+          type: string
+          enum:
+          - newest
+          - top-rated
+          - most-purchased
+          - price_asc
+          - price_desc
+          title: Sort
+          default: newest
+      additionalProperties: false
+      type: object
+      title: ExploreSearchFilters
+      description: 'Validated Explore filter blob persisted by saved searches.
+
+
+        Pagination is intentionally excluded so a saved search captures query intent,
+
+        not one temporary result page.'
     ForgotPasswordRequest:
       properties:
         email:
@@ -11822,6 +12073,114 @@ components:
       - approved
       title: RoleAssignmentResponse
       description: Response body for role assignment endpoints.
+    SavedSearchCreateRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        filters:
+          $ref: '#/components/schemas/ExploreSearchFilters'
+        alert_enabled:
+          type: boolean
+          title: Alert Enabled
+          default: false
+      type: object
+      required:
+      - name
+      title: SavedSearchCreateRequest
+      description: Operator request body for creating a saved Explore search.
+    SavedSearchListResponse:
+      properties:
+        saved_searches:
+          items:
+            $ref: '#/components/schemas/SavedSearchResponse'
+          type: array
+          title: Saved Searches
+      type: object
+      required:
+      - saved_searches
+      title: SavedSearchListResponse
+      description: List response for Operator-owned saved searches.
+    SavedSearchResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        name:
+          type: string
+          title: Name
+        filters:
+          additionalProperties: true
+          type: object
+          title: Filters
+        filter_version:
+          type: integer
+          title: Filter Version
+        alert_enabled:
+          type: boolean
+          title: Alert Enabled
+        last_alerted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Alerted At
+        last_alerted_framework_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Last Alerted Framework Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - user_id
+      - name
+      - filters
+      - filter_version
+      - alert_enabled
+      - last_alerted_at
+      - last_alerted_framework_id
+      - created_at
+      - updated_at
+      title: SavedSearchResponse
+      description: Operator-facing saved-search response.
+    SavedSearchUpdateRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 1
+          - type: 'null'
+          title: Name
+        filters:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreSearchFilters'
+          - type: 'null'
+        alert_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Alert Enabled
+      type: object
+      title: SavedSearchUpdateRequest
+      description: Operator request body for editing an owned saved search.
     SessionResponse:
       properties:
         id:
