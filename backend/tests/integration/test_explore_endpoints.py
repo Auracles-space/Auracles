@@ -399,6 +399,60 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
     assert detail_response.json()["attestation_badge"]["id"] == str(attestation_id)
 
 
+async def test_rejected_framework_attestation_does_not_render_positive_badge(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Rejected public reports must not appear as positive Explore badges."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "rejected-attestation-seller@auracles.space",
+        ["contributor"],
+    )
+    requestor_id = await create_user(
+        "rejected-attestation-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user(
+        "rejected-public-attestor@auracles.space",
+        ["attestor"],
+    )
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Rejected Attestation Framework",
+    )
+    await create_framework_attestation(
+        framework_id=framework_id,
+        requestor_id=requestor_id,
+        attestor_id=attestor_id,
+        status="closed",
+        outcome="rejected",
+    )
+
+    catalog_response = await client.get("/v1/explore/frameworks")
+    attested_response = await client.get(
+        "/v1/explore/frameworks",
+        params={"attestation_status": "attested"},
+    )
+    none_response = await client.get(
+        "/v1/explore/frameworks",
+        params={"attestation_status": "none"},
+    )
+    detail_response = await client.get(f"/v1/explore/frameworks/{framework_id}")
+
+    assert catalog_response.status_code == 200
+    catalog_item = catalog_response.json()["items"][0]
+    assert catalog_item["id"] == str(framework_id)
+    assert catalog_item["attestation_badge"] is None
+    assert attested_response.status_code == 200
+    assert attested_response.json()["total"] == 0
+    assert none_response.status_code == 200
+    assert none_response.json()["total"] == 1
+    assert detail_response.status_code == 200
+    assert detail_response.json()["attestation_badge"] is None
+
+
 async def test_authenticated_contributor_catalog_excludes_own_frameworks(
     client: AsyncClient,
     migrated_database: None,

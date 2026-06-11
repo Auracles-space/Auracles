@@ -227,17 +227,25 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
   - `outcome = approved` + `status = closed` → `attested`
   - `outcome = conditional` + `status = closed` → `conditionally_attested`
   - `outcome = rejected` → **no positive badge** (suppress, or show a neutral
-    "reviewed — did not pass"; never `attested`)
+    "reviewed — did not pass"; never `attested`). This rejection rule has
+    precedence over status, so `outcome = rejected` + `status = report_submitted`
+    is also not `pending_acceptance`.
   - `status = report_submitted` (any non-rejected outcome) → `pending_acceptance`
 - Public report links remain labelled `pending_acceptance` until the Attestation
   closes, so the UI does not overstate trust before release/closure.
 - **Multiple attestations per target (BR-ATT-004):** do not blindly show the
-  latest. Pick the **best public outcome** (approved > conditional), and surface a
-  count ("N attestations") rather than letting a newer rejected/conditional hide
-  an older approved.
+  latest. Pick the **best public outcome** in deterministic order:
+  `closed approved` > `closed conditional` > `report_submitted approved` >
+  `report_submitted conditional` > none. Surface a count ("N attestations") so a
+  newer rejected/conditional report does not hide an older approved report.
 - No public contributor **directory/listing** page exists today; this slice ships
   the detail page only, reachable via contributor-name links on Framework cards.
   A browsable directory is a separate decision (see Discovery note).
+- Deactivated Contributors are a limited public-profile case, not a 404, when
+  they still have published Frameworks. This matches BR-SET-002: their published
+  Frameworks remain visible in Explore, but new purchases are suspended. The
+  public profile should show safe public identity, published Frameworks, and a
+  read-only/deactivated marker; it must not expose private account state.
 
 ### Backend scope
 
@@ -250,14 +258,17 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
   - `location`
   - `website`
   - `attestation_badge`
+  - `attestation_count`
+  - `is_deactivated`
   - `published_framework_count`
-  - `published_frameworks`
+  - `published_frameworks` capped to the first 12 newest published Frameworks
 - Extend Explore Framework card/detail responses with `contributor_id` and
   `contributor_name` (public `display_name` only — never email/handle).
-- Badge query for contributor targets: the existing `_framework_attestation_badges`
-  hardcodes `target_type == "framework"`, so this needs a **parameterized/parallel
-  query** (`target_type = "contributor"`) — net-new code, not pure reuse. Criteria:
-  - `target_type = "contributor"`
+- Badge query: the existing `_framework_attestation_badges` hardcodes
+  `target_type == "framework"` and returns only a single latest badge, so this
+  needs a **parameterized shared helper** that works for Framework and Contributor
+  targets. Criteria:
+  - `target_type = "framework" | "contributor"`
   - `report_key IS NOT NULL`
   - `status IN ("report_submitted", "closed")`
   - **label derived from `outcome`** (approved/conditional/rejected) per the badge
@@ -265,7 +276,10 @@ jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
 - **Enumeration guard:** `GET /v1/explore/contributors/{id}` must return **404
   unless the target is a Contributor with ≥1 published Framework**. A public,
   unauthenticated endpoint must not confirm the existence of arbitrary user ids
-  (operators, attestors, admins, deactivated/banned accounts).
+  (operators, attestors, admins, banned accounts, or contributors with no
+  published Frameworks). Do **not** 404 solely because the Contributor is
+  deactivated if they still have published Frameworks; return the limited
+  read-only public profile instead.
 - Return only published (not suspended/unpublished) Frameworks on the profile.
 - Keep this as a public read endpoint; no KYC/profile gate.
 
@@ -279,6 +293,12 @@ therefore renders as `attested` on Explore cards/detail today. Fix the shared
 badge mapper to derive the label from `outcome` — this corrects both the existing
 framework badge and the new contributor badge in one place.
 
+Required schema/API adjustment: `ExploreAttestationBadge.status` and the
+`attestation_status` filter must support `conditionally_attested` in addition to
+`pending_acceptance`, `attested`, and `none`. `attestation_count` should be
+returned beside the selected badge so public UI can say "N attestations" without
+exposing private report details.
+
 ### Frontend scope
 
 - Add public route `/explore/contributors/[id]`.
@@ -286,6 +306,13 @@ framework badge and the new contributor badge in one place.
   Framework cards.
 - Link contributor name from Framework cards and detail pages to the profile.
 - Reuse the existing `AttestationBadge` component and Explore card pattern.
+- Render `conditionally_attested` distinctly from `attested`, and never render a
+  rejected report as a positive badge.
+- Render only the first 12 newest published Frameworks on the profile in this
+  slice. Full contributor-profile pagination is deferred unless product asks for
+  it.
+- For deactivated Contributors with published Frameworks, render a neutral
+  read-only marker and do not expose private deactivation metadata.
 - Do not redesign the existing Explore layout in this slice.
 
 ### Tests
@@ -296,14 +323,18 @@ framework badge and the new contributor badge in one place.
   evidence keys.
 - Badge label is outcome-driven: `approved`→`attested`, `conditional`→
   `conditionally_attested`, `rejected`→ no positive badge; `report_submitted`→
-  `pending_acceptance`.
+  `pending_acceptance` only for non-rejected outcomes.
 - **Rejected attestation never renders `attested`** (regression guard for
   Finding 1 — assert for both framework and contributor badges).
 - Multiple attestations on one target: best public outcome wins; a newer
   rejected/conditional does not hide an older approved; count surfaced.
 - `GET /v1/explore/contributors/{id}` returns 404 for a non-contributor id, a
-  contributor with zero published Frameworks, and a deactivated account
-  (enumeration guard).
+  contributor with zero published Frameworks, and a banned account (enumeration
+  guard).
+- Deactivated Contributor with published Frameworks returns 200 with a limited
+  read-only public profile and no private account metadata.
+- Contributor profile returns at most 12 newest published Frameworks while
+  `published_framework_count` reports the total published count.
 - Framework card/detail responses include contributor id/name.
 - Frontend profile page renders badge and published Frameworks.
 - Framework cards/detail link to `/explore/contributors/{id}`.

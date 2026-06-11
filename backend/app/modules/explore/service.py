@@ -31,6 +31,7 @@ from app.modules.frameworks.models_artifact import Artifact
 PREVIEW_URL_TTL_SECONDS = 900
 PREVIEW_RATE_LIMIT = 60
 PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
+PUBLIC_POSITIVE_ATTESTATION_OUTCOMES = ("approved", "conditional")
 
 
 def _card_from_framework(
@@ -153,7 +154,9 @@ def _public_attestation_exists(
         .where(
             Attestation.target_type == "framework",
             Attestation.target_id == Framework.id,
-            Attestation.outcome.is_not(None),
+            # Public badges are positive trust signals; rejected reports remain
+            # available to future report views but must not render as attested.
+            Attestation.outcome.in_(PUBLIC_POSITIVE_ATTESTATION_OUTCOMES),
             Attestation.report_key.is_not(None),
             Attestation.status.in_(("report_submitted", "closed")),
         )
@@ -272,7 +275,7 @@ async def _framework_attestation_badges(
             .where(
                 Attestation.target_type == "framework",
                 Attestation.target_id.in_(framework_ids),
-                Attestation.outcome.is_not(None),
+                Attestation.outcome.in_(PUBLIC_POSITIVE_ATTESTATION_OUTCOMES),
                 Attestation.report_key.is_not(None),
                 Attestation.status.in_(("report_submitted", "closed")),
             )
