@@ -9,7 +9,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -22,11 +23,17 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.collections import service as collections_service
 from app.modules.collections.models import (
     CollectionEarningAllocation,
     CollectionFramework,
     CollectionPurchaseSnapshot,
     FrameworkCollection,
+)
+from app.modules.collections.schemas import (
+    CollectionCreateRequest,
+    CollectionMemberRequest,
+    CollectionUpdateRequest,
 )
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
@@ -232,6 +239,121 @@ async def test_contributor_can_create_update_add_members_and_publish_collection(
         )
     assert created is not None
     assert published is not None
+
+
+async def test_collection_service_directly_handles_full_owner_lifecycle(
+    migrated_database: None,
+    collection_test_context: None,
+) -> None:
+    """Collection service functions support the full draft-to-unpublish flow."""
+    contributor_id = await create_user_with_roles(
+        "collections-service-owner@auracles.space",
+        ["contributor"],
+    )
+    first_id = await create_framework(
+        contributor_id,
+        title="Service Risk Register Kit",
+        price=Decimal("500.00"),
+    )
+    second_id = await create_framework(
+        contributor_id,
+        title="Service Board Reporting Kit",
+        price=Decimal("600.00"),
+    )
+    contributor = cast(User, SimpleNamespace(id=contributor_id))
+
+    async with async_session_factory() as session:
+        created = await collections_service.create_collection(
+            db=session,
+            contributor=contributor,
+            payload=CollectionCreateRequest(
+                title=" Service Bundle ",
+                description=" Service bundle description. ",
+                bundle_price=Decimal("700.00"),
+                currency="USD",
+            ),
+        )
+        listed = await collections_service.list_my_collections(
+            db=session,
+            contributor=contributor,
+        )
+        fetched = await collections_service.get_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+        )
+        updated = await collections_service.update_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            payload=CollectionUpdateRequest(
+                title="Service Collection",
+                description="Updated service bundle.",
+                bundle_price=Decimal("800.00"),
+            ),
+        )
+        first_member = await collections_service.add_collection_member(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            payload=CollectionMemberRequest(framework_id=first_id),
+        )
+        duplicate_member = await collections_service.add_collection_member(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            payload=CollectionMemberRequest(framework_id=first_id),
+        )
+        removed = await collections_service.remove_collection_member(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            framework_id=first_id,
+        )
+        await collections_service.add_collection_member(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            payload=CollectionMemberRequest(framework_id=first_id),
+        )
+        await collections_service.add_collection_member(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+            payload=CollectionMemberRequest(framework_id=second_id),
+        )
+        published = await collections_service.publish_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+        )
+        republished = await collections_service.publish_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+        )
+        unpublished = await collections_service.unpublish_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+        )
+        reunpublished = await collections_service.unpublish_collection(
+            db=session,
+            contributor=contributor,
+            collection_id=created.id,
+        )
+
+    assert created.title == "Service Bundle"
+    assert listed.collections[0].id == created.id
+    assert fetched.id == created.id
+    assert updated.title == "Service Collection"
+    assert [member.framework_id for member in first_member.members] == [first_id]
+    assert [member.framework_id for member in duplicate_member.members] == [first_id]
+    assert removed.members == []
+    assert published.status == "published"
+    assert republished.status == "published"
+    assert unpublished.status == "unpublished"
+    assert reunpublished.status == "unpublished"
 
 
 async def test_publish_rejects_collection_with_fewer_than_two_members(

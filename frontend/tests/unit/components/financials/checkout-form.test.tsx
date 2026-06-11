@@ -189,8 +189,10 @@ describe("CheckoutForm", () => {
         }),
       );
     });
-    expect(screen.getByText("Includes 3 frameworks")).toBeInTheDocument();
-    expect(screen.getByText("You already own 1 member")).toBeInTheDocument();
+    expect(screen.getByText("Includes")).toBeInTheDocument();
+    expect(screen.getByText("3 frameworks")).toBeInTheDocument();
+    expect(screen.getByText("Already own")).toBeInTheDocument();
+    expect(screen.getByText("1 member")).toBeInTheDocument();
     expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
   });
 });

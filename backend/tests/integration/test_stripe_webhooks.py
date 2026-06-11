@@ -27,6 +27,10 @@ from app.modules.collections.models import (
     CollectionPurchaseSnapshot,
     FrameworkCollection,
 )
+from app.modules.collections.purchase import (
+    CollectionPurchaseProcessingError,
+    confirm_collection_purchase,
+)
 from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
@@ -745,6 +749,117 @@ async def test_stripe_collection_purchase_success_mints_missing_license_and_allo
     assert audit.metadata_["minted_license_count"] == 1
     invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
     assert invoice_task.dispatched == [str(transaction_id)]
+
+
+async def test_confirm_collection_purchase_reactivates_license_idempotently(
+    webhook_context: dict[str, Any],
+) -> None:
+    """Collection confirmation can replay without duplicate allocations."""
+    del webhook_context
+    (
+        transaction_id,
+        collection_id,
+        _prior_framework_id,
+        minted_framework_id,
+        operator_id,
+    ) = await create_pending_collection_purchase()
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                License(
+                    framework_id=minted_framework_id,
+                    operator_id=operator_id,
+                    license_type="single_user",
+                    status="revoked",
+                    version_at_grant="1.0.0",
+                )
+            )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            first_result = await confirm_collection_purchase(
+                session,
+                transaction_id=transaction_id,
+                payment_intent_id="pi_collection_webhook_123",
+            )
+    async with async_session_factory() as session:
+        async with session.begin():
+            replay_result = await confirm_collection_purchase(
+                session,
+                transaction_id=transaction_id,
+                payment_intent_id="pi_collection_webhook_123",
+            )
+
+    async with async_session_factory() as session:
+        licenses = (
+            await session.execute(
+                select(License)
+                .where(License.operator_id == operator_id)
+                .order_by(License.framework_id)
+            )
+        ).scalars().all()
+        allocations = (
+            await session.execute(
+                select(CollectionEarningAllocation).where(
+                    CollectionEarningAllocation.transaction_id == transaction_id
+                )
+            )
+        ).scalars().all()
+
+    assert first_result == transaction_id
+    assert replay_result == transaction_id
+    assert len(licenses) == 2
+    reactivated = next(
+        license_row
+        for license_row in licenses
+        if license_row.framework_id == minted_framework_id
+    )
+    assert reactivated.status == "active"
+    assert reactivated.transaction_id == transaction_id
+    assert reactivated.source == "collection"
+    assert reactivated.collection_id == collection_id
+    assert len(allocations) == 1
+    assert allocations[0].framework_id == minted_framework_id
+    assert allocations[0].allocated_amount == Decimal("700.00")
+
+
+async def test_confirm_collection_purchase_rejects_unavailable_snapshot_member(
+    webhook_context: dict[str, Any],
+) -> None:
+    """Collection confirmation fails loudly when a snapshotted member changed."""
+    del webhook_context
+    (
+        transaction_id,
+        _collection_id,
+        _prior_framework_id,
+        minted_framework_id,
+        _operator_id,
+    ) = await create_pending_collection_purchase()
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await session.get(Framework, minted_framework_id)
+            assert framework is not None
+            framework.status = "draft"
+
+    with pytest.raises(CollectionPurchaseProcessingError) as exc_info:
+        async with async_session_factory() as session:
+            async with session.begin():
+                await confirm_collection_purchase(
+                    session,
+                    transaction_id=transaction_id,
+                    payment_intent_id="pi_collection_webhook_123",
+                )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.scalar(
+            select(License).where(License.framework_id == minted_framework_id)
+        )
+
+    assert str(exc_info.value) == "collection framework unavailable"
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert license_row is None
 
 
 async def test_stripe_purchase_success_creates_partner_commission_once(

@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -19,6 +20,7 @@ from app.core.security import create_access_token, hash_password
 from app.integrations.stripe import StripeProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.collections import service as collections_service
 from app.modules.collections.models import (
     CollectionFramework,
     CollectionPurchaseSnapshot,
@@ -26,6 +28,7 @@ from app.modules.collections.models import (
 )
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
+from app.modules.financials.schemas import PurchaseRequest
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 
@@ -427,6 +430,93 @@ async def test_operator_can_start_collection_purchase_with_member_snapshot(
             "idempotency_key": f"collection_purchase:{transaction.id}",
         }
     ]
+
+
+async def test_collection_purchase_service_directly_snapshots_only_missing_members(
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Collection checkout service snapshots owned members before charging."""
+    contributor_id = await create_user_with_roles(
+        "collection-direct-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "collection-direct-operator@auracles.space",
+        ["operator"],
+    )
+    first_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("401.00"),
+        license_types=["single_user", "team"],
+    )
+    second_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("599.00"),
+        license_types=["single_user", "team"],
+    )
+    collection_id = await create_published_collection(
+        contributor_id,
+        framework_ids=[first_framework_id, second_framework_id],
+        bundle_price=Decimal("700.00"),
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                License(
+                    framework_id=first_framework_id,
+                    operator_id=operator_id,
+                    license_type="team",
+                    status="active",
+                    version_at_grant="1.0.0",
+                )
+            )
+
+    operator = cast(
+        User,
+        SimpleNamespace(
+            id=operator_id,
+            email="collection-direct-operator@auracles.space",
+            display_name="collection-direct-operator",
+            stripe_customer_id=None,
+        ),
+    )
+    async with async_session_factory() as session:
+        response = await collections_service.create_collection_purchase(
+            db=session,
+            operator=operator,
+            collection_id=collection_id,
+            payload=PurchaseRequest(license_type="team"),
+        )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, response.transaction_id)
+        snapshots = (
+            await session.execute(
+                select(CollectionPurchaseSnapshot).order_by(
+                    CollectionPurchaseSnapshot.list_price_at_purchase
+                )
+            )
+        ).scalars().all()
+
+    assert response.provider == "stripe"
+    assert response.client_secret == "pi_secret_123"
+    assert transaction is not None
+    assert transaction.ref_type == "collection"
+    assert transaction.provider_ref == "pi_purchase_123"
+    assert [snapshot.already_owned for snapshot in snapshots] == [True, False]
+    assert purchase_context["customers"] == [
+        {
+            "email": "collection-direct-operator@auracles.space",
+            "name": "collection-direct-operator",
+            "idempotency_key": f"stripe_customer:{operator_id}",
+        }
+    ]
+    assert purchase_context["payment_intents"][0]["metadata"] == {
+        "kind": "collection",
+        "transaction_id": str(response.transaction_id),
+        "collection_id": str(collection_id),
+    }
 
 
 async def test_collection_purchase_rejects_invalid_or_fully_owned_bundle(
