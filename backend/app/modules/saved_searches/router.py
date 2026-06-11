@@ -3,12 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.modules.auth.models import User
+from app.modules.explore.schemas import ExploreFrameworkListResponse
 from app.modules.saved_searches import service
 from app.modules.saved_searches.schemas import (
     SavedSearchCreateRequest,
@@ -47,6 +48,24 @@ async def list_saved_searches(
 ) -> SavedSearchListResponse:
     """List saved searches owned by the authenticated Operator."""
     return await service.list_saved_searches(db=db, operator=operator)
+
+
+@router.get("/{saved_search_id}/run", response_model=ExploreFrameworkListResponse)
+async def run_saved_search(
+    saved_search_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> ExploreFrameworkListResponse:
+    """Execute an owned saved search against current Explore Frameworks."""
+    return await service.run_saved_search(
+        db=db,
+        operator=operator,
+        saved_search_id=saved_search_id,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.patch("/{saved_search_id}", response_model=SavedSearchResponse)

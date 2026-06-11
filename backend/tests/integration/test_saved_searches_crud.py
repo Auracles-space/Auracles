@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -21,6 +22,7 @@ from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.frameworks.models import Framework
 from app.modules.saved_searches.models import (
     SavedSearch,
     SavedSearchAlertDelivery,
@@ -54,6 +56,7 @@ async def saved_search_test_context() -> AsyncIterator[None]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(SavedSearchAlertDelivery))
             await session.execute(delete(SavedSearch))
+            await session.execute(delete(Framework))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
             await session.commit()
@@ -129,6 +132,43 @@ async def create_saved_search(
     )
     assert response.status_code == 201
     return dict(response.json())
+
+
+async def create_framework(
+    contributor_id: UUID,
+    *,
+    title: str,
+    description: str,
+    category: str,
+    function: str,
+    price: Decimal,
+) -> UUID:
+    """Create a published Framework available to Explore and saved-search run."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor_id,
+                title=title,
+                description=description,
+                status="published",
+                category=category,
+                sector="financial_services",
+                industry="fund_management",
+                business_function=function,
+                tags=["risk", "saved-search"],
+                tags_text="risk saved-search",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=price,
+                currency="USD",
+                license_types=["single_user", "team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            return framework.id
 
 
 async def test_operator_can_create_list_update_toggle_and_delete_saved_search(
@@ -298,3 +338,82 @@ async def test_saved_searches_are_operator_only_and_owner_scoped(
         created["id"]
     ]
     assert other_list.json()["saved_searches"] == []
+
+
+async def test_saved_search_run_matches_live_explore_filters(
+    client: AsyncClient,
+    migrated_database: None,
+    saved_search_test_context: None,
+) -> None:
+    """Running a saved search returns the same Framework ids as live Explore."""
+    contributor_id = await create_user_with_roles(
+        "saved-search-run-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "saved-search-run-operator@auracles.space",
+        ["operator"],
+    )
+    matching_id = await create_framework(
+        contributor_id,
+        title="Risk Control Playbook",
+        description="A risk governance implementation package.",
+        category="playbook",
+        function="risk_management",
+        price=Decimal("450.00"),
+    )
+    await create_framework(
+        contributor_id,
+        title="Finance Control Playbook",
+        description="A finance governance implementation package.",
+        category="playbook",
+        function="finance",
+        price=Decimal("475.00"),
+    )
+    await create_framework(
+        contributor_id,
+        title="Risk Control Checklist",
+        description="A risk governance checklist.",
+        category="checklist",
+        function="risk_management",
+        price=Decimal("250.00"),
+    )
+    headers = auth_headers(operator_id, ["operator"])
+    saved_search = await create_saved_search(
+        client,
+        operator_id,
+        name="Run parity",
+        filters={
+            "q": "risk",
+            "category": "playbook",
+            "function": "risk_management",
+            "price_min": "400.00",
+            "price_max": "900.00",
+            "sort": "newest",
+        },
+    )
+
+    live = await client.get(
+        "/v1/explore/frameworks",
+        params={
+            "q": "risk",
+            "category": "playbook",
+            "function": "risk_management",
+            "price_min": "400.00",
+            "price_max": "900.00",
+            "sort": "newest",
+        },
+        headers=headers,
+    )
+    run = await client.get(
+        f"/v1/saved-searches/{saved_search['id']}/run",
+        params={"page": 1, "page_size": 10},
+        headers=headers,
+    )
+
+    assert live.status_code == 200
+    assert run.status_code == 200
+    assert [item["id"] for item in run.json()["items"]] == [
+        item["id"] for item in live.json()["items"]
+    ] == [str(matching_id)]
+    assert run.json()["total"] == live.json()["total"] == 1

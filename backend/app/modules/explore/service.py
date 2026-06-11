@@ -34,6 +34,7 @@ from app.modules.explore.schemas import (
     ExploreFrameworkCatalogItem,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
+    ExploreSearchFilters,
     ExploreSort,
 )
 from app.modules.frameworks.models import Framework, License, Review
@@ -320,6 +321,30 @@ def _apply_sort(
     return query.order_by(Framework.published_at.desc(), Framework.created_at.desc())
 
 
+def build_explore_query(
+    *,
+    current_user_id: UUID | None,
+    filters: ExploreSearchFilters,
+) -> Select[tuple[Framework]]:
+    """Build the canonical Framework Explore query from validated filters."""
+    return _apply_filters(
+        _base_catalog_query(current_user_id),
+        q=filters.q,
+        sector=filters.sector,
+        industry=filters.industry,
+        function=filters.function,
+        category=filters.category,
+        license_type=filters.license_type,
+        complexity=filters.complexity,
+        org_size=filters.org_size,
+        lifecycle_stage=filters.lifecycle_stage,
+        jurisdiction=filters.jurisdiction,
+        price_min=filters.price_min,
+        price_max=filters.price_max,
+        attestation_status=filters.attestation_status,
+    )
+
+
 async def _framework_rarity_scores(
     db: AsyncSession,
     framework_ids: list[UUID],
@@ -506,8 +531,7 @@ async def list_catalog(
     attestation_status: ExploreAttestationStatus | None,
 ) -> ExploreFrameworkListResponse:
     """Return published Frameworks for public Explore."""
-    query = _apply_filters(
-        _base_catalog_query(current_user_id),
+    filters = ExploreSearchFilters(
         q=q,
         sector=sector,
         industry=industry,
@@ -521,11 +545,36 @@ async def list_catalog(
         price_min=price_min,
         price_max=price_max,
         attestation_status=attestation_status,
+        sort=sort,
+    )
+    return await list_catalog_from_filters(
+        db,
+        current_user_id=current_user_id,
+        filters=filters,
+        page=page,
+        page_size=page_size,
+    )
+
+
+async def list_catalog_from_filters(
+    db: AsyncSession,
+    *,
+    current_user_id: UUID | None,
+    filters: ExploreSearchFilters,
+    page: int,
+    page_size: int,
+) -> ExploreFrameworkListResponse:
+    """Return published Frameworks using the shared Explore filter object."""
+    query = build_explore_query(
+        current_user_id=current_user_id,
+        filters=filters,
     )
     count_query = select(func.count()).select_from(query.subquery())
     total = int(await db.scalar(count_query) or 0)
     offset = (page - 1) * page_size
-    rows = await db.execute(_apply_sort(query, sort).offset(offset).limit(page_size))
+    rows = await db.execute(
+        _apply_sort(query, filters.sort).offset(offset).limit(page_size)
+    )
     frameworks = list(rows.scalars().all())
     rarity_scores = await _framework_rarity_scores(
         db,
@@ -557,8 +606,8 @@ async def list_catalog(
         total=total,
         page=page,
         page_size=page_size,
-        sort=sort,
-        sort_shim=sort == "most-purchased",
+        sort=filters.sort,
+        sort_shim=filters.sort == "most-purchased",
     )
 
 

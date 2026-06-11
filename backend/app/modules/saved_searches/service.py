@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
-from app.modules.explore.schemas import ExploreSearchFilters
+from app.modules.explore import service as explore_service
+from app.modules.explore.schemas import (
+    ExploreFrameworkListResponse,
+    ExploreSearchFilters,
+)
 from app.modules.saved_searches.models import SavedSearch
 from app.modules.saved_searches.schemas import (
     SavedSearchCreateRequest,
@@ -160,6 +164,30 @@ async def list_saved_searches(
     )
     return SavedSearchListResponse(
         saved_searches=[_to_response(row) for row in result.scalars().all()]
+    )
+
+
+async def run_saved_search(
+    *,
+    db: AsyncSession,
+    operator: User,
+    saved_search_id: UUID,
+    page: int,
+    page_size: int,
+) -> ExploreFrameworkListResponse:
+    """Execute an owned saved search through the shared Explore query path."""
+    saved_search = await _load_owned_saved_search(
+        db,
+        user_id=operator.id,
+        saved_search_id=saved_search_id,
+    )
+    filters = ExploreSearchFilters.model_validate(saved_search.filters)
+    return await explore_service.list_catalog_from_filters(
+        db,
+        current_user_id=operator.id,
+        filters=filters,
+        page=page,
+        page_size=page_size,
     )
 
 
