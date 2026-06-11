@@ -1,3 +1,9 @@
+/**
+ * Foundation status component tests.
+ *
+ * Verifies that the public status page renders service readiness and degraded
+ * infrastructure states from the health API response.
+ */
 import { render, screen } from "@testing-library/react";
 
 import { FoundationStatus } from "@/components/modules/foundation-status";
@@ -40,7 +46,7 @@ describe("FoundationStatus", () => {
       />,
     );
 
-    expect(screen.getByText("Foundation services are not ready")).toBeInTheDocument();
+    expect(screen.getByText("System is Degraded")).toBeInTheDocument();
     expect(screen.getByText("database ping failed")).toBeInTheDocument();
     expect(screen.getAllByText("Down")).toHaveLength(2);
   });

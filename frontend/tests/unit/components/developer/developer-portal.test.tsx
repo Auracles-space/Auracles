@@ -188,7 +188,7 @@ describe("DeveloperPortal", () => {
     render(<DeveloperPortal />);
 
     expect(await screen.findByText("Developer platform")).toBeInTheDocument();
-    expect(screen.getByText("$17.50")).toBeInTheDocument();
+    expect(screen.getAllByText("$17.50")).toHaveLength(2);
     expect(screen.getAllByText("Tier 2")).toHaveLength(2);
     expect(screen.getByText("Production CRM")).toBeInTheDocument();
     expect(screen.getByText("Governance Operating Model")).toBeInTheDocument();
