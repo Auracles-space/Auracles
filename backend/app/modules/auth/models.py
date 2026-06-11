@@ -32,6 +32,7 @@ ROLE_ENUM = ENUM(
     "operator",
     "attestor",
     "admin",
+    "developer",
     name="role_enum",
     create_type=False,
 )

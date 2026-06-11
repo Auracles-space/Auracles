@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.core.database import Base
 from app.modules.attestation import models as _attestation_models  # noqa: F401
 from app.modules.auth import models as _auth_models  # noqa: F401
+from app.modules.developer import models as _developer_models  # noqa: F401
 from app.modules.financials import models as _financials_models  # noqa: F401
 from app.modules.frameworks import models as _framework_models  # noqa: F401
 from app.modules.frameworks import models_artifact as _artifact_models  # noqa: F401
