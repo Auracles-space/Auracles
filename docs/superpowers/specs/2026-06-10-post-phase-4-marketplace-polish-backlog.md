@@ -108,50 +108,71 @@ and Attestation, never by a similarity threshold.
 ### Decision — three bands (recalibrate, don't rebuild)
 
 ```
-jaccard ≥ NEAR_DUP (≈0.90, calibrated)   → HARD block "near-duplicate / likely copy"
-NOTICE (≈0.70) ≤ jaccard < NEAR_DUP      → NON-BLOCKING "similar to X" notice
-jaccard < NOTICE                          → clear, no flag
+jaccard ≥ NEAR_DUPLICATE_JACCARD_THRESHOLD (provisional 0.90)
+  → HARD block "near-duplicate / likely copy"
+SIMILARITY_NOTICE_JACCARD_THRESHOLD (provisional 0.70) ≤ jaccard < NEAR_DUPLICATE_JACCARD_THRESHOLD
+  → NON-BLOCKING "similar to X" notice
+jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD
+  → clear, no flag
 ```
 
 - **Hard band** stays a `pipeline_failed` reason (`internal_rarity`), but only for
   near-duplicates. **Admin override** path added (reuse the escrow-style admin +
   audit pattern) so legitimate edge cases — same author republishing, licensed
-  reuse, new version — are not dead-ended.
-- **Notice band** does **not** block. Framework publishes; system records the
-  nearest match for context. This is where review context + differentiation note
-  live (informational, audited, never gating).
+  reuse, new version — are not dead-ended. Override state must be durable, not
+  audit-only, so future gate re-evaluations remain deterministic.
+- **Notice band** does **not** block. The Framework can reach `pipeline_passed`,
+  and the normal Contributor-controlled publish action remains enabled. The
+  system records the nearest match for context. This is where review context +
+  an optional differentiation note live (informational, audited, never gating).
 - This **changes BR-FWK-006 semantics**: update the FRD wording and the rarity
   docstrings to say the gate targets *near-duplication*, not *rarity*, so the
   behavior is not silently "restored" later.
 
 ### Sub-step ordering
 
-- **2.0 — Threshold calibration (prereq, offline).** Run the internal scorer over
-  a labelled sample (known copies vs known same-topic-distinct Frameworks). Pick
-  `NEAR_DUP` at the valley between the two clusters; pick `NOTICE` floor likewise.
-  0.90 / 0.70 are starting guesses, not final. Document the chosen cutoffs.
+- **2.0 — Threshold calibration (data-gated, not launch-blocking).** Ship
+  provisional defaults first:
+  `NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.90` and
+  `SIMILARITY_NOTICE_JACCARD_THRESHOLD = 0.70`, ideally configurable through
+  backend settings. Once there is a labelled sample (known copies vs known
+  same-topic-distinct Frameworks), run the internal scorer and recalibrate at the
+  valley between the clusters. Document any changed cutoffs.
 - **2.1 — Gate reframe (independent of reviews; can ship first).** `pipeline_gate.py`
-  bands + `INTERNAL_RARITY_NEAR_DUP_THRESHOLD` / `INTERNAL_RARITY_NOTICE_THRESHOLD`
-  constants (the old `0.30` hard threshold moves to `1 − NEAR_DUP ≈ 0.10`). Notice
-  band writes a non-blocking `similarity_notice` (nearest title + jaccard) onto the
-  framework/artifact instead of a failure reason. Admin override endpoint on the
-  hard block. Reuses already-persisted `nearest_match_id` + `internal_jaccard`
+  bands + explicit Jaccard constants, not inverted rarity constants:
+  `NEAR_DUPLICATE_JACCARD_THRESHOLD` and
+  `SIMILARITY_NOTICE_JACCARD_THRESHOLD`. The old `0.30` rarity hard threshold
+  moves to a near-duplicate Jaccard comparison (`internal_jaccard >= 0.90`, or
+  equivalently `internal_rarity <= 0.10` only at the implementation boundary).
+  Notice band writes a non-blocking `similarity_notice` (nearest title + jaccard)
+  to `Artifact.metadata_vector["similarity_notice"]` and exposes it through
+  `ArtifactResponse`, not `framework.pipeline_failure_reasons`. Admin override
+  endpoint on the hard block writes both durable override state and audit.
+  Reuses already-persisted `nearest_match_id` + `internal_jaccard`
   (`rarity_internal.py`) — no recompute.
 - **2.2 — Notice-band review context (depends on Slice 1 reviews).** Enrich the
   `similarity_notice` with the nearest match's review aggregate (avg score +
   count) via `nearest_match_id` → artifact → `framework_id` → reviews. Add an
   optional differentiation note to the contributor acknowledgement of a notice
-  (persisted in audit metadata — no new column); require it only when the nearest
-  match has public review data. Low review score on the similar Framework never
+  (persisted in audit metadata). A note is required only if the Contributor
+  chooses to acknowledge/dismiss the notice in the UI, never as a condition for
+  `pipeline_passed` or publish. Low review score on the similar Framework never
   bypasses or weakens anything — notice is non-blocking regardless.
 
 ### Backend scope
 
 - `pipeline_gate.py`: replace the single internal-rarity hard fail with the
   three-band logic; emit `similarity_notice` for the notice band.
-- New admin override on the hard band (admin role + audit `rarity_block_overridden`).
-- Extend the notice/acknowledgement payload with optional `differentiation_note`;
-  persist in `write_audit` metadata.
+- New admin override on the hard band (admin role + durable override state +
+  audit `rarity_block_overridden`).
+- Add explicit durable override columns to `artifact_rarity_audit`
+  (`near_duplicate_overridden_at`, `near_duplicate_overridden_by`,
+  `near_duplicate_override_reason`) so pipeline re-evaluation does not depend on
+  audit-log queries.
+- Store notice-band context in `Artifact.metadata_vector["similarity_notice"]`
+  and expose it via `ArtifactResponse`.
+- Extend the notice acknowledgement payload with optional
+  `differentiation_note`; persist in `write_audit` metadata.
 - Notice/aggregate read path: `nearest_match_id` → nearest Framework → review
   aggregate (after Slice 1).
 - Keep PII/virus/processing as hard blocks unchanged.
@@ -162,20 +183,23 @@ jaccard < NOTICE                          → clear, no flag
 - Pipeline panel: near-duplicate hard fail (with admin-only override affordance)
   vs non-blocking "similar to X" notice — visually distinct.
 - Notice shows nearest-match title + (after Slice 1) review aggregate; optional
-  differentiation field.
+  differentiation field. That field is required only when the Contributor
+  explicitly acknowledges/dismisses the notice; it must not disable publish.
 - Copy makes clear: same-problem Frameworks are welcome; only near-duplicates are
   blocked; similar low-rated content may still be protected and cannot be copied.
 
 ### Tests
 
-- `jaccard ≥ NEAR_DUP` → hard `pipeline_failed`; admin override unblocks + audits.
-- `NOTICE ≤ jaccard < NEAR_DUP` → publishes, `similarity_notice` recorded, no block.
-- `jaccard < NOTICE` → no flag.
+- `jaccard ≥ NEAR_DUPLICATE_JACCARD_THRESHOLD` → hard `pipeline_failed`; admin
+  override writes durable state, unblocks re-evaluation, and audits.
+- `SIMILARITY_NOTICE_JACCARD_THRESHOLD ≤ jaccard < NEAR_DUPLICATE_JACCARD_THRESHOLD`
+  → `pipeline_passed`, `similarity_notice` recorded, no block.
+- `jaccard < SIMILARITY_NOTICE_JACCARD_THRESHOLD` → no flag.
 - Same-problem distinct Framework (notice band) is no longer blocked (regression
   guard for the reported bug).
 - Notice review aggregate populated when nearest match has reviews (post Slice 1).
-- Differentiation note persisted in audit; required only when nearest has review
-  data; never bypasses the hard band.
+- Differentiation note persisted in audit when the Contributor acknowledges or
+  dismisses a notice; never required for publish and never bypasses the hard band.
 
 ## Slice 3 — Public Contributor Profiles With Attestation Badges
 
