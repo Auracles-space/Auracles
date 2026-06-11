@@ -7,7 +7,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AttestationBadge } from "@/components/modules/explore/framework-card";
+import {
+  AttestationBadge,
+  ReviewSummary,
+} from "@/components/modules/explore/framework-card";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
 import {
@@ -104,6 +107,15 @@ export default async function ExploreDetailPage({
                   {framework.rarity_score ?? "Pending"}
                 </dd>
               </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-foreground-muted">Reviews</dt>
+                <dd className="font-semibold text-foreground">
+                  <ReviewSummary
+                    averageScore={framework.average_review_score}
+                    reviewCount={framework.review_count}
+                  />
+                </dd>
+              </div>
             </dl>
             <Link
               className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
@@ -129,6 +141,11 @@ export default async function ExploreDetailPage({
               ) : (
                 <li>No public Attestation report has been attached yet.</li>
               )}
+              <li>
+                Reviews: {framework.average_review_score ?? "No average yet"} from{" "}
+                {framework.review_count} review
+                {framework.review_count === 1 ? "" : "s"}.
+              </li>
               <li>Published version snapshot preserved for licensees.</li>
               <li>Artifact previews use short-lived read URLs.</li>
               <li>Licensed downloads require Operator role and verified KYC.</li>

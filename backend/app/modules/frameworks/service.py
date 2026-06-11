@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -18,6 +19,8 @@ from app.modules.frameworks.models import (
     Framework,
     FrameworkVersion,
     FrameworkVersionArtifact,
+    License,
+    Review,
 )
 from app.modules.frameworks.models_artifact import (
     Artifact,
@@ -33,6 +36,10 @@ from app.modules.frameworks.schemas import (
     FrameworkCreate,
     FrameworkListItem,
     FrameworkResponse,
+    FrameworkReviewCreate,
+    FrameworkReviewListResponse,
+    FrameworkReviewResponse,
+    FrameworkReviewUpdate,
     FrameworkUpdate,
     FrameworkVersionCreate,
     PreviewArtifactRequest,
@@ -59,6 +66,7 @@ ALLOWED_ARTIFACT_MIME_TYPES = {
 }
 ARTIFACT_MAX_TOTAL_SIZE = 500 * 1024 * 1024
 ARTIFACT_UPLOAD_URL_TTL_SECONDS = 900
+REVIEW_EDIT_WINDOW = timedelta(days=30)
 
 
 def _tags_text(tags: list[str]) -> str:
@@ -155,6 +163,59 @@ def _framework_to_list_item(framework: Framework) -> FrameworkListItem:
         created_at=framework.created_at,
         updated_at=framework.updated_at,
     )
+
+
+def _review_to_response(review: Review) -> FrameworkReviewResponse:
+    """Map a Review ORM row to the public review response schema."""
+    return FrameworkReviewResponse(
+        id=review.id,
+        framework_id=review.framework_id,
+        operator_id=review.operator_id,
+        score=review.score,
+        body=review.body,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+    )
+
+
+def _review_average(scores: list[int]) -> Decimal | None:
+    """Return a two-decimal average for a collection of review scores."""
+    if not scores:
+        return None
+    return (Decimal(sum(scores)) / Decimal(len(scores))).quantize(Decimal("0.01"))
+
+
+def _require_reviewable_framework(framework: Framework) -> None:
+    """Reject new reviews for Frameworks outside the published catalog."""
+    if framework.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only published Frameworks accept new reviews.",
+        )
+
+
+async def _load_active_operator_license(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    operator_id: UUID,
+) -> License:
+    """Load an active, unexpired Operator License or raise 403."""
+    now = datetime.now(UTC)
+    license_row = await db.scalar(
+        select(License).where(
+            License.framework_id == framework_id,
+            License.operator_id == operator_id,
+            License.status == "active",
+            or_(License.expires_at.is_(None), License.expires_at > now),
+        )
+    )
+    if license_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An active License is required to review this Framework.",
+        )
+    return license_row
 
 
 async def _load_owned_framework(
@@ -340,6 +401,165 @@ async def list_contributor_frameworks(
         .all()
     )
     return [_framework_to_list_item(framework) for framework in frameworks]
+
+
+async def create_framework_review(
+    db: AsyncSession,
+    operator: User,
+    framework_id: UUID,
+    payload: FrameworkReviewCreate,
+) -> FrameworkReviewResponse:
+    """Create the current Operator's review for an actively licensed Framework."""
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        framework = await db.scalar(
+            select(Framework).where(Framework.id == framework_id)
+        )
+        if framework is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        _require_reviewable_framework(framework)
+        if framework.contributor_id == operator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Contributors cannot review their own Frameworks.",
+            )
+        license_row = await _load_active_operator_license(
+            db,
+            framework_id=framework_id,
+            operator_id=operator_id,
+        )
+        existing_review = await db.scalar(
+            select(Review).where(
+                Review.framework_id == framework_id,
+                Review.operator_id == operator_id,
+            )
+        )
+        if existing_review is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Operator has already reviewed this Framework.",
+            )
+        review = Review(
+            framework_id=framework_id,
+            operator_id=operator_id,
+            license_id=license_row.id,
+            score=payload.score,
+            body=payload.body,
+        )
+        db.add(review)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="framework_review_created",
+            target_type="framework",
+            target_id=framework_id,
+            metadata={"review_id": str(review.id), "score": payload.score},
+        )
+    await db.refresh(review)
+    logger.bind(
+        module="frameworks",
+        action="create_framework_review",
+        user_id=operator_id,
+        framework_id=framework_id,
+    ).info("framework_review_created")
+    return _review_to_response(review)
+
+
+async def update_my_framework_review(
+    db: AsyncSession,
+    operator: User,
+    framework_id: UUID,
+    payload: FrameworkReviewUpdate,
+) -> FrameworkReviewResponse:
+    """Update the current Operator's review before the 30-day edit window closes."""
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        review = await db.scalar(
+            select(Review).where(
+                Review.framework_id == framework_id,
+                Review.operator_id == operator_id,
+            )
+        )
+        if review is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Review not found.",
+            )
+        if review.created_at < datetime.now(UTC) - REVIEW_EDIT_WINDOW:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Review edit window has closed.",
+            )
+        if payload.score is not None:
+            review.score = payload.score
+        if "body" in payload.model_fields_set:
+            review.body = payload.body
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=operator_id,
+            action="framework_review_updated",
+            target_type="framework",
+            target_id=framework_id,
+            metadata={"review_id": str(review.id), "score": review.score},
+        )
+    await db.refresh(review)
+    logger.bind(
+        module="frameworks",
+        action="update_framework_review",
+        user_id=operator_id,
+        framework_id=framework_id,
+    ).info("framework_review_updated")
+    return _review_to_response(review)
+
+
+async def list_framework_reviews(
+    db: AsyncSession,
+    framework_id: UUID,
+    *,
+    viewer_id: UUID | None,
+    viewer_roles: set[str],
+) -> FrameworkReviewListResponse:
+    """Return reviews and score aggregates for one Framework."""
+    framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    if framework.status != "published":
+        if viewer_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        if "admin" not in viewer_roles:
+            await _load_active_operator_license(
+                db,
+                framework_id=framework_id,
+                operator_id=viewer_id,
+            )
+    rows = await db.execute(
+        select(Review)
+        .where(Review.framework_id == framework_id)
+        .order_by(Review.created_at.desc())
+    )
+    reviews = list(rows.scalars().all())
+    return FrameworkReviewListResponse(
+        reviews=[_review_to_response(review) for review in reviews],
+        average_score=_review_average([review.score for review in reviews]),
+        review_count=len(reviews),
+    )
 
 
 async def update_framework(

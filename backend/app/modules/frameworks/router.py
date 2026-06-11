@@ -4,6 +4,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,6 +14,7 @@ from app.core.dependencies import (
     require_profile_complete,
     require_role,
 )
+from app.core.security import decode_access_token
 from app.modules.auth.models import User
 from app.modules.frameworks import service
 from app.modules.frameworks.schemas import (
@@ -22,6 +25,10 @@ from app.modules.frameworks.schemas import (
     FrameworkCreate,
     FrameworkListItem,
     FrameworkResponse,
+    FrameworkReviewCreate,
+    FrameworkReviewListResponse,
+    FrameworkReviewResponse,
+    FrameworkReviewUpdate,
     FrameworkUpdate,
     FrameworkVersionCreate,
     PreviewArtifactRequest,
@@ -30,8 +37,26 @@ from app.modules.frameworks.schemas import (
 router = APIRouter(prefix="/frameworks", tags=["Frameworks"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
+OperatorUser = Annotated[User, Depends(require_role("operator"))]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 ProfileCompleteUser = Annotated[User, Depends(require_profile_complete)]
+optional_bearer = HTTPBearer(auto_error=False)
+
+
+async def optional_review_viewer(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(optional_bearer),
+    ],
+) -> tuple[UUID | None, set[str]]:
+    """Return optional bearer identity for review visibility checks."""
+    if credentials is None:
+        return None, set()
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except JWTError:
+        return None, set()
+    return payload.sub, set(payload.roles)
 
 
 @router.post(
@@ -61,6 +86,64 @@ async def list_frameworks(
 ) -> list[FrameworkListItem]:
     """List Frameworks owned by the authenticated Contributor."""
     return await service.list_contributor_frameworks(db=db, contributor=contributor)
+
+
+@router.post(
+    "/{framework_id}/reviews",
+    response_model=FrameworkReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_framework_review(
+    framework_id: UUID,
+    payload: FrameworkReviewCreate,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> FrameworkReviewResponse:
+    """Create the authenticated Operator's review for a licensed Framework."""
+    return await service.create_framework_review(
+        db=db,
+        operator=operator,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@router.patch(
+    "/{framework_id}/reviews/me",
+    response_model=FrameworkReviewResponse,
+)
+async def update_my_framework_review(
+    framework_id: UUID,
+    payload: FrameworkReviewUpdate,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> FrameworkReviewResponse:
+    """Edit the authenticated Operator's own Framework review."""
+    return await service.update_my_framework_review(
+        db=db,
+        operator=operator,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/{framework_id}/reviews",
+    response_model=FrameworkReviewListResponse,
+)
+async def list_framework_reviews(
+    framework_id: UUID,
+    viewer: Annotated[tuple[UUID | None, set[str]], Depends(optional_review_viewer)],
+    db: DatabaseSession,
+) -> FrameworkReviewListResponse:
+    """List reviews and aggregate score for one Framework."""
+    viewer_id, viewer_roles = viewer
+    return await service.list_framework_reviews(
+        db=db,
+        framework_id=framework_id,
+        viewer_id=viewer_id,
+        viewer_roles=viewer_roles,
+    )
 
 
 @router.get("/{framework_id}", response_model=FrameworkResponse)

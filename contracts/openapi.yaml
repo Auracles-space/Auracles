@@ -970,6 +970,111 @@ paths:
           description: Framework must pass pipeline checks before publish.
         '422':
           description: At least one Artifact is required.
+  /v1/frameworks/{framework_id}/reviews:
+    post:
+      tags:
+      - Frameworks
+      operationId: createFrameworkReview
+      summary: Create Framework review
+      description: Creates the authenticated Operator's review for an actively licensed published Framework.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkReviewCreate'
+      responses:
+        '201':
+          description: Review created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkReviewResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Operator role and active License required.
+        '404':
+          description: Framework not found.
+        '409':
+          description: Operator has already reviewed this Framework.
+        '422':
+          description: Framework is not reviewable or payload is invalid.
+    get:
+      tags:
+      - Frameworks
+      operationId: listFrameworkReviews
+      summary: List Framework reviews
+      description: Returns review records and score aggregates. Published Framework reviews are public; unpublished or suspended Framework reviews require an active License or admin role.
+      security:
+      - bearerAuth: []
+      - {}
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Reviews returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkReviewListResponse'
+        '404':
+          description: Framework not found.
+        '403':
+          description: Active License or admin role required for non-public Framework reviews.
+  /v1/frameworks/{framework_id}/reviews/me:
+    patch:
+      tags:
+      - Frameworks
+      operationId: updateMyFrameworkReview
+      summary: Update my Framework review
+      description: Updates the authenticated Operator's own review during the 30-day edit window.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkReviewUpdate'
+      responses:
+        '200':
+          description: Review updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkReviewResponse'
+        '401':
+          description: Missing or invalid access token.
+        '403':
+          description: Operator role required.
+        '404':
+          description: Review not found.
+        '409':
+          description: Edit window closed.
+        '422':
+          description: Review payload is invalid.
   /v1/frameworks/{framework_id}/artifacts/upload-url:
     post:
       tags:
@@ -1270,7 +1375,7 @@ paths:
       - Explore
       operationId: listExploreFrameworks
       summary: List public Framework catalog
-      description: Returns published Frameworks with search, filters, pagination, and temporary sort shims.
+      description: Returns published Frameworks with search, filters, pagination, review aggregates, and any temporary sort shims.
       security:
       - bearerAuth: []
       - {}
@@ -1380,7 +1485,7 @@ paths:
           description: Public Framework catalog returned.
           headers:
             X-Sort-Shim:
-              description: true when top-rated or most-purchased sort uses newest fallback until Phase 3 data exists.
+              description: true when most-purchased sort uses newest fallback until purchase-count ranking ships.
               schema:
                 type: string
           content:
@@ -6113,6 +6218,8 @@ components:
       - license_types
       - thumbnail_key
       - rarity_score
+      - average_review_score
+      - review_count
       - attestation_badge
       - owned
       - published_at
@@ -6178,6 +6285,14 @@ components:
           - string
           - 'null'
           pattern: ^[0-9]+(\.[0-9]{1,4})?$
+        average_review_score:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        review_count:
+          type: integer
+          default: 0
         attestation_badge:
           anyOf:
           - $ref: '#/components/schemas/ExploreAttestationBadge'
@@ -6575,6 +6690,87 @@ components:
           - string
           - 'null'
           format: date-time
+    FrameworkReviewCreate:
+      type: object
+      required:
+      - score
+      properties:
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        body:
+          type:
+          - string
+          - 'null'
+          maxLength: 4000
+    FrameworkReviewUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        score:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 5
+        body:
+          type:
+          - string
+          - 'null'
+          maxLength: 4000
+    FrameworkReviewResponse:
+      type: object
+      required:
+      - id
+      - framework_id
+      - operator_id
+      - score
+      - body
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        framework_id:
+          type: string
+          format: uuid
+        operator_id:
+          type: string
+          format: uuid
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        body:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FrameworkReviewListResponse:
+      type: object
+      required:
+      - reviews
+      - average_score
+      - review_count
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameworkReviewResponse'
+        average_score:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        review_count:
+          type: integer
     FrameworkVersionCreate:
       type: object
       required:

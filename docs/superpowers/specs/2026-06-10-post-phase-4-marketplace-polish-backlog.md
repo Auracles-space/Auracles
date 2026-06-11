@@ -14,6 +14,12 @@ so Explore trust signals do not stay permanently shimmed.
 
 **Maps to:** FR-FWK-014, BR-FWK-004, BR-FWK-005, FR-EXP-006, FR-FWK-010.
 
+**Status:** Implemented in backlog Slice 1. Backend review writes enforce active
+License ownership, one review per Operator, no self-review, 30-day edit window,
+and audit rows. Public Explore now returns average review score/count and
+`top-rated` uses real review aggregates. Operator Library exposes the licensed
+review form, and Contributor analytics reads the real review aggregate.
+
 ### Product behavior
 
 - Operators can submit a 1-5 score plus optional body for a Framework they

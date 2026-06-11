@@ -1,9 +1,13 @@
 /**
  * Contributor Framework analytics route.
  *
- * Phase 2 exposes views only. Purchases, revenue, and review average remain
- * zero-value shims until Phase 3 transaction/review flows are implemented.
+ * Exposes current review aggregates while views, purchases, and per-Framework
+ * revenue remain placeholder metrics until dedicated analytics endpoints ship.
  */
+import { listFrameworkReviews } from "@/lib/generated/sdk.gen";
+import type { FrameworkReviewListResponse } from "@/lib/generated/types.gen";
+import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
+
 type AnalyticsPageProps = {
   params: Promise<{ id: string }>;
 };
@@ -17,11 +21,24 @@ export default async function FrameworkAnalyticsPage({
   params,
 }: AnalyticsPageProps) {
   const { id } = await params;
+  configureServerMarketplaceClient();
+  let reviews: FrameworkReviewListResponse | null = null;
+  try {
+    const result = await listFrameworkReviews({
+      path: { framework_id: id },
+    });
+    reviews = result.data ?? null;
+  } catch {
+    reviews = null;
+  }
+  const averageReview = reviews?.average_score
+    ? `${reviews.average_score} (${reviews.review_count})`
+    : "No reviews";
   const metrics = [
     { label: "Catalog views", value: "0" },
     { label: "Purchases", value: "0" },
     { label: "Revenue", value: "$0" },
-    { label: "Average review", value: "0" },
+    { label: "Average review", value: averageReview },
   ];
 
   return (

@@ -24,6 +24,8 @@ import {
 } from "@/lib/auth/form-client";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
+import { FrameworkReviewPanel } from "./framework-review-panel";
+
 type LibraryCardState = {
   artifacts: ExploreArtifactSummary[];
   error: string | null;
@@ -184,6 +186,7 @@ function LibraryCard({ item }: LibraryCardProps) {
           </button>
         ))}
       </div>
+      <FrameworkReviewPanel frameworkId={item.framework_id} />
     </article>
   );
 }

@@ -50,6 +50,8 @@ class ExploreFrameworkCard(BaseModel):
     license_types: list[str]
     thumbnail_key: str | None
     rarity_score: Decimal | None
+    average_review_score: Decimal | None = Field(default=None, decimal_places=2)
+    review_count: int = 0
     attestation_badge: ExploreAttestationBadge | None = None
     owned: bool = False
     published_at: datetime | None

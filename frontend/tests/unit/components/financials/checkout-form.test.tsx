@@ -33,6 +33,7 @@ vi.mock("@stripe/react-stripe-js", () => ({
 const framework: ExploreFrameworkDetail = {
   attestation_badge: null,
   artifacts: [],
+  average_review_score: null,
   category: "playbook",
   complexity: 3,
   currency: "USD",
@@ -50,6 +51,7 @@ const framework: ExploreFrameworkDetail = {
   price: "250.00",
   published_at: "2026-06-09T00:00:00Z",
   rarity_score: "0.82",
+  review_count: 0,
   sector: "private_equity",
   tags: ["diligence", "controls"],
   thumbnail_key: null,

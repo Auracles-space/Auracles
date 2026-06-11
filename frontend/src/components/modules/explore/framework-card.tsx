@@ -3,7 +3,11 @@
  *
  * Cards expose trust signals and pricing without leaking private artifact keys.
  */
-import { CheckCircledIcon, ClockIcon } from "@radix-ui/react-icons";
+import {
+  CheckCircledIcon,
+  ClockIcon,
+  StarFilledIcon,
+} from "@radix-ui/react-icons";
 import Link from "next/link";
 
 import type {
@@ -48,6 +52,30 @@ export function AttestationBadge({
 }
 
 /**
+ * Render public review aggregate text for a Framework card or detail page.
+ *
+ * @param props - Average score and count from the Explore API.
+ */
+export function ReviewSummary({
+  averageScore,
+  reviewCount,
+}: {
+  averageScore: string | null;
+  reviewCount: number;
+}) {
+  const label = averageScore
+    ? `${averageScore} (${reviewCount} review${reviewCount === 1 ? "" : "s"})`
+    : "No reviews yet";
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
+      <StarFilledIcon className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+/**
  * Render one marketplace catalog item.
  *
  * @param props - Public Framework summary.
@@ -72,6 +100,12 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
         <p className="line-clamp-2 text-sm leading-6 text-foreground-muted">
           {framework.description}
         </p>
+        <div className="mt-3">
+          <ReviewSummary
+            averageScore={framework.average_review_score}
+            reviewCount={framework.review_count}
+          />
+        </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-4">

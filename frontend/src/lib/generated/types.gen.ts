@@ -669,6 +669,8 @@ export type ExploreFrameworkCard = {
     license_types: Array<(string)>;
     thumbnail_key: (string) | null;
     rarity_score: (string) | null;
+    average_review_score: (string) | null;
+    review_count: number;
     attestation_badge: (ExploreAttestationBadge | null);
     owned: boolean;
     published_at: (string) | null;
@@ -764,6 +766,32 @@ export type FrameworkResponse = {
 };
 
 export type status5 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+
+export type FrameworkReviewCreate = {
+    score: number;
+    body?: (string) | null;
+};
+
+export type FrameworkReviewListResponse = {
+    reviews: Array<FrameworkReviewResponse>;
+    average_score: (string) | null;
+    review_count: number;
+};
+
+export type FrameworkReviewResponse = {
+    id: string;
+    framework_id: string;
+    operator_id: string;
+    score: number;
+    body: (string) | null;
+    created_at: string;
+    updated_at: string;
+};
+
+export type FrameworkReviewUpdate = {
+    score?: (number) | null;
+    body?: (string) | null;
+};
 
 export type FrameworkSector = 'private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology';
 
@@ -1650,6 +1678,38 @@ export type PublishFrameworkData = {
 export type PublishFrameworkResponse = (FrameworkResponse);
 
 export type PublishFrameworkError = (unknown);
+
+export type CreateFrameworkReviewData = {
+    body: FrameworkReviewCreate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type CreateFrameworkReviewResponse = (FrameworkReviewResponse);
+
+export type CreateFrameworkReviewError = (unknown);
+
+export type ListFrameworkReviewsData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkReviewsResponse = (FrameworkReviewListResponse);
+
+export type ListFrameworkReviewsError = (unknown);
+
+export type UpdateMyFrameworkReviewData = {
+    body: FrameworkReviewUpdate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type UpdateMyFrameworkReviewResponse = (FrameworkReviewResponse);
+
+export type UpdateMyFrameworkReviewError = (unknown);
 
 export type RequestArtifactUploadUrlData = {
     body: ArtifactUploadUrlRequest;

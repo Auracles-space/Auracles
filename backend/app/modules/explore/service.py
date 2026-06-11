@@ -25,7 +25,7 @@ from app.modules.explore.schemas import (
     ExploreFrameworkListResponse,
     ExploreSort,
 )
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, Review
 from app.modules.frameworks.models_artifact import Artifact
 
 PREVIEW_URL_TTL_SECONDS = 900
@@ -37,8 +37,10 @@ def _card_from_framework(
     framework: Framework,
     rarity_score: Decimal | None,
     attestation_badge: ExploreAttestationBadge | None,
+    review_aggregate: tuple[Decimal | None, int] | None,
 ) -> ExploreFrameworkCard:
     """Map a published Framework row into a public catalog card."""
+    average_review_score, review_count = review_aggregate or (None, 0)
     return ExploreFrameworkCard(
         id=framework.id,
         title=framework.title,
@@ -58,6 +60,8 @@ def _card_from_framework(
         license_types=framework.license_types,
         thumbnail_key=framework.thumbnail_key,
         rarity_score=rarity_score,
+        average_review_score=average_review_score,
+        review_count=review_count,
         attestation_badge=attestation_badge,
         owned=False,
         published_at=framework.published_at,
@@ -177,6 +181,25 @@ def _apply_sort(
     sort: ExploreSort,
 ) -> Select[tuple[Framework]]:
     """Apply stable catalog ordering."""
+    if sort == "top-rated":
+        average_score = (
+            select(func.avg(Review.score))
+            .where(Review.framework_id == Framework.id)
+            .correlate(Framework)
+            .scalar_subquery()
+        )
+        review_count = (
+            select(func.count(Review.id))
+            .where(Review.framework_id == Framework.id)
+            .correlate(Framework)
+            .scalar_subquery()
+        )
+        return query.order_by(
+            average_score.desc().nullslast(),
+            review_count.desc(),
+            Framework.published_at.desc(),
+            Framework.created_at.desc(),
+        )
     if sort == "price_asc":
         return query.order_by(Framework.price.asc(), Framework.created_at.desc())
     if sort == "price_desc":
@@ -200,6 +223,33 @@ async def _framework_rarity_scores(
         .group_by(Artifact.framework_id)
     )
     return {framework_id: rarity_score for framework_id, rarity_score in rows.all()}
+
+
+async def _framework_review_aggregates(
+    db: AsyncSession,
+    framework_ids: list[UUID],
+) -> dict[UUID, tuple[Decimal | None, int]]:
+    """Return average review score and count by Framework id."""
+    if not framework_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            Review.framework_id,
+            func.avg(Review.score),
+            func.count(Review.id),
+        )
+        .where(Review.framework_id.in_(framework_ids))
+        .group_by(Review.framework_id)
+    )
+    aggregates: dict[UUID, tuple[Decimal | None, int]] = {}
+    for framework_id, average_score, review_count in rows.all():
+        rounded_score = (
+            Decimal(average_score).quantize(Decimal("0.01"))
+            if average_score is not None
+            else None
+        )
+        aggregates[framework_id] = (rounded_score, int(review_count))
+    return aggregates
 
 
 def _public_attestation_status(status_: str) -> str:
@@ -300,12 +350,17 @@ async def list_catalog(
         db,
         [framework.id for framework in frameworks],
     )
+    review_aggregates = await _framework_review_aggregates(
+        db,
+        [framework.id for framework in frameworks],
+    )
     return ExploreFrameworkListResponse(
         items=[
             _card_from_framework(
                 framework,
                 rarity_scores.get(framework.id),
                 attestation_badges.get(framework.id),
+                review_aggregates.get(framework.id),
             )
             for framework in frameworks
         ],
@@ -313,7 +368,7 @@ async def list_catalog(
         page=page,
         page_size=page_size,
         sort=sort,
-        sort_shim=sort in {"top-rated", "most-purchased"},
+        sort_shim=sort == "most-purchased",
     )
 
 
@@ -378,6 +433,7 @@ async def get_detail(
     artifacts = list(artifact_rows)
     rarity_scores = await _framework_rarity_scores(db, [framework.id])
     attestation_badges = await _framework_attestation_badges(db, [framework.id])
+    review_aggregates = await _framework_review_aggregates(db, [framework.id])
     preview_artifact = next(
         (
             artifact
@@ -390,6 +446,7 @@ async def get_detail(
         framework,
         rarity_scores.get(framework.id),
         attestation_badges.get(framework.id),
+        review_aggregates.get(framework.id),
     )
     return ExploreFrameworkDetail(
         **card.model_dump(),
@@ -461,11 +518,16 @@ async def related_frameworks(
         db,
         [framework.id for framework in ranked],
     )
+    review_aggregates = await _framework_review_aggregates(
+        db,
+        [framework.id for framework in ranked],
+    )
     return [
         _card_from_framework(
             framework,
             rarity_scores.get(framework.id),
             attestation_badges.get(framework.id),
+            review_aggregates.get(framework.id),
         )
         for framework in ranked
     ]

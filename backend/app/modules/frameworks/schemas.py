@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.frameworks.taxonomy import (
     FrameworkCategory,
@@ -222,3 +222,64 @@ class ArtifactResponse(BaseModel):
     redaction_accepted: bool
     rarity_score: Decimal | None
     created_at: datetime
+
+
+class FrameworkReviewCreate(BaseModel):
+    """Request body for creating an Operator review of a licensed Framework."""
+
+    score: int = Field(ge=1, le=5)
+    body: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("body")
+    @classmethod
+    def body_is_trimmed(cls, value: str | None) -> str | None:
+        """Normalize blank review text to null."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class FrameworkReviewUpdate(BaseModel):
+    """Request body for editing the current Operator's Framework review."""
+
+    score: int | None = Field(default=None, ge=1, le=5)
+    body: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("body")
+    @classmethod
+    def body_is_trimmed(cls, value: str | None) -> str | None:
+        """Normalize blank review text to null."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def has_editable_field(self) -> FrameworkReviewUpdate:
+        """Require at least one review field to be patched."""
+        if self.score is None and self.body is None:
+            raise ValueError("At least one review field is required.")
+        return self
+
+
+class FrameworkReviewResponse(BaseModel):
+    """Public review record written by a licensed Operator."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    framework_id: UUID
+    operator_id: UUID
+    score: int
+    body: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FrameworkReviewListResponse(BaseModel):
+    """Review list and aggregate score for one Framework."""
+
+    reviews: list[FrameworkReviewResponse]
+    average_score: Decimal | None = Field(default=None, decimal_places=2)
+    review_count: int
