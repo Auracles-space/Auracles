@@ -61,6 +61,7 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "attestation_disputed",
     "attestation_dispute_resolved",
     "attestation_refunded",
+    "api_rate_limit_threshold",
     name="notification_type_enum",
     create_type=False,
 )
