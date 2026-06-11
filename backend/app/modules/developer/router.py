@@ -13,8 +13,15 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.developer import application_service
+from app.modules.developer import application_service, keys_service
+from app.modules.developer.dependencies import require_active_developer_account
+from app.modules.developer.models import DeveloperAccount
 from app.modules.developer.schemas import (
+    ApiKeyCreateRequest,
+    ApiKeyCreateResponse,
+    ApiKeyResponse,
+    ApiKeysResponse,
+    ApiKeyUpdateRequest,
     DeveloperApplicationCreateRequest,
     DeveloperApplicationResponse,
     DeveloperApplicationReviewRequest,
@@ -26,6 +33,10 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+ActiveDeveloperAccount = Annotated[
+    DeveloperAccount,
+    Depends(require_active_developer_account),
+]
 
 
 @router.post(
@@ -132,3 +143,78 @@ async def review_developer_application(
         payload=payload,
     )
     return DeveloperApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/developer/api-keys",
+    response_model=ApiKeyCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_api_key(
+    payload: ApiKeyCreateRequest,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> ApiKeyCreateResponse:
+    """Create a scoped API key and return the raw key exactly once."""
+    api_key, raw_key = await keys_service.create_api_key(
+        db=db,
+        developer_account=developer_account,
+        payload=payload,
+    )
+    return ApiKeyCreateResponse(
+        **ApiKeyResponse.model_validate(api_key).model_dump(),
+        raw_key=raw_key,
+    )
+
+
+@router.get("/developer/api-keys", response_model=ApiKeysResponse)
+async def list_api_keys(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> ApiKeysResponse:
+    """List API key metadata for the active Developer account."""
+    api_keys = await keys_service.list_api_keys(
+        db=db,
+        developer_account=developer_account,
+    )
+    return ApiKeysResponse(
+        api_keys=[ApiKeyResponse.model_validate(api_key) for api_key in api_keys]
+    )
+
+
+@router.patch(
+    "/developer/api-keys/{api_key_id}",
+    response_model=ApiKeyResponse,
+)
+async def update_api_key(
+    api_key_id: UUID,
+    payload: ApiKeyUpdateRequest,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> ApiKeyResponse:
+    """Update the display label for an API key owned by the Developer."""
+    api_key = await keys_service.update_api_key(
+        db=db,
+        developer_account=developer_account,
+        api_key_id=api_key_id,
+        payload=payload,
+    )
+    return ApiKeyResponse.model_validate(api_key)
+
+
+@router.delete(
+    "/developer/api-keys/{api_key_id}",
+    response_model=ApiKeyResponse,
+)
+async def revoke_api_key(
+    api_key_id: UUID,
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+) -> ApiKeyResponse:
+    """Revoke an API key owned by the active Developer account."""
+    api_key = await keys_service.revoke_api_key(
+        db=db,
+        developer_account=developer_account,
+        api_key_id=api_key_id,
+    )
+    return ApiKeyResponse.model_validate(api_key)

@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+
+from app.modules.developer.constants import VALID_API_KEY_SCOPES
 
 
 class DeveloperApplicationCreateRequest(BaseModel):
@@ -46,3 +48,56 @@ class DeveloperApplicationReviewRequest(BaseModel):
     decision: Literal["approved", "rejected"]
     feedback: str | None = Field(default=None, max_length=5000)
     totp_code: str = Field(min_length=6, max_length=16)
+
+
+class ApiKeyCreateRequest(BaseModel):
+    """Request body for creating a partner API key."""
+
+    name: str = Field(min_length=1, max_length=255)
+    scopes: list[str] = Field(min_length=1, max_length=20)
+    expires_at: datetime | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def scopes_are_known_and_unique(cls, value: list[str]) -> list[str]:
+        """Reject duplicate or unknown API key scopes."""
+        if len(set(value)) != len(value):
+            raise ValueError("Scopes must be unique.")
+        unknown = sorted(set(value) - VALID_API_KEY_SCOPES)
+        if unknown:
+            raise ValueError(f"Unknown API key scopes: {', '.join(unknown)}.")
+        return value
+
+
+class ApiKeyUpdateRequest(BaseModel):
+    """Request body for changing an API key display label."""
+
+    name: str = Field(min_length=1, max_length=255)
+
+
+class ApiKeyResponse(BaseModel):
+    """API key metadata returned after creation, listing, update, or revoke."""
+
+    id: UUID
+    name: str
+    key_prefix: str
+    scopes: list[str]
+    status: str
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApiKeyCreateResponse(ApiKeyResponse):
+    """API key creation response that includes the raw key exactly once."""
+
+    raw_key: str
+
+
+class ApiKeysResponse(BaseModel):
+    """List response for API key metadata."""
+
+    api_keys: list[ApiKeyResponse]

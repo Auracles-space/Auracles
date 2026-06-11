@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from uuid import UUID
@@ -18,7 +19,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
-from app.modules.developer.models import DeveloperAccount, DeveloperApplication
+from app.modules.developer.models import ApiKey, DeveloperAccount, DeveloperApplication
 from app.shared.models.audit_log import AuditLog
 
 
@@ -81,6 +82,7 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
     await engine.dispose()
     async with async_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
             await session.execute(delete(DeveloperApplication))
             await session.execute(delete(AuditLog))
@@ -94,6 +96,7 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
         app.dependency_overrides.pop(get_redis, None)
         async with async_session_factory() as session:
             async with session.begin():
+                await session.execute(delete(ApiKey))
                 await session.execute(delete(DeveloperAccount))
                 await session.execute(delete(DeveloperApplication))
                 await session.execute(delete(AuditLog))
@@ -150,6 +153,45 @@ async def create_admin_user() -> tuple[UUID, str]:
         return user.id, secret
 
 
+async def create_developer_user(email: str) -> tuple[UUID, UUID]:
+    """Create an approved Developer account for API key lifecycle tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash=hash_password("CorrectHorse9"),
+                display_name=email.split("@")[0],
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id,
+                    role="developer",
+                    approved_at=datetime.now(UTC),
+                )
+            )
+            application = DeveloperApplication(
+                user_id=user.id,
+                company_name="Developer Key Co.",
+                website="https://developer-key.example.com",
+                use_case="Embed Auracles catalog into a partner workflow.",
+                status="approved",
+                reviewed_at=datetime.now(UTC),
+            )
+            session.add(application)
+            await session.flush()
+            account = DeveloperAccount(
+                user_id=user.id,
+                application_id=application.id,
+                company_name=application.company_name,
+            )
+            session.add(account)
+            await session.flush()
+            return user.id, account.id
+
+
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -162,6 +204,14 @@ def application_payload() -> dict[str, str]:
         "company_name": "Partner Systems Inc.",
         "website": "https://partners.example.com",
         "use_case": "We want to embed Auracles Framework discovery in our CRM.",
+    }
+
+
+def api_key_payload() -> dict[str, object]:
+    """Return a valid API key creation request payload."""
+    return {
+        "name": "Production CRM integration",
+        "scopes": ["catalog:read", "purchase:write"],
     }
 
 
@@ -383,3 +433,181 @@ async def test_admin_rejects_developer_application_with_feedback(
     assert account is None
     assert role is None
     assert audit is not None
+
+
+async def test_developer_generates_key_raw_once_and_lists_masked_metadata(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Approved Developers can create API keys and only see the raw key once."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("keys@auracles.space")
+    headers = auth_headers(user_id, ["developer"])
+
+    created = await client.post(
+        "/v1/developer/api-keys",
+        headers=headers,
+        json=api_key_payload(),
+    )
+    listed = await client.get("/v1/developer/api-keys", headers=headers)
+
+    assert created.status_code == 201
+    created_body = created.json()
+    raw_key = created_body["raw_key"]
+    assert raw_key.startswith("ak_")
+    assert created_body["key_prefix"] == raw_key[:12]
+    assert created_body["scopes"] == ["catalog:read", "purchase:write"]
+    assert listed.status_code == 200
+    assert listed.json()["api_keys"] == [
+        {
+            "id": created_body["id"],
+            "name": "Production CRM integration",
+            "key_prefix": raw_key[:12],
+            "scopes": ["catalog:read", "purchase:write"],
+            "status": "active",
+            "expires_at": None,
+            "revoked_at": None,
+            "last_used_at": None,
+            "created_at": created_body["created_at"],
+        }
+    ]
+    assert "raw_key" not in listed.text
+
+    async with async_session_factory() as session:
+        api_key = await session.get(ApiKey, UUID(created_body["id"]))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "api_key_created")
+        )
+
+    assert api_key is not None
+    assert api_key.developer_account_id == account_id
+    assert api_key.key_hash == hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    assert raw_key not in api_key.key_hash
+    assert audit is not None
+
+
+async def test_developer_api_key_rejects_unknown_scopes(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """API key creation rejects scopes outside the known Partner API set."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("bad-scope@auracles.space")
+
+    rejected = await client.post(
+        "/v1/developer/api-keys",
+        headers=auth_headers(user_id, ["developer"]),
+        json={
+            "name": "Bad key",
+            "scopes": ["catalog:read", "admin:write"],
+        },
+    )
+
+    async with async_session_factory() as session:
+        key_count = len(
+            (
+                await session.execute(
+                    select(ApiKey).where(ApiKey.developer_account_id == account_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert rejected.status_code == 422
+    assert key_count == 0
+
+
+async def test_developer_updates_and_revokes_own_api_key(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developers can relabel and revoke API keys they own."""
+    del migrated_database, developer_application_context
+    user_id, _account_id = await create_developer_user("revoke-key@auracles.space")
+    headers = auth_headers(user_id, ["developer"])
+    created = await client.post(
+        "/v1/developer/api-keys",
+        headers=headers,
+        json=api_key_payload(),
+    )
+    key_id = created.json()["id"]
+
+    updated = await client.patch(
+        f"/v1/developer/api-keys/{key_id}",
+        headers=headers,
+        json={"name": "Renamed production integration"},
+    )
+    revoked = await client.delete(
+        f"/v1/developer/api-keys/{key_id}",
+        headers=headers,
+    )
+    listed = await client.get("/v1/developer/api-keys", headers=headers)
+
+    async with async_session_factory() as session:
+        api_key = await session.get(ApiKey, UUID(key_id))
+        update_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "api_key_updated")
+        )
+        revoke_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "api_key_revoked")
+        )
+
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Renamed production integration"
+    assert updated.json()["status"] == "active"
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    assert revoked.json()["revoked_at"] is not None
+    assert listed.status_code == 200
+    assert listed.json()["api_keys"][0]["name"] == "Renamed production integration"
+    assert listed.json()["api_keys"][0]["status"] == "revoked"
+    assert "raw_key" not in listed.text
+    assert api_key is not None
+    assert api_key.status == "revoked"
+    assert api_key.revoked_at is not None
+    assert update_audit is not None
+    assert revoke_audit is not None
+
+
+async def test_developer_cannot_manage_another_developers_api_key(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developer API key mutation is scoped to the owning Developer account."""
+    del migrated_database, developer_application_context
+    owner_id, _owner_account_id = await create_developer_user(
+        "key-owner@auracles.space"
+    )
+    other_id, _other_account_id = await create_developer_user(
+        "key-outsider@auracles.space"
+    )
+    created = await client.post(
+        "/v1/developer/api-keys",
+        headers=auth_headers(owner_id, ["developer"]),
+        json=api_key_payload(),
+    )
+    key_id = created.json()["id"]
+
+    update_denied = await client.patch(
+        f"/v1/developer/api-keys/{key_id}",
+        headers=auth_headers(other_id, ["developer"]),
+        json={"name": "Stolen label"},
+    )
+    revoke_denied = await client.delete(
+        f"/v1/developer/api-keys/{key_id}",
+        headers=auth_headers(other_id, ["developer"]),
+    )
+
+    async with async_session_factory() as session:
+        api_key = await session.get(ApiKey, UUID(key_id))
+
+    assert update_denied.status_code == 404
+    assert revoke_denied.status_code == 404
+    assert api_key is not None
+    assert api_key.name == "Production CRM integration"
+    assert api_key.status == "active"
