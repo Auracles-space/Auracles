@@ -53,7 +53,7 @@ export default async function FrameworkAnalyticsPage({
         <div className="mt-8 grid gap-4 md:grid-cols-4">
           {metrics.map((metric) => (
             <section
-              className="rounded-[8px] border border-border-default bg-surface-2 p-5"
+              className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm"
               key={metric.label}
             >
               <p className="text-sm text-foreground-muted">{metric.label}</p>

@@ -54,7 +54,7 @@ export function DelistButton({ frameworkId }: DelistButtonProps) {
         Delist from marketplace
       </button>
       {confirming ? (
-        <div className="mt-3 rounded-[8px] border border-border-default bg-background p-4">
+        <div className="mt-3 rounded-2xl border border-border-default bg-background p-4 shadow-sm">
           <p className="text-sm text-foreground">
             Delisting hides this Framework from the catalog. Existing licensees
             keep access to the version they paid for.

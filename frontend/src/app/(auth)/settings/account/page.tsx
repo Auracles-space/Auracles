@@ -20,7 +20,7 @@ export default function AccountSettingsPage() {
             Change verified account details after backend confirmation checks.
           </p>
         </header>
-        <section className="rounded-[8px] border border-border-default bg-surface-1 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
           <AccountSettingsPanel />
         </section>
       </div>

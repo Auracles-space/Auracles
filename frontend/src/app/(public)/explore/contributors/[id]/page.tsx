@@ -51,9 +51,9 @@ export default async function ContributorProfilePage({
           Back to Explore
         </Link>
 
-        <section className="mt-6 rounded-[8px] border border-border-default bg-surface-1 p-5 md:p-8">
+        <section className="mt-6 rounded-2xl border border-border-default bg-surface-1 p-5 md:p-8 shadow-sm">
           <div className="grid gap-6 md:grid-cols-[96px_1fr]">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[8px] border border-border-default bg-surface-2">
+            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-border-default bg-surface-2 shadow-sm">
               {profile.avatar_url ? (
                 <div
                   aria-hidden="true"

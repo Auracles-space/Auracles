@@ -93,7 +93,7 @@ export default async function OnboardingPage({
             </p>
           ) : null}
         </header>
-        <section className="rounded-[8px] border border-border-default bg-surface-1 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
           <OnboardingPrompt returnTo={next} />
         </section>
       </div>

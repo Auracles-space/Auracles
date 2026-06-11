@@ -85,7 +85,7 @@ export default async function ExploreDetailPage({
               ))}
             </div>
           </section>
-          <aside className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+          <aside className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <p className="text-sm text-foreground-muted">Starting price</p>
             <p className="mt-1 font-heading text-3xl font-bold text-foreground">
               {formatMoney(framework.price, framework.currency)}
@@ -133,7 +133,7 @@ export default async function ExploreDetailPage({
         </div>
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">
           <PreviewArtifactBlock framework={framework} />
-          <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+          <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <h2 className="font-heading text-lg font-bold text-foreground">
               Trust signals
             </h2>

@@ -21,7 +21,7 @@ export default function KycSettingsPage() {
             payout access is granted.
           </p>
         </header>
-        <section className="rounded-[8px] border border-border-default bg-surface-1 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
           <KycUpload />
         </section>
       </div>

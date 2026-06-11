@@ -142,7 +142,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-      <section className="rounded-[8px] border border-border-default bg-surface-1 p-5">
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
@@ -176,7 +176,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         {hasRaritySoftFail ? (
           <SoftFailAcknowledgement frameworkId={framework.id} />
         ) : null}
-        <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
           <h2 className="font-heading text-lg font-bold text-foreground">
             Publish workflow
           </h2>
@@ -196,7 +196,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
             </div>
           ) : null}
         </section>
-        <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
           <h2 className="font-heading text-lg font-bold text-foreground">
             New version
           </h2>
@@ -228,7 +228,7 @@ type ArtifactManifestProps = {
  */
 function ArtifactManifest({ artifacts }: ArtifactManifestProps) {
   return (
-    <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+    <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
       <h2 className="font-heading text-lg font-bold text-foreground">
         Artifact manifest
       </h2>

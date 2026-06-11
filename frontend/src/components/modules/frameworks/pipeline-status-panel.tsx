@@ -136,7 +136,7 @@ export function PipelineStatusPanel({
   }
 
   return (
-    <section className="rounded-[8px] border border-border-default bg-surface-1 p-6 sm:p-8">
+    <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-lg font-bold text-foreground">
@@ -153,7 +153,7 @@ export function PipelineStatusPanel({
       <div className="grid gap-4">
         {checks.map((check) => (
           <div
-            className="rounded-[8px] border border-border-default bg-background p-5 transition-all hover:bg-surface-2"
+            className="rounded-2xl border border-border-default bg-background p-5 transition-all hover:bg-surface-2 shadow-sm"
             key={check.label}
           >
             <div className="flex items-center justify-between gap-3">
@@ -167,7 +167,7 @@ export function PipelineStatusPanel({
         ))}
       </div>
       {notices.length > 0 ? (
-        <div className="mt-5 rounded-[8px] border border-info/30 bg-info/10 p-4">
+        <div className="mt-5 rounded-2xl border border-info/30 bg-info/10 p-4 shadow-sm">
           <p className="text-sm font-semibold text-info">
             Similar published Framework found
           </p>

@@ -68,7 +68,7 @@ export function OperatorLibrary() {
 
   if (items.length === 0) {
     return (
-      <div className="rounded-[8px] border border-border-default bg-surface-2 p-8 text-center">
+      <div className="rounded-2xl border border-border-default bg-surface-2 p-8 text-center shadow-sm">
         <h2 className="font-heading text-xl font-bold text-foreground">
           No licensed frameworks yet
         </h2>
@@ -144,7 +144,7 @@ function LibraryCard({ item }: LibraryCardProps) {
   }
 
   return (
-    <article className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+    <article className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">

@@ -22,7 +22,7 @@ export default function SessionsSettingsPage() {
             sessions that should no longer have access.
           </p>
         </header>
-        <section className="rounded-[8px] border border-border-default bg-surface-1 p-5">
+        <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
           <SessionList autoload />
         </section>
       </div>

@@ -95,14 +95,14 @@ export function ArtifactUploader({
   }
 
   return (
-    <section className="rounded-[8px] border border-border-default bg-surface-2 p-5">
+    <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
       <h2 className="font-heading text-lg font-bold text-foreground">
         Artifacts
       </h2>
       <p className="mt-1 text-sm text-foreground-muted">
         Upload PDF, Office, or ZIP framework packages for private processing.
       </p>
-      <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[8px] border border-dashed border-border-strong bg-background px-4 text-center text-sm text-foreground-muted">
+      <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-background px-4 text-center text-sm text-foreground-muted">
         <span className="font-semibold text-foreground">
           {uploading ? "Uploading" : "Choose artifact"}
         </span>
