@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -63,6 +63,78 @@ class ExploreFrameworkCard(BaseModel):
     attestation_badge: ExploreAttestationBadge | None = None
     owned: bool = False
     published_at: datetime | None
+
+
+class ExploreFrameworkCatalogItem(ExploreFrameworkCard):
+    """Framework card shape used inside the mixed Explore catalog."""
+
+    item_type: Literal["framework"] = "framework"
+
+
+class ExploreCollectionMemberSummary(BaseModel):
+    """Public member Framework summary embedded in Collection cards."""
+
+    framework_id: UUID
+    title: str
+    version: str
+    category: str
+    price: Decimal
+    currency: str
+    thumbnail_key: str | None
+
+
+class ExploreCollectionCard(BaseModel):
+    """Public catalog card for one published Collection."""
+
+    item_type: Literal["collection"] = "collection"
+    id: UUID
+    contributor_id: UUID
+    contributor_name: str
+    title: str
+    description: str
+    bundle_price: Decimal
+    currency: str
+    member_price_sum: Decimal
+    savings_amount: Decimal
+    savings_percent: Decimal = Field(decimal_places=2)
+    member_count: int
+    members: list[ExploreCollectionMemberSummary]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExploreCollectionListResponse(BaseModel):
+    """Paginated public Collection catalog response."""
+
+    items: list[ExploreCollectionCard]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    sort: ExploreSort
+    sort_shim: bool = False
+
+
+class ExploreCollectionDetail(ExploreCollectionCard):
+    """Public Collection detail payload."""
+
+    already_owned_member_ids: list[UUID] = Field(default_factory=list)
+
+
+ExploreCatalogItem = Annotated[
+    ExploreFrameworkCatalogItem | ExploreCollectionCard,
+    Field(discriminator="item_type"),
+]
+
+
+class ExploreCatalogResponse(BaseModel):
+    """Paginated mixed catalog response for Framework and Collection cards."""
+
+    items: list[ExploreCatalogItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    sort: ExploreSort
+    sort_shim: bool = False
 
 
 class ExploreFrameworkListResponse(BaseModel):

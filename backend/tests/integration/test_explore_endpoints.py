@@ -30,6 +30,7 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import CollectionFramework, FrameworkCollection
 from app.modules.frameworks.models import (
     Framework,
     FrameworkVersion,
@@ -107,6 +108,8 @@ async def explore_test_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
             await session.execute(delete(License))
+            await session.execute(delete(CollectionFramework))
+            await session.execute(delete(FrameworkCollection))
             await session.execute(delete(ArtifactRarityAudit))
             await session.execute(delete(ArtifactPiiAudit))
             await session.execute(delete(AttestationUploadSession))
@@ -248,6 +251,38 @@ async def create_framework(
         return framework.id, preview_artifact_id
 
 
+async def create_collection(
+    contributor_id: UUID,
+    *,
+    title: str,
+    framework_ids: list[UUID],
+    bundle_price: Decimal,
+    status: str = "published",
+) -> UUID:
+    """Create a Collection and member joins directly in the DB."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            collection = FrameworkCollection(
+                id=uuid4(),
+                contributor_id=contributor_id,
+                title=title,
+                description=f"{title} bundle.",
+                bundle_price=bundle_price,
+                currency="USD",
+                status=status,
+            )
+            session.add(collection)
+            await session.flush()
+            for framework_id in framework_ids:
+                session.add(
+                    CollectionFramework(
+                        collection_id=collection.id,
+                        framework_id=framework_id,
+                    )
+                )
+            return collection.id
+
+
 async def create_framework_attestation(
     *,
     framework_id: UUID,
@@ -367,6 +402,111 @@ async def test_public_catalog_search_filters_and_visibility(
     assert body["items"][0]["function"] == "risk_management"
     assert body["items"][0]["org_size"] == "mid_market"
     assert body["items"][0]["owned"] is False
+
+
+async def test_public_collection_list_and_detail_show_members_and_savings(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Explore exposes published Collections with member summaries and savings."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "collection-explore-seller@auracles.space",
+        ["contributor"],
+        display_name="Collection Seller",
+    )
+    first_id, _ = await create_framework(
+        contributor_id,
+        title="Risk Register Kit",
+        price=Decimal("500.00"),
+    )
+    second_id, _ = await create_framework(
+        contributor_id,
+        title="Board Reporting Kit",
+        price=Decimal("700.00"),
+    )
+    published_collection_id = await create_collection(
+        contributor_id,
+        title="Risk Governance Bundle",
+        framework_ids=[first_id, second_id],
+        bundle_price=Decimal("900.00"),
+    )
+    await create_collection(
+        contributor_id,
+        title="Hidden Draft Bundle",
+        framework_ids=[first_id, second_id],
+        bundle_price=Decimal("800.00"),
+        status="draft",
+    )
+
+    list_response = await client.get("/v1/explore/collections")
+    detail_response = await client.get(
+        f"/v1/explore/collections/{published_collection_id}"
+    )
+
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["total"] == 1
+    item = list_body["items"][0]
+    assert item["item_type"] == "collection"
+    assert item["id"] == str(published_collection_id)
+    assert item["contributor_name"] == "Collection Seller"
+    assert item["bundle_price"] == "900.00"
+    assert item["member_price_sum"] == "1200.00"
+    assert item["savings_amount"] == "300.00"
+    assert item["savings_percent"] == "25.00"
+    assert item["member_count"] == 2
+    assert [member["title"] for member in item["members"]] == [
+        "Board Reporting Kit",
+        "Risk Register Kit",
+    ]
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert detail_body["id"] == str(published_collection_id)
+    assert detail_body["already_owned_member_ids"] == []
+    assert detail_body["members"][0]["framework_id"] == str(second_id)
+
+
+async def test_mixed_catalog_returns_framework_and_collection_items(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """The mixed catalog returns typed Framework and Collection cards together."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "mixed-catalog-seller@auracles.space",
+        ["contributor"],
+    )
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Standalone Risk System",
+        price=Decimal("500.00"),
+    )
+    second_id, _ = await create_framework(
+        contributor_id,
+        title="Governance Companion",
+        price=Decimal("600.00"),
+        tags=["governance", "board"],
+    )
+    collection_id = await create_collection(
+        contributor_id,
+        title="Mixed Risk Bundle",
+        framework_ids=[framework_id, second_id],
+        bundle_price=Decimal("800.00"),
+    )
+
+    response = await client.get("/v1/explore/catalog", params={"q": "risk"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    item_types = {item["item_type"] for item in body["items"]}
+    item_ids = {item["id"] for item in body["items"]}
+    assert item_types == {"framework", "collection"}
+    assert str(framework_id) in item_ids
+    assert str(collection_id) in item_ids
 
 
 async def test_public_catalog_returns_and_filters_framework_attestation_badges(

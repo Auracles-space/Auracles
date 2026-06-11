@@ -18,6 +18,9 @@ from app.core.security import decode_access_token
 from app.modules.explore import service
 from app.modules.explore.schemas import (
     ExploreAttestationStatus,
+    ExploreCatalogResponse,
+    ExploreCollectionDetail,
+    ExploreCollectionListResponse,
     ExploreContributorProfile,
     ExploreFrameworkCard,
     ExploreFrameworkDetail,
@@ -92,6 +95,64 @@ async def list_frameworks(
     if result.sort_shim:
         response.headers["X-Sort-Shim"] = "true"
     return result
+
+
+@router.get("/catalog", response_model=ExploreCatalogResponse)
+async def list_mixed_catalog(
+    db: DatabaseSession,
+    current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],
+    q: str | None = Query(default=None, min_length=1),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort: ExploreSort = "newest",
+) -> ExploreCatalogResponse:
+    """Return paginated public Framework and Collection catalog results."""
+    return await service.list_mixed_catalog(
+        db,
+        current_user_id=current_user_id,
+        q=q,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+    )
+
+
+@router.get("/collections", response_model=ExploreCollectionListResponse)
+async def list_collections(
+    db: DatabaseSession,
+    current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],
+    q: str | None = Query(default=None, min_length=1),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort: ExploreSort = "newest",
+    price_min: Annotated[Decimal | None, Query(ge=0)] = None,
+    price_max: Annotated[Decimal | None, Query(ge=0)] = None,
+) -> ExploreCollectionListResponse:
+    """Return paginated public Collection catalog results."""
+    return await service.list_collections(
+        db,
+        current_user_id=current_user_id,
+        q=q,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        price_min=price_min,
+        price_max=price_max,
+    )
+
+
+@router.get("/collections/{collection_id}", response_model=ExploreCollectionDetail)
+async def get_collection_detail(
+    collection_id: UUID,
+    db: DatabaseSession,
+    current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],
+) -> ExploreCollectionDetail:
+    """Return public detail for one published Collection."""
+    return await service.get_collection_detail(
+        db,
+        collection_id=collection_id,
+        current_user_id=current_user_id,
+    )
 
 
 @router.get(

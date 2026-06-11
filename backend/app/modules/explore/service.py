@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import cast
 from uuid import UUID
@@ -17,17 +18,25 @@ from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import CollectionFramework, FrameworkCollection
 from app.modules.explore.schemas import (
     ExploreArtifactSummary,
     ExploreAttestationBadge,
     ExploreAttestationStatus,
+    ExploreCatalogItem,
+    ExploreCatalogResponse,
+    ExploreCollectionCard,
+    ExploreCollectionDetail,
+    ExploreCollectionListResponse,
+    ExploreCollectionMemberSummary,
     ExploreContributorProfile,
     ExploreFrameworkCard,
+    ExploreFrameworkCatalogItem,
     ExploreFrameworkDetail,
     ExploreFrameworkListResponse,
     ExploreSort,
 )
-from app.modules.frameworks.models import Framework, Review
+from app.modules.frameworks.models import Framework, License, Review
 from app.modules.frameworks.models_artifact import Artifact
 
 PREVIEW_URL_TTL_SECONDS = 900
@@ -72,6 +81,92 @@ def _card_from_framework(
         attestation_badge=attestation_badge,
         owned=False,
         published_at=framework.published_at,
+    )
+
+
+def _catalog_item_from_framework_card(
+    card: ExploreFrameworkCard,
+) -> ExploreFrameworkCatalogItem:
+    """Add the mixed-catalog discriminator to an existing Framework card."""
+    return ExploreFrameworkCatalogItem(**card.model_dump(), item_type="framework")
+
+
+def _collection_search_match(collection: FrameworkCollection, query: str) -> bool:
+    """Return whether a Collection matches simple public text search."""
+    normalized = query.lower()
+    haystack = " ".join([collection.title, collection.description]).lower()
+    return normalized in haystack
+
+
+def _collection_member_summary(framework: Framework) -> ExploreCollectionMemberSummary:
+    """Map a member Framework to the public Collection member summary."""
+    return ExploreCollectionMemberSummary(
+        framework_id=framework.id,
+        title=framework.title,
+        version=framework.version,
+        category=framework.category,
+        price=framework.price,
+        currency=framework.currency,
+        thumbnail_key=framework.thumbnail_key,
+    )
+
+
+async def _collection_members(
+    db: AsyncSession,
+    collection_id: UUID,
+) -> list[Framework]:
+    """Return member Frameworks for a public Collection card."""
+    rows = await db.execute(
+        select(Framework)
+        .join(CollectionFramework, CollectionFramework.framework_id == Framework.id)
+        .where(CollectionFramework.collection_id == collection_id)
+        .order_by(Framework.title.asc(), Framework.id.asc())
+    )
+    return list(rows.scalars().all())
+
+
+def _collection_savings(
+    *,
+    collection: FrameworkCollection,
+    members: list[Framework],
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Return current member sum, savings amount, and percentage for a bundle."""
+    member_price_sum = sum((member.price for member in members), Decimal("0.00"))
+    savings_amount = member_price_sum - collection.bundle_price
+    if member_price_sum <= 0:
+        return member_price_sum, savings_amount, Decimal("0.00")
+    savings_percent = (
+        (savings_amount / member_price_sum) * Decimal("100")
+    ).quantize(Decimal("0.01"))
+    return member_price_sum, savings_amount, savings_percent
+
+
+async def _card_from_collection(
+    db: AsyncSession,
+    collection: FrameworkCollection,
+    contributor_name: str,
+) -> ExploreCollectionCard:
+    """Map a published Collection row into a public catalog card."""
+    members = await _collection_members(db, collection.id)
+    member_price_sum, savings_amount, savings_percent = _collection_savings(
+        collection=collection,
+        members=members,
+    )
+    return ExploreCollectionCard(
+        id=collection.id,
+        contributor_id=collection.contributor_id,
+        contributor_name=contributor_name,
+        title=collection.title,
+        description=collection.description,
+        bundle_price=collection.bundle_price,
+        currency=collection.currency,
+        member_price_sum=member_price_sum,
+        savings_amount=savings_amount,
+        savings_percent=savings_percent,
+        member_count=len(members),
+        members=[_collection_member_summary(member) for member in members],
+        created_at=collection.created_at,
+        updated_at=collection.updated_at,
     )
 
 
@@ -464,6 +559,276 @@ async def list_catalog(
         page_size=page_size,
         sort=sort,
         sort_shim=sort == "most-purchased",
+    )
+
+
+def _base_collection_query(
+    current_user_id: UUID | None,
+) -> Select[tuple[FrameworkCollection]]:
+    """Build the base query for public Collection catalog reads."""
+    query = select(FrameworkCollection).where(FrameworkCollection.status == "published")
+    if current_user_id is not None:
+        query = query.where(FrameworkCollection.contributor_id != current_user_id)
+    return query
+
+
+def _apply_collection_filters(
+    query: Select[tuple[FrameworkCollection]],
+    *,
+    q: str | None,
+    price_min: Decimal | None = None,
+    price_max: Decimal | None = None,
+) -> Select[tuple[FrameworkCollection]]:
+    """Apply public Collection filters supported by the MVP read model."""
+    if q:
+        query = query.where(
+            or_(
+                FrameworkCollection.title.ilike(f"%{q}%"),
+                FrameworkCollection.description.ilike(f"%{q}%"),
+            )
+        )
+    if price_min is not None:
+        query = query.where(FrameworkCollection.bundle_price >= price_min)
+    if price_max is not None:
+        query = query.where(FrameworkCollection.bundle_price <= price_max)
+    return query
+
+
+def _apply_collection_sort(
+    query: Select[tuple[FrameworkCollection]],
+    sort: ExploreSort,
+) -> Select[tuple[FrameworkCollection]]:
+    """Apply stable public Collection ordering."""
+    if sort == "price_asc":
+        return query.order_by(
+            FrameworkCollection.bundle_price.asc(),
+            FrameworkCollection.updated_at.desc(),
+        )
+    if sort == "price_desc":
+        return query.order_by(
+            FrameworkCollection.bundle_price.desc(),
+            FrameworkCollection.updated_at.desc(),
+        )
+    return query.order_by(
+        FrameworkCollection.updated_at.desc(),
+        FrameworkCollection.created_at.desc(),
+    )
+
+
+async def list_collections(
+    db: AsyncSession,
+    *,
+    current_user_id: UUID | None,
+    q: str | None,
+    page: int,
+    page_size: int,
+    sort: ExploreSort,
+    price_min: Decimal | None,
+    price_max: Decimal | None,
+) -> ExploreCollectionListResponse:
+    """Return published Collections for public Explore."""
+    query = _apply_collection_filters(
+        _base_collection_query(current_user_id),
+        q=q,
+        price_min=price_min,
+        price_max=price_max,
+    )
+    total = int(
+        await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    )
+    offset = (page - 1) * page_size
+    rows = await db.execute(
+        _apply_collection_sort(query, sort).offset(offset).limit(page_size)
+    )
+    collections = list(rows.scalars().all())
+    contributor_names = await _user_display_names(
+        db,
+        [collection.contributor_id for collection in collections],
+    )
+    return ExploreCollectionListResponse(
+        items=[
+            await _card_from_collection(
+                db,
+                collection,
+                contributor_names.get(collection.contributor_id, "Contributor"),
+            )
+            for collection in collections
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        sort_shim=sort in {"most-purchased", "top-rated"},
+    )
+
+
+async def _already_owned_member_ids(
+    db: AsyncSession,
+    *,
+    current_user_id: UUID | None,
+    member_ids: list[UUID],
+) -> list[UUID]:
+    """Return active member Framework ids already licensed by the viewer."""
+    if current_user_id is None or not member_ids:
+        return []
+    now = datetime.now(UTC)
+    rows = await db.execute(
+        select(License.framework_id).where(
+            License.operator_id == current_user_id,
+            License.framework_id.in_(member_ids),
+            License.status == "active",
+            or_(License.expires_at.is_(None), License.expires_at > now),
+        )
+    )
+    return list(rows.scalars().all())
+
+
+async def get_collection_detail(
+    db: AsyncSession,
+    *,
+    collection_id: UUID,
+    current_user_id: UUID | None,
+) -> ExploreCollectionDetail:
+    """Return public detail for one published Collection."""
+    collection = await db.scalar(
+        _base_collection_query(current_user_id).where(
+            FrameworkCollection.id == collection_id
+        )
+    )
+    if collection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Collection not found.",
+        )
+    contributor_names = await _user_display_names(db, [collection.contributor_id])
+    card = await _card_from_collection(
+        db,
+        collection,
+        contributor_names.get(collection.contributor_id, "Contributor"),
+    )
+    already_owned = await _already_owned_member_ids(
+        db,
+        current_user_id=current_user_id,
+        member_ids=[member.framework_id for member in card.members],
+    )
+    return ExploreCollectionDetail(
+        **card.model_dump(),
+        already_owned_member_ids=already_owned,
+    )
+
+
+def _catalog_item_sort_key(
+    item: ExploreCatalogItem,
+    sort: ExploreSort,
+) -> tuple[Decimal | datetime, datetime]:
+    """Return a stable Python sort key for the mixed catalog."""
+    if isinstance(item, ExploreFrameworkCatalogItem):
+        price = item.price
+        timestamp = item.published_at or datetime.min.replace(tzinfo=UTC)
+    else:
+        price = item.bundle_price
+        timestamp = item.updated_at
+    if sort in {"price_asc", "price_desc"}:
+        return price, timestamp
+    return timestamp, timestamp
+
+
+async def list_mixed_catalog(
+    db: AsyncSession,
+    *,
+    current_user_id: UUID | None,
+    q: str | None,
+    page: int,
+    page_size: int,
+    sort: ExploreSort,
+) -> ExploreCatalogResponse:
+    """Return Framework and Collection cards in one typed public catalog."""
+    framework_query = _apply_filters(
+        _base_catalog_query(current_user_id),
+        q=q,
+        sector=None,
+        industry=None,
+        function=None,
+        category=None,
+        license_type=None,
+        complexity=None,
+        org_size=None,
+        lifecycle_stage=None,
+        jurisdiction=None,
+        price_min=None,
+        price_max=None,
+        attestation_status=None,
+    )
+    framework_rows = await db.execute(framework_query)
+    frameworks = list(framework_rows.scalars().all())
+    rarity_scores = await _framework_rarity_scores(
+        db,
+        [framework.id for framework in frameworks],
+    )
+    attestation_badges = await _framework_attestation_badges(
+        db,
+        [framework.id for framework in frameworks],
+    )
+    review_aggregates = await _framework_review_aggregates(
+        db,
+        [framework.id for framework in frameworks],
+    )
+    framework_contributor_names = await _user_display_names(
+        db,
+        [framework.contributor_id for framework in frameworks],
+    )
+    framework_items: list[ExploreCatalogItem] = [
+        _catalog_item_from_framework_card(
+            _card_from_framework(
+                framework,
+                rarity_scores.get(framework.id),
+                attestation_badges.get(framework.id),
+                review_aggregates.get(framework.id),
+                framework_contributor_names.get(
+                    framework.contributor_id,
+                    "Contributor",
+                ),
+            )
+        )
+        for framework in frameworks
+    ]
+
+    collection_query = _apply_collection_filters(
+        _base_collection_query(current_user_id),
+        q=q,
+    )
+    collection_rows = await db.execute(collection_query)
+    collections = list(collection_rows.scalars().all())
+    collection_contributor_names = await _user_display_names(
+        db,
+        [collection.contributor_id for collection in collections],
+    )
+    collection_items: list[ExploreCatalogItem] = [
+        await _card_from_collection(
+            db,
+            collection,
+            collection_contributor_names.get(
+                collection.contributor_id,
+                "Contributor",
+            ),
+        )
+        for collection in collections
+    ]
+    items = framework_items + collection_items
+    reverse = sort not in {"price_asc"}
+    items = sorted(
+        items,
+        key=lambda item: _catalog_item_sort_key(item, sort),
+        reverse=reverse,
+    )
+    offset = (page - 1) * page_size
+    return ExploreCatalogResponse(
+        items=items[offset : offset + page_size],
+        total=len(items),
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        sort_shim=sort in {"most-purchased", "top-rated"},
     )
 
 
