@@ -28,6 +28,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import (
     ApiKey,
+    ApiRequestLog,
     DeveloperAccount,
     DeveloperApplication,
     PartnerCommission,
@@ -101,6 +102,7 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
             await session.execute(delete(PartnerCommission))
             await session.execute(delete(PartnerWebhookDelivery))
             await session.execute(delete(PartnerWebhook))
+            await session.execute(delete(ApiRequestLog))
             await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
             await session.execute(delete(DeveloperApplication))
@@ -120,6 +122,7 @@ async def developer_application_context() -> AsyncIterator[FakeRedis]:
                 await session.execute(delete(PartnerCommission))
                 await session.execute(delete(PartnerWebhookDelivery))
                 await session.execute(delete(PartnerWebhook))
+                await session.execute(delete(ApiRequestLog))
                 await session.execute(delete(ApiKey))
                 await session.execute(delete(DeveloperAccount))
                 await session.execute(delete(DeveloperApplication))
@@ -284,6 +287,134 @@ async def create_recent_partner_sales(account_id: UUID, count: int) -> None:
                         created_at=datetime.now(UTC) - timedelta(days=1),
                     )
                 )
+
+
+async def create_partner_sales_for_analytics(account_id: UUID) -> None:
+    """Create Partner commission rows for Developer sales analytics tests."""
+    contributor_id = await create_user(
+        f"sales-analytics-contributor-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user(
+        f"sales-analytics-operator-{uuid4()}@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            api_key = ApiKey(
+                developer_account_id=account_id,
+                name="Sales analytics key",
+                key_prefix="ak_sales",
+                key_hash=f"sales-hash-{uuid4()}",
+                scopes=["purchase:write"],
+            )
+            session.add(api_key)
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Sales Analytics Framework",
+                description="Framework used by Developer sales analytics tests.",
+                status="published",
+                category="operations",
+                tags=["analytics"],
+                tags_text="analytics",
+                price=Decimal("100.00"),
+                currency="USD",
+                license_types=["team"],
+            )
+            session.add(framework)
+            await session.flush()
+
+            statuses = [
+                ("pending", Decimal("100.00"), Decimal("5.00")),
+                ("cleared", Decimal("200.00"), Decimal("10.00")),
+                ("voided", Decimal("50.00"), Decimal("2.50")),
+            ]
+            for index, (commission_status, sale_amount, commission_amount) in enumerate(
+                statuses
+            ):
+                transaction = Transaction(
+                    payer_id=operator_id,
+                    payee_id=contributor_id,
+                    amount=sale_amount,
+                    currency="USD",
+                    platform_commission=Decimal("0.00"),
+                    net_amount=sale_amount,
+                    transaction_type="purchase",
+                    status="refunded" if commission_status == "voided" else "completed",
+                    provider="stripe",
+                    provider_ref=f"pi_sales_analytics_{index}_{uuid4()}",
+                    ref_id=framework.id,
+                    ref_type="framework",
+                )
+                session.add(transaction)
+                await session.flush()
+                session.add(
+                    PartnerCommission(
+                        api_key_id=api_key.id,
+                        developer_account_id=account_id,
+                        transaction_id=transaction.id,
+                        framework_id=framework.id,
+                        sale_amount=sale_amount,
+                        currency="USD",
+                        tier_at_sale=1,
+                        tier_rate=Decimal("0.0500"),
+                        commission_amount=commission_amount,
+                        status=commission_status,
+                        cleared_at=(
+                            datetime.now(UTC)
+                            if commission_status == "cleared"
+                            else None
+                        ),
+                        created_at=datetime.now(UTC) - timedelta(days=index + 1),
+                    )
+                )
+
+
+async def create_partner_usage_logs(account_id: UUID) -> UUID:
+    """Create Partner API usage logs for Developer analytics tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            api_key = ApiKey(
+                developer_account_id=account_id,
+                name="Analytics usage key",
+                key_prefix="ak_usage",
+                key_hash=f"usage-hash-{uuid4()}",
+                scopes=["catalog:read", "purchase:write"],
+            )
+            session.add(api_key)
+            await session.flush()
+            session.add_all(
+                [
+                    ApiRequestLog(
+                        api_key_id=api_key.id,
+                        endpoint="/v1/partner/catalog",
+                        method="GET",
+                        status_code=200,
+                        response_ms=120,
+                        ip="203.0.113.10",
+                        created_at=datetime.now(UTC) - timedelta(days=1),
+                    ),
+                    ApiRequestLog(
+                        api_key_id=api_key.id,
+                        endpoint="/v1/partner/catalog",
+                        method="GET",
+                        status_code=429,
+                        response_ms=40,
+                        ip="203.0.113.10",
+                        created_at=datetime.now(UTC) - timedelta(days=1),
+                    ),
+                    ApiRequestLog(
+                        api_key_id=api_key.id,
+                        endpoint="/v1/partner/frameworks/abc/purchase",
+                        method="POST",
+                        status_code=500,
+                        response_ms=240,
+                        ip="203.0.113.10",
+                        created_at=datetime.now(UTC) - timedelta(days=2),
+                    ),
+                ]
+            )
+        return api_key.id
 
 
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
@@ -734,6 +865,93 @@ async def test_developer_reads_tier_progress(
         {"tier": 1, "min_sales": 0, "max_sales": 99, "rate": "0.0500"},
         {"tier": 2, "min_sales": 100, "max_sales": 499, "rate": "0.0800"},
         {"tier": 3, "min_sales": 500, "max_sales": None, "rate": "0.1200"},
+    ]
+
+
+async def test_developer_reads_partner_api_usage_analytics(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developers can read aggregate Partner API usage without raw IP data."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("usage-analytics@auracles.space")
+    await create_partner_usage_logs(account_id)
+
+    response = await client.get(
+        "/v1/developer/analytics/usage?days=7",
+        headers=auth_headers(user_id, ["developer"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["window_days"] == 7
+    assert body["total_requests"] == 3
+    assert body["success_count"] == 1
+    assert body["client_error_count"] == 1
+    assert body["server_error_count"] == 1
+    assert body["average_response_ms"] == 133
+    assert body["by_endpoint"] == [
+        {
+            "endpoint": "/v1/partner/catalog",
+            "method": "GET",
+            "request_count": 2,
+            "success_count": 1,
+            "client_error_count": 1,
+            "server_error_count": 0,
+            "average_response_ms": 80,
+        },
+        {
+            "endpoint": "/v1/partner/frameworks/abc/purchase",
+            "method": "POST",
+            "request_count": 1,
+            "success_count": 0,
+            "client_error_count": 0,
+            "server_error_count": 1,
+            "average_response_ms": 240,
+        },
+    ]
+    assert "203.0.113.10" not in response.text
+
+
+async def test_developer_reads_partner_sales_analytics(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Developers can read aggregate Partner sales and commission analytics."""
+    del migrated_database, developer_application_context
+    user_id, account_id = await create_developer_user("sales-analytics@auracles.space")
+    await create_partner_sales_for_analytics(account_id)
+
+    response = await client.get(
+        "/v1/developer/analytics/sales?days=30",
+        headers=auth_headers(user_id, ["developer"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["window_days"] == 30
+    assert body["total_sales"] == 3
+    assert body["gross_sale_amount"] == "350.00"
+    assert body["total_commission_amount"] == "17.50"
+    assert body["pending_commission_amount"] == "5.00"
+    assert body["cleared_commission_amount"] == "10.00"
+    assert body["voided_commission_amount"] == "2.50"
+    assert body["status_counts"] == {
+        "pending": 1,
+        "cleared": 1,
+        "paid": 0,
+        "voided": 1,
+    }
+    assert body["by_framework"] == [
+        {
+            "framework_id": body["by_framework"][0]["framework_id"],
+            "framework_title": "Sales Analytics Framework",
+            "sale_count": 3,
+            "gross_sale_amount": "350.00",
+            "commission_amount": "17.50",
+        }
     ]
 
 

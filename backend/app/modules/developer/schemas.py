@@ -229,6 +229,55 @@ class PartnerWebhookDeliveryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DeveloperUsageEndpointBreakdown(BaseModel):
+    """Aggregated Partner API usage for one endpoint/method pair."""
+
+    endpoint: str
+    method: str
+    request_count: int
+    success_count: int
+    client_error_count: int
+    server_error_count: int
+    average_response_ms: int
+
+
+class DeveloperUsageAnalyticsResponse(BaseModel):
+    """Developer-facing Partner API usage analytics response."""
+
+    window_days: int
+    total_requests: int
+    success_count: int
+    client_error_count: int
+    server_error_count: int
+    average_response_ms: int
+    by_endpoint: list[DeveloperUsageEndpointBreakdown]
+
+
+class DeveloperSalesFrameworkBreakdown(BaseModel):
+    """Aggregated Partner sales for one attributed Framework."""
+
+    framework_id: UUID
+    framework_title: str
+    sale_count: int
+    gross_sale_amount: Decimal
+    commission_amount: Decimal
+
+
+class DeveloperSalesAnalyticsResponse(BaseModel):
+    """Developer-facing Partner sales and commission analytics response."""
+
+    window_days: int
+    total_sales: int
+    gross_sale_amount: Decimal
+    total_commission_amount: Decimal
+    pending_commission_amount: Decimal
+    cleared_commission_amount: Decimal
+    paid_commission_amount: Decimal
+    voided_commission_amount: Decimal
+    status_counts: dict[str, int]
+    by_framework: list[DeveloperSalesFrameworkBreakdown]
+
+
 class PartnerFrameworkDetailResponse(BaseModel):
     """Partner-safe public Framework detail without full artifact inventory."""
 

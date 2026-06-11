@@ -14,6 +14,7 @@ from app.core.dependencies import get_current_user, require_kyc_verified, requir
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.developer import (
+    analytics_service,
     application_service,
     commission_service,
     keys_service,
@@ -31,7 +32,9 @@ from app.modules.developer.schemas import (
     DeveloperApplicationResponse,
     DeveloperApplicationReviewRequest,
     DeveloperApplicationsResponse,
+    DeveloperSalesAnalyticsResponse,
     DeveloperTierProgressResponse,
+    DeveloperUsageAnalyticsResponse,
     PartnerPayoutRequest,
     PartnerPayoutResponse,
     PartnerPayoutsResponse,
@@ -237,6 +240,40 @@ async def list_partner_payouts(
     return await commission_service.list_partner_payouts(
         db,
         developer_account=developer_account,
+    )
+
+
+@router.get(
+    "/developer/analytics/usage",
+    response_model=DeveloperUsageAnalyticsResponse,
+)
+async def get_developer_usage_analytics(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+    days: int = Query(default=30, ge=1, le=365),
+) -> DeveloperUsageAnalyticsResponse:
+    """Return aggregate Partner API usage analytics for the Developer."""
+    return await analytics_service.get_usage_analytics(
+        db,
+        developer_account=developer_account,
+        days=days,
+    )
+
+
+@router.get(
+    "/developer/analytics/sales",
+    response_model=DeveloperSalesAnalyticsResponse,
+)
+async def get_developer_sales_analytics(
+    developer_account: ActiveDeveloperAccount,
+    db: DatabaseSession,
+    days: int = Query(default=30, ge=1, le=365),
+) -> DeveloperSalesAnalyticsResponse:
+    """Return aggregate Partner sales and commission analytics."""
+    return await analytics_service.get_sales_analytics(
+        db,
+        developer_account=developer_account,
+        days=days,
     )
 
 
