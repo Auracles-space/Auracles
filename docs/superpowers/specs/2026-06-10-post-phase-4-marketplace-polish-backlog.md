@@ -80,49 +80,102 @@ review form, and Contributor analytics reads the real review aggregate.
 - Review helpfulness/upvotes.
 - Organization-level reviews.
 
-## Slice 2 — Rarity Gate Context From Reviews
+## Slice 2 — Rarity Gate Reframe + Notice-Band Review Context
 
-**Maps to:** BR-FWK-006, FR-FWK-014, FR-EXP-006.
+**Maps to:** BR-FWK-006 (semantics change — see below), FR-FWK-014, FR-EXP-006.
 
-### Product behavior
+### Problem with the current gate
 
-- Low rarity remains a publish gate because it detects similarity/plagiarism
-  risk, not market quality.
-- Once Framework reviews exist, the rarity warning should show context about the
-  nearest published match:
-  - nearest Framework title
-  - internal rarity / similarity score
-  - average review score and review count for the nearest match
-- Low review score on the similar published Framework does not bypass the gate.
-  It can support a Contributor differentiation note, but the platform still
-  records the similarity and acknowledgement.
-- Contributor acknowledgement should require a short differentiation statement
-  when the nearest match has public review data.
+Internal rarity = `1.0 − max_jaccard`, where `max_jaccard` is the MinHash-Jaccard
+overlap of an artifact's text shingles against every published Framework
+(`workers/tasks/processing/rarity_internal.py:104`). The publish gate blocks at
+`internal_rarity < 0.30`, i.e. **`jaccard > 0.70`** (`frameworks/pipeline_gate.py:85`).
+
+MinHash-Jaccard measures **shared vocabulary / topic overlap, not copying**.
+Consequences:
+- Two independent Frameworks solving the **same problem** share heavy domain
+  vocabulary → high Jaccard → hard-blocked. Same problem ≠ plagiarism.
+- The signal has **no notion of "better."** A more thorough Framework on the same
+  topic has *more* shared terminology → *more* likely to trip the gate.
+- **First-mover lock-in:** whoever publishes first claims the shingle space; a
+  later, superior entrant is hard-blocked.
+- 0.70 is a weak plagiarism bar — real copy-paste sits ~0.90+.
+
+**Intent correction:** the gate must block *near-duplication / copying*, not
+*topical similarity*. Quality and originality-of-approach are decided by reviews
+and Attestation, never by a similarity threshold.
+
+### Decision — three bands (recalibrate, don't rebuild)
+
+```
+jaccard ≥ NEAR_DUP (≈0.90, calibrated)   → HARD block "near-duplicate / likely copy"
+NOTICE (≈0.70) ≤ jaccard < NEAR_DUP      → NON-BLOCKING "similar to X" notice
+jaccard < NOTICE                          → clear, no flag
+```
+
+- **Hard band** stays a `pipeline_failed` reason (`internal_rarity`), but only for
+  near-duplicates. **Admin override** path added (reuse the escrow-style admin +
+  audit pattern) so legitimate edge cases — same author republishing, licensed
+  reuse, new version — are not dead-ended.
+- **Notice band** does **not** block. Framework publishes; system records the
+  nearest match for context. This is where review context + differentiation note
+  live (informational, audited, never gating).
+- This **changes BR-FWK-006 semantics**: update the FRD wording and the rarity
+  docstrings to say the gate targets *near-duplication*, not *rarity*, so the
+  behavior is not silently "restored" later.
+
+### Sub-step ordering
+
+- **2.0 — Threshold calibration (prereq, offline).** Run the internal scorer over
+  a labelled sample (known copies vs known same-topic-distinct Frameworks). Pick
+  `NEAR_DUP` at the valley between the two clusters; pick `NOTICE` floor likewise.
+  0.90 / 0.70 are starting guesses, not final. Document the chosen cutoffs.
+- **2.1 — Gate reframe (independent of reviews; can ship first).** `pipeline_gate.py`
+  bands + `INTERNAL_RARITY_NEAR_DUP_THRESHOLD` / `INTERNAL_RARITY_NOTICE_THRESHOLD`
+  constants (the old `0.30` hard threshold moves to `1 − NEAR_DUP ≈ 0.10`). Notice
+  band writes a non-blocking `similarity_notice` (nearest title + jaccard) onto the
+  framework/artifact instead of a failure reason. Admin override endpoint on the
+  hard block. Reuses already-persisted `nearest_match_id` + `internal_jaccard`
+  (`rarity_internal.py`) — no recompute.
+- **2.2 — Notice-band review context (depends on Slice 1 reviews).** Enrich the
+  `similarity_notice` with the nearest match's review aggregate (avg score +
+  count) via `nearest_match_id` → artifact → `framework_id` → reviews. Add an
+  optional differentiation note to the contributor acknowledgement of a notice
+  (persisted in audit metadata — no new column); require it only when the nearest
+  match has public review data. Low review score on the similar Framework never
+  bypasses or weakens anything — notice is non-blocking regardless.
 
 ### Backend scope
 
-- Extend rarity failure metadata to include nearest-match review aggregate when
-  available.
-- Extend `acknowledge_soft_fail` payload with optional differentiation note.
-- Persist differentiation note in audit metadata.
-- Keep current publishing behavior: soft-fail acknowledgement can unblock allowed
-  rarity failures; unresolved PII/virus/processing failures still block.
+- `pipeline_gate.py`: replace the single internal-rarity hard fail with the
+  three-band logic; emit `similarity_notice` for the notice band.
+- New admin override on the hard band (admin role + audit `rarity_block_overridden`).
+- Extend the notice/acknowledgement payload with optional `differentiation_note`;
+  persist in `write_audit` metadata.
+- Notice/aggregate read path: `nearest_match_id` → nearest Framework → review
+  aggregate (after Slice 1).
+- Keep PII/virus/processing as hard blocks unchanged.
+- All multi-table writes in `async with db.begin()`.
 
 ### Frontend scope
 
-- Framework pipeline panel shows nearest-match review context beside the rarity
-  warning.
-- Acknowledgement form includes a concise differentiation field.
-- Copy must make clear that low-rated similar content may still be protected
-  content and cannot simply be copied.
+- Pipeline panel: near-duplicate hard fail (with admin-only override affordance)
+  vs non-blocking "similar to X" notice — visually distinct.
+- Notice shows nearest-match title + (after Slice 1) review aggregate; optional
+  differentiation field.
+- Copy makes clear: same-problem Frameworks are welcome; only near-duplicates are
+  blocked; similar low-rated content may still be protected and cannot be copied.
 
 ### Tests
 
-- Low-rarity framework with nearest match includes review aggregate in failure
-  metadata.
-- Low nearest-match rating does not auto-pass rarity.
-- Acknowledgement persists differentiation note and unblocks only allowed
-  rarity failures.
+- `jaccard ≥ NEAR_DUP` → hard `pipeline_failed`; admin override unblocks + audits.
+- `NOTICE ≤ jaccard < NEAR_DUP` → publishes, `similarity_notice` recorded, no block.
+- `jaccard < NOTICE` → no flag.
+- Same-problem distinct Framework (notice band) is no longer blocked (regression
+  guard for the reported bug).
+- Notice review aggregate populated when nearest match has reviews (post Slice 1).
+- Differentiation note persisted in audit; required only when nearest has review
+  data; never bypasses the hard band.
 
 ## Slice 3 — Public Contributor Profiles With Attestation Badges
 
