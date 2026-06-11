@@ -21,6 +21,12 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import (
+    CollectionEarningAllocation,
+    CollectionFramework,
+    CollectionPurchaseSnapshot,
+    FrameworkCollection,
+)
 from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
@@ -56,6 +62,8 @@ async def reset_webhook_state() -> None:
         await session.execute(delete(AuditLog))
         await session.execute(delete(PartnerCommission))
         await session.execute(delete(PartnerPurchaseAttribution))
+        await session.execute(delete(CollectionEarningAllocation))
+        await session.execute(delete(CollectionPurchaseSnapshot))
         await session.execute(delete(WorkspaceMessage))
         await session.execute(delete(AttestationUploadSession))
         await session.execute(delete(AttestationOffer))
@@ -64,7 +72,9 @@ async def reset_webhook_state() -> None:
         await session.execute(delete(Milestone))
         await session.execute(delete(Escrow))
         await session.execute(delete(License))
+        await session.execute(delete(CollectionFramework))
         await session.execute(delete(ApiKey))
+        await session.execute(delete(FrameworkCollection))
         await session.execute(delete(DeveloperAccount))
         await session.execute(delete(DeveloperApplication))
         await session.execute(delete(Transaction))
@@ -192,6 +202,132 @@ async def create_pending_purchase() -> tuple[UUID, UUID, UUID, UUID]:
             session.add(transaction)
             await session.flush()
             return transaction.id, framework.id, operator_id, contributor_id
+
+
+async def create_pending_collection_purchase() -> tuple[
+    UUID,
+    UUID,
+    UUID,
+    UUID,
+    UUID,
+]:
+    """Create a pending Collection purchase with one prior-owned member."""
+    contributor_id = await create_user_with_roles(
+        "collection-webhook-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "collection-webhook-operator@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            first_framework = Framework(
+                contributor_id=contributor_id,
+                title="Collection Prior-Owned Framework",
+                description="Framework already owned before bundle checkout.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["stripe", "collection"],
+                price=Decimal("400.00"),
+                currency="USD",
+                license_types=["single_user", "team"],
+                published_at=datetime.now(UTC),
+            )
+            second_framework = Framework(
+                contributor_id=contributor_id,
+                title="Collection Minted Framework",
+                description="Framework minted by bundle checkout.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["stripe", "collection"],
+                price=Decimal("500.00"),
+                currency="USD",
+                license_types=["single_user", "team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add_all([first_framework, second_framework])
+            await session.flush()
+            collection = FrameworkCollection(
+                contributor_id=contributor_id,
+                title="Webhook Collection Bundle",
+                description="Bundle used by Stripe webhook tests.",
+                bundle_price=Decimal("700.00"),
+                currency="USD",
+                status="published",
+            )
+            session.add(collection)
+            await session.flush()
+            session.add_all(
+                [
+                    CollectionFramework(
+                        collection_id=collection.id,
+                        framework_id=first_framework.id,
+                    ),
+                    CollectionFramework(
+                        collection_id=collection.id,
+                        framework_id=second_framework.id,
+                    ),
+                ]
+            )
+            prior_license = License(
+                framework_id=first_framework.id,
+                operator_id=operator_id,
+                license_type="team",
+                status="active",
+                version_at_grant="1.0.0",
+            )
+            session.add(prior_license)
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("700.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("700.00"),
+                transaction_type="purchase",
+                status="pending",
+                provider="stripe",
+                provider_ref="pi_collection_webhook_123",
+                ref_id=collection.id,
+                ref_type="collection",
+            )
+            session.add(transaction)
+            await session.flush()
+            session.add_all(
+                [
+                    CollectionPurchaseSnapshot(
+                        transaction_id=transaction.id,
+                        collection_id=collection.id,
+                        framework_id=first_framework.id,
+                        list_price_at_purchase=Decimal("400.00"),
+                        license_type="team",
+                        already_owned=True,
+                    ),
+                    CollectionPurchaseSnapshot(
+                        transaction_id=transaction.id,
+                        collection_id=collection.id,
+                        framework_id=second_framework.id,
+                        list_price_at_purchase=Decimal("500.00"),
+                        license_type="team",
+                        already_owned=False,
+                    ),
+                ]
+            )
+            await session.flush()
+            return (
+                transaction.id,
+                collection.id,
+                first_framework.id,
+                second_framework.id,
+                operator_id,
+            )
 
 
 async def create_partner_attribution(
@@ -433,6 +569,31 @@ def payment_intent_event(
     }
 
 
+def collection_payment_intent_event(
+    event_id: str,
+    event_type: str,
+    *,
+    transaction_id: UUID,
+    collection_id: UUID,
+    provider_ref: str = "pi_collection_webhook_123",
+) -> dict[str, Any]:
+    """Build a Stripe PaymentIntent event payload for Collection purchases."""
+    return {
+        "id": event_id,
+        "type": event_type,
+        "data": {
+            "object": {
+                "id": provider_ref,
+                "metadata": {
+                    "transaction_id": str(transaction_id),
+                    "kind": "collection",
+                    "collection_id": str(collection_id),
+                },
+            }
+        },
+    }
+
+
 async def test_stripe_payment_intent_success_creates_license_once(
     client: AsyncClient,
     webhook_context: dict[str, Any],
@@ -489,6 +650,99 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert events[0].status == "processed"
     assert audit is not None
     assert audit.target_id == transaction_id
+    invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
+    assert invoice_task.dispatched == [str(transaction_id)]
+
+
+async def test_stripe_collection_purchase_success_mints_missing_license_and_allocation(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A verified Collection webhook mints missing Licenses and allocations once."""
+    (
+        transaction_id,
+        collection_id,
+        prior_framework_id,
+        minted_framework_id,
+        operator_id,
+    ) = await create_pending_collection_purchase()
+    webhook_context["event"] = collection_payment_intent_event(
+        "evt_collection_purchase_success",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        collection_id=collection_id,
+    )
+
+    first = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+    replay = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        licenses = (
+            (
+                await session.execute(
+                    select(License)
+                    .where(License.operator_id == operator_id)
+                    .order_by(License.framework_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        allocations = (
+            (
+                await session.execute(
+                    select(CollectionEarningAllocation).where(
+                        CollectionEarningAllocation.transaction_id == transaction_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "collection_purchased")
+        )
+
+    assert first.status_code == 200
+    assert first.json() == {"received": True, "status": "processed"}
+    assert replay.status_code == 200
+    assert replay.json() == {"received": True, "status": "duplicate"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert len(licenses) == 2
+    prior_license = next(
+        license_row
+        for license_row in licenses
+        if license_row.framework_id == prior_framework_id
+    )
+    minted_license = next(
+        license_row
+        for license_row in licenses
+        if license_row.framework_id == minted_framework_id
+    )
+    assert prior_license.transaction_id is None
+    assert prior_license.source == "individual"
+    assert minted_license.transaction_id == transaction_id
+    assert minted_license.source == "collection"
+    assert minted_license.collection_id == collection_id
+    assert minted_license.license_type == "team"
+    assert minted_license.seats_total == 10
+    assert len(allocations) == 1
+    assert allocations[0].framework_id == minted_framework_id
+    assert allocations[0].allocated_amount == Decimal("700.00")
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert audit.metadata_["collection_id"] == str(collection_id)
+    assert audit.metadata_["minted_license_count"] == 1
     invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
     assert invoice_task.dispatched == [str(transaction_id)]
 

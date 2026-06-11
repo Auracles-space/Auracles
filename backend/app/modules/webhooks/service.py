@@ -28,6 +28,7 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
+from app.modules.collections.purchase import confirm_collection_purchase
 from app.modules.developer import webhooks_service as developer_webhooks_service
 from app.modules.developer.models import (
     DeveloperAccount,
@@ -691,6 +692,17 @@ async def _dispatch_verified_event(
         )
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", invoice_transaction_id, after_commit_notifications
+    if (
+        event_type == "payment_intent.succeeded"
+        and metadata.get("kind") == "collection"
+    ):
+        invoice_transaction_id = await confirm_collection_purchase(
+            db,
+            transaction_id=_purchase_transaction_id(event),
+            payment_intent_id=_event_object_id(event),
+        )
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", invoice_transaction_id, []
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "escrow":
         after_commit_notifications = await _handle_escrow_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
