@@ -862,6 +862,84 @@ async def test_confirm_collection_purchase_rejects_unavailable_snapshot_member(
     assert license_row is None
 
 
+async def test_confirm_collection_purchase_rejects_midflight_owned_member(
+    webhook_context: dict[str, Any],
+) -> None:
+    """Collection confirmation fails when a missing member became licensed."""
+    del webhook_context
+    (
+        transaction_id,
+        _collection_id,
+        _prior_framework_id,
+        minted_framework_id,
+        operator_id,
+    ) = await create_pending_collection_purchase()
+    async with async_session_factory() as session:
+        async with session.begin():
+            collection_transaction = await session.get(Transaction, transaction_id)
+            assert collection_transaction is not None
+            individual_transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=collection_transaction.payee_id,
+                amount=Decimal("500.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("500.00"),
+                transaction_type="purchase",
+                status="completed",
+                provider="stripe",
+                provider_ref="pi_midflight_individual_123",
+                ref_id=minted_framework_id,
+                ref_type="framework",
+            )
+            session.add(individual_transaction)
+            await session.flush()
+            session.add(
+                License(
+                    framework_id=minted_framework_id,
+                    operator_id=operator_id,
+                    transaction_id=individual_transaction.id,
+                    source="individual",
+                    license_type="team",
+                    status="active",
+                    version_at_grant="1.0.0",
+                )
+            )
+
+    with pytest.raises(CollectionPurchaseProcessingError) as exc_info:
+        async with async_session_factory() as session:
+            async with session.begin():
+                await confirm_collection_purchase(
+                    session,
+                    transaction_id=transaction_id,
+                    payment_intent_id="pi_collection_webhook_123",
+                )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        allocations = (
+            await session.execute(
+                select(CollectionEarningAllocation).where(
+                    CollectionEarningAllocation.transaction_id == transaction_id
+                )
+            )
+        ).scalars().all()
+        license_row = await session.scalar(
+            select(License).where(
+                License.framework_id == minted_framework_id,
+                License.operator_id == operator_id,
+            )
+        )
+
+    assert str(exc_info.value) == "collection member already licensed"
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert allocations == []
+    assert license_row is not None
+    assert license_row.transaction_id != transaction_id
+    assert license_row.source == "individual"
+
+
 async def test_stripe_purchase_success_creates_partner_commission_once(
     client: AsyncClient,
     webhook_context: dict[str, Any],

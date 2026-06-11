@@ -175,6 +175,7 @@ async def confirm_collection_purchase(
 
     minted_snapshots: list[CollectionPurchaseSnapshot] = []
     minted_license_ids: list[str] = []
+    midflight_owned_framework_ids: list[str] = []
     for snapshot in snapshots:
         if snapshot.already_owned:
             continue
@@ -209,6 +210,9 @@ async def confirm_collection_purchase(
             minted_snapshots.append(snapshot)
             minted_license_ids.append(str(existing_license.id))
             continue
+        if existing_license.status == "active":
+            midflight_owned_framework_ids.append(str(snapshot.framework_id))
+            continue
         if existing_license.status != "active":
             existing_license.transaction_id = transaction.id
             existing_license.source = "collection"
@@ -220,6 +224,21 @@ async def confirm_collection_purchase(
             existing_license.seats_total = _license_seats_total(snapshot.license_type)
             minted_snapshots.append(snapshot)
             minted_license_ids.append(str(existing_license.id))
+
+    if midflight_owned_framework_ids:
+        await write_audit(
+            db=db,
+            actor_id=transaction.payer_id,
+            action="collection_purchase_needs_refund",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "collection_id": str(transaction.ref_id),
+                "framework_ids": midflight_owned_framework_ids,
+                "reason": "license_already_active",
+            },
+        )
+        raise CollectionPurchaseProcessingError("collection member already licensed")
 
     existing_allocation_id = await db.scalar(
         select(CollectionEarningAllocation.id)
