@@ -11,6 +11,7 @@ from app.core.redis import close_redis
 from app.modules.admin.router import router as admin_router
 from app.modules.attestation.router import router as attestation_router
 from app.modules.auth.router import router as auth_router
+from app.modules.collections.router import router as collections_router
 from app.modules.developer.auth import PartnerApiRequestLoggingMiddleware
 from app.modules.developer.partner_router import router as partner_router
 from app.modules.developer.router import router as developer_router
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     application.include_router(admin_router, prefix="/v1")
     application.include_router(attestation_router, prefix="/v1")
     application.include_router(auth_router, prefix="/v1")
+    application.include_router(collections_router, prefix="/v1")
     application.include_router(developer_router, prefix="/v1")
     application.include_router(explore_router, prefix="/v1")
     application.include_router(financials_router, prefix="/v1")
