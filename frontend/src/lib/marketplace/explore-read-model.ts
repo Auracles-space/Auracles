@@ -5,16 +5,16 @@
  * normalized API error. These helpers keep SSR pages from crashing when the API
  * is temporarily unavailable.
  */
-import { listExploreFrameworks } from "@/lib/generated/sdk.gen";
+import { listExploreMixedCatalog } from "@/lib/generated/sdk.gen";
 import type {
-  ExploreFrameworkListResponse,
-  ListExploreFrameworksData,
+  ExploreCatalogResponse,
+  ListMixedCatalogV1ExploreCatalogGetData,
 } from "@/lib/generated/types.gen";
 
 import { configureServerMarketplaceClient } from "./api";
 
 type ExploreCatalogReadModel = {
-  catalog: ExploreFrameworkListResponse | null;
+  catalog: ExploreCatalogResponse | null;
   unavailable: boolean;
 };
 
@@ -25,12 +25,12 @@ type ExploreCatalogReadModel = {
  * @returns Catalog data or an unavailable marker when network fetch fails.
  */
 export async function loadExploreCatalog(
-  query: ListExploreFrameworksData["query"],
+  query: ListMixedCatalogV1ExploreCatalogGetData["query"],
 ): Promise<ExploreCatalogReadModel> {
   configureServerMarketplaceClient();
 
   try {
-    const result = await listExploreFrameworks({ query });
+    const result = await listExploreMixedCatalog({ query });
 
     if (!result.response.ok || !result.data) {
       return { catalog: null, unavailable: true };

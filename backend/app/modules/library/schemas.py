@@ -18,6 +18,8 @@ class LibraryItem(BaseModel):
     version_at_grant: str
     current_version: str
     license_type: str
+    source: str
+    collection_id: UUID | None
     status: str
     seats_used: int
     seats_total: int | None

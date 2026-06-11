@@ -1,9 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CheckoutForm } from "@/components/modules/financials/checkout-form";
-import { createFrameworkPurchase } from "@/lib/generated/sdk.gen";
-import type { ExploreFrameworkDetail } from "@/lib/generated/types.gen";
+import {
+  CheckoutForm,
+  CollectionCheckoutForm,
+} from "@/components/modules/financials/checkout-form";
+import {
+  createCollectionPurchase,
+  createFrameworkPurchase,
+  getExploreCollectionDetail,
+} from "@/lib/generated/sdk.gen";
+import type {
+  ExploreCollectionDetail,
+  ExploreFrameworkDetail,
+} from "@/lib/generated/types.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -16,7 +26,9 @@ vi.mock("@/lib/financials/stripe-client", () => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  createCollectionPurchase: vi.fn(),
   createFrameworkPurchase: vi.fn(),
+  getExploreCollectionDetail: vi.fn(),
 }));
 
 vi.mock("@stripe/react-stripe-js", () => ({
@@ -61,9 +73,64 @@ const framework: ExploreFrameworkDetail = {
   version: "1.0.0",
 };
 
+const collection: ExploreCollectionDetail = {
+  already_owned_member_ids: ["00000000-0000-4000-8000-000000000021"],
+  bundle_price: "700.00",
+  contributor_id: "00000000-0000-4000-8000-000000000014",
+  contributor_name: "Mara Okafor",
+  created_at: "2026-06-09T00:00:00Z",
+  currency: "USD",
+  description: "A bundle of diligence controls for an operating team.",
+  id: "00000000-0000-4000-8000-000000000020",
+  item_type: "collection",
+  member_count: 3,
+  member_price_sum: "900.00",
+  members: [
+    {
+      category: "playbook",
+      currency: "USD",
+      framework_id: "00000000-0000-4000-8000-000000000021",
+      price: "250.00",
+      thumbnail_key: null,
+      title: "Diligence Control Playbook",
+      version: "1.0.0",
+    },
+    {
+      category: "checklist",
+      currency: "USD",
+      framework_id: "00000000-0000-4000-8000-000000000022",
+      price: "300.00",
+      thumbnail_key: null,
+      title: "Risk Register Checklist",
+      version: "1.0.0",
+    },
+    {
+      category: "template",
+      currency: "USD",
+      framework_id: "00000000-0000-4000-8000-000000000023",
+      price: "350.00",
+      thumbnail_key: null,
+      title: "Control Evidence Template",
+      version: "1.0.0",
+    },
+  ],
+  savings_amount: "200.00",
+  savings_percent: "22.22",
+  title: "Diligence Control Collection",
+  updated_at: "2026-06-09T00:00:00Z",
+};
+
 describe("CheckoutForm", () => {
   beforeEach(() => {
+    vi.mocked(createCollectionPurchase).mockReset();
     vi.mocked(createFrameworkPurchase).mockReset();
+    vi.mocked(getExploreCollectionDetail).mockReset();
+    vi.mocked(getExploreCollectionDetail).mockResolvedValue({
+      data: collection,
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
   });
 
   it("starts checkout for the selected self-serve license", async () => {
@@ -95,5 +162,35 @@ describe("CheckoutForm", () => {
     expect(
       screen.getByRole("button", { name: "Confirm payment" }),
     ).toBeInTheDocument();
+  });
+
+  it("starts checkout for a collection bundle", async () => {
+    vi.mocked(createCollectionPurchase).mockResolvedValue({
+      data: {
+        client_secret: "pi_secret_collection",
+        provider: "stripe",
+        transaction_id: "00000000-0000-4000-8000-000000000098",
+      },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<CollectionCheckoutForm collection={collection} />);
+
+    fireEvent.click(screen.getByLabelText("Team"));
+    fireEvent.click(screen.getByRole("button", { name: "Start checkout" }));
+
+    await waitFor(() => {
+      expect(createCollectionPurchase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: { license_type: "team" },
+          path: { collection_id: collection.id },
+        }),
+      );
+    });
+    expect(screen.getByText("Includes 3 frameworks")).toBeInTheDocument();
+    expect(screen.getByText("You already own 1 member")).toBeInTheDocument();
+    expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
   });
 });

@@ -165,10 +165,14 @@ function LibraryCard({ item }: LibraryCardProps) {
       <div className="mt-4 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
         <span>Status {formatLabel(item.status)}</span>
         <span>
+          Source{" "}
+          {item.source === "collection" ? "Collection" : formatLabel(item.source)}
+        </span>
+        <span>
           Seats {item.seats_used}
           {item.seats_total ? ` / ${item.seats_total}` : ""}
         </span>
-        <span>
+        <span className="sm:col-span-3">
           Expires {item.expires_at ? new Date(item.expires_at).toLocaleDateString() : "Never"}
         </span>
       </div>

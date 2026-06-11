@@ -5,16 +5,19 @@
  * are handled only when users attempt write/download actions.
  */
 import { FilterSidebar } from "@/components/modules/explore/filter-sidebar";
-import { FrameworkCard } from "@/components/modules/explore/framework-card";
+import {
+  CollectionCard,
+  FrameworkCard,
+} from "@/components/modules/explore/framework-card";
 import type {
-  ExploreFrameworkCard,
   ExploreAttestationStatus,
+  ExploreCatalogResponse,
   ExploreSort,
   FrameworkCategory,
   FrameworkFunction,
   FrameworkIndustry,
   FrameworkSector,
-  ListExploreFrameworksData,
+  ListMixedCatalogV1ExploreCatalogGetData,
   OrgSize,
 } from "@/lib/generated/types.gen";
 import { loadExploreCatalog } from "@/lib/marketplace/explore-read-model";
@@ -119,28 +122,31 @@ function attestationStatusParam(
  */
 export default async function ExplorePage({ searchParams }: ExplorePageProps) {
   const params = (await searchParams) ?? {};
-  const query: NonNullable<ListExploreFrameworksData["query"]> = {
-    category: taxonomyParam<FrameworkCategory>(
-      params.category,
-      FRAMEWORK_CATEGORY_OPTIONS,
-    ),
-    complexity: firstParam(params.complexity)
-      ? Number(firstParam(params.complexity))
-      : null,
-    function: taxonomyParam<FrameworkFunction>(params.function, FUNCTION_OPTIONS),
-    industry: taxonomyParam<FrameworkIndustry>(params.industry, INDUSTRY_OPTIONS),
-    jurisdiction: firstParam(params.jurisdiction) ?? null,
-    license_type: firstParam(params.license_type) ?? null,
-    lifecycle_stage: firstParam(params.lifecycle_stage) ?? null,
-    org_size: taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS),
+  const query: NonNullable<ListMixedCatalogV1ExploreCatalogGetData["query"]> = {
     page: numberParam(params.page, 1),
     page_size: 12,
-    price_max: firstParam(params.price_max) ?? null,
-    price_min: firstParam(params.price_min) ?? null,
     q: firstParam(params.q) ?? null,
-    sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS),
     sort: sortParam(params.sort),
-    attestation_status: attestationStatusParam(params.attestation_status),
+  };
+  const filterActive = {
+    category:
+      taxonomyParam<FrameworkCategory>(
+        params.category,
+        FRAMEWORK_CATEGORY_OPTIONS,
+      ) ?? undefined,
+    attestation_status:
+      attestationStatusParam(params.attestation_status) ?? undefined,
+    function:
+      taxonomyParam<FrameworkFunction>(params.function, FUNCTION_OPTIONS) ??
+      undefined,
+    industry:
+      taxonomyParam<FrameworkIndustry>(params.industry, INDUSTRY_OPTIONS) ??
+      undefined,
+    license_type: firstParam(params.license_type) ?? undefined,
+    org_size: taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS) ?? undefined,
+    q: query.q ?? undefined,
+    sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS) ?? undefined,
+    sort: query.sort,
   };
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
@@ -166,17 +172,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                 </summary>
                 <div className="border-t border-border-default p-4 bg-background">
                   <FilterSidebar
-                    active={{
-                      category: query.category ?? undefined,
-                      attestation_status: query.attestation_status ?? undefined,
-                      function: query.function ?? undefined,
-                      industry: query.industry ?? undefined,
-                      license_type: query.license_type ?? undefined,
-                      org_size: query.org_size ?? undefined,
-                      q: query.q ?? undefined,
-                      sector: query.sector ?? undefined,
-                      sort: query.sort,
-                    }}
+                    active={filterActive}
                   />
                 </div>
               </details>
@@ -185,23 +181,13 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
             {/* Desktop Filters Sidebar */}
             <div className="hidden lg:block">
               <FilterSidebar
-                active={{
-                  category: query.category ?? undefined,
-                  attestation_status: query.attestation_status ?? undefined,
-                  function: query.function ?? undefined,
-                  industry: query.industry ?? undefined,
-                  license_type: query.license_type ?? undefined,
-                  org_size: query.org_size ?? undefined,
-                  q: query.q ?? undefined,
-                  sector: query.sector ?? undefined,
-                  sort: query.sort,
-                }}
+                active={filterActive}
               />
             </div>
           </div>
           <section className="flex-1 min-w-0">
             <div className="mb-6 flex items-center justify-between border-b border-border-default pb-4">
-              <p className="text-sm font-medium text-foreground-muted">{catalog?.total ?? 0} frameworks</p>
+              <p className="text-sm font-medium text-foreground-muted">{catalog?.total ?? 0} marketplace items</p>
               
               <div className="flex items-center gap-3">
                 <button className="flex items-center gap-2 rounded-xl border border-border-default px-3 py-1.5 text-sm font-medium text-foreground-muted hover:bg-surface-2 transition-colors">
@@ -227,9 +213,13 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
               </div>
             ) : catalog && catalog.items.length > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {catalog.items.map((framework: ExploreFrameworkCard) => (
-                  <FrameworkCard framework={framework} key={framework.id} />
-                ))}
+                {catalog.items.map((item: ExploreCatalogResponse["items"][number]) =>
+                  "bundle_price" in item ? (
+                    <CollectionCard collection={item} key={item.id} />
+                  ) : (
+                    <FrameworkCard framework={item} key={item.id} />
+                  ),
+                )}
               </div>
             ) : (
               <div className="rounded-xl border border-border-default bg-surface-2 p-12 text-center">

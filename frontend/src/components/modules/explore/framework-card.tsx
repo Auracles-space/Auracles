@@ -13,12 +13,17 @@ import Link from "next/link";
 
 import type {
   ExploreAttestationBadge,
+  ExploreCollectionCard,
   ExploreFrameworkCard,
 } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type FrameworkCardProps = {
   framework: ExploreFrameworkCard;
+};
+
+type CollectionCardProps = {
+  collection: ExploreCollectionCard;
 };
 
 /**
@@ -174,6 +179,80 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
             </svg>
             Preview
           </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * Render one public Collection catalog item.
+ *
+ * @param props - Public Collection summary.
+ */
+export function CollectionCard({ collection }: CollectionCardProps) {
+  return (
+    <article className="group relative flex flex-col justify-between overflow-hidden rounded-lg border border-border-default bg-surface-1 p-5 transition-colors hover:border-accent/50 hover:bg-surface-2">
+      <div>
+        <div className="mb-3 flex items-start justify-between gap-4">
+          <h2 className="font-heading text-lg font-semibold leading-tight text-foreground transition-colors group-hover:text-accent">
+            <Link
+              href={`/explore/collections/${collection.id}`}
+              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {collection.title}
+            </Link>
+          </h2>
+          <div className="text-right">
+            <strong className="font-heading text-lg font-bold text-foreground">
+              {formatMoney(collection.bundle_price, collection.currency)}
+            </strong>
+          </div>
+        </div>
+        <p className="line-clamp-2 text-sm leading-6 text-foreground-muted">
+          {collection.description}
+        </p>
+        <Link
+          className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
+          href={`/explore/contributors/${collection.contributor_id}`}
+        >
+          {collection.contributor_name}
+        </Link>
+      </div>
+
+      <div className="mt-6 flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-md border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-info">
+            Collection
+          </span>
+          <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+            {collection.member_count} frameworks
+          </span>
+          <span className="rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-success">
+            Save {formatMoney(collection.savings_amount, collection.currency)}
+          </span>
+          <span className="rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-success">
+            {collection.savings_percent}% off
+          </span>
+        </div>
+
+        <div className="grid gap-2">
+          {collection.members.slice(0, 3).map((member) => (
+            <div
+              className="rounded-md border border-border-default bg-surface-2 px-3 py-2 text-xs text-foreground-muted"
+              key={member.framework_id}
+            >
+              <span className="font-semibold text-foreground">{member.title}</span>
+              <span> · {formatLabel(member.category)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-border-default pt-4">
+          <span className="text-xs font-medium text-foreground-muted">
+            Member value {formatMoney(collection.member_price_sum, collection.currency)}
+          </span>
+          <span className="text-xs font-semibold text-accent">View bundle</span>
         </div>
       </div>
     </article>

@@ -23,6 +23,7 @@ const appLinks = [
   { href: "/attestations", label: "Attestations" },
   { href: "/attestor/assignments", label: "Attestor" },
   { href: "/dashboard/frameworks", label: "Frameworks" },
+  { href: "/dashboard/collections", label: "Collections" },
   { href: "/dashboard/earnings", label: "Earnings" },
   { href: "/dashboard/payouts", label: "Payouts" },
   { href: "/dashboard/developer", label: "Developer" },

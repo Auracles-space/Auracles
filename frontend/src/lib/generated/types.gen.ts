@@ -560,6 +560,69 @@ export type AttestorAssignmentsResponse = {
 };
 
 /**
+ * Contributor request body for creating a draft Collection.
+ */
+export type CollectionCreateRequest = {
+    title: string;
+    description: string;
+    bundle_price: (number | string);
+    currency?: string;
+};
+
+/**
+ * List response for Contributor-owned Collections.
+ */
+export type CollectionListResponse = {
+    collections: Array<CollectionResponse>;
+};
+
+/**
+ * Contributor request body for adding one Framework to a Collection.
+ */
+export type CollectionMemberRequest = {
+    framework_id: string;
+};
+
+/**
+ * Framework summary embedded in contributor Collection responses.
+ */
+export type CollectionMemberResponse = {
+    framework_id: string;
+    title: string;
+    status: string;
+    price: string;
+    currency: string;
+};
+
+/**
+ * Contributor-facing Collection response.
+ */
+export type CollectionResponse = {
+    id: string;
+    contributor_id: string;
+    title: string;
+    description: string;
+    bundle_price: string;
+    currency: string;
+    status: 'draft' | 'published' | 'unpublished';
+    members: Array<CollectionMemberResponse>;
+    created_at: string;
+    updated_at: string;
+};
+
+export type status2 = 'draft' | 'published' | 'unpublished';
+
+/**
+ * Contributor request body for editing an unpublished Collection.
+ */
+export type CollectionUpdateRequest = {
+    title?: (string | null);
+    description?: (string | null);
+    bundle_price?: (number | string | null);
+    currency?: (string | null);
+};
+
+/**
  * Readiness status for a single platform component.
  */
 export type ComponentHealth = {
@@ -883,7 +946,89 @@ export type ExploreAttestationBadge = {
     attestation_count?: number;
 };
 
-export type status2 = 'pending_acceptance' | 'attested' | 'conditionally_attested';
+export type status3 = 'pending_acceptance' | 'attested' | 'conditionally_attested';
+
+/**
+ * Paginated mixed catalog response for Framework and Collection cards.
+ */
+export type ExploreCatalogResponse = {
+    items: Array<(ExploreFrameworkCatalogItem | ExploreCollectionCard)>;
+    total: number;
+    page: number;
+    page_size: number;
+    sort: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    sort_shim?: boolean;
+};
+
+export type sort = 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+
+/**
+ * Public catalog card for one published Collection.
+ */
+export type ExploreCollectionCard = {
+    item_type?: "collection";
+    id: string;
+    contributor_id: string;
+    contributor_name: string;
+    title: string;
+    description: string;
+    bundle_price: string;
+    currency: string;
+    member_price_sum: string;
+    savings_amount: string;
+    savings_percent: string;
+    member_count: number;
+    members: Array<ExploreCollectionMemberSummary>;
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Public Collection detail payload.
+ */
+export type ExploreCollectionDetail = {
+    item_type?: "collection";
+    id: string;
+    contributor_id: string;
+    contributor_name: string;
+    title: string;
+    description: string;
+    bundle_price: string;
+    currency: string;
+    member_price_sum: string;
+    savings_amount: string;
+    savings_percent: string;
+    member_count: number;
+    members: Array<ExploreCollectionMemberSummary>;
+    created_at: string;
+    updated_at: string;
+    already_owned_member_ids?: Array<(string)>;
+};
+
+/**
+ * Paginated public Collection catalog response.
+ */
+export type ExploreCollectionListResponse = {
+    items: Array<ExploreCollectionCard>;
+    total: number;
+    page: number;
+    page_size: number;
+    sort: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    sort_shim?: boolean;
+};
+
+/**
+ * Public member Framework summary embedded in Collection cards.
+ */
+export type ExploreCollectionMemberSummary = {
+    framework_id: string;
+    title: string;
+    version: string;
+    category: string;
+    price: string;
+    currency: string;
+    thumbnail_key: (string | null);
+};
 
 /**
  * Public Contributor profile for Explore discovery.
@@ -934,6 +1079,38 @@ export type ExploreFrameworkCard = {
 };
 
 /**
+ * Framework card shape used inside the mixed Explore catalog.
+ */
+export type ExploreFrameworkCatalogItem = {
+    id: string;
+    contributor_id: string;
+    contributor_name: string;
+    title: string;
+    description: string;
+    version: string;
+    category: string;
+    sector: (string | null);
+    industry: (string | null);
+    function: (string | null);
+    tags: Array<(string)>;
+    jurisdiction: (string | null);
+    complexity: (number | null);
+    org_size: (string | null);
+    lifecycle_stage: (string | null);
+    price: string;
+    currency: string;
+    license_types: Array<(string)>;
+    thumbnail_key: (string | null);
+    rarity_score: (string | null);
+    average_review_score?: (string | null);
+    review_count?: number;
+    attestation_badge?: (ExploreAttestationBadge | null);
+    owned?: boolean;
+    published_at: (string | null);
+    item_type?: "framework";
+};
+
+/**
  * Public Framework detail payload.
  */
 export type ExploreFrameworkDetail = {
@@ -979,8 +1156,6 @@ export type ExploreFrameworkListResponse = {
     sort_shim?: boolean;
 };
 
-export type sort = 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
-
 /**
  * Request body for starting password reset without enumeration.
  */
@@ -1024,7 +1199,7 @@ export type FrameworkListItem = {
     updated_at: string;
 };
 
-export type status3 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status4 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 /**
  * Framework draft prefill data derived from an approved Deliverable.
@@ -1212,6 +1387,8 @@ export type LibraryItem = {
     version_at_grant: string;
     current_version: string;
     license_type: string;
+    source: string;
+    collection_id: (string | null);
     status: string;
     seats_used: number;
     seats_total: (number | null);
@@ -1990,7 +2167,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status4 = 'processed' | 'received' | 'duplicate';
+export type status5 = 'processed' | 'received' | 'duplicate';
 
 /**
  * Request body for posting a user workspace message.
@@ -2455,6 +2632,81 @@ export type VerifyTotpLoginV1Auth2FaVerifyLoginPostResponse = (LoginResponse);
 
 export type VerifyTotpLoginV1Auth2FaVerifyLoginPostError = (HTTPValidationError);
 
+export type CreateCollectionV1CollectionsPostData = {
+    body: CollectionCreateRequest;
+};
+
+export type CreateCollectionV1CollectionsPostResponse = (CollectionResponse);
+
+export type CreateCollectionV1CollectionsPostError = (HTTPValidationError);
+
+export type ListMyCollectionsV1CollectionsMineGetResponse = (CollectionListResponse);
+
+export type ListMyCollectionsV1CollectionsMineGetError = unknown;
+
+export type GetCollectionV1CollectionsCollectionIdGetData = {
+    path: {
+        collection_id: string;
+    };
+};
+
+export type GetCollectionV1CollectionsCollectionIdGetResponse = (CollectionResponse);
+
+export type GetCollectionV1CollectionsCollectionIdGetError = (HTTPValidationError);
+
+export type UpdateCollectionV1CollectionsCollectionIdPatchData = {
+    body: CollectionUpdateRequest;
+    path: {
+        collection_id: string;
+    };
+};
+
+export type UpdateCollectionV1CollectionsCollectionIdPatchResponse = (CollectionResponse);
+
+export type UpdateCollectionV1CollectionsCollectionIdPatchError = (HTTPValidationError);
+
+export type AddCollectionMemberV1CollectionsCollectionIdMembersPostData = {
+    body: CollectionMemberRequest;
+    path: {
+        collection_id: string;
+    };
+};
+
+export type AddCollectionMemberV1CollectionsCollectionIdMembersPostResponse = (CollectionResponse);
+
+export type AddCollectionMemberV1CollectionsCollectionIdMembersPostError = (HTTPValidationError);
+
+export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDeleteData = {
+    path: {
+        collection_id: string;
+        framework_id: string;
+    };
+};
+
+export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDeleteResponse = (CollectionResponse);
+
+export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDeleteError = (HTTPValidationError);
+
+export type PublishCollectionV1CollectionsCollectionIdPublishPostData = {
+    path: {
+        collection_id: string;
+    };
+};
+
+export type PublishCollectionV1CollectionsCollectionIdPublishPostResponse = (CollectionResponse);
+
+export type PublishCollectionV1CollectionsCollectionIdPublishPostError = (HTTPValidationError);
+
+export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostData = {
+    path: {
+        collection_id: string;
+    };
+};
+
+export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostResponse = (CollectionResponse);
+
+export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostError = (HTTPValidationError);
+
 export type SubmitDeveloperApplicationV1DeveloperApplicationsPostData = {
     body: DeveloperApplicationCreateRequest;
 };
@@ -2624,6 +2876,44 @@ export type ListFrameworksV1ExploreFrameworksGetResponse = (ExploreFrameworkList
 
 export type ListFrameworksV1ExploreFrameworksGetError = (HTTPValidationError);
 
+export type ListMixedCatalogV1ExploreCatalogGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        q?: (string | null);
+        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    };
+};
+
+export type ListMixedCatalogV1ExploreCatalogGetResponse = (ExploreCatalogResponse);
+
+export type ListMixedCatalogV1ExploreCatalogGetError = (HTTPValidationError);
+
+export type ListCollectionsV1ExploreCollectionsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        price_max?: (number | string | null);
+        price_min?: (number | string | null);
+        q?: (string | null);
+        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    };
+};
+
+export type ListCollectionsV1ExploreCollectionsGetResponse = (ExploreCollectionListResponse);
+
+export type ListCollectionsV1ExploreCollectionsGetError = (HTTPValidationError);
+
+export type GetCollectionDetailV1ExploreCollectionsCollectionIdGetData = {
+    path: {
+        collection_id: string;
+    };
+};
+
+export type GetCollectionDetailV1ExploreCollectionsCollectionIdGetResponse = (ExploreCollectionDetail);
+
+export type GetCollectionDetailV1ExploreCollectionsCollectionIdGetError = (HTTPValidationError);
+
 export type GetContributorProfileV1ExploreContributorsContributorIdGetData = {
     path: {
         contributor_id: string;
@@ -2698,6 +2988,17 @@ export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostData = {
 export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostResponse = (PurchaseResponse);
 
 export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostError = (HTTPValidationError);
+
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostData = {
+    body: PurchaseRequest;
+    path: {
+        collection_id: string;
+    };
+};
+
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostResponse = (PurchaseResponse);
+
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostError = (HTTPValidationError);
 
 export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostData = {
     path: {

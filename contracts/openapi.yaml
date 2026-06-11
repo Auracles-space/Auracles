@@ -1353,6 +1353,248 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/collections:
+    post:
+      tags:
+      - Collections
+      summary: Create Collection
+      description: Create a draft Collection for the authenticated Contributor.
+      operationId: create_collection_v1_collections_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/collections/mine:
+    get:
+      tags:
+      - Collections
+      summary: List My Collections
+      description: List Collections owned by the authenticated Contributor.
+      operationId: list_my_collections_v1_collections_mine_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionListResponse'
+      security:
+      - HTTPBearer: []
+  /v1/collections/{collection_id}:
+    get:
+      tags:
+      - Collections
+      summary: Get Collection
+      description: Return one Collection owned by the authenticated Contributor.
+      operationId: get_collection_v1_collections__collection_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Collections
+      summary: Update Collection
+      description: Edit an owned draft or unpublished Collection.
+      operationId: update_collection_v1_collections__collection_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/collections/{collection_id}/members:
+    post:
+      tags:
+      - Collections
+      summary: Add Collection Member
+      description: Add an owned Framework to an editable Collection.
+      operationId: add_collection_member_v1_collections__collection_id__members_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionMemberRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/collections/{collection_id}/members/{framework_id}:
+    delete:
+      tags:
+      - Collections
+      summary: Remove Collection Member
+      description: Remove a Framework from an editable Collection.
+      operationId: remove_collection_member_v1_collections__collection_id__members__framework_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/collections/{collection_id}/publish:
+    post:
+      tags:
+      - Collections
+      summary: Publish Collection
+      description: Publish an owned Collection after bundle validation passes.
+      operationId: publish_collection_v1_collections__collection_id__publish_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/collections/{collection_id}/unpublish:
+    post:
+      tags:
+      - Collections
+      summary: Unpublish Collection
+      description: Unpublish an owned Collection so new catalog purchases stop.
+      operationId: unpublish_collection_v1_collections__collection_id__unpublish_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/applications:
     post:
       tags:
@@ -2004,6 +2246,182 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/explore/catalog:
+    get:
+      tags:
+      - Explore
+      summary: List Mixed Catalog
+      description: Return paginated public Framework and Collection catalog results.
+      operationId: list_mixed_catalog_v1_explore_catalog_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Q
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      - name: sort
+        in: query
+        required: false
+        schema:
+          enum:
+          - newest
+          - top-rated
+          - most-purchased
+          - price_asc
+          - price_desc
+          type: string
+          default: newest
+          title: Sort
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreCatalogResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/explore/collections:
+    get:
+      tags:
+      - Explore
+      summary: List Collections
+      description: Return paginated public Collection catalog results.
+      operationId: list_collections_v1_explore_collections_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Q
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      - name: sort
+        in: query
+        required: false
+        schema:
+          enum:
+          - newest
+          - top-rated
+          - most-purchased
+          - price_asc
+          - price_desc
+          type: string
+          default: newest
+          title: Sort
+      - name: price_min
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Min
+      - name: price_max
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Max
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreCollectionListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/explore/collections/{collection_id}:
+    get:
+      tags:
+      - Explore
+      summary: Get Collection Detail
+      description: Return public detail for one published Collection.
+      operationId: get_collection_detail_v1_explore_collections__collection_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExploreCollectionDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/explore/contributors/{contributor_id}:
     get:
       tags:
@@ -2250,12 +2668,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/financials/collections/{collection_id}/purchase:
+    post:
+      tags:
+      - Financials
+      summary: Create Collection Purchase
+      description: Start Stripe checkout for a published Collection bundle.
+      operationId: create_collection_purchase_v1_financials_collections__collection_id__purchase_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/purchases/{transaction_id}/refund:
     post:
       tags:
       - Financials
       summary: Refund Framework Purchase
-      description: Refund an eligible completed Framework purchase for the Operator.
+      description: Refund an eligible completed Framework or Collection purchase.
       operationId: refund_framework_purchase_v1_financials_purchases__transaction_id__refund_post
       security:
       - HTTPBearer: []
@@ -6624,6 +7078,178 @@ components:
       - assignments
       title: AttestorAssignmentsResponse
       description: List response for an Attestor's open offers and accepted work.
+    CollectionCreateRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Title
+        description:
+          type: string
+          minLength: 1
+          title: Description
+        bundle_price:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+          title: Bundle Price
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: USD
+      type: object
+      required:
+      - title
+      - description
+      - bundle_price
+      title: CollectionCreateRequest
+      description: Contributor request body for creating a draft Collection.
+    CollectionListResponse:
+      properties:
+        collections:
+          items:
+            $ref: '#/components/schemas/CollectionResponse'
+          type: array
+          title: Collections
+      type: object
+      required:
+      - collections
+      title: CollectionListResponse
+      description: List response for Contributor-owned Collections.
+    CollectionMemberRequest:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+      type: object
+      required:
+      - framework_id
+      title: CollectionMemberRequest
+      description: Contributor request body for adding one Framework to a Collection.
+    CollectionMemberResponse:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        status:
+          type: string
+          title: Status
+        price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Price
+        currency:
+          type: string
+          title: Currency
+      type: object
+      required:
+      - framework_id
+      - title
+      - status
+      - price
+      - currency
+      title: CollectionMemberResponse
+      description: Framework summary embedded in contributor Collection responses.
+    CollectionResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        bundle_price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Bundle Price
+        currency:
+          type: string
+          title: Currency
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+          - unpublished
+          title: Status
+        members:
+          items:
+            $ref: '#/components/schemas/CollectionMemberResponse'
+          type: array
+          title: Members
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - contributor_id
+      - title
+      - description
+      - bundle_price
+      - currency
+      - status
+      - members
+      - created_at
+      - updated_at
+      title: CollectionResponse
+      description: Contributor-facing Collection response.
+    CollectionUpdateRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Title
+        description:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Description
+        bundle_price:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+          - type: 'null'
+          title: Bundle Price
+        currency:
+          anyOf:
+          - type: string
+            maxLength: 3
+            minLength: 3
+          - type: 'null'
+          title: Currency
+      type: object
+      title: CollectionUpdateRequest
+      description: Contributor request body for editing an unpublished Collection.
     ComponentHealth:
       properties:
         status:
@@ -7565,6 +8191,293 @@ components:
       - issued_at
       title: ExploreAttestationBadge
       description: Public trust badge for a Framework or Contributor-target Attestation.
+    ExploreCatalogResponse:
+      properties:
+        items:
+          items:
+            oneOf:
+            - $ref: '#/components/schemas/ExploreFrameworkCatalogItem'
+            - $ref: '#/components/schemas/ExploreCollectionCard'
+            discriminator:
+              propertyName: item_type
+              mapping:
+                collection: '#/components/schemas/ExploreCollectionCard'
+                framework: '#/components/schemas/ExploreFrameworkCatalogItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+        sort:
+          type: string
+          enum:
+          - newest
+          - top-rated
+          - most-purchased
+          - price_asc
+          - price_desc
+          title: Sort
+        sort_shim:
+          type: boolean
+          title: Sort Shim
+          default: false
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      - sort
+      title: ExploreCatalogResponse
+      description: Paginated mixed catalog response for Framework and Collection cards.
+    ExploreCollectionCard:
+      properties:
+        item_type:
+          type: string
+          const: collection
+          title: Item Type
+          default: collection
+        id:
+          type: string
+          format: uuid
+          title: Id
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        bundle_price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Bundle Price
+        currency:
+          type: string
+          title: Currency
+        member_price_sum:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Member Price Sum
+        savings_amount:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Savings Amount
+        savings_percent:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          title: Savings Percent
+        member_count:
+          type: integer
+          title: Member Count
+        members:
+          items:
+            $ref: '#/components/schemas/ExploreCollectionMemberSummary'
+          type: array
+          title: Members
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - contributor_id
+      - contributor_name
+      - title
+      - description
+      - bundle_price
+      - currency
+      - member_price_sum
+      - savings_amount
+      - savings_percent
+      - member_count
+      - members
+      - created_at
+      - updated_at
+      title: ExploreCollectionCard
+      description: Public catalog card for one published Collection.
+    ExploreCollectionDetail:
+      properties:
+        item_type:
+          type: string
+          const: collection
+          title: Item Type
+          default: collection
+        id:
+          type: string
+          format: uuid
+          title: Id
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        bundle_price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Bundle Price
+        currency:
+          type: string
+          title: Currency
+        member_price_sum:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Member Price Sum
+        savings_amount:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Savings Amount
+        savings_percent:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          title: Savings Percent
+        member_count:
+          type: integer
+          title: Member Count
+        members:
+          items:
+            $ref: '#/components/schemas/ExploreCollectionMemberSummary'
+          type: array
+          title: Members
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        already_owned_member_ids:
+          items:
+            type: string
+            format: uuid
+          type: array
+          title: Already Owned Member Ids
+      type: object
+      required:
+      - id
+      - contributor_id
+      - contributor_name
+      - title
+      - description
+      - bundle_price
+      - currency
+      - member_price_sum
+      - savings_amount
+      - savings_percent
+      - member_count
+      - members
+      - created_at
+      - updated_at
+      title: ExploreCollectionDetail
+      description: Public Collection detail payload.
+    ExploreCollectionListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExploreCollectionCard'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+        sort:
+          type: string
+          enum:
+          - newest
+          - top-rated
+          - most-purchased
+          - price_asc
+          - price_desc
+          title: Sort
+        sort_shim:
+          type: boolean
+          title: Sort Shim
+          default: false
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      - sort
+      title: ExploreCollectionListResponse
+      description: Paginated public Collection catalog response.
+    ExploreCollectionMemberSummary:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        version:
+          type: string
+          title: Version
+        category:
+          type: string
+          title: Category
+        price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Price
+        currency:
+          type: string
+          title: Currency
+        thumbnail_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Key
+      type: object
+      required:
+      - framework_id
+      - title
+      - version
+      - category
+      - price
+      - currency
+      - thumbnail_key
+      title: ExploreCollectionMemberSummary
+      description: Public member Framework summary embedded in Collection cards.
     ExploreContributorProfile:
       properties:
         id:
@@ -7763,6 +8676,148 @@ components:
       - published_at
       title: ExploreFrameworkCard
       description: Public catalog card for one published Framework.
+    ExploreFrameworkCatalogItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        version:
+          type: string
+          title: Version
+        category:
+          type: string
+          title: Category
+        sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sector
+        industry:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Industry
+        function:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Function
+        tags:
+          items:
+            type: string
+          type: array
+          title: Tags
+        jurisdiction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jurisdiction
+        complexity:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Complexity
+        org_size:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Size
+        lifecycle_stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lifecycle Stage
+        price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Price
+        currency:
+          type: string
+          title: Currency
+        license_types:
+          items:
+            type: string
+          type: array
+          title: License Types
+        thumbnail_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Key
+        rarity_score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Rarity Score
+        average_review_score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          - type: 'null'
+          title: Average Review Score
+        review_count:
+          type: integer
+          title: Review Count
+          default: 0
+        attestation_badge:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
+        owned:
+          type: boolean
+          title: Owned
+          default: false
+        published_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Published At
+        item_type:
+          type: string
+          const: framework
+          title: Item Type
+          default: framework
+      type: object
+      required:
+      - id
+      - contributor_id
+      - contributor_name
+      - title
+      - description
+      - version
+      - category
+      - sector
+      - industry
+      - function
+      - tags
+      - jurisdiction
+      - complexity
+      - org_size
+      - lifecycle_stage
+      - price
+      - currency
+      - license_types
+      - thumbnail_key
+      - rarity_score
+      - published_at
+      title: ExploreFrameworkCatalogItem
+      description: Framework card shape used inside the mixed Explore catalog.
     ExploreFrameworkDetail:
       properties:
         id:
@@ -8753,6 +9808,15 @@ components:
         license_type:
           type: string
           title: License Type
+        source:
+          type: string
+          title: Source
+        collection_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Collection Id
         status:
           type: string
           title: Status
@@ -8794,6 +9858,8 @@ components:
       - version_at_grant
       - current_version
       - license_type
+      - source
+      - collection_id
       - status
       - seats_used
       - seats_total

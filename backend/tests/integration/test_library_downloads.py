@@ -19,6 +19,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import CollectionFramework, FrameworkCollection
 from app.modules.frameworks.models import (
     Framework,
     FrameworkVersion,
@@ -82,6 +83,8 @@ async def library_test_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
             await session.execute(delete(License))
+            await session.execute(delete(CollectionFramework))
+            await session.execute(delete(FrameworkCollection))
             await session.execute(delete(ArtifactRarityAudit))
             await session.execute(delete(ArtifactPiiAudit))
             await session.execute(delete(FrameworkVersionArtifact))
@@ -257,6 +260,46 @@ async def grant_license_directly(
         return license_row.id
 
 
+async def grant_collection_license_directly(
+    framework_id: UUID,
+    operator_id: UUID,
+    contributor_id: UUID,
+) -> UUID:
+    """Create a collection-sourced license directly for library tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            collection = FrameworkCollection(
+                contributor_id=contributor_id,
+                title="Governance Collection",
+                description="A collection source for library display.",
+                bundle_price=Decimal("399.00"),
+                currency="USD",
+                status="published",
+            )
+            session.add(collection)
+            await session.flush()
+            session.add(
+                CollectionFramework(
+                    collection_id=collection.id,
+                    framework_id=framework_id,
+                )
+            )
+            license_row = License(
+                framework_id=framework_id,
+                operator_id=operator_id,
+                source="collection",
+                collection_id=collection.id,
+                license_type="team",
+                status="active",
+                version_at_grant="1.0.0",
+                seats_used=1,
+                seats_total=10,
+            )
+            session.add(license_row)
+            await session.flush()
+            return collection.id
+
+
 async def test_admin_can_grant_team_license_and_operator_library_lists_it(
     client: AsyncClient,
     migrated_database: None,
@@ -288,6 +331,41 @@ async def test_admin_can_grant_team_license_and_operator_library_lists_it(
     assert library.status_code == 200
     assert library.json()["total"] == 1
     assert library.json()["items"][0]["framework_id"] == str(framework_id)
+    assert library.json()["items"][0]["source"] == "individual"
+    assert library.json()["items"][0]["collection_id"] is None
+
+
+async def test_operator_library_marks_collection_sourced_licenses(
+    client: AsyncClient,
+    migrated_database: None,
+    library_test_context: dict[str, Any],
+) -> None:
+    """Collection-minted licenses expose source metadata for the Library UI."""
+    contributor_id = await create_user(
+        "collection-library-seller@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user(
+        "collection-library-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id, _ = await create_published_framework_version(contributor_id)
+    collection_id = await grant_collection_license_directly(
+        framework_id,
+        operator_id,
+        contributor_id,
+    )
+
+    library = await client.get(
+        "/v1/library",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    assert library.status_code == 200
+    item = library.json()["items"][0]
+    assert item["framework_id"] == str(framework_id)
+    assert item["source"] == "collection"
+    assert item["collection_id"] == str(collection_id)
 
 
 async def test_admin_duplicate_license_grant_returns_409(

@@ -38,6 +38,8 @@ def _library_item(framework: Framework, license_row: License) -> LibraryItem:
         version_at_grant=license_row.version_at_grant,
         current_version=framework.version,
         license_type=license_row.license_type,
+        source=license_row.source,
+        collection_id=license_row.collection_id,
         status=license_row.status,
         seats_used=license_row.seats_used,
         seats_total=license_row.seats_total,
