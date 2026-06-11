@@ -102,6 +102,7 @@ class Framework(UpdatedAtMixin, Base):
             name="ck_frameworks_complexity_range",
         ),
         Index("idx_frameworks_status", "status"),
+        Index("idx_frameworks_status_published_at", "status", "published_at"),
         Index("idx_frameworks_contributor", "contributor_id"),
         Index("idx_frameworks_category", "category"),
         Index("idx_frameworks_sector", "sector"),

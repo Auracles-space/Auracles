@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ExploreSort = Literal[
     "newest",
@@ -180,3 +180,28 @@ class ExploreContributorProfile(BaseModel):
     is_deactivated: bool = False
     published_framework_count: int
     published_frameworks: list[ExploreFrameworkCard]
+
+
+class ExploreSearchFilters(BaseModel):
+    """Validated Explore filter blob persisted by saved searches.
+
+    Pagination is intentionally excluded so a saved search captures query intent,
+    not one temporary result page.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    q: str | None = Field(default=None, min_length=1)
+    category: str | None = None
+    sector: str | None = None
+    industry: str | None = None
+    function: str | None = None
+    jurisdiction: str | None = None
+    complexity: int | None = Field(default=None, ge=1, le=5)
+    org_size: str | None = None
+    lifecycle_stage: str | None = None
+    license_type: str | None = None
+    price_min: Decimal | None = Field(default=None, ge=0)
+    price_max: Decimal | None = Field(default=None, ge=0)
+    attestation_status: ExploreAttestationStatus | None = None
+    sort: ExploreSort = "newest"
