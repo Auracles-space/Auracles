@@ -122,8 +122,10 @@ class FakeRedis:
         now_ms: int,
         window_ms: int,
         limit: int,
+        member_suffix: str | None = None,
     ) -> list[int]:
         """Emulate the sliding-window Lua script used by Partner API auth."""
+        del member_suffix
         bucket = self.sorted_sets.setdefault(key, {})
         cutoff = now_ms - window_ms
         for member, score in list(bucket.items()):

@@ -232,7 +232,11 @@ backend/app/workers/tasks/
 - **Commission vs platform margin:** validate tier rate ≤ `commission_rate` at sale and on tier/config change; never let partner commission exceed margin or touch contributor net. Highest money-risk — test explicitly (mirror the 4a/4b earnings discipline).
 - **Find-or-invite operator:** invited-but-unactivated operator may own a license, but must not receive artifact access until email verification + authenticated operator session. The partner only receives purchase status, never licensed artifact URLs.
 - **`api_request_logs` volume:** can grow fast; ship with a retention prune; partition later if needed.
-- **Outbound webhook SSRF:** partners supply the URL — validate scheme/host, block internal/loopback ranges before delivery.
+- **Outbound webhook SSRF:** partners supply the URL — validate scheme/host,
+  block internal/loopback ranges before delivery. Current delivery re-resolves and
+  blocks unsafe IPs at send time; future hardening should pin the resolved public
+  IP through connect while preserving HTTPS hostname/SNI verification to close the
+  residual DNS-rebinding TOCTOU window.
 - **Rate-limit accuracy under concurrency:** Redis sliding-window must be atomic (Lua / INCR+EXPIRE) to avoid races.
 - **Key attribution integrity:** tier_rate snapshot must travel in PaymentIntent metadata and be re-validated server-side at commission creation, not trusted from the client.
 - **Partner read leakage:** partner detail/preview/attestation endpoints must reuse the public Explore visibility rules plus explicit artifact/report gating. Only published Frameworks are returned; private evidence and non-preview artifacts are never exposed through Partner API reads.

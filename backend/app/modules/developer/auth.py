@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -35,12 +36,13 @@ local key = KEYS[1]
 local now = tonumber(ARGV[1])
 local window = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
+local suffix = ARGV[4]
 redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
 local count = redis.call('ZCARD', key)
 if count >= limit then
   return {0, count}
 end
-redis.call('ZADD', key, now, tostring(now) .. ':' .. tostring(count))
+redis.call('ZADD', key, now, tostring(now) .. ':' .. tostring(count) .. ':' .. suffix)
 redis.call('PEXPIRE', key, window)
 return {1, count + 1}
 """
@@ -82,6 +84,7 @@ async def _rate_limit_count(
         now_ms,
         RATE_LIMIT_WINDOW_MS,
         limit,
+        secrets.token_hex(8),
     )
     allowed = bool(int(result[0]))
     count = int(result[1])
@@ -156,7 +159,7 @@ async def authenticate_partner_api_key(
             actor_id=None,
             action="partner_api_key_invalid",
             target_type="api_key",
-            metadata={"key_prefix": x_api_key[:12]},
+            metadata={"key_hash": _hash_api_key(x_api_key)},
         )
         await db.commit()
         raise HTTPException(

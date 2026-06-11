@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -23,6 +23,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.developer.auth import (
     PartnerApiContext,
     PartnerApiRequestLoggingMiddleware,
+    _rate_limit_count,
     require_api_key_scope,
 )
 from app.modules.developer.models import (
@@ -93,8 +94,10 @@ class FakeRedis:
         now_ms: int,
         window_ms: int,
         limit: int,
+        member_suffix: str | None = None,
     ) -> list[int]:
         """Emulate the sliding-window Lua script used by production Redis."""
+        del member_suffix
         bucket = self.sorted_sets.setdefault(key, {})
         cutoff = now_ms - window_ms
         for member, score in list(bucket.items()):
@@ -103,6 +106,36 @@ class FakeRedis:
         if len(bucket) >= limit:
             return [0, len(bucket)]
         bucket[f"{now_ms}:{len(bucket)}"] = float(now_ms)
+        return [1, len(bucket)]
+
+
+class CollisionDetectingRedis(FakeRedis):
+    """Fake Redis that fails when the Lua member lacks a unique suffix."""
+
+    async def eval(
+        self,
+        script: str,
+        _numkeys: int,
+        key: str,
+        now_ms: int,
+        window_ms: int,
+        limit: int,
+        member_suffix: str | None = None,
+    ) -> list[int]:
+        """Emulate same-ms limiter calls and reject colliding sorted-set members."""
+        bucket = self.sorted_sets.setdefault(key, {})
+        cutoff = now_ms - window_ms
+        for member, score in list(bucket.items()):
+            if score < cutoff:
+                bucket.pop(member, None)
+        if len(bucket) >= limit:
+            return [0, len(bucket)]
+        member = f"{now_ms}:{len(bucket)}"
+        if "ARGV[4]" in script:
+            member = f"{member}:{member_suffix}"
+        if member in bucket:
+            return [0, len(bucket)]
+        bucket[member] = float(now_ms)
         return [1, len(bucket)]
 
 
@@ -369,6 +402,22 @@ async def test_partner_api_key_rate_limit_blocks_after_limit(
     assert rate_limit_log is not None
 
 
+async def test_rate_limiter_uses_unique_sorted_set_members(
+    migrated_database: None,
+) -> None:
+    """Rate limiter adds entropy to sorted-set members to avoid collisions."""
+    del migrated_database
+    redis = CollisionDetectingRedis()
+    api_key_id = uuid4()
+
+    first = await _rate_limit_count(redis, api_key_id, limit=10)
+    second = await _rate_limit_count(redis, api_key_id, limit=10)
+
+    assert first[0] is True
+    assert second[0] is True
+    assert len(redis.sorted_sets[f"partner-api-rate:{api_key_id}"]) == 2
+
+
 async def test_invalid_partner_api_key_audits_without_usage_log(
     partner_client: AsyncClient,
     migrated_database: None,
@@ -377,9 +426,11 @@ async def test_invalid_partner_api_key_audits_without_usage_log(
     """Invalid API keys return 401 and are audited without API usage rows."""
     del migrated_database, partner_auth_context
 
+    attacker_key = "ak_invalid_partner_key"
+
     response = await partner_client.get(
         "/partner/protected",
-        headers={"X-API-Key": "ak_invalid_partner_key"},
+        headers={"X-API-Key": attacker_key},
     )
 
     async with async_session_factory() as session:
@@ -391,3 +442,6 @@ async def test_invalid_partner_api_key_audits_without_usage_log(
     assert response.status_code == 401
     assert usage_log is None
     assert audit is not None
+    assert audit.metadata_ == {
+        "key_hash": hashlib.sha256(attacker_key.encode("utf-8")).hexdigest()
+    }
