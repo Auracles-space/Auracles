@@ -3405,6 +3405,12 @@ export type GetDataExportStatusV1GdprExportsExportRequestIdGetResponse = (DataEx
 
 export type GetDataExportStatusV1GdprExportsExportRequestIdGetError = (HTTPValidationError);
 
+export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
+    path: {
+        export_request_id: string;
+    };
+};
+
 export type ListLibraryV1LibraryGetData = {
     query?: {
         page?: number;

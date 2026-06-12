@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.gdpr import export_service as gdpr_export_service
 from app.modules.gdpr.models import DataExportRequest
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
@@ -64,6 +65,8 @@ class FakeS3Storage:
     def __init__(self) -> None:
         """Create empty upload storage."""
         self.uploads: list[dict[str, Any]] = []
+        self.presigned_get_requests: list[dict[str, Any]] = []
+        self.deleted_objects: list[tuple[str, str]] = []
 
     def upload_bytes(
         self,
@@ -81,6 +84,32 @@ class FakeS3Storage:
                 "mime_type": mime_type,
             }
         )
+
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
+        """Return a deterministic fake presigned GET URL."""
+        self.presigned_get_requests.append(
+            {
+                "bucket": bucket,
+                "key": key,
+                "expires_in": expires_in,
+                "download_name": download_name,
+            }
+        )
+        return (
+            f"https://s3.test/{bucket}/{key}"
+            f"?expires={expires_in}&download_name={download_name}"
+        )
+
+    def delete_object(self, bucket: str, key: str) -> None:
+        """Record a private object deletion request."""
+        self.deleted_objects.append((bucket, key))
 
 
 @pytest.fixture
@@ -273,3 +302,203 @@ async def test_generate_data_export_writes_redacted_json_bundle(
     assert "TOTP_SHOULD_NOT_EXPORT" not in serialized_bundle
     assert "TOKEN_SHOULD_NOT_EXPORT" not in serialized_bundle
     assert "counterparty@example.com" not in serialized_bundle
+
+
+async def test_ready_export_download_redirects_to_private_presigned_url(
+    client: AsyncClient,
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ready export downloads redirect the owner to a private S3 URL."""
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user("export-download@auracles.space")
+    async with async_session_factory() as session:
+        async with session.begin():
+            request = DataExportRequest(
+                user_id=user_id,
+                status="ready",
+                bundle_key="gdpr-exports/test/export.json",
+                completed_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+            session.add(request)
+            await session.flush()
+            request_id = request.id
+
+    response = await client.get(
+        f"/v1/gdpr/exports/{request_id}/download",
+        headers=auth_headers(user_id),
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert fake_s3.presigned_get_requests == [
+        {
+            "bucket": app.state.settings.s3_reports_bucket,
+            "key": "gdpr-exports/test/export.json",
+            "expires_in": 600,
+            "download_name": "auracles-data-export.json",
+        }
+    ]
+    assert (
+        response.headers["location"]
+        == (
+            f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
+            "gdpr-exports/test/export.json"
+            "?expires=600&download_name=auracles-data-export.json"
+        )
+    )
+
+
+async def test_export_download_is_owner_scoped_and_ready_only(
+    client: AsyncClient,
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Download rejects non-owners, pending exports, and expired bundles."""
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    owner_id = await create_verified_user("export-guard-owner@auracles.space")
+    other_id = await create_verified_user("export-guard-other@auracles.space")
+    async with async_session_factory() as session:
+        async with session.begin():
+            pending_request = DataExportRequest(
+                user_id=owner_id,
+                status="pending",
+            )
+            expired_request = DataExportRequest(
+                user_id=owner_id,
+                status="ready",
+                bundle_key="gdpr-exports/test/expired-guard.json",
+                completed_at=datetime.now(UTC) - timedelta(days=1),
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+            session.add_all([pending_request, expired_request])
+            await session.flush()
+            pending_request_id = pending_request.id
+            expired_request_id = expired_request.id
+
+    other_response = await client.get(
+        f"/v1/gdpr/exports/{pending_request_id}/download",
+        headers=auth_headers(other_id),
+        follow_redirects=False,
+    )
+    pending_response = await client.get(
+        f"/v1/gdpr/exports/{pending_request_id}/download",
+        headers=auth_headers(owner_id),
+        follow_redirects=False,
+    )
+    expired_response = await client.get(
+        f"/v1/gdpr/exports/{expired_request_id}/download",
+        headers=auth_headers(owner_id),
+        follow_redirects=False,
+    )
+
+    assert other_response.status_code == 404
+    assert pending_response.status_code == 409
+    assert pending_response.json()["detail"] == "Data export is not ready for download."
+    assert expired_response.status_code == 410
+    assert expired_response.json()["detail"] == "Data export has expired."
+    assert fake_s3.presigned_get_requests == []
+
+
+async def test_export_download_is_rate_limited_per_user(
+    client: AsyncClient,
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Download throttles repeated presigned URL minting per user."""
+    del migrated_database
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user("export-limit@auracles.space")
+    async with async_session_factory() as session:
+        async with session.begin():
+            request = DataExportRequest(
+                user_id=user_id,
+                status="ready",
+                bundle_key="gdpr-exports/test/rate-limit.json",
+                completed_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+            session.add(request)
+            await session.flush()
+            request_id = request.id
+
+    for _ in range(gdpr_export_service.EXPORT_DOWNLOAD_LIMITER.limit):
+        response = await client.get(
+            f"/v1/gdpr/exports/{request_id}/download",
+            headers=auth_headers(user_id),
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    limited = await client.get(
+        f"/v1/gdpr/exports/{request_id}/download",
+        headers=auth_headers(user_id),
+        follow_redirects=False,
+    )
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "Rate limit exceeded."
+    assert (
+        export_test_context["redis"].ttls[
+            f"rate_limit:gdpr_export_download:{user_id}"
+        ]
+        == gdpr_export_service.EXPORT_DOWNLOAD_LIMITER.window
+    )
+
+
+async def test_expire_data_exports_deletes_bundle_and_marks_request_expired(
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Daily GDPR export expiry deletes past-due bundles and updates status."""
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user("export-expiry@auracles.space")
+    async with async_session_factory() as session:
+        async with session.begin():
+            expired_request = DataExportRequest(
+                user_id=user_id,
+                status="ready",
+                bundle_key="gdpr-exports/test/expired.json",
+                completed_at=datetime.now(UTC) - timedelta(days=2),
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+            active_request = DataExportRequest(
+                user_id=user_id,
+                status="ready",
+                bundle_key="gdpr-exports/test/active.json",
+                completed_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+            session.add_all([expired_request, active_request])
+            await session.flush()
+            expired_request_id = expired_request.id
+            active_request_id = active_request.id
+
+    result = await gdpr_beat._expire_data_exports_impl()
+
+    async with async_session_factory() as session:
+        expired_request = await session.get(DataExportRequest, expired_request_id)
+        active_request = await session.get(DataExportRequest, active_request_id)
+
+    assert result == {"expired_count": 1}
+    assert expired_request is not None
+    assert expired_request.status == "expired"
+    assert expired_request.bundle_key is None
+    assert active_request is not None
+    assert active_request.status == "ready"
+    assert active_request.bundle_key == "gdpr-exports/test/active.json"
+    assert fake_s3.deleted_objects == [
+        (app.state.settings.s3_reports_bucket, "gdpr-exports/test/expired.json")
+    ]

@@ -99,12 +99,28 @@ class S3Storage:
             CopySource={"Bucket": source_bucket, "Key": source_key},
         )
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def delete_object(self, bucket: str, key: str) -> None:
+        """Delete one private S3 object."""
+        self._client.delete_object(Bucket=bucket, Key=key)
+
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Create a short-lived GET URL for a private S3 object."""
+        params: dict[str, Any] = {"Bucket": bucket, "Key": key}
+        if download_name is not None:
+            params["ResponseContentDisposition"] = (
+                f'attachment; filename="{download_name}"'
+            )
         return str(
             self._client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": bucket, "Key": key},
+                Params=params,
                 ExpiresIn=expires_in,
             )
         )

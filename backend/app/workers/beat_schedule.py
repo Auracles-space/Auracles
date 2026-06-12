@@ -28,6 +28,10 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
             max_hours=168,
         ),
     },
+    "expire-gdpr-exports-daily": {
+        "task": "app.workers.tasks.gdpr_beat.expire_data_exports",
+        "schedule": 86400.0,
+    },
     "expire-open-proposals-hourly": {
         "task": "app.workers.tasks.projects_beat.expire_open_proposals",
         "schedule": 3600.0,

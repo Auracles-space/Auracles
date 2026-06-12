@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import RedirectResponse, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,6 +88,42 @@ async def get_data_export_status(
     """Return the current user's GDPR data export request status."""
     return await export_service.get_data_export_status(
         db=db,
+        user_id=current_user.id,
+        export_request_id=export_request_id,
+    )
+
+
+@router.get(
+    "/exports/{export_request_id}/download",
+    status_code=status.HTTP_302_FOUND,
+    response_class=RedirectResponse,
+    summary="Download GDPR export",
+    description=(
+        "Redirect the current user to a short-lived private S3 download URL for "
+        "a ready GDPR export bundle."
+    ),
+    responses={
+        status.HTTP_302_FOUND: {"description": "Private presigned download URL."},
+        status.HTTP_404_NOT_FOUND: {"description": "Data export request not found."},
+        status.HTTP_409_CONFLICT: {
+            "description": "Data export is not ready for download."
+        },
+        status.HTTP_410_GONE: {"description": "Data export has expired."},
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": "Rate limit exceeded."
+        },
+    },
+)
+async def download_data_export(
+    export_request_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> Response:
+    """Return a presigned GDPR export download redirect for the current user."""
+    return await export_service.download_data_export(
+        db=db,
+        redis=redis,
         user_id=current_user.id,
         export_request_id=export_request_id,
     )

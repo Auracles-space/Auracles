@@ -3669,6 +3669,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/gdpr/exports/{export_request_id}/download:
+    get:
+      tags:
+      - GDPR
+      summary: Download GDPR export
+      description: Redirect the current user to a short-lived private S3 download
+        URL for a ready GDPR export bundle.
+      operationId: download_data_export_v1_gdpr_exports__export_request_id__download_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: export_request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Export Request Id
+      responses:
+        '302':
+          description: Private presigned download URL.
+        '404':
+          description: Data export request not found.
+        '409':
+          description: Data export is not ready for download.
+        '410':
+          description: Data export has expired.
+        '429':
+          description: Rate limit exceeded.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/library:
     get:
       tags:

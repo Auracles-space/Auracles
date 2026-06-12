@@ -6,19 +6,22 @@ user, and builds deny-by-default JSON bundles for Celery workers.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from fastapi.responses import RedirectResponse, Response
 from redis.asyncio import Redis
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.rate_limit import RateLimiter, RedisCounter
+from app.integrations import s3
 from app.modules.attestation.models import (
     Attestation,
     AttestorApplication,
@@ -74,6 +77,14 @@ EXPORT_REQUEST_LIMITER = RateLimiter(
     limit=3,
     window=86_400,
 )
+# Presigned export URLs are cheap to mint but security-sensitive, so cap repeats.
+EXPORT_DOWNLOAD_LIMITER = RateLimiter(
+    namespace="gdpr_export_download",
+    limit=20,
+    window=3_600,
+)
+DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS = 600
+DATA_EXPORT_DOWNLOAD_FILENAME = "auracles-data-export.json"
 
 
 def _export_response(request: DataExportRequest) -> DataExportRequestResponse:
@@ -798,6 +809,46 @@ async def get_data_export_status(
             detail="Data export request not found.",
         )
     return _export_response(request)
+
+
+async def download_data_export(
+    *,
+    db: AsyncSession,
+    redis: Redis,
+    user_id: UUID,
+    export_request_id: UUID,
+) -> Response:
+    """Return an owner-scoped presigned download redirect for a ready export."""
+    await EXPORT_DOWNLOAD_LIMITER.check(cast(RedisCounter, redis), str(user_id))
+    request = await db.scalar(
+        select(DataExportRequest).where(
+            DataExportRequest.id == export_request_id,
+            DataExportRequest.user_id == user_id,
+        )
+    )
+    if request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data export request not found.",
+        )
+    if request.status != "ready" or request.bundle_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Data export is not ready for download.",
+        )
+    if request.expires_at is not None and request.expires_at <= datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Data export has expired.",
+        )
+    settings = get_settings()
+    download_url = s3.storage.presigned_get(
+        settings.s3_reports_bucket,
+        request.bundle_key,
+        DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS,
+        download_name=DATA_EXPORT_DOWNLOAD_FILENAME,
+    )
+    return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
 
 
 async def build_data_export_bundle(

@@ -106,6 +106,61 @@ async def _data_export_expiry_days(db: Any) -> int:
     return min(max(days, 1), 30)
 
 
+async def _expire_data_exports_impl() -> dict[str, int]:
+    """Delete expired export bundles and mark their requests expired."""
+    settings = get_settings()
+    now = datetime.now(UTC)
+    async with async_session_factory() as db:
+        due_requests = list(
+            (
+                await db.execute(
+                    select(DataExportRequest).where(
+                        DataExportRequest.status == "ready",
+                        DataExportRequest.expires_at.is_not(None),
+                        DataExportRequest.expires_at <= now,
+                    )
+                )
+            ).scalars().all()
+        )
+        due_request_ids = [request.id for request in due_requests]
+        if not due_request_ids:
+            return {"expired_count": 0}
+        for export_request in due_requests:
+            if export_request.bundle_key:
+                s3.storage.delete_object(
+                    settings.s3_reports_bucket,
+                    export_request.bundle_key,
+                )
+
+        if db.in_transaction():
+            await db.rollback()
+
+        async with db.begin():
+            locked_requests = list(
+                (
+                    await db.execute(
+                        select(DataExportRequest)
+                        .where(
+                            DataExportRequest.id.in_(due_request_ids)
+                        )
+                        .with_for_update()
+                    )
+                ).scalars().all()
+            )
+            expired_count = 0
+            for export_request in locked_requests:
+                if (
+                    export_request.status != "ready"
+                    or export_request.expires_at is None
+                    or export_request.expires_at > now
+                ):
+                    continue
+                export_request.status = "expired"
+                export_request.bundle_key = None
+                expired_count += 1
+    return {"expired_count": expired_count}
+
+
 @app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
 def generate_data_export(self: Any, request_id: str) -> dict[str, str]:
     """Generate a private JSON data export bundle for one request."""
@@ -120,6 +175,26 @@ def generate_data_export(self: Any, request_id: str) -> dict[str, str]:
         from app.workers.async_runner import run_async
 
         result = run_async(_generate_data_export_impl(request_id))
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
+def expire_data_exports(self: Any) -> dict[str, int]:
+    """Expire past-due GDPR export bundles and delete their S3 objects."""
+    log = logger.bind(
+        module="gdpr",
+        action="expire_data_exports",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    try:
+        from app.workers.async_runner import run_async
+
+        result = run_async(_expire_data_exports_impl())
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
