@@ -8,14 +8,19 @@ from typing import Any
 from uuid import UUID
 
 from loguru import logger
+from redis.asyncio import Redis
 from sqlalchemy import select
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.database import async_session_factory
+from app.core.redis import get_redis
 from app.integrations import s3
+from app.modules.auth import service as auth_service
+from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig
-from app.modules.gdpr.models import DataExportRequest
+from app.modules.gdpr import anonymise, deletion_service
+from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
 from app.workers.celery_app import app
 
 
@@ -161,6 +166,95 @@ async def _expire_data_exports_impl() -> dict[str, int]:
     return {"expired_count": expired_count}
 
 
+async def _process_account_deletions_impl(
+    *,
+    redis: Redis | None = None,
+) -> dict[str, int]:
+    """Anonymise due scheduled account deletions after a final obligation check."""
+    cache = redis or get_redis()
+    settings = get_settings()
+    now = datetime.now(UTC)
+    async with async_session_factory() as db:
+        due_requests = list(
+            (
+                await db.execute(
+                    select(AccountDeletionRequest).where(
+                        AccountDeletionRequest.status == "scheduled",
+                        AccountDeletionRequest.scheduled_for.is_not(None),
+                        AccountDeletionRequest.scheduled_for <= now,
+                    )
+                )
+            ).scalars().all()
+        )
+        processed_count = 0
+        skipped_count = 0
+        for due_request in due_requests:
+            user_id = due_request.user_id
+            request_id = due_request.id
+            reasons = await deletion_service.collect_blocked_reasons(
+                db=db,
+                user_id=user_id,
+            )
+            if reasons:
+                skipped_count += 1
+                if db.in_transaction():
+                    await db.rollback()
+                async with db.begin():
+                    locked_request = await db.get(
+                        AccountDeletionRequest,
+                        request_id,
+                        with_for_update=True,
+                    )
+                    if (
+                        locked_request is None
+                        or locked_request.status != "scheduled"
+                    ):
+                        continue
+                    locked_request.blocked_reasons = [
+                        reason.model_dump(mode="json") for reason in reasons
+                    ]
+                continue
+
+            kyc_keys = await anonymise.collect_kyc_object_keys(db=db, user_id=user_id)
+            user = await db.get(User, user_id)
+            if user is not None:
+                await auth_service.revoke_all_user_sessions(cache, user)
+            for key in kyc_keys:
+                s3.storage.delete_object(settings.s3_artifacts_bucket, key)
+
+            if db.in_transaction():
+                await db.rollback()
+            async with db.begin():
+                locked_request = await db.get(
+                    AccountDeletionRequest,
+                    request_id,
+                    with_for_update=True,
+                )
+                if locked_request is None or locked_request.status != "scheduled":
+                    continue
+                reasons = await deletion_service.collect_blocked_reasons(
+                    db=db,
+                    user_id=user_id,
+                )
+                if reasons:
+                    locked_request.blocked_reasons = [
+                        reason.model_dump(mode="json") for reason in reasons
+                    ]
+                    skipped_count += 1
+                    continue
+                await anonymise.anonymise_user_records(
+                    db=db,
+                    user_id=user_id,
+                    request_id=request_id,
+                    completed_at=now,
+                )
+                processed_count += 1
+        return {
+            "processed_count": processed_count,
+            "skipped_count": skipped_count,
+        }
+
+
 @app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
 def generate_data_export(self: Any, request_id: str) -> dict[str, str]:
     """Generate a private JSON data export bundle for one request."""
@@ -195,6 +289,26 @@ def expire_data_exports(self: Any) -> dict[str, int]:
         from app.workers.async_runner import run_async
 
         result = run_async(_expire_data_exports_impl())
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
+def process_account_deletions(self: Any) -> dict[str, int]:
+    """Anonymise due scheduled GDPR deletion requests once obligations clear."""
+    log = logger.bind(
+        module="gdpr",
+        action="process_account_deletions",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    try:
+        from app.workers.async_runner import run_async
+
+        result = run_async(_process_account_deletions_impl())
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc

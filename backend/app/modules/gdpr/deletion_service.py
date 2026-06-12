@@ -253,7 +253,7 @@ async def _count_active_attestations(db: AsyncSession, user_id: UUID) -> int:
     )
 
 
-async def _blocked_reasons(
+async def collect_blocked_reasons(
     *,
     db: AsyncSession,
     user_id: UUID,
@@ -351,7 +351,7 @@ async def request_account_deletion(
                     user=user_for_confirmation,
                     code=payload.totp_code,
                 )
-            reasons = await _blocked_reasons(db=db, user_id=user_id)
+            reasons = await collect_blocked_reasons(db=db, user_id=user_id)
             if reasons:
                 request = AccountDeletionRequest(
                     user_id=user_id,
