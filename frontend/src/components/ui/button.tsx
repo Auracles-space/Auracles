@@ -16,11 +16,11 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   destructive:
-    "border-error bg-transparent text-error hover:bg-error/10 focus-visible:outline-error",
+    "border-error/50 bg-error/5 text-error hover:bg-error/10 focus-visible:ring-error",
   primary:
-    "border-transparent bg-foreground text-background hover:bg-foreground/90 shadow-md focus-visible:outline-foreground active:scale-[0.98]",
+    "border-transparent bg-foreground text-background hover:bg-foreground/90 focus-visible:ring-accent shadow-sm",
   secondary:
-    "border-2 border-foreground bg-transparent text-foreground hover:bg-foreground hover:text-background focus-visible:outline-foreground",
+    "border-border-default bg-surface-1 text-foreground hover:bg-surface-2 focus-visible:ring-accent",
 };
 
 /**
@@ -38,8 +38,8 @@ export function Button({
   return (
     <button
       className={[
-        "inline-flex min-h-11 items-center justify-center rounded-control border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-6 text-sm font-semibold outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+        "focus-visible:ring-2",
         variantClasses[variant],
         className,
       ].join(" ")}

@@ -3,9 +3,9 @@
 /**
  * Account identity and exit settings panel.
  *
- * Provides email-change controls plus the single user-facing GDPR delete-account
- * flow. The legacy self-service deactivation action has been retired in favor
- * of the cooling-off deletion workflow.
+ * Provides email-change controls, GDPR export access, and the single
+ * user-facing GDPR delete-account flow. The legacy self-service deactivation
+ * action has been retired in favor of the cooling-off deletion workflow.
  */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -17,21 +17,28 @@ import {
 } from "@/lib/auth/form-client";
 import {
   cancelAccountDeletion,
+  downloadDataExportV1GdprExportsExportRequestIdDownloadGet,
   getAccountDeletionStatus,
+  getLatestDataExportStatusV1GdprExportsLatestGet,
   requestAccountDeletion,
+  requestDataExportV1GdprExportsPost,
   requestEmailChange,
 } from "@/lib/generated/sdk.gen";
-import type { AccountDeletionStatusResponse } from "@/lib/generated/types.gen";
+import type {
+  AccountDeletionStatusResponse,
+  DataExportRequestResponse,
+} from "@/lib/generated/types.gen";
 
 import { FormField } from "../auth/form-field";
 import { FormMessage } from "../auth/form-message";
 
 type PendingDeleteAction = "cancel" | "request" | null;
+type PendingExportAction = "download" | "request" | null;
 
 /**
- * Detect whether a generated-client error contains structured deletion status.
+ * Detect whether an unknown value is a structured deletion-status payload.
  *
- * @param value - Unknown generated-client error payload.
+ * @param value - Unknown payload candidate.
  */
 function isAccountDeletionStatusResponse(
   value: unknown,
@@ -42,6 +49,32 @@ function isAccountDeletionStatusResponse(
       "blocked_reasons" in value &&
       "status" in value,
   );
+}
+
+/**
+ * Extract structured deletion status from generated-client error payloads.
+ *
+ * Supports both direct response bodies and `{ detail: {...} }` wrappers used
+ * by some generated error shapes.
+ *
+ * @param value - Unknown generated-client error payload.
+ * @returns Parsed deletion status when present.
+ */
+function getAccountDeletionStatusError(
+  value: unknown,
+): AccountDeletionStatusResponse | null {
+  if (isAccountDeletionStatusResponse(value)) {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "detail" in value &&
+    isAccountDeletionStatusResponse(value.detail)
+  ) {
+    return value.detail;
+  }
+  return null;
 }
 
 /**
@@ -66,7 +99,28 @@ function formatScheduledFor(value: string | null | undefined): string | null {
 }
 
 /**
- * Render email-change and GDPR delete-account controls.
+ * Format a GDPR export timestamp for compact settings copy.
+ *
+ * @param value - ISO timestamp from the API.
+ */
+function formatTimestamp(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+/**
+ * Render email-change, GDPR export, and delete-account controls.
  */
 export function AccountSettingsPanel() {
   const [deletionError, setDeletionError] = useState<string | null>(null);
@@ -77,6 +131,13 @@ export function AccountSettingsPanel() {
   const [deletionTotp, setDeletionTotp] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailMessage, setEmailMessage] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportPending, setExportPending] = useState<PendingExportAction>(null);
+  const [exportStatus, setExportStatus] = useState<DataExportRequestResponse | null>(
+    null,
+  );
+  const [exportStatusLoading, setExportStatusLoading] = useState(true);
   const [newEmail, setNewEmail] = useState("");
   const [statusLoading, setStatusLoading] = useState(true);
   const [totpCode, setTotpCode] = useState("");
@@ -84,27 +145,46 @@ export function AccountSettingsPanel() {
   useEffect(() => {
     let mounted = true;
 
-    async function loadDeletionStatus(): Promise<void> {
+    async function loadSettingsState(): Promise<void> {
       configureBrowserClient();
-      const result = await getAccountDeletionStatus({
-        headers: getAccessTokenHeaders(),
-      });
+      const headers = getAccessTokenHeaders();
+      const [deletionResult, exportResult] = await Promise.all([
+        getAccountDeletionStatus({
+          headers,
+        }),
+        getLatestDataExportStatusV1GdprExportsLatestGet({
+          headers,
+        }),
+      ]);
 
       if (!mounted) {
         return;
       }
 
       setStatusLoading(false);
-      if (!result.response.ok || !result.data) {
-        setDeletionError(describeGeneratedError(result.error));
+      if (!deletionResult.response.ok || !deletionResult.data) {
+        setDeletionError(describeGeneratedError(deletionResult.error));
+      } else {
+        setDeletionError(null);
+        setDeletionStatus(deletionResult.data);
+      }
+
+      setExportStatusLoading(false);
+      if (exportResult.response.status === 404) {
+        setExportError(null);
+        setExportStatus(null);
+        return;
+      }
+      if (!exportResult.response.ok || !exportResult.data) {
+        setExportError(describeGeneratedError(exportResult.error));
         return;
       }
 
-      setDeletionError(null);
-      setDeletionStatus(result.data);
+      setExportError(null);
+      setExportStatus(exportResult.data);
     }
 
-    void loadDeletionStatus();
+    void loadSettingsState();
     return () => {
       mounted = false;
     };
@@ -114,7 +194,17 @@ export function AccountSettingsPanel() {
     () => formatScheduledFor(deletionStatus?.scheduled_for),
     [deletionStatus?.scheduled_for],
   );
+  const exportReadyAt = useMemo(
+    () => formatTimestamp(exportStatus?.completed_at),
+    [exportStatus?.completed_at],
+  );
+  const exportExpiryDate = useMemo(
+    () => formatTimestamp(exportStatus?.expires_at),
+    [exportStatus?.expires_at],
+  );
   const hasScheduledDeletion = deletionStatus?.status === "scheduled";
+  const isExportActive =
+    exportStatus?.status === "pending" || exportStatus?.status === "processing";
 
   async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -140,6 +230,54 @@ export function AccountSettingsPanel() {
     setEmailMessage(result.data?.message ?? "Email change verification sent.");
   }
 
+  async function submitExportRequest(): Promise<void> {
+    setExportError(null);
+    setExportMessage(null);
+    setExportPending("request");
+
+    configureBrowserClient();
+    const result = await requestDataExportV1GdprExportsPost({
+      headers: getAccessTokenHeaders(),
+    });
+    setExportPending(null);
+
+    if (!result.response.ok || !result.data) {
+      setExportError(describeGeneratedError(result.error));
+      return;
+    }
+
+    setExportStatus(result.data);
+    setExportMessage("Export requested. We will prepare your JSON bundle shortly.");
+  }
+
+  async function submitExportDownload(): Promise<void> {
+    if (!exportStatus?.id) {
+      return;
+    }
+
+    setExportError(null);
+    setExportMessage(null);
+    setExportPending("download");
+
+    configureBrowserClient();
+    const result = await downloadDataExportV1GdprExportsExportRequestIdDownloadGet({
+      headers: getAccessTokenHeaders(),
+      path: { export_request_id: exportStatus.id },
+    });
+    setExportPending(null);
+
+    if (result.response.redirected && result.response.url) {
+      window.location.assign(result.response.url);
+      return;
+    }
+    if (!result.response.ok) {
+      setExportError(describeGeneratedError(result.error));
+      return;
+    }
+
+    setExportMessage("Download started.");
+  }
+
   async function submitDeletionRequest(
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -158,8 +296,11 @@ export function AccountSettingsPanel() {
     setDeletionPending(null);
 
     if (!result.response.ok) {
-      if (isAccountDeletionStatusResponse(result.error)) {
-        setDeletionStatus(result.error);
+      const deletionStatusError =
+        getAccountDeletionStatusError(result.data) ??
+        getAccountDeletionStatusError(result.error);
+      if (deletionStatusError) {
+        setDeletionStatus(deletionStatusError);
         setDeletionPassword("");
         setDeletionTotp("");
         return;
@@ -195,7 +336,7 @@ export function AccountSettingsPanel() {
   return (
     <div className="space-y-8">
       <form
-        className="space-y-5 border-b border-border-strong pb-8"
+        className="space-y-5 border-b border-border-default pb-8"
         onSubmit={submitEmailChange}
       >
         <div>
@@ -230,6 +371,90 @@ export function AccountSettingsPanel() {
       </form>
 
       <section
+        aria-labelledby="data-export-heading"
+        className="space-y-5 border-b border-border-default pb-8"
+        role="region"
+      >
+        <div>
+          <h2
+            className="font-heading text-xl font-semibold text-foreground"
+            id="data-export-heading"
+          >
+            Data export
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-foreground-muted">
+            Request a private JSON export of the personal data linked to your
+            account across Auracles.
+          </p>
+        </div>
+
+        {exportStatusLoading ? (
+          <p className="rounded-xl border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
+            Loading export status...
+          </p>
+        ) : null}
+
+        {exportError ? <FormMessage kind="error" message={exportError} /> : null}
+        {exportMessage ? (
+          <FormMessage kind="success" message={exportMessage} />
+        ) : null}
+
+        {exportStatus?.status === "ready" ? (
+          <div className="space-y-4 rounded-xl border border-success/30 bg-success/10 p-4">
+            <p className="text-sm font-medium text-success">Ready for download.</p>
+            <div className="space-y-1 text-sm leading-6 text-foreground-muted">
+              {exportReadyAt ? <p>Prepared {exportReadyAt}.</p> : null}
+              {exportExpiryDate ? <p>Available until {exportExpiryDate}.</p> : null}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                disabled={exportPending === "download"}
+                onClick={() => void submitExportDownload()}
+                type="button"
+              >
+                {exportPending === "download"
+                  ? "Opening..."
+                  : "Download latest export"}
+              </Button>
+              <Button
+                disabled={exportPending === "request"}
+                onClick={() => void submitExportRequest()}
+                type="button"
+                variant="secondary"
+              >
+                {exportPending === "request" ? "Requesting..." : "Request new export"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4 rounded-xl border border-border-default bg-surface-2 p-4">
+            <div className="space-y-1 text-sm leading-6 text-foreground-muted">
+              {exportStatus?.status === "pending" || exportStatus?.status === "processing" ? (
+                <p>Your latest export is being prepared.</p>
+              ) : null}
+              {exportStatus?.status === "failed" && exportStatus.failure_reason ? (
+                <p>{exportStatus.failure_reason}</p>
+              ) : null}
+              {exportStatus?.status === "expired" ? (
+                <p>Your last export expired. Request a fresh bundle to download it.</p>
+              ) : null}
+              {!exportStatus ? (
+                <p>No data export has been requested yet.</p>
+              ) : null}
+            </div>
+            <Button
+              disabled={exportPending === "request" || isExportActive}
+              onClick={() => void submitExportRequest()}
+              type="button"
+              variant="secondary"
+            >
+              {exportPending === "request" ? "Requesting..." : "Request export"}
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <section
         aria-labelledby="delete-account-heading"
         className="space-y-5"
         role="region"
@@ -249,7 +474,7 @@ export function AccountSettingsPanel() {
         </div>
 
         {statusLoading ? (
-          <p className="rounded-control border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
+          <p className="rounded-xl border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
             Loading deletion status...
           </p>
         ) : null}
@@ -259,7 +484,7 @@ export function AccountSettingsPanel() {
         ) : null}
 
         {deletionStatus?.status === "scheduled" ? (
-          <div className="space-y-4 rounded-control border border-success/30 bg-success/10 p-4">
+          <div className="space-y-4 rounded-xl border border-success/30 bg-success/10 p-4">
             <p className="text-sm font-medium text-success">
               Your account is scheduled for deletion.
             </p>
@@ -282,7 +507,7 @@ export function AccountSettingsPanel() {
         ) : (
           <form className="space-y-5" onSubmit={submitDeletionRequest}>
             {deletionStatus?.status === "blocked" ? (
-              <div className="space-y-3 rounded-control border border-error/30 bg-error/10 p-4">
+              <div className="space-y-3 rounded-xl border border-error/30 bg-error/10 p-4">
                 <p className="text-sm font-medium text-error">
                   Deletion is blocked until the obligations below are resolved.
                 </p>

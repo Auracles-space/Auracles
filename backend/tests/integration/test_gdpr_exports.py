@@ -245,6 +245,42 @@ async def test_export_status_is_owner_checked(
     assert response.status_code == 404
 
 
+async def test_user_can_load_the_latest_export_status_resource(
+    client: AsyncClient,
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+) -> None:
+    """The latest export endpoint returns the current user's most recent request."""
+    del migrated_database, export_test_context
+    user_id = await create_verified_user("export-latest@auracles.space")
+
+    first = await client.post(
+        "/v1/gdpr/exports",
+        headers=auth_headers(user_id),
+    )
+    first_id = first.json()["id"]
+    async with async_session_factory() as session:
+        first_request = await session.get(DataExportRequest, UUID(first_id))
+        assert first_request is not None
+        first_request.status = "ready"
+        first_request.completed_at = datetime.now(UTC)
+        await session.commit()
+
+    second = await client.post(
+        "/v1/gdpr/exports",
+        headers=auth_headers(user_id),
+    )
+    latest = await client.get(
+        "/v1/gdpr/exports/latest",
+        headers=auth_headers(user_id),
+    )
+
+    assert second.status_code == 202
+    assert latest.status_code == 200
+    assert latest.json()["id"] == second.json()["id"]
+    assert latest.json()["status"] == "pending"
+
+
 async def test_generate_data_export_writes_redacted_json_bundle(
     migrated_database: None,
     export_test_context: dict[str, Any],

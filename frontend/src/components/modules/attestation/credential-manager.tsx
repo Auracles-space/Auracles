@@ -129,7 +129,7 @@ export function CredentialManager() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Credential title
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setTitle(event.target.value)}
               value={title}
             />
@@ -137,7 +137,7 @@ export function CredentialManager() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Issuer
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setIssuer(event.target.value)}
               value={issuer}
             />
@@ -145,7 +145,7 @@ export function CredentialManager() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Issued date
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setIssuedDate(event.target.value)}
               type="date"
               value={issuedDate}
@@ -154,7 +154,7 @@ export function CredentialManager() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Expiry date
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setExpiresDate(event.target.value)}
               type="date"
               value={expiresDate}
@@ -162,7 +162,7 @@ export function CredentialManager() {
           </label>
         </div>
         <button
-          className="mt-5 min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!title || !issuer || !issuedDate || submitting}
           onClick={handleCreateCredential}
           type="button"
@@ -197,7 +197,7 @@ export function CredentialManager() {
                 </p>
               </div>
               <button
-                className="min-h-11 rounded-xl border border-error px-4 text-sm font-semibold text-error outline-none transition hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
                 onClick={() => handleDeleteCredential(credential.id)}
                 type="button"
               >

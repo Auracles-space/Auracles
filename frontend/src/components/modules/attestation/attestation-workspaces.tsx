@@ -196,7 +196,7 @@ export function AttestationRequestorPanel() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Target type
             <select
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) =>
                 setTargetType(
                   event.target.value as
@@ -217,7 +217,7 @@ export function AttestationRequestorPanel() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Target ID
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setTargetId(event.target.value)}
               value={targetId}
             />
@@ -225,7 +225,7 @@ export function AttestationRequestorPanel() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setSpecializations(event.target.value)}
               placeholder="governance, healthcare"
               value={specializations}
@@ -234,7 +234,7 @@ export function AttestationRequestorPanel() {
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
               onChange={(event) => setJurisdictions(event.target.value)}
               placeholder="US, EU"
               value={jurisdictions}
@@ -242,7 +242,7 @@ export function AttestationRequestorPanel() {
           </label>
         </div>
         <button
-          className="mt-5 min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
           onClick={handleRequestAttestation}
           type="button"
         >
@@ -256,7 +256,7 @@ export function AttestationRequestorPanel() {
             {attestation.status === "report_submitted" ? (
               <div className="mt-4 grid gap-3">
                 <button
-                  className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                  className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
                   onClick={() => handleAcceptReport(attestation.id)}
                   type="button"
                 >
@@ -271,7 +271,7 @@ export function AttestationRequestorPanel() {
                   />
                 </label>
                 <button
-                  className="min-h-11 rounded-xl border border-error px-4 text-sm font-semibold text-error outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                  className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
                   onClick={() => handleDispute(attestation.id)}
                   type="button"
                 >
@@ -379,11 +379,11 @@ export function AttestorApplicationPanel() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
-            <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSpecializations(event.target.value)} value={specializations} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSpecializations(event.target.value)} value={specializations} />
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
-            <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setJurisdictions(event.target.value)} value={jurisdictions} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setJurisdictions(event.target.value)} value={jurisdictions} />
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground md:col-span-2">
             Credentials summary
@@ -394,7 +394,7 @@ export function AttestorApplicationPanel() {
             <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setProfessionalReferences(event.target.value)} value={professionalReferences} />
           </label>
         </div>
-        <button className="mt-5 min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleSubmitApplication} type="button">
+        <button className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleSubmitApplication} type="button">
           Submit application
         </button>
       </div>
@@ -507,24 +507,24 @@ export function AttestorAssignmentsPanel() {
             </div>
             {assignment.offer_status === "offered" ? (
               <div className="mt-4 flex flex-wrap gap-3">
-                <button className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleOffer(assignment, "accept")} type="button">
+                <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleOffer(assignment, "accept")} type="button">
                   Accept
                 </button>
-                <button className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleOffer(assignment, "decline")} type="button">
+                <button className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleOffer(assignment, "decline")} type="button">
                   Decline
                 </button>
               </div>
             ) : null}
             {assignment.attestation_status === "accepted" ? (
               <div className="mt-4 grid gap-3">
-                <select className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setOutcome(event.target.value as "approved" | "conditional" | "rejected")} value={outcome}>
+                <select className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setOutcome(event.target.value as "approved" | "conditional" | "rejected")} value={outcome}>
                   <option value="approved">Approved</option>
                   <option value="conditional">Conditional</option>
                   <option value="rejected">Rejected</option>
                 </select>
                 <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSummary(event.target.value)} placeholder="Report summary" value={summary} />
                 <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setScope(event.target.value)} placeholder="Scope reviewed" value={scope} />
-                <button className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleSubmitReport(assignment)} type="button">
+                <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleSubmitReport(assignment)} type="button">
                   Submit report
                 </button>
               </div>
@@ -668,11 +668,11 @@ export function AdminAttestationPanel() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Admin 2FA code
-            <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setTotpCode(event.target.value)} value={totpCode} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setTotpCode(event.target.value)} value={totpCode} />
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Reason or notes
-            <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setManualReason(event.target.value)} value={manualReason} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setManualReason(event.target.value)} value={manualReason} />
           </label>
         </div>
       </div>
@@ -682,25 +682,25 @@ export function AdminAttestationPanel() {
           Needs-admin action
         </h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestationId(event.target.value)} placeholder="Attestation ID" value={assignAttestationId} />
-          <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestorId(event.target.value)} placeholder="Attestor ID" value={assignAttestorId} />
-          <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setDisputeId(event.target.value)} placeholder="Dispute ID" value={disputeId} />
-          <select className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} value={resolutionType}>
+          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestationId(event.target.value)} placeholder="Attestation ID" value={assignAttestationId} />
+          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestorId(event.target.value)} placeholder="Attestor ID" value={assignAttestorId} />
+          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setDisputeId(event.target.value)} placeholder="Dispute ID" value={disputeId} />
+          <select className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} value={resolutionType}>
             <option value="release">Release</option>
             <option value="refund">Refund</option>
             <option value="split">Split</option>
           </select>
-          <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setReleaseAmount(event.target.value)} placeholder="Release amount for split" value={releaseAmount} />
-          <input className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setRefundAmount(event.target.value)} placeholder="Refund amount for split" value={refundAmount} />
+          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setReleaseAmount(event.target.value)} placeholder="Release amount for split" value={releaseAmount} />
+          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setRefundAmount(event.target.value)} placeholder="Refund amount for split" value={refundAmount} />
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleManualAssign} type="button">
+          <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleManualAssign} type="button">
             Manual assign
           </button>
-          <button className="min-h-11 rounded-xl border border-error px-4 text-sm font-semibold text-error outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={handleAdminRefund} type="button">
+          <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={handleAdminRefund} type="button">
             Refund request
           </button>
-          <button className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleResolveDispute} type="button">
+          <button className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleResolveDispute} type="button">
             Resolve dispute
           </button>
         </div>

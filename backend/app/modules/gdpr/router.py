@@ -81,6 +81,18 @@ async def request_data_export(
     )
 
 
+@router.get("/exports/latest", response_model=DataExportRequestResponse)
+async def get_latest_data_export_status(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DataExportRequestResponse:
+    """Return the current user's latest GDPR data export request status."""
+    return await export_service.get_latest_data_export_status(
+        db=db,
+        user_id=current_user.id,
+    )
+
+
 @router.get("/exports/{export_request_id}", response_model=DataExportRequestResponse)
 async def get_data_export_status(
     export_request_id: UUID,

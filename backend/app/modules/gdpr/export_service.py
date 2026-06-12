@@ -811,6 +811,25 @@ async def get_data_export_status(
     return _export_response(request)
 
 
+async def get_latest_data_export_status(
+    *,
+    db: AsyncSession,
+    user_id: UUID,
+) -> DataExportRequestResponse:
+    """Return the latest owner-scoped GDPR export request status."""
+    request = await db.scalar(
+        select(DataExportRequest)
+        .where(DataExportRequest.user_id == user_id)
+        .order_by(DataExportRequest.requested_at.desc())
+    )
+    if request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data export request not found.",
+        )
+    return _export_response(request)
+
+
 async def download_data_export(
     *,
     db: AsyncSession,

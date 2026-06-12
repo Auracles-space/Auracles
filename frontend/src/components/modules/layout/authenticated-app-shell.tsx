@@ -29,6 +29,7 @@ const appLinks = [
   { href: "/dashboard/developer", label: "Developer" },
   { href: "/library", label: "Library" },
   { href: "/settings/credentials", label: "Credentials" },
+  { href: "/settings/consent", label: "Consent" },
   { href: "/settings/saved-searches", label: "Saved Searches" },
   { href: "/admin/attestations", label: "Admin" },
   { href: "/settings/account", label: "Settings" },

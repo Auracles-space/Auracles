@@ -3639,6 +3639,22 @@ paths:
                 $ref: '#/components/schemas/DataExportRequestResponse'
       security:
       - HTTPBearer: []
+  /v1/gdpr/exports/latest:
+    get:
+      tags:
+      - GDPR
+      summary: Get Latest Data Export Status
+      description: Return the current user's latest GDPR data export request status.
+      operationId: get_latest_data_export_status_v1_gdpr_exports_latest_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataExportRequestResponse'
+      security:
+      - HTTPBearer: []
   /v1/gdpr/exports/{export_request_id}:
     get:
       tags:

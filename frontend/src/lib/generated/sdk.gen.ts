@@ -2077,3 +2077,11 @@ export const verifyEmail = verifyEmailV1AuthVerifyEmailPost;
 export const verifyTotp = verifyTotpV1Auth2FaVerifyPost;
 export const verifyTotpLogin = verifyTotpLoginV1Auth2FaVerifyLoginPost;
 export const withdrawAttestorApplication = withdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatch;
+
+// Manually patched SDK functions for paths skipped by codegen.
+export const getLatestDataExportStatusV1GdprExportsLatestGet = <ThrowOnError extends boolean = false>(options?: OptionsLegacyParser<unknown, ThrowOnError>) => {
+  return (options?.client ?? client).get<any, any, ThrowOnError>({
+    ...options,
+    url: '/v1/gdpr/exports/latest'
+  });
+};

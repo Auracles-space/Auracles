@@ -128,6 +128,20 @@ if (!sdk.includes("// Compatibility aliases used by application code.")) {
   sdk = `${sdk.trimEnd()}\n${aliasBlock}`;
 }
 
+const manualSdkBlock = `
+// Manually patched SDK functions for paths skipped by codegen.
+export const getLatestDataExportStatusV1GdprExportsLatestGet = <ThrowOnError extends boolean = false>(options?: OptionsLegacyParser<unknown, ThrowOnError>) => {
+  return (options?.client ?? client).get<any, any, ThrowOnError>({
+    ...options,
+    url: '/v1/gdpr/exports/latest'
+  });
+};
+`;
+
+if (!sdk.includes("getLatestDataExportStatusV1GdprExportsLatestGet")) {
+  sdk = `${sdk.trimEnd()}\n${manualSdkBlock}`;
+}
+
 writeFileSync(sdkPath, sdk);
 
 const typeAliasBlock = `
