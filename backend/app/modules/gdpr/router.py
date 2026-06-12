@@ -1,18 +1,26 @@
 """FastAPI router for GDPR and data-rights endpoints."""
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.gdpr import consent_service
-from app.modules.gdpr.schemas import ConsentAcceptRequest, ConsentHistoryResponse
+from app.modules.gdpr import consent_service, export_service
+from app.modules.gdpr.schemas import (
+    ConsentAcceptRequest,
+    ConsentHistoryResponse,
+    DataExportRequestResponse,
+)
 
 router = APIRouter(prefix="/gdpr", tags=["GDPR"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
@@ -50,3 +58,35 @@ async def list_consent_history(
 ) -> ConsentHistoryResponse:
     """Return the user's consent status and append-only history."""
     return await consent_service.get_consent_history(db=db, user_id=current_user.id)
+
+
+@router.post(
+    "/exports",
+    response_model=DataExportRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_data_export(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> DataExportRequestResponse:
+    """Request an async GDPR JSON data export for the current user."""
+    return await export_service.request_data_export(
+        db=db,
+        redis=redis,
+        user=current_user,
+    )
+
+
+@router.get("/exports/{export_request_id}", response_model=DataExportRequestResponse)
+async def get_data_export_status(
+    export_request_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DataExportRequestResponse:
+    """Return the current user's GDPR data export request status."""
+    return await export_service.get_data_export_status(
+        db=db,
+        user_id=current_user.id,
+        export_request_id=export_request_id,
+    )

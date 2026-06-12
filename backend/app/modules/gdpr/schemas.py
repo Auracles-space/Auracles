@@ -31,3 +31,14 @@ class ConsentHistoryResponse(BaseModel):
     current_versions: dict[str, str]
     missing_documents: list[str]
     items: list[ConsentLogItem]
+
+
+class DataExportRequestResponse(BaseModel):
+    """Status response for a GDPR data export request."""
+
+    id: UUID
+    status: str
+    requested_at: datetime
+    completed_at: datetime | None
+    expires_at: datetime | None
+    failure_reason: str | None

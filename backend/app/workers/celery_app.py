@@ -29,6 +29,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.developer_beat",
             "app.workers.tasks.developer_payouts",
             "app.workers.tasks.financials",
+            "app.workers.tasks.gdpr_beat",
             "app.workers.tasks.notifications",
             "app.workers.tasks.partner_webhooks",
             "app.workers.tasks.payouts",

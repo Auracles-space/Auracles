@@ -3623,6 +3623,52 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/gdpr/exports:
+    post:
+      tags:
+      - GDPR
+      summary: Request Data Export
+      description: Request an async GDPR JSON data export for the current user.
+      operationId: request_data_export_v1_gdpr_exports_post
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataExportRequestResponse'
+      security:
+      - HTTPBearer: []
+  /v1/gdpr/exports/{export_request_id}:
+    get:
+      tags:
+      - GDPR
+      summary: Get Data Export Status
+      description: Return the current user's GDPR data export request status.
+      operationId: get_data_export_status_v1_gdpr_exports__export_request_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: export_request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Export Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataExportRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/library:
     get:
       tags:
@@ -7762,6 +7808,46 @@ components:
       - deactivated_at
       title: CurrentUserResponse
       description: Authenticated user response for `/v1/auth/me`.
+    DataExportRequestResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        status:
+          type: string
+          title: Status
+        requested_at:
+          type: string
+          format: date-time
+          title: Requested At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+      type: object
+      required:
+      - id
+      - status
+      - requested_at
+      - completed_at
+      - expires_at
+      - failure_reason
+      title: DataExportRequestResponse
+      description: Status response for a GDPR data export request.
     DeliverableResponse:
       properties:
         id:

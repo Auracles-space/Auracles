@@ -740,6 +740,18 @@ export type CurrentUserResponse = {
 };
 
 /**
+ * Status response for a GDPR data export request.
+ */
+export type DataExportRequestResponse = {
+    id: string;
+    status: string;
+    requested_at: string;
+    completed_at: (string | null);
+    expires_at: (string | null);
+    failure_reason: (string | null);
+};
+
+/**
  * Deliverable response returned to Project members.
  */
 export type DeliverableResponse = {
@@ -3378,6 +3390,20 @@ export type AcceptCurrentConsentV1GdprConsentPostData = {
 export type AcceptCurrentConsentV1GdprConsentPostResponse = (ConsentHistoryResponse);
 
 export type AcceptCurrentConsentV1GdprConsentPostError = (HTTPValidationError);
+
+export type RequestDataExportV1GdprExportsPostResponse = (DataExportRequestResponse);
+
+export type RequestDataExportV1GdprExportsPostError = unknown;
+
+export type GetDataExportStatusV1GdprExportsExportRequestIdGetData = {
+    path: {
+        export_request_id: string;
+    };
+};
+
+export type GetDataExportStatusV1GdprExportsExportRequestIdGetResponse = (DataExportRequestResponse);
+
+export type GetDataExportStatusV1GdprExportsExportRequestIdGetError = (HTTPValidationError);
 
 export type ListLibraryV1LibraryGetData = {
     query?: {

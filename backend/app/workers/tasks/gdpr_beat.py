@@ -1,0 +1,127 @@
+"""Celery tasks for GDPR data-rights background work."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
+
+from loguru import logger
+from sqlalchemy import select
+
+from app.core.audit import write_audit
+from app.core.config import get_settings
+from app.core.database import async_session_factory
+from app.integrations import s3
+from app.modules.financials.models import PlatformConfig
+from app.modules.gdpr.models import DataExportRequest
+from app.workers.celery_app import app
+
+
+async def _generate_data_export_impl(request_id: str) -> dict[str, str]:
+    """Generate one GDPR export bundle and update request status."""
+    parsed_request_id = UUID(request_id)
+    async with async_session_factory() as db:
+        async with db.begin():
+            export_request = await db.get(
+                DataExportRequest,
+                parsed_request_id,
+                with_for_update=True,
+            )
+            if export_request is None:
+                raise ValueError("Data export request not found.")
+            if export_request.status == "ready" and export_request.bundle_key:
+                return {
+                    "request_id": str(export_request.id),
+                    "status": "ready",
+                    "bundle_key": export_request.bundle_key,
+                }
+            if export_request.status not in {"pending", "processing"}:
+                raise ValueError("Data export request is not active.")
+            export_request.status = "processing"
+            export_request_id = export_request.id
+            user_id = export_request.user_id
+
+        from app.modules.gdpr import export_service
+
+        bundle = await export_service.build_data_export_bundle(
+            db=db,
+            user_id=user_id,
+        )
+        bundle_key = f"gdpr-exports/{user_id}/{export_request_id}.json"
+        body = json.dumps(bundle, sort_keys=True).encode("utf-8")
+        settings = get_settings()
+        s3.storage.upload_bytes(
+            settings.s3_reports_bucket,
+            bundle_key,
+            body,
+            "application/json",
+        )
+
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            export_request = await db.get(
+                DataExportRequest,
+                parsed_request_id,
+                with_for_update=True,
+            )
+            if export_request is None:
+                raise ValueError("Data export request not found.")
+            expiry_days = await _data_export_expiry_days(db)
+            export_request.status = "ready"
+            export_request.bundle_key = bundle_key
+            export_request.expires_at = datetime.now(UTC) + timedelta(days=expiry_days)
+            export_request.completed_at = datetime.now(UTC)
+            export_request.failure_reason = None
+            await write_audit(
+                db=db,
+                actor_id=export_request.user_id,
+                action="gdpr_export_ready",
+                target_type="data_export_request",
+                target_id=export_request.id,
+                metadata={"bundle_key": bundle_key},
+            )
+    return {
+        "request_id": str(parsed_request_id),
+        "status": "ready",
+        "bundle_key": bundle_key,
+    }
+
+
+async def _data_export_expiry_days(db: Any) -> int:
+    """Return configured export expiry days with a safe default."""
+    value = await db.scalar(
+        select(PlatformConfig.value).where(
+            PlatformConfig.key == "data_export_expiry_days"
+        )
+    )
+    if value is None:
+        return 7
+    try:
+        days = int(value)
+    except ValueError:
+        return 7
+    return min(max(days, 1), 30)
+
+
+@app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
+def generate_data_export(self: Any, request_id: str) -> dict[str, str]:
+    """Generate a private JSON data export bundle for one request."""
+    log = logger.bind(
+        module="gdpr",
+        action="generate_data_export",
+        task_id=self.request.id,
+        data_export_request_id=request_id,
+    )
+    log.info("task_started")
+    try:
+        from app.workers.async_runner import run_async
+
+        result = run_async(_generate_data_export_impl(request_id))
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed", result=result)
+    return result
