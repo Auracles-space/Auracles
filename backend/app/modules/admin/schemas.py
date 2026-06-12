@@ -171,3 +171,59 @@ class AdminConfigPatchRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
     totp_code: str = Field(min_length=6, max_length=16)
     updates: list[AdminConfigUpdateItem] = Field(min_length=1, max_length=10)
+
+
+class AdminAnalyticsGmvBreakdown(BaseModel):
+    """Money totals for each marketplace revenue source within one window."""
+
+    framework_purchase: str
+    collection_purchase: str
+    project_milestone: str
+    attestation_fee: str
+
+
+class AdminAnalyticsGmvResponse(BaseModel):
+    """GMV totals and by-source breakdowns for the admin dashboard."""
+
+    today_total: str
+    last_7_days_total: str
+    last_30_days_total: str
+    today_by_source: AdminAnalyticsGmvBreakdown
+    last_7_days_by_source: AdminAnalyticsGmvBreakdown
+    last_30_days_by_source: AdminAnalyticsGmvBreakdown
+
+
+class AdminAnalyticsWindowCounts(BaseModel):
+    """Three standard recency windows used across current-state analytics."""
+
+    last_24_hours: int
+    last_7_days: int
+    last_30_days: int
+
+
+class AdminAnalyticsPublishedFrameworks(BaseModel):
+    """Published Framework totals and recent publication counts."""
+
+    total: int
+    last_24_hours: int
+    last_7_days: int
+    last_30_days: int
+
+
+class AdminAnalyticsDisputesOpen(BaseModel):
+    """Current open dispute counts split by dispute source."""
+
+    total: int
+    projects: int
+    attestations: int
+
+
+class AdminAnalyticsDashboardResponse(BaseModel):
+    """Current-state admin analytics without historical trend snapshots."""
+
+    gmv: AdminAnalyticsGmvResponse
+    active_users: AdminAnalyticsWindowCounts
+    new_registrations: AdminAnalyticsWindowCounts
+    frameworks_published: AdminAnalyticsPublishedFrameworks
+    attestations_issued: AdminAnalyticsWindowCounts
+    disputes_open: AdminAnalyticsDisputesOpen

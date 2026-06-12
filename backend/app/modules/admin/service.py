@@ -1,18 +1,23 @@
-"""Admin service logic."""
+"""Admin service logic.
 
-from datetime import UTC, datetime
+Handles platform configuration, moderation overrides, escrow overrides, and
+admin analytics read models for the Auracles back office.
+"""
+
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.financials import escrow_service
@@ -23,6 +28,8 @@ from app.modules.frameworks.pipeline_gate import (
     NEAR_DUPLICATE_JACCARD_THRESHOLD,
     evaluate_framework_pipeline,
 )
+from app.modules.projects.models import Dispute
+from app.shared.models.audit_log import AuditLog
 from app.workers.tasks.processing.minhash_index import (
     remove_framework_artifacts_from_index,
 )
@@ -80,6 +87,257 @@ ATTESTATION_INTEGER_RANGES = {
     "attestation_offer_accept_hours": (1, 168),
     "attestation_dispute_window_days": (1, 30),
 }
+GMV_SOURCE_KEYS = (
+    "framework_purchase",
+    "collection_purchase",
+    "project_milestone",
+    "attestation_fee",
+)
+ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
+ATTESTATION_ISSUED_STATUSES = ("report_submitted", "closed")
+
+
+def _money(value: Decimal | str | int | None) -> Decimal:
+    """Normalize nullable money-like values to a two-decimal Decimal."""
+    return Decimal(str(value or "0")).quantize(Decimal("0.01"))
+
+
+def _money_string(value: Decimal | str | int | None) -> str:
+    """Serialize a money value as a plain string for API responses."""
+    return format(_money(value), ".2f")
+
+
+def _empty_gmv_sources() -> dict[str, Decimal]:
+    """Return a zeroed GMV source breakdown."""
+    return {key: Decimal("0.00") for key in GMV_SOURCE_KEYS}
+
+
+def _transaction_source_key(transaction: Transaction) -> str | None:
+    """Map a transaction row to one analytics GMV source bucket."""
+    if transaction.transaction_type == "purchase":
+        if transaction.ref_type == "collection":
+            return "collection_purchase"
+        return "framework_purchase"
+    if (
+        transaction.transaction_type == "milestone"
+        and transaction.ref_type == "project_milestone"
+    ):
+        return "project_milestone"
+    if (
+        transaction.transaction_type == "attestation_fee"
+        and transaction.ref_type == "attestation"
+    ):
+        return "attestation_fee"
+    return None
+
+
+def _serialize_gmv_sources(values: dict[str, Decimal]) -> dict[str, str]:
+    """Convert a Decimal GMV source map into string-valued API output."""
+    return {key: _money_string(values[key]) for key in GMV_SOURCE_KEYS}
+
+
+async def _count_distinct_audit_actors(db: AsyncSession, *, since: datetime) -> int:
+    """Count distinct authenticated actors seen in audit logs within a window."""
+    result = await db.scalar(
+        select(func.count(func.distinct(AuditLog.actor_id))).where(
+            AuditLog.actor_id.is_not(None),
+            AuditLog.created_at >= since,
+        )
+    )
+    return int(result or 0)
+
+
+async def _count_users_created_since(db: AsyncSession, *, since: datetime) -> int:
+    """Count user registrations created within the given window."""
+    result = await db.scalar(
+        select(func.count(User.id)).where(User.created_at >= since)
+    )
+    return int(result or 0)
+
+
+async def _count_published_frameworks_total(db: AsyncSession) -> int:
+    """Count currently published Frameworks."""
+    result = await db.scalar(
+        select(func.count(Framework.id)).where(Framework.status == "published")
+    )
+    return int(result or 0)
+
+
+async def _count_published_frameworks_since(
+    db: AsyncSession,
+    *,
+    since: datetime,
+) -> int:
+    """Count Frameworks published within the given window."""
+    result = await db.scalar(
+        select(func.count(Framework.id)).where(
+            Framework.status == "published",
+            Framework.published_at.is_not(None),
+            Framework.published_at >= since,
+        )
+    )
+    return int(result or 0)
+
+
+async def _count_attestations_issued_since(
+    db: AsyncSession,
+    *,
+    since: datetime,
+) -> int:
+    """Count Attestations issued within the given window."""
+    issued_at_expr = func.coalesce(
+        Attestation.issued_at,
+        Attestation.closed_at,
+        Attestation.created_at,
+    )
+    result = await db.scalar(
+        select(func.count(Attestation.id)).where(
+            Attestation.status.in_(ATTESTATION_ISSUED_STATUSES),
+            Attestation.outcome.is_not(None),
+            issued_at_expr >= since,
+        )
+    )
+    return int(result or 0)
+
+
+async def _count_open_project_disputes(db: AsyncSession) -> int:
+    """Count currently open or under-review Project disputes."""
+    result = await db.scalar(
+        select(func.count(Dispute.id)).where(Dispute.status.in_(ACTIVE_DISPUTE_STATUSES))
+    )
+    return int(result or 0)
+
+
+async def _count_open_attestation_disputes(db: AsyncSession) -> int:
+    """Count currently open or under-review Attestation disputes."""
+    result = await db.scalar(
+        select(func.count(AttestationDispute.id)).where(
+            AttestationDispute.status.in_(ACTIVE_DISPUTE_STATUSES)
+        )
+    )
+    return int(result or 0)
+
+
+async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
+    """Return current-state analytics for the admin dashboard.
+
+    The Slice 2 contract intentionally excludes historical trend rows. Those
+    are introduced later from `analytics_daily_snapshots`.
+    """
+    now = datetime.now(UTC)
+    today_since = now - timedelta(days=1)
+    seven_day_since = now - timedelta(days=7)
+    thirty_day_since = now - timedelta(days=30)
+
+    qualifying_transactions = (
+        await db.execute(
+            select(Transaction).where(
+                Transaction.currency == "USD",
+                Transaction.status == "completed",
+                Transaction.transaction_type.in_(
+                    ("purchase", "milestone", "attestation_fee")
+                ),
+                Transaction.created_at >= thirty_day_since,
+            )
+        )
+    ).scalars().all()
+
+    today_sources = _empty_gmv_sources()
+    seven_day_sources = _empty_gmv_sources()
+    thirty_day_sources = _empty_gmv_sources()
+    for transaction in qualifying_transactions:
+        source_key = _transaction_source_key(transaction)
+        if source_key is None:
+            continue
+        amount = _money(transaction.amount)
+        if transaction.created_at >= thirty_day_since:
+            thirty_day_sources[source_key] += amount
+        if transaction.created_at >= seven_day_since:
+            seven_day_sources[source_key] += amount
+        if transaction.created_at >= today_since:
+            today_sources[source_key] += amount
+
+    active_last_24h = await _count_distinct_audit_actors(db, since=today_since)
+    active_last_7d = await _count_distinct_audit_actors(db, since=seven_day_since)
+    active_last_30d = await _count_distinct_audit_actors(db, since=thirty_day_since)
+
+    registrations_last_24h = await _count_users_created_since(db, since=today_since)
+    registrations_last_7d = await _count_users_created_since(db, since=seven_day_since)
+    registrations_last_30d = await _count_users_created_since(
+        db,
+        since=thirty_day_since,
+    )
+
+    published_total = await _count_published_frameworks_total(db)
+    published_last_24h = await _count_published_frameworks_since(
+        db,
+        since=today_since,
+    )
+    published_last_7d = await _count_published_frameworks_since(
+        db,
+        since=seven_day_since,
+    )
+    published_last_30d = await _count_published_frameworks_since(
+        db,
+        since=thirty_day_since,
+    )
+
+    attestations_last_24h = await _count_attestations_issued_since(
+        db,
+        since=today_since,
+    )
+    attestations_last_7d = await _count_attestations_issued_since(
+        db,
+        since=seven_day_since,
+    )
+    attestations_last_30d = await _count_attestations_issued_since(
+        db,
+        since=thirty_day_since,
+    )
+
+    project_disputes = await _count_open_project_disputes(db)
+    attestation_disputes = await _count_open_attestation_disputes(db)
+
+    return {
+        "gmv": {
+            "today_total": _money_string(sum(today_sources.values(), Decimal("0.00"))),
+            "last_7_days_total": _money_string(
+                sum(seven_day_sources.values(), Decimal("0.00"))
+            ),
+            "last_30_days_total": _money_string(
+                sum(thirty_day_sources.values(), Decimal("0.00"))
+            ),
+            "today_by_source": _serialize_gmv_sources(today_sources),
+            "last_7_days_by_source": _serialize_gmv_sources(seven_day_sources),
+            "last_30_days_by_source": _serialize_gmv_sources(thirty_day_sources),
+        },
+        "active_users": {
+            "last_24_hours": active_last_24h,
+            "last_7_days": active_last_7d,
+            "last_30_days": active_last_30d,
+        },
+        "new_registrations": {
+            "last_24_hours": registrations_last_24h,
+            "last_7_days": registrations_last_7d,
+            "last_30_days": registrations_last_30d,
+        },
+        "frameworks_published": {
+            "total": published_total,
+            "last_24_hours": published_last_24h,
+            "last_7_days": published_last_7d,
+            "last_30_days": published_last_30d,
+        },
+        "attestations_issued": {
+            "last_24_hours": attestations_last_24h,
+            "last_7_days": attestations_last_7d,
+            "last_30_days": attestations_last_30d,
+        },
+        "disputes_open": {
+            "total": project_disputes + attestation_disputes,
+            "projects": project_disputes,
+            "attestations": attestation_disputes,
+        },
+    }
 
 
 async def assign_user_role(

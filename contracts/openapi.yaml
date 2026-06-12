@@ -47,6 +47,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/admin/analytics/dashboard:
+    get:
+      tags:
+      - Admin
+      summary: Get admin dashboard analytics
+      description: Return current-state admin analytics aggregates. Slice 2 excludes
+        historical trend rows until snapshot-backed analytics land.
+      operationId: get_admin_analytics_dashboard_v1_admin_analytics_dashboard_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAnalyticsDashboardResponse'
+      security:
+      - HTTPBearer: []
   /v1/admin/users/{user_id}/roles:
     patch:
       tags:
@@ -5935,6 +5952,137 @@ components:
       - role
       title: AddRoleRequest
       description: Request body for self-adding a non-privileged role.
+    AdminAnalyticsDashboardResponse:
+      properties:
+        gmv:
+          $ref: '#/components/schemas/AdminAnalyticsGmvResponse'
+        active_users:
+          $ref: '#/components/schemas/AdminAnalyticsWindowCounts'
+        new_registrations:
+          $ref: '#/components/schemas/AdminAnalyticsWindowCounts'
+        frameworks_published:
+          $ref: '#/components/schemas/AdminAnalyticsPublishedFrameworks'
+        attestations_issued:
+          $ref: '#/components/schemas/AdminAnalyticsWindowCounts'
+        disputes_open:
+          $ref: '#/components/schemas/AdminAnalyticsDisputesOpen'
+      type: object
+      required:
+      - gmv
+      - active_users
+      - new_registrations
+      - frameworks_published
+      - attestations_issued
+      - disputes_open
+      title: AdminAnalyticsDashboardResponse
+      description: Current-state admin analytics without historical trend snapshots.
+    AdminAnalyticsDisputesOpen:
+      properties:
+        total:
+          type: integer
+          title: Total
+        projects:
+          type: integer
+          title: Projects
+        attestations:
+          type: integer
+          title: Attestations
+      type: object
+      required:
+      - total
+      - projects
+      - attestations
+      title: AdminAnalyticsDisputesOpen
+      description: Current open dispute counts split by dispute source.
+    AdminAnalyticsGmvBreakdown:
+      properties:
+        framework_purchase:
+          type: string
+          title: Framework Purchase
+        collection_purchase:
+          type: string
+          title: Collection Purchase
+        project_milestone:
+          type: string
+          title: Project Milestone
+        attestation_fee:
+          type: string
+          title: Attestation Fee
+      type: object
+      required:
+      - framework_purchase
+      - collection_purchase
+      - project_milestone
+      - attestation_fee
+      title: AdminAnalyticsGmvBreakdown
+      description: Money totals for each marketplace revenue source within one window.
+    AdminAnalyticsGmvResponse:
+      properties:
+        today_total:
+          type: string
+          title: Today Total
+        last_7_days_total:
+          type: string
+          title: Last 7 Days Total
+        last_30_days_total:
+          type: string
+          title: Last 30 Days Total
+        today_by_source:
+          $ref: '#/components/schemas/AdminAnalyticsGmvBreakdown'
+        last_7_days_by_source:
+          $ref: '#/components/schemas/AdminAnalyticsGmvBreakdown'
+        last_30_days_by_source:
+          $ref: '#/components/schemas/AdminAnalyticsGmvBreakdown'
+      type: object
+      required:
+      - today_total
+      - last_7_days_total
+      - last_30_days_total
+      - today_by_source
+      - last_7_days_by_source
+      - last_30_days_by_source
+      title: AdminAnalyticsGmvResponse
+      description: GMV totals and by-source breakdowns for the admin dashboard.
+    AdminAnalyticsPublishedFrameworks:
+      properties:
+        total:
+          type: integer
+          title: Total
+        last_24_hours:
+          type: integer
+          title: Last 24 Hours
+        last_7_days:
+          type: integer
+          title: Last 7 Days
+        last_30_days:
+          type: integer
+          title: Last 30 Days
+      type: object
+      required:
+      - total
+      - last_24_hours
+      - last_7_days
+      - last_30_days
+      title: AdminAnalyticsPublishedFrameworks
+      description: Published Framework totals and recent publication counts.
+    AdminAnalyticsWindowCounts:
+      properties:
+        last_24_hours:
+          type: integer
+          title: Last 24 Hours
+        last_7_days:
+          type: integer
+          title: Last 7 Days
+        last_30_days:
+          type: integer
+          title: Last 30 Days
+      type: object
+      required:
+      - last_24_hours
+      - last_7_days
+      - last_30_days
+      title: AdminAnalyticsWindowCounts
+      description: Three standard recency windows used across current-state analytics.
     AdminAttestationAssignRequest:
       properties:
         attestor_id:

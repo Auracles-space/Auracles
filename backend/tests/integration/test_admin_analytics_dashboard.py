@@ -1,0 +1,630 @@
+"""Integration tests for the admin analytics dashboard endpoint.
+
+These tests exercise the public admin HTTP contract for current-state
+analytics. They verify GMV window aggregation, by-source breakdowns, and the
+string-based money output expected by finance-safe API consumers.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from uuid import UUID, uuid4
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from httpx import AsyncClient
+from sqlalchemy import create_engine, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import async_session_factory, engine
+from app.core.security import create_access_token, hash_password
+from app.main import app
+from app.modules.attestation.models import Attestation, AttestationDispute
+from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Transaction
+from app.modules.frameworks.models import Framework
+from app.modules.projects.models import Dispute, Milestone, Project
+from app.shared.models.audit_log import AuditLog
+
+
+def auth_headers(user_id: UUID) -> dict[str, str]:
+    """Create bearer auth headers for an admin user."""
+    token = create_access_token(user_id=user_id, roles=["admin"])
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _create_user(
+    session: AsyncSession,
+    *,
+    email: str,
+    roles: list[str],
+    created_at: datetime,
+) -> User:
+    """Create a verified user with approved roles for analytics tests."""
+    user = User(
+        email=email,
+        password_hash=hash_password("CorrectHorse9"),
+        display_name=email.split("@")[0],
+        email_verified=True,
+        kyc_status="verified",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    session.add(user)
+    await session.flush()
+    for role in roles:
+        session.add(
+            UserRole(
+                user_id=user.id,
+                role=role,
+                approved_at=created_at,
+                created_at=created_at,
+            )
+        )
+    await session.flush()
+    return user
+
+
+async def _create_transaction(
+    session: AsyncSession,
+    *,
+    payer_id: UUID,
+    payee_id: UUID,
+    amount: Decimal,
+    transaction_type: str,
+    status: str,
+    ref_type: str,
+    created_at: datetime,
+    currency: str = "USD",
+) -> Transaction:
+    """Create a transaction row with explicit timing for GMV aggregation tests."""
+    transaction = Transaction(
+        payer_id=payer_id,
+        payee_id=payee_id,
+        amount=amount,
+        currency=currency,
+        platform_commission=Decimal("0.00"),
+        net_amount=amount,
+        transaction_type=transaction_type,
+        status=status,
+        provider="stripe",
+        provider_ref=f"pi_admin_dashboard_{uuid4().hex[:12]}",
+        ref_id=uuid4(),
+        ref_type=ref_type,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    session.add(transaction)
+    await session.flush()
+    return transaction
+
+
+async def _cleanup_admin_dashboard_state() -> None:
+    """Delete analytics test rows in foreign-key-safe order."""
+    async with async_session_factory() as session:
+        await session.execute(delete(AuditLog))
+        await session.execute(delete(AttestationDispute))
+        await session.execute(delete(Attestation))
+        await session.execute(delete(Dispute))
+        await session.execute(delete(Milestone))
+        await session.execute(delete(Project))
+        await session.execute(delete(Transaction))
+        await session.execute(delete(Framework))
+        await session.execute(delete(UserRole))
+        await session.execute(delete(User))
+        await session.commit()
+
+
+@pytest.fixture
+def migrated_database() -> Iterator[None]:
+    """Ensure the database schema is current for admin analytics tests."""
+    backend_dir = Path(__file__).resolve().parents[2]
+    sync_engine = create_engine(app.state.settings.sync_database_url)
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    command.upgrade(config, "head")
+    try:
+        yield
+    finally:
+        command.upgrade(config, "head")
+        sync_engine.dispose()
+
+
+async def test_admin_dashboard_reports_gmv_windows_and_by_source_strings(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """Dashboard GMV must include only completed USD marketplace revenue."""
+    del migrated_database
+    now = datetime.now(UTC)
+    await engine.dispose()
+    await _cleanup_admin_dashboard_state()
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                admin = await _create_user(
+                    session,
+                    email=f"admin-{uuid4()}@auracles.space",
+                    roles=["admin"],
+                    created_at=now - timedelta(days=60),
+                )
+                operator = await _create_user(
+                    session,
+                    email=f"operator-{uuid4()}@auracles.space",
+                    roles=["operator"],
+                    created_at=now - timedelta(days=12),
+                )
+                contributor = await _create_user(
+                    session,
+                    email=f"contributor-{uuid4()}@auracles.space",
+                    roles=["contributor"],
+                    created_at=now - timedelta(days=12),
+                )
+
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("100.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="framework",
+                    created_at=now - timedelta(hours=3),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("200.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="collection",
+                    created_at=now - timedelta(hours=2),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("300.00"),
+                    transaction_type="milestone",
+                    status="completed",
+                    ref_type="project_milestone",
+                    created_at=now - timedelta(days=2),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("400.00"),
+                    transaction_type="attestation_fee",
+                    status="completed",
+                    ref_type="attestation",
+                    created_at=now - timedelta(days=5),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("50.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="framework",
+                    created_at=now - timedelta(days=20),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("999.00"),
+                    transaction_type="purchase",
+                    status="failed",
+                    ref_type="framework",
+                    created_at=now - timedelta(hours=1),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("888.00"),
+                    transaction_type="purchase",
+                    status="refunded",
+                    ref_type="framework",
+                    created_at=now - timedelta(days=1),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("777.00"),
+                    transaction_type="refund",
+                    status="completed",
+                    ref_type="framework",
+                    created_at=now - timedelta(days=1),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("666.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="framework",
+                    currency="NGN",
+                    created_at=now - timedelta(days=1),
+                )
+
+            response = await client.get(
+                "/v1/admin/analytics/dashboard",
+                headers=auth_headers(admin.id),
+            )
+    finally:
+        await _cleanup_admin_dashboard_state()
+        await engine.dispose()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "trend" not in body
+    assert body["gmv"]["today_total"] == "300.00"
+    assert body["gmv"]["last_7_days_total"] == "1000.00"
+    assert body["gmv"]["last_30_days_total"] == "1050.00"
+    assert body["gmv"]["today_by_source"] == {
+        "framework_purchase": "100.00",
+        "collection_purchase": "200.00",
+        "project_milestone": "0.00",
+        "attestation_fee": "0.00",
+    }
+    assert body["gmv"]["last_7_days_by_source"] == {
+        "framework_purchase": "100.00",
+        "collection_purchase": "200.00",
+        "project_milestone": "300.00",
+        "attestation_fee": "400.00",
+    }
+    assert body["gmv"]["last_30_days_by_source"] == {
+        "framework_purchase": "150.00",
+        "collection_purchase": "200.00",
+        "project_milestone": "300.00",
+        "attestation_fee": "400.00",
+    }
+
+
+async def test_admin_dashboard_reports_current_state_counts(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """Dashboard current-state counts must reflect audit, content, and dispute state."""
+    del migrated_database
+    now = datetime.now(UTC)
+    await engine.dispose()
+    await _cleanup_admin_dashboard_state()
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                admin = await _create_user(
+                    session,
+                    email=f"admin-counts-{uuid4()}@auracles.space",
+                    roles=["admin"],
+                    created_at=now - timedelta(days=60),
+                )
+                operator = await _create_user(
+                    session,
+                    email=f"operator-counts-{uuid4()}@auracles.space",
+                    roles=["operator"],
+                    created_at=now - timedelta(hours=2),
+                )
+                contributor = await _create_user(
+                    session,
+                    email=f"contributor-counts-{uuid4()}@auracles.space",
+                    roles=["contributor"],
+                    created_at=now - timedelta(days=5),
+                )
+                attestor = await _create_user(
+                    session,
+                    email=f"attestor-counts-{uuid4()}@auracles.space",
+                    roles=["attestor"],
+                    created_at=now - timedelta(days=20),
+                )
+                await _create_user(
+                    session,
+                    email=f"stale-counts-{uuid4()}@auracles.space",
+                    roles=["operator"],
+                    created_at=now - timedelta(days=40),
+                )
+
+                session.add_all(
+                    [
+                        Framework(
+                            contributor_id=contributor.id,
+                            title="Fresh Published",
+                            description="Fresh dashboard fixture.",
+                            status="published",
+                            category="operations",
+                            sector="technology",
+                            industry="software",
+                            business_function="operations",
+                            tags=["fresh"],
+                            tags_text="fresh",
+                            price=Decimal("100.00"),
+                            currency="USD",
+                            license_types=["single_user"],
+                            created_at=now - timedelta(hours=3),
+                            updated_at=now - timedelta(hours=3),
+                            published_at=now - timedelta(hours=3),
+                        ),
+                        Framework(
+                            contributor_id=contributor.id,
+                            title="Week Published",
+                            description="Week dashboard fixture.",
+                            status="published",
+                            category="operations",
+                            sector="technology",
+                            industry="software",
+                            business_function="operations",
+                            tags=["week"],
+                            tags_text="week",
+                            price=Decimal("120.00"),
+                            currency="USD",
+                            license_types=["single_user"],
+                            created_at=now - timedelta(days=4),
+                            updated_at=now - timedelta(days=4),
+                            published_at=now - timedelta(days=4),
+                        ),
+                        Framework(
+                            contributor_id=contributor.id,
+                            title="Month Published",
+                            description="Month dashboard fixture.",
+                            status="published",
+                            category="operations",
+                            sector="technology",
+                            industry="software",
+                            business_function="operations",
+                            tags=["month"],
+                            tags_text="month",
+                            price=Decimal("140.00"),
+                            currency="USD",
+                            license_types=["single_user"],
+                            created_at=now - timedelta(days=20),
+                            updated_at=now - timedelta(days=20),
+                            published_at=now - timedelta(days=20),
+                        ),
+                        Framework(
+                            contributor_id=contributor.id,
+                            title="Draft Framework",
+                            description="Excluded dashboard fixture.",
+                            status="draft",
+                            category="operations",
+                            sector="technology",
+                            industry="software",
+                            business_function="operations",
+                            tags=["draft"],
+                            tags_text="draft",
+                            price=Decimal("160.00"),
+                            currency="USD",
+                            license_types=["single_user"],
+                            created_at=now - timedelta(hours=1),
+                            updated_at=now - timedelta(hours=1),
+                        ),
+                    ]
+                )
+                await session.flush()
+
+                recent_attestation = Attestation(
+                    target_type="framework",
+                    target_id=uuid4(),
+                    requestor_id=operator.id,
+                    attestor_id=attestor.id,
+                    status="report_submitted",
+                    outcome="approved",
+                    requested_specializations=["risk"],
+                    requested_jurisdictions=["us"],
+                    fee_amount=Decimal("250.00"),
+                    currency="USD",
+                    issued_at=now - timedelta(hours=4),
+                    created_at=now - timedelta(hours=4),
+                    updated_at=now - timedelta(hours=4),
+                )
+                week_attestation = Attestation(
+                    target_type="framework",
+                    target_id=uuid4(),
+                    requestor_id=operator.id,
+                    attestor_id=attestor.id,
+                    status="closed",
+                    outcome="conditional",
+                    requested_specializations=["ops"],
+                    requested_jurisdictions=["uk"],
+                    fee_amount=Decimal("260.00"),
+                    currency="USD",
+                    issued_at=now - timedelta(days=5),
+                    closed_at=now - timedelta(days=5),
+                    created_at=now - timedelta(days=5),
+                    updated_at=now - timedelta(days=5),
+                )
+                month_attestation = Attestation(
+                    target_type="framework",
+                    target_id=uuid4(),
+                    requestor_id=operator.id,
+                    attestor_id=attestor.id,
+                    status="closed",
+                    outcome="approved",
+                    requested_specializations=["finance"],
+                    requested_jurisdictions=["ca"],
+                    fee_amount=Decimal("270.00"),
+                    currency="USD",
+                    issued_at=now - timedelta(days=20),
+                    closed_at=now - timedelta(days=20),
+                    created_at=now - timedelta(days=20),
+                    updated_at=now - timedelta(days=20),
+                )
+                excluded_attestation = Attestation(
+                    target_type="framework",
+                    target_id=uuid4(),
+                    requestor_id=operator.id,
+                    attestor_id=attestor.id,
+                    status="pending_fee",
+                    outcome=None,
+                    requested_specializations=["excluded"],
+                    requested_jurisdictions=["us"],
+                    fee_amount=Decimal("280.00"),
+                    currency="USD",
+                    created_at=now - timedelta(hours=1),
+                    updated_at=now - timedelta(hours=1),
+                )
+                session.add_all(
+                    [
+                        recent_attestation,
+                        week_attestation,
+                        month_attestation,
+                        excluded_attestation,
+                    ]
+                )
+                await session.flush()
+
+                project = Project(
+                    operator_id=operator.id,
+                    title="Admin Dashboard Project",
+                    description="Project dispute fixture.",
+                    category="operations",
+                    required_deliverables=[{"name": "Playbook"}],
+                    budget_min=Decimal("1000.00"),
+                    budget_max=Decimal("1500.00"),
+                    currency="USD",
+                    status="disputed",
+                    milestone_plan_status="draft",
+                    expires_at=now + timedelta(days=7),
+                    created_at=now - timedelta(days=3),
+                    updated_at=now - timedelta(days=3),
+                )
+                session.add(project)
+                await session.flush()
+                milestone = Milestone(
+                    project_id=project.id,
+                    sequence=1,
+                    name="Milestone 1",
+                    description="Milestone dispute fixture.",
+                    budget=Decimal("1000.00"),
+                    currency="USD",
+                    status="disputed",
+                    created_at=now - timedelta(days=3),
+                )
+                session.add(milestone)
+                await session.flush()
+                session.add_all(
+                    [
+                        Dispute(
+                            project_id=project.id,
+                            milestone_id=milestone.id,
+                            raised_by=operator.id,
+                            reason="Need admin review.",
+                            status="open",
+                            created_at=now - timedelta(days=2),
+                        ),
+                        Dispute(
+                            project_id=project.id,
+                            milestone_id=milestone.id,
+                            raised_by=contributor.id,
+                            reason="Already resolved.",
+                            status="resolved",
+                            resolution_type="refund",
+                            created_at=now - timedelta(days=1),
+                        ),
+                        AttestationDispute(
+                            attestation_id=recent_attestation.id,
+                            raised_by=operator.id,
+                            reason="Attestation under review.",
+                            status="under_review",
+                            created_at=now - timedelta(hours=6),
+                        ),
+                        AttestationDispute(
+                            attestation_id=week_attestation.id,
+                            raised_by=operator.id,
+                            reason="Closed dispute.",
+                            status="resolved",
+                            resolution_type="release",
+                            created_at=now - timedelta(days=1),
+                        ),
+                    ]
+                )
+                session.add_all(
+                    [
+                        AuditLog(
+                            actor_id=operator.id,
+                            action="operator_seen",
+                            target_type="session",
+                            target_id=None,
+                            metadata_={},
+                            created_at=now - timedelta(hours=3),
+                        ),
+                        AuditLog(
+                            actor_id=operator.id,
+                            action="operator_seen_again",
+                            target_type="session",
+                            target_id=None,
+                            metadata_={},
+                            created_at=now - timedelta(hours=2),
+                        ),
+                        AuditLog(
+                            actor_id=contributor.id,
+                            action="contributor_seen",
+                            target_type="session",
+                            target_id=None,
+                            metadata_={},
+                            created_at=now - timedelta(days=6),
+                        ),
+                        AuditLog(
+                            actor_id=attestor.id,
+                            action="attestor_seen",
+                            target_type="session",
+                            target_id=None,
+                            metadata_={},
+                            created_at=now - timedelta(days=20),
+                        ),
+                        AuditLog(
+                            actor_id=None,
+                            action="anonymous_event",
+                            target_type="session",
+                            target_id=None,
+                            metadata_={},
+                            created_at=now - timedelta(hours=1),
+                        ),
+                    ]
+                )
+
+            response = await client.get(
+                "/v1/admin/analytics/dashboard",
+                headers=auth_headers(admin.id),
+            )
+    finally:
+        await _cleanup_admin_dashboard_state()
+        await engine.dispose()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["active_users"] == {
+        "last_24_hours": 1,
+        "last_7_days": 2,
+        "last_30_days": 3,
+    }
+    assert body["new_registrations"] == {
+        "last_24_hours": 1,
+        "last_7_days": 2,
+        "last_30_days": 3,
+    }
+    assert body["frameworks_published"] == {
+        "total": 3,
+        "last_24_hours": 1,
+        "last_7_days": 2,
+        "last_30_days": 3,
+    }
+    assert body["attestations_issued"] == {
+        "last_24_hours": 1,
+        "last_7_days": 2,
+        "last_30_days": 3,
+    }
+    assert body["disputes_open"] == {
+        "total": 2,
+        "projects": 1,
+        "attestations": 1,
+    }

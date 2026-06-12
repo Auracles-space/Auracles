@@ -12,6 +12,7 @@ from app.core.dependencies import require_role
 from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminAnalyticsDashboardResponse,
     AdminConfigItem,
     AdminConfigPatchRequest,
     AdminConfigResponse,
@@ -79,6 +80,25 @@ async def list_platform_config(
     del admin
     items = await service.list_platform_config(db=db)
     return _config_response(items)
+
+
+@router.get(
+    "/analytics/dashboard",
+    response_model=AdminAnalyticsDashboardResponse,
+    summary="Get admin dashboard analytics",
+    description=(
+        "Return current-state admin analytics aggregates. Slice 2 excludes "
+        "historical trend rows until snapshot-backed analytics land."
+    ),
+)
+async def get_admin_analytics_dashboard(
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminAnalyticsDashboardResponse:
+    """Return current-state analytics for the admin dashboard."""
+    del admin
+    dashboard = await service.get_dashboard_analytics(db=db)
+    return AdminAnalyticsDashboardResponse.model_validate(dashboard)
 
 
 @router.patch("/config", response_model=AdminConfigResponse)
