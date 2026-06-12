@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, or_, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -492,6 +492,81 @@ async def seed_blocking_state(user_id: UUID) -> None:
             session.add(attestation)
 
 
+async def clear_blocking_state(user_id: UUID) -> None:
+    """Move seeded deletion blockers into terminal states for one user.
+
+    This helper simulates the post-resolution state after the user has closed
+    active work, payouts, disputes, escrows, and attestations.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            payouts = list(
+                (
+                    await session.execute(
+                        select(Payout).where(Payout.contributor_id == user_id)
+                    )
+                ).scalars()
+            )
+            for payout in payouts:
+                payout.status = "completed"
+
+            projects = list(
+                (
+                    await session.execute(
+                        select(Project).where(Project.operator_id == user_id)
+                    )
+                ).scalars()
+            )
+            for project in projects:
+                project.status = "closed"
+                project.closed_at = datetime.now(UTC)
+
+            disputes = list(
+                (
+                    await session.execute(
+                        select(Dispute)
+                        .join(Project, Project.id == Dispute.project_id)
+                        .where(Project.operator_id == user_id)
+                    )
+                ).scalars()
+            )
+            for dispute in disputes:
+                dispute.status = "resolved"
+                dispute.resolution_type = "release"
+                dispute.resolved_at = datetime.now(UTC)
+
+            escrows = list(
+                (
+                    await session.execute(
+                        select(Escrow)
+                        .join(Milestone, Milestone.id == Escrow.ref_id)
+                        .join(Project, Project.id == Milestone.project_id)
+                        .where(
+                            Escrow.ref_type == "project_milestone",
+                            Project.operator_id == user_id,
+                        )
+                    )
+                ).scalars()
+            )
+            for escrow in escrows:
+                escrow.status = "released"
+
+            attestations = list(
+                (
+                    await session.execute(
+                        select(Attestation).where(
+                            or_(
+                                Attestation.requestor_id == user_id,
+                                Attestation.attestor_id == user_id,
+                            )
+                        )
+                    )
+                ).scalars()
+            )
+            for attestation in attestations:
+                attestation.status = "cancelled"
+
+
 async def test_request_account_deletion_schedules_cooling_off_and_status_reads_it(
     client: AsyncClient,
     migrated_database: None,
@@ -678,6 +753,57 @@ async def test_cancel_account_deletion_marks_scheduled_request_cancelled(
     assert request is not None
     assert request.status == "cancelled"
     assert audit is not None
+
+
+async def test_blocked_deletion_can_be_re_requested_after_obligations_clear(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """A blocked user can schedule and cancel deletion after clearing blockers."""
+    del migrated_database, account_deletion_test_context
+    user_id, _secret = await create_verified_user(
+        "delete-retry@auracles.space",
+        roles=["operator", "contributor"],
+    )
+    await seed_blocking_state(user_id)
+
+    blocked = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id, ["operator", "contributor"]),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+
+    await clear_blocking_state(user_id)
+
+    scheduled = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id, ["operator", "contributor"]),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+    cancelled = await client.post(
+        "/v1/gdpr/account-deletion/cancel",
+        headers=auth_headers(user_id, ["operator", "contributor"]),
+    )
+
+    async with async_session_factory() as session:
+        requests = list(
+            (
+                await session.execute(
+                    select(AccountDeletionRequest)
+                    .where(AccountDeletionRequest.user_id == user_id)
+                    .order_by(AccountDeletionRequest.requested_at.asc())
+                )
+            ).scalars()
+        )
+
+    assert blocked.status_code == 409
+    assert blocked.json()["status"] == "blocked"
+    assert scheduled.status_code == 202
+    assert scheduled.json()["status"] == "scheduled"
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert [request.status for request in requests] == ["blocked", "cancelled"]
 
 
 async def test_legacy_settings_deactivate_endpoint_is_removed(
