@@ -1,10 +1,11 @@
 """Admin service logic.
 
 Handles platform configuration, moderation overrides, escrow overrides, and
-admin analytics read models for the Auracles back office.
+admin analytics read models for the Auracles back office, including the daily
+snapshot aggregates that back dashboard trend charts and exports.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
@@ -136,22 +138,68 @@ def _serialize_gmv_sources(values: dict[str, Decimal]) -> dict[str, str]:
     return {key: _money_string(values[key]) for key in GMV_SOURCE_KEYS}
 
 
-async def _count_distinct_audit_actors(db: AsyncSession, *, since: datetime) -> int:
+async def _list_gmv_transactions(
+    db: AsyncSession,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+) -> list[Transaction]:
+    """Return completed USD marketplace transactions within a time range."""
+    filters = [
+        Transaction.currency == "USD",
+        Transaction.status == "completed",
+        Transaction.transaction_type.in_(("purchase", "milestone", "attestation_fee")),
+        Transaction.created_at >= since,
+    ]
+    if until is not None:
+        filters.append(Transaction.created_at < until)
+    result = await db.execute(select(Transaction).where(*filters))
+    return list(result.scalars().all())
+
+
+def _sum_gmv_sources(transactions: list[Transaction]) -> dict[str, Decimal]:
+    """Aggregate qualifying transactions into admin GMV source buckets."""
+    sources = _empty_gmv_sources()
+    for transaction in transactions:
+        source_key = _transaction_source_key(transaction)
+        if source_key is None:
+            continue
+        sources[source_key] += _money(transaction.amount)
+    return sources
+
+
+async def _count_distinct_audit_actors(
+    db: AsyncSession,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+) -> int:
     """Count distinct authenticated actors seen in audit logs within a window."""
+    filters = [
+        AuditLog.actor_id.is_not(None),
+        AuditLog.created_at >= since,
+    ]
+    if until is not None:
+        filters.append(AuditLog.created_at < until)
     result = await db.scalar(
         select(func.count(func.distinct(AuditLog.actor_id))).where(
-            AuditLog.actor_id.is_not(None),
-            AuditLog.created_at >= since,
+            *filters,
         )
     )
     return int(result or 0)
 
 
-async def _count_users_created_since(db: AsyncSession, *, since: datetime) -> int:
+async def _count_users_created_since(
+    db: AsyncSession,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+) -> int:
     """Count user registrations created within the given window."""
-    result = await db.scalar(
-        select(func.count(User.id)).where(User.created_at >= since)
-    )
+    filters = [User.created_at >= since]
+    if until is not None:
+        filters.append(User.created_at < until)
+    result = await db.scalar(select(func.count(User.id)).where(*filters))
     return int(result or 0)
 
 
@@ -167,14 +215,18 @@ async def _count_published_frameworks_since(
     db: AsyncSession,
     *,
     since: datetime,
+    until: datetime | None = None,
 ) -> int:
     """Count Frameworks published within the given window."""
+    filters = [
+        Framework.status == "published",
+        Framework.published_at.is_not(None),
+        Framework.published_at >= since,
+    ]
+    if until is not None:
+        filters.append(Framework.published_at < until)
     result = await db.scalar(
-        select(func.count(Framework.id)).where(
-            Framework.status == "published",
-            Framework.published_at.is_not(None),
-            Framework.published_at >= since,
-        )
+        select(func.count(Framework.id)).where(*filters)
     )
     return int(result or 0)
 
@@ -183,6 +235,7 @@ async def _count_attestations_issued_since(
     db: AsyncSession,
     *,
     since: datetime,
+    until: datetime | None = None,
 ) -> int:
     """Count Attestations issued within the given window."""
     issued_at_expr = func.coalesce(
@@ -190,12 +243,15 @@ async def _count_attestations_issued_since(
         Attestation.closed_at,
         Attestation.created_at,
     )
+    filters = [
+        Attestation.status.in_(ATTESTATION_ISSUED_STATUSES),
+        Attestation.outcome.is_not(None),
+        issued_at_expr >= since,
+    ]
+    if until is not None:
+        filters.append(issued_at_expr < until)
     result = await db.scalar(
-        select(func.count(Attestation.id)).where(
-            Attestation.status.in_(ATTESTATION_ISSUED_STATUSES),
-            Attestation.outcome.is_not(None),
-            issued_at_expr >= since,
-        )
+        select(func.count(Attestation.id)).where(*filters)
     )
     return int(result or 0)
 
@@ -218,29 +274,83 @@ async def _count_open_attestation_disputes(db: AsyncSession) -> int:
     return int(result or 0)
 
 
-async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
-    """Return current-state analytics for the admin dashboard.
+async def compute_daily_snapshot_payload(
+    db: AsyncSession,
+    *,
+    snapshot_date: date,
+) -> dict[str, object]:
+    """Compute one frozen UTC daily analytics snapshot payload."""
+    day_start = datetime(
+        snapshot_date.year,
+        snapshot_date.month,
+        snapshot_date.day,
+        tzinfo=UTC,
+    )
+    day_end = day_start + timedelta(days=1)
+    gmv_sources = _sum_gmv_sources(
+        await _list_gmv_transactions(
+            db,
+            since=day_start,
+            until=day_end,
+        )
+    )
+    project_disputes = await _count_open_project_disputes(db)
+    attestation_disputes = await _count_open_attestation_disputes(db)
+    return {
+        "snapshot_date": snapshot_date,
+        "gmv_total": _money(sum(gmv_sources.values(), Decimal("0.00"))),
+        "gmv_by_source": _serialize_gmv_sources(gmv_sources),
+        "active_users": await _count_distinct_audit_actors(
+            db,
+            since=day_start,
+            until=day_end,
+        ),
+        "new_registrations": await _count_users_created_since(
+            db,
+            since=day_start,
+            until=day_end,
+        ),
+        "frameworks_published": await _count_published_frameworks_since(
+            db,
+            since=day_start,
+            until=day_end,
+        ),
+        "attestations_issued": await _count_attestations_issued_since(
+            db,
+            since=day_start,
+            until=day_end,
+        ),
+        "disputes_open": project_disputes + attestation_disputes,
+    }
 
-    The Slice 2 contract intentionally excludes historical trend rows. Those
-    are introduced later from `analytics_daily_snapshots`.
-    """
+
+async def list_dashboard_trend(
+    db: AsyncSession,
+    *,
+    limit: int = 30,
+) -> list[AnalyticsDailySnapshot]:
+    """Return frozen daily snapshot rows ordered oldest to newest."""
+    result = await db.execute(
+        select(AnalyticsDailySnapshot)
+        .order_by(desc(AnalyticsDailySnapshot.snapshot_date))
+        .limit(limit)
+    )
+    rows = list(result.scalars().all())
+    rows.reverse()
+    return rows
+
+
+async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
+    """Return current-state analytics plus frozen trend rows for the admin dashboard."""
     now = datetime.now(UTC)
     today_since = now - timedelta(days=1)
     seven_day_since = now - timedelta(days=7)
     thirty_day_since = now - timedelta(days=30)
 
-    qualifying_transactions = (
-        await db.execute(
-            select(Transaction).where(
-                Transaction.currency == "USD",
-                Transaction.status == "completed",
-                Transaction.transaction_type.in_(
-                    ("purchase", "milestone", "attestation_fee")
-                ),
-                Transaction.created_at >= thirty_day_since,
-            )
-        )
-    ).scalars().all()
+    qualifying_transactions = await _list_gmv_transactions(
+        db,
+        since=thirty_day_since,
+    )
 
     today_sources = _empty_gmv_sources()
     seven_day_sources = _empty_gmv_sources()
@@ -297,6 +407,7 @@ async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
 
     project_disputes = await _count_open_project_disputes(db)
     attestation_disputes = await _count_open_attestation_disputes(db)
+    trend_rows = await list_dashboard_trend(db=db)
 
     return {
         "gmv": {
@@ -337,6 +448,18 @@ async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
             "projects": project_disputes,
             "attestations": attestation_disputes,
         },
+        "trend": [
+            {
+                "snapshot_date": row.snapshot_date,
+                "gmv_total": _money_string(row.gmv_total),
+                "active_users": row.active_users,
+                "new_registrations": row.new_registrations,
+                "frameworks_published": row.frameworks_published,
+                "attestations_issued": row.attestations_issued,
+                "disputes_open": row.disputes_open,
+            }
+            for row in trend_rows
+        ],
     }
 
 

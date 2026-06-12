@@ -23,6 +23,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         backend=resolved_settings.celery_result_backend,
         include=[
             "app.workers.tasks.artifacts",
+            "app.workers.tasks.admin_beat",
             "app.workers.tasks.attestation_beat",
             "app.workers.tasks.attestation_pdf",
             "app.workers.tasks.attestation_upload_scan",

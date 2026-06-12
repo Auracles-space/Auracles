@@ -1,8 +1,9 @@
-"""Integration tests for the admin analytics dashboard endpoint.
+"""Integration tests for admin analytics dashboard and snapshot behavior.
 
 These tests exercise the public admin HTTP contract for current-state
-analytics. They verify GMV window aggregation, by-source breakdowns, and the
-string-based money output expected by finance-safe API consumers.
+analytics and the daily snapshot task that backs dashboard trend rows. They
+verify GMV aggregation, by-source breakdowns, string-safe money output, UTC
+snapshot boundaries, and rerun idempotency.
 """
 
 from __future__ import annotations
@@ -16,19 +17,22 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from freezegun import freeze_time
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
+from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.projects.models import Dispute, Milestone, Project
 from app.shared.models.audit_log import AuditLog
+from app.workers.tasks import admin_beat
 
 
 def auth_headers(user_id: UUID) -> dict[str, str]:
@@ -106,6 +110,7 @@ async def _create_transaction(
 async def _cleanup_admin_dashboard_state() -> None:
     """Delete analytics test rows in foreign-key-safe order."""
     async with async_session_factory() as session:
+        await session.execute(delete(AnalyticsDailySnapshot))
         await session.execute(delete(AuditLog))
         await session.execute(delete(AttestationDispute))
         await session.execute(delete(Attestation))
@@ -267,7 +272,7 @@ async def test_admin_dashboard_reports_gmv_windows_and_by_source_strings(
 
     assert response.status_code == 200
     body = response.json()
-    assert "trend" not in body
+    assert body["trend"] == []
     assert body["gmv"]["today_total"] == "300.00"
     assert body["gmv"]["last_7_days_total"] == "1000.00"
     assert body["gmv"]["last_30_days_total"] == "1050.00"
@@ -627,4 +632,336 @@ async def test_admin_dashboard_reports_current_state_counts(
         "total": 2,
         "projects": 1,
         "attestations": 1,
+    }
+    assert body["trend"] == []
+
+
+async def test_daily_snapshot_captures_prior_utc_day_and_dashboard_trend(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """Snapshot Beat must freeze the prior UTC day and expose ordered trend rows."""
+    del migrated_database
+    frozen_now = "2026-06-12 00:10:00+00:00"
+    target_day = datetime(2026, 6, 11, 0, 0, tzinfo=UTC)
+    next_day = datetime(2026, 6, 12, 0, 0, tzinfo=UTC)
+    await engine.dispose()
+    await _cleanup_admin_dashboard_state()
+    try:
+        with freeze_time(frozen_now):
+            async with async_session_factory() as session:
+                async with session.begin():
+                    admin = await _create_user(
+                        session,
+                        email=f"admin-snapshot-{uuid4()}@auracles.space",
+                        roles=["admin"],
+                        created_at=target_day - timedelta(days=30),
+                    )
+                    operator = await _create_user(
+                        session,
+                        email=f"operator-snapshot-{uuid4()}@auracles.space",
+                        roles=["operator"],
+                        created_at=target_day + timedelta(hours=1),
+                    )
+                    contributor = await _create_user(
+                        session,
+                        email=f"contributor-snapshot-{uuid4()}@auracles.space",
+                        roles=["contributor"],
+                        created_at=target_day + timedelta(hours=2),
+                    )
+                    attestor = await _create_user(
+                        session,
+                        email=f"attestor-snapshot-{uuid4()}@auracles.space",
+                        roles=["attestor"],
+                        created_at=target_day - timedelta(days=10),
+                    )
+                    late_user = await _create_user(
+                        session,
+                        email=f"late-user-snapshot-{uuid4()}@auracles.space",
+                        roles=["operator"],
+                        created_at=next_day + timedelta(minutes=1),
+                    )
+
+                    session.add(
+                        AnalyticsDailySnapshot(
+                            snapshot_date=(target_day - timedelta(days=1)).date(),
+                            gmv_total=Decimal("80.00"),
+                            gmv_by_source={"framework_purchase": "80.00"},
+                            active_users=1,
+                            new_registrations=1,
+                            frameworks_published=1,
+                            attestations_issued=0,
+                            disputes_open=0,
+                            computed_at=target_day - timedelta(minutes=5),
+                        )
+                    )
+
+                    framework = Framework(
+                        contributor_id=contributor.id,
+                        title="Snapshot Published",
+                        description="Snapshot fixture.",
+                        status="published",
+                        category="operations",
+                        sector="technology",
+                        industry="software",
+                        business_function="operations",
+                        tags=["snapshot"],
+                        tags_text="snapshot",
+                        price=Decimal("99.00"),
+                        currency="USD",
+                        license_types=["single_user"],
+                        created_at=target_day + timedelta(hours=3),
+                        updated_at=target_day + timedelta(hours=3),
+                        published_at=target_day + timedelta(hours=4),
+                    )
+                    late_framework = Framework(
+                        contributor_id=contributor.id,
+                        title="Late Published",
+                        description="Excluded from prior-day snapshot.",
+                        status="published",
+                        category="operations",
+                        sector="technology",
+                        industry="software",
+                        business_function="operations",
+                        tags=["late"],
+                        tags_text="late",
+                        price=Decimal("120.00"),
+                        currency="USD",
+                        license_types=["single_user"],
+                        created_at=next_day + timedelta(minutes=1),
+                        updated_at=next_day + timedelta(minutes=1),
+                        published_at=next_day + timedelta(minutes=1),
+                    )
+                    session.add_all([framework, late_framework])
+                    await session.flush()
+
+                    attestation = Attestation(
+                        target_type="framework",
+                        target_id=framework.id,
+                        requestor_id=operator.id,
+                        attestor_id=attestor.id,
+                        status="report_submitted",
+                        outcome="approved",
+                        requested_specializations=["ops"],
+                        requested_jurisdictions=["us"],
+                        fee_amount=Decimal("50.00"),
+                        currency="USD",
+                        issued_at=target_day + timedelta(hours=6),
+                        created_at=target_day + timedelta(hours=6),
+                        updated_at=target_day + timedelta(hours=6),
+                    )
+                    late_attestation = Attestation(
+                        target_type="framework",
+                        target_id=late_framework.id,
+                        requestor_id=late_user.id,
+                        attestor_id=attestor.id,
+                        status="report_submitted",
+                        outcome="approved",
+                        requested_specializations=["ops"],
+                        requested_jurisdictions=["us"],
+                        fee_amount=Decimal("50.00"),
+                        currency="USD",
+                        issued_at=next_day + timedelta(minutes=2),
+                        created_at=next_day + timedelta(minutes=2),
+                        updated_at=next_day + timedelta(minutes=2),
+                    )
+                    session.add_all([attestation, late_attestation])
+
+                    project = Project(
+                        operator_id=operator.id,
+                        title="Snapshot Project",
+                        description="Snapshot dispute fixture.",
+                        category="operations",
+                        required_deliverables=[{"name": "Playbook"}],
+                        budget_min=Decimal("500.00"),
+                        budget_max=Decimal("500.00"),
+                        currency="USD",
+                        status="disputed",
+                        milestone_plan_status="draft",
+                        expires_at=next_day + timedelta(days=7),
+                        created_at=target_day + timedelta(hours=7),
+                        updated_at=target_day + timedelta(hours=7),
+                    )
+                    session.add(project)
+                    await session.flush()
+                    milestone = Milestone(
+                        project_id=project.id,
+                        sequence=1,
+                        name="Snapshot Milestone",
+                        description="Snapshot dispute milestone.",
+                        budget=Decimal("500.00"),
+                        currency="USD",
+                        status="disputed",
+                        created_at=target_day + timedelta(hours=7),
+                    )
+                    session.add(milestone)
+                    await session.flush()
+                    session.add(
+                        Dispute(
+                            project_id=project.id,
+                            milestone_id=milestone.id,
+                            raised_by=operator.id,
+                            reason="Snapshot open dispute.",
+                            status="open",
+                            created_at=target_day + timedelta(hours=8),
+                        )
+                    )
+
+                    session.add_all(
+                        [
+                            AuditLog(
+                                actor_id=operator.id,
+                                action="operator_seen_snapshot",
+                                target_type="session",
+                                target_id=None,
+                                metadata_={},
+                                created_at=target_day + timedelta(hours=9),
+                            ),
+                            AuditLog(
+                                actor_id=contributor.id,
+                                action="contributor_seen_snapshot",
+                                target_type="session",
+                                target_id=None,
+                                metadata_={},
+                                created_at=target_day + timedelta(hours=10),
+                            ),
+                            AuditLog(
+                                actor_id=late_user.id,
+                                action="late_seen_snapshot",
+                                target_type="session",
+                                target_id=None,
+                                metadata_={},
+                                created_at=next_day + timedelta(minutes=3),
+                            ),
+                        ]
+                    )
+
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("100.00"),
+                        transaction_type="purchase",
+                        status="completed",
+                        ref_type="framework",
+                        created_at=target_day + timedelta(hours=1),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("70.00"),
+                        transaction_type="purchase",
+                        status="completed",
+                        ref_type="collection",
+                        created_at=target_day + timedelta(hours=2),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("500.00"),
+                        transaction_type="milestone",
+                        status="refunded",
+                        ref_type="project_milestone",
+                        created_at=target_day + timedelta(hours=3),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("300.00"),
+                        transaction_type="milestone",
+                        status="completed",
+                        ref_type="project_milestone",
+                        created_at=target_day + timedelta(hours=4),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("200.00"),
+                        transaction_type="refund",
+                        status="refunded",
+                        ref_type="project_milestone",
+                        created_at=target_day + timedelta(hours=4, minutes=1),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=operator.id,
+                        payee_id=attestor.id,
+                        amount=Decimal("50.00"),
+                        transaction_type="attestation_fee",
+                        status="completed",
+                        ref_type="attestation",
+                        created_at=target_day + timedelta(hours=5),
+                    )
+                    await _create_transaction(
+                        session,
+                        payer_id=late_user.id,
+                        payee_id=contributor.id,
+                        amount=Decimal("999.00"),
+                        transaction_type="purchase",
+                        status="completed",
+                        ref_type="framework",
+                        created_at=next_day + timedelta(minutes=4),
+                    )
+
+            first_result = await admin_beat._snapshot_daily_analytics_impl()
+            second_result = await admin_beat._snapshot_daily_analytics_impl()
+
+            response = await client.get(
+                "/v1/admin/analytics/dashboard",
+                headers=auth_headers(admin.id),
+            )
+
+            async with async_session_factory() as session:
+                snapshot_rows = (
+                    (
+                        await session.execute(select(AnalyticsDailySnapshot))
+                    )
+                    .scalars()
+                    .all()
+                )
+    finally:
+        await _cleanup_admin_dashboard_state()
+        await engine.dispose()
+
+    assert first_result["snapshot_date"] == "2026-06-11"
+    assert first_result["created"] is True
+    assert second_result["snapshot_date"] == "2026-06-11"
+    assert second_result["created"] is False
+    assert len(snapshot_rows) == 2
+    latest = next(
+        row
+        for row in snapshot_rows
+        if row.snapshot_date.isoformat() == "2026-06-11"
+    )
+    assert latest.gmv_total == Decimal("520.00")
+    assert latest.gmv_by_source == {
+        "framework_purchase": "100.00",
+        "collection_purchase": "70.00",
+        "project_milestone": "300.00",
+        "attestation_fee": "50.00",
+    }
+    assert latest.active_users == 2
+    assert latest.new_registrations == 2
+    assert latest.frameworks_published == 1
+    assert latest.attestations_issued == 1
+    assert latest.disputes_open == 1
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [row["snapshot_date"] for row in body["trend"]] == [
+        "2026-06-10",
+        "2026-06-11",
+    ]
+    assert body["trend"][1] == {
+        "snapshot_date": "2026-06-11",
+        "gmv_total": "520.00",
+        "active_users": 2,
+        "new_registrations": 2,
+        "frameworks_published": 1,
+        "attestations_issued": 1,
+        "disputes_open": 1,
     }

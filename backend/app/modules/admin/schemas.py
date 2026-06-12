@@ -1,6 +1,6 @@
 """Pydantic schemas for admin endpoints."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -218,8 +218,20 @@ class AdminAnalyticsDisputesOpen(BaseModel):
     attestations: int
 
 
+class AdminAnalyticsTrendPoint(BaseModel):
+    """One frozen UTC daily analytics row for dashboard trend charts."""
+
+    snapshot_date: date
+    gmv_total: str
+    active_users: int
+    new_registrations: int
+    frameworks_published: int
+    attestations_issued: int
+    disputes_open: int
+
+
 class AdminAnalyticsDashboardResponse(BaseModel):
-    """Current-state admin analytics without historical trend snapshots."""
+    """Current-state admin analytics plus frozen historical trend rows."""
 
     gmv: AdminAnalyticsGmvResponse
     active_users: AdminAnalyticsWindowCounts
@@ -227,3 +239,4 @@ class AdminAnalyticsDashboardResponse(BaseModel):
     frameworks_published: AdminAnalyticsPublishedFrameworks
     attestations_issued: AdminAnalyticsWindowCounts
     disputes_open: AdminAnalyticsDisputesOpen
+    trend: list[AdminAnalyticsTrendPoint]

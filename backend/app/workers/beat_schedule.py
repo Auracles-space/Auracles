@@ -1,8 +1,14 @@
 """Celery Beat schedule for periodic maintenance tasks."""
 
+from celery.schedules import crontab
+
 from app.workers.schedules import PlatformConfigHoursSchedule
 
 BEAT_SCHEDULE: dict[str, dict[str, object]] = {
+    "snapshot-daily-analytics": {
+        "task": "app.workers.tasks.admin_beat.snapshot_daily_analytics",
+        "schedule": crontab(hour=0, minute=5),
+    },
     "clear-expired-licenses-daily": {
         "task": "app.workers.tasks.scheduled.clear_expired_licenses",
         "schedule": 86400.0,

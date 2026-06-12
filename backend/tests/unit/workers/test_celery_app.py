@@ -33,3 +33,18 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
         "task": "app.workers.tasks.partner_webhooks.retry_due_partner_webhooks",
         "schedule": 60.0,
     }
+
+
+def test_celery_app_registers_admin_snapshot_beat_task() -> None:
+    """Celery includes the admin Beat task and schedules the daily snapshot."""
+    settings = Settings(REDIS_URL="redis://cache.internal:6379/4")
+
+    celery_app = create_celery_app(settings)
+
+    assert "app.workers.tasks.admin_beat" in celery_app.conf.include
+    snapshot_schedule = celery_app.conf.beat_schedule["snapshot-daily-analytics"]
+    assert snapshot_schedule["task"] == (
+        "app.workers.tasks.admin_beat.snapshot_daily_analytics"
+    )
+    assert snapshot_schedule["schedule"].hour == {0}
+    assert snapshot_schedule["schedule"].minute == {5}

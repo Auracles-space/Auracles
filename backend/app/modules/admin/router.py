@@ -87,8 +87,8 @@ async def list_platform_config(
     response_model=AdminAnalyticsDashboardResponse,
     summary="Get admin dashboard analytics",
     description=(
-        "Return current-state admin analytics aggregates. Slice 2 excludes "
-        "historical trend rows until snapshot-backed analytics land."
+        "Return current-state admin analytics aggregates plus frozen daily "
+        "trend rows from snapshot history."
     ),
 )
 async def get_admin_analytics_dashboard(

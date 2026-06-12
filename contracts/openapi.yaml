@@ -52,8 +52,8 @@ paths:
       tags:
       - Admin
       summary: Get admin dashboard analytics
-      description: Return current-state admin analytics aggregates. Slice 2 excludes
-        historical trend rows until snapshot-backed analytics land.
+      description: Return current-state admin analytics aggregates plus frozen daily
+        trend rows from snapshot history.
       operationId: get_admin_analytics_dashboard_v1_admin_analytics_dashboard_get
       responses:
         '200':
@@ -5966,6 +5966,11 @@ components:
           $ref: '#/components/schemas/AdminAnalyticsWindowCounts'
         disputes_open:
           $ref: '#/components/schemas/AdminAnalyticsDisputesOpen'
+        trend:
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsTrendPoint'
+          type: array
+          title: Trend
       type: object
       required:
       - gmv
@@ -5974,8 +5979,9 @@ components:
       - frameworks_published
       - attestations_issued
       - disputes_open
+      - trend
       title: AdminAnalyticsDashboardResponse
-      description: Current-state admin analytics without historical trend snapshots.
+      description: Current-state admin analytics plus frozen historical trend rows.
     AdminAnalyticsDisputesOpen:
       properties:
         total:
@@ -6065,6 +6071,41 @@ components:
       - last_30_days
       title: AdminAnalyticsPublishedFrameworks
       description: Published Framework totals and recent publication counts.
+    AdminAnalyticsTrendPoint:
+      properties:
+        snapshot_date:
+          type: string
+          format: date
+          title: Snapshot Date
+        gmv_total:
+          type: string
+          title: Gmv Total
+        active_users:
+          type: integer
+          title: Active Users
+        new_registrations:
+          type: integer
+          title: New Registrations
+        frameworks_published:
+          type: integer
+          title: Frameworks Published
+        attestations_issued:
+          type: integer
+          title: Attestations Issued
+        disputes_open:
+          type: integer
+          title: Disputes Open
+      type: object
+      required:
+      - snapshot_date
+      - gmv_total
+      - active_users
+      - new_registrations
+      - frameworks_published
+      - attestations_issued
+      - disputes_open
+      title: AdminAnalyticsTrendPoint
+      description: One frozen UTC daily analytics row for dashboard trend charts.
     AdminAnalyticsWindowCounts:
       properties:
         last_24_hours:
