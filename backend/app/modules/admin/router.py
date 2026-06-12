@@ -27,6 +27,7 @@ from app.modules.admin.schemas import (
     AdminKycReviewResponse,
     AdminLicenseGrantRequest,
     AdminLicenseGrantResponse,
+    AdminModerationQueueResponse,
     AdminRarityBlockOverrideRequest,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
@@ -142,6 +143,39 @@ async def export_admin_analytics(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get(
+    "/moderation/queue",
+    response_model=AdminModerationQueueResponse,
+    summary="List moderation queue rows",
+    description=(
+        "Aggregate current rarity, near-duplicate, and PII review signals into "
+        "one paginated admin moderation queue."
+    ),
+)
+async def list_moderation_queue(
+    admin: AdminUser,
+    db: DatabaseSession,
+    queue_type: Annotated[
+        str,
+        Query(
+            alias="type",
+            pattern="^(all|rarity_review|near_duplicate_block|pii_review)$",
+        ),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminModerationQueueResponse:
+    """Return the aggregated moderation queue for admin review."""
+    queue = await service.list_moderation_queue(
+        db=db,
+        admin=admin,
+        queue_type=queue_type,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminModerationQueueResponse.model_validate(queue)
 
 
 @router.patch("/config", response_model=AdminConfigResponse)

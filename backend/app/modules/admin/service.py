@@ -7,8 +7,10 @@ snapshot aggregates that back dashboard trend charts and exports.
 
 import csv
 import io
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -27,7 +29,11 @@ from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, License
-from app.modules.frameworks.models_artifact import Artifact, ArtifactRarityAudit
+from app.modules.frameworks.models_artifact import (
+    Artifact,
+    ArtifactPiiAudit,
+    ArtifactRarityAudit,
+)
 from app.modules.frameworks.pipeline_gate import (
     NEAR_DUPLICATE_JACCARD_THRESHOLD,
     evaluate_framework_pipeline,
@@ -99,6 +105,12 @@ GMV_SOURCE_KEYS = (
 )
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 ATTESTATION_ISSUED_STATUSES = ("report_submitted", "closed")
+MODERATION_QUEUE_TYPES = ("rarity_review", "near_duplicate_block", "pii_review")
+MODERATION_QUEUE_SORT_PRIORITY = {
+    "pii_review": 0,
+    "near_duplicate_block": 1,
+    "rarity_review": 2,
+}
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -697,6 +709,356 @@ async def export_dashboard_csv(
     await db.commit()
     filename = f"admin-analytics-{from_date.isoformat()}-to-{to_date.isoformat()}.csv"
     return filename, _render_admin_analytics_csv(rows)
+
+
+def _decimal_4_string(value: Decimal | None) -> str | None:
+    """Serialize a four-decimal review score without float drift."""
+    if value is None:
+        return None
+    return format(value.quantize(Decimal("0.0001")), ".4f")
+
+
+def _admin_action_link(*, rel: str, path: str) -> dict[str, str]:
+    """Build one admin-authenticated moderation action link."""
+    return {
+        "rel": rel,
+        "method": "POST",
+        "path": path,
+        "actor_role": "admin",
+    }
+
+
+def _contributor_action_link(*, rel: str, path: str) -> dict[str, str]:
+    """Build one contributor-authenticated moderation action link."""
+    return {
+        "rel": rel,
+        "method": "POST",
+        "path": path,
+        "actor_role": "contributor",
+    }
+
+
+def _framework_suspend_action_links(framework: Framework) -> list[dict[str, str]]:
+    """Return framework suspension actions relevant to the current state."""
+    if framework.status != "published":
+        return []
+    return [
+        _admin_action_link(
+            rel="suspend_framework",
+            path=f"/v1/admin/frameworks/{framework.id}/suspend",
+        )
+    ]
+
+
+async def _list_rarity_review_rows(
+    db: AsyncSession,
+) -> list[tuple[Artifact, Framework, User, ArtifactRarityAudit | None]]:
+    """Return current artifact rows that require rarity moderation review."""
+    result = await db.execute(
+        select(Artifact, Framework, User, ArtifactRarityAudit)
+        .join(Framework, Framework.id == Artifact.framework_id)
+        .join(User, User.id == Framework.contributor_id)
+        .outerjoin(
+            ArtifactRarityAudit,
+            ArtifactRarityAudit.artifact_id == Artifact.id,
+        )
+        .where(
+            Artifact.current_for_framework.is_(True),
+            Artifact.processing_status == "flagged_rarity",
+        )
+    )
+    return list(result.all())
+
+
+async def _latest_pii_audits_by_artifact(
+    db: AsyncSession,
+    artifact_ids: Sequence[UUID],
+) -> dict[UUID, Any]:
+    """Return the latest PII audit row for each requested artifact."""
+    if not artifact_ids:
+        return {}
+    result = await db.execute(
+        select(ArtifactPiiAudit)
+        .where(ArtifactPiiAudit.artifact_id.in_(artifact_ids))
+    )
+    latest: dict[UUID, Any] = {}
+    for audit in result.scalars().all():
+        existing = latest.get(audit.artifact_id)
+        if existing is None or audit.processed_at > existing.processed_at:
+            latest[audit.artifact_id] = audit
+    return latest
+
+
+def _rarity_review_item(
+    *,
+    artifact: Artifact,
+    framework: Framework,
+    contributor: User,
+    rarity_audit: ArtifactRarityAudit | None,
+) -> dict[str, Any]:
+    """Serialize one artifact-level rarity review row."""
+    details: dict[str, Any] = {
+        "internal_jaccard": _decimal_4_string(
+            rarity_audit.internal_jaccard if rarity_audit else None
+        ),
+        "blended_score": _decimal_4_string(
+            rarity_audit.blended_score if rarity_audit else None
+        ),
+        "external_phrases_queried": list(
+            rarity_audit.external_phrases_queried if rarity_audit else []
+        ),
+        "external_hit_counts": list(
+            rarity_audit.external_hit_counts if rarity_audit else []
+        ),
+    }
+    signal_at = (
+        rarity_audit.created_at if rarity_audit is not None else artifact.created_at
+    )
+    signal_id = (
+        str(rarity_audit.id) if rarity_audit is not None else str(artifact.id)
+    )
+    return {
+        "signal_id": signal_id,
+        "queue_type": "rarity_review",
+        "framework_id": framework.id,
+        "framework_title": framework.title,
+        "contributor_id": contributor.id,
+        "contributor_name": contributor.display_name,
+        "artifact_id": artifact.id,
+        "artifact_name": artifact.name,
+        "signal_at": signal_at,
+        "details": details,
+        "action_links": _framework_suspend_action_links(framework),
+    }
+
+
+def _near_duplicate_block_item(
+    *,
+    framework: Framework,
+    contributor: User,
+    blocked_artifacts: Sequence[Artifact],
+    rarity_audits: dict[UUID, ArtifactRarityAudit | None],
+) -> dict[str, Any]:
+    """Serialize one framework-level near-duplicate block row."""
+    ranked_artifacts = sorted(
+        blocked_artifacts,
+        key=lambda artifact: (
+            rarity_audits.get(artifact.id).internal_jaccard
+            if rarity_audits.get(artifact.id) is not None
+            and rarity_audits[artifact.id].internal_jaccard is not None
+            else Decimal("0.0000")
+        ),
+        reverse=True,
+    )
+    primary_artifact = ranked_artifacts[0]
+    primary_audit = rarity_audits.get(primary_artifact.id)
+    signal_at = (
+        primary_audit.created_at if primary_audit is not None else framework.updated_at
+    )
+    return {
+        "signal_id": f"{framework.id}:near_duplicate_block",
+        "queue_type": "near_duplicate_block",
+        "framework_id": framework.id,
+        "framework_title": framework.title,
+        "contributor_id": contributor.id,
+        "contributor_name": contributor.display_name,
+        "artifact_id": primary_artifact.id,
+        "artifact_name": primary_artifact.name,
+        "signal_at": signal_at,
+        "details": {
+            "blocked_artifact_ids": [str(artifact.id) for artifact in ranked_artifacts],
+            "internal_jaccard": _decimal_4_string(
+                primary_audit.internal_jaccard if primary_audit else None
+            ),
+            "blended_score": _decimal_4_string(
+                primary_audit.blended_score if primary_audit else None
+            ),
+            "external_phrases_queried": list(
+                primary_audit.external_phrases_queried if primary_audit else []
+            ),
+            "external_hit_counts": list(
+                primary_audit.external_hit_counts if primary_audit else []
+            ),
+        },
+        "action_links": [
+            _admin_action_link(
+                rel="override_rarity_block",
+                path=f"/v1/admin/frameworks/{framework.id}/rarity-block/override",
+            ),
+            *_framework_suspend_action_links(framework),
+        ],
+    }
+
+
+def _pii_review_item(
+    *,
+    artifact: Artifact,
+    framework: Framework,
+    contributor: User,
+    pii_audit: Any | None,
+) -> dict[str, Any]:
+    """Serialize one artifact-level PII review row."""
+    redaction = dict((artifact.metadata_vector or {}).get("redaction") or {})
+    signal_at = pii_audit.processed_at if pii_audit is not None else artifact.created_at
+    action_links: list[dict[str, str]] = []
+    if artifact.clean_file_key:
+        action_links.append(
+            _contributor_action_link(
+                rel="accept_redaction",
+                path=(
+                    f"/v1/frameworks/{framework.id}/artifacts/"
+                    f"{artifact.id}/accept-redaction"
+                ),
+            )
+        )
+    action_links.append(
+        _contributor_action_link(
+            rel="resolve_pii_review",
+            path=(
+                f"/v1/frameworks/{framework.id}/artifacts/"
+                f"{artifact.id}/resolve-pii-review"
+            ),
+        )
+    )
+    return {
+        "signal_id": (
+            str(pii_audit.id) if pii_audit is not None else f"{artifact.id}:pii_review"
+        ),
+        "queue_type": "pii_review",
+        "framework_id": framework.id,
+        "framework_title": framework.title,
+        "contributor_id": contributor.id,
+        "contributor_name": contributor.display_name,
+        "artifact_id": artifact.id,
+        "artifact_name": artifact.name,
+        "signal_at": signal_at,
+        "details": {
+            "pii_types_found": list(pii_audit.pii_types_found if pii_audit else []),
+            "auto_redacted": bool(pii_audit.auto_redacted) if pii_audit else False,
+            "redaction_status": (
+                str(redaction.get("status")) if redaction.get("status") else None
+            ),
+            "redaction_accepted": bool(redaction.get("accepted")),
+            "redaction_available": artifact.clean_file_key is not None,
+        },
+        "action_links": action_links,
+    }
+
+
+async def list_moderation_queue(
+    db: AsyncSession,
+    *,
+    admin: User,
+    queue_type: str,
+    page: int,
+    page_size: int,
+) -> dict[str, Any]:
+    """Aggregate moderation rows across rarity, near-duplicate, and PII signals."""
+    if queue_type not in {"all", *MODERATION_QUEUE_TYPES}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unknown moderation queue type.",
+        )
+
+    rarity_rows = await _list_rarity_review_rows(db)
+    rarity_audits_by_artifact = {
+        artifact.id: rarity_audit
+        for artifact, _, _, rarity_audit in rarity_rows
+    }
+    items: list[dict[str, Any]] = [
+        _rarity_review_item(
+            artifact=artifact,
+            framework=framework,
+            contributor=contributor,
+            rarity_audit=rarity_audit,
+        )
+        for artifact, framework, contributor, rarity_audit in rarity_rows
+    ]
+
+    framework_maps: dict[UUID, tuple[Framework, User, list[Artifact]]] = {}
+    for artifact, framework, contributor, _ in rarity_rows:
+        blocked_ids = (framework.pipeline_failure_reasons or {}).get("internal_rarity")
+        if not isinstance(blocked_ids, list):
+            blocked_ids = []
+        blocked_id_set = {
+            UUID(value)
+            for value in blocked_ids
+            if isinstance(value, str)
+        }
+        if artifact.id not in blocked_id_set:
+            continue
+        existing = framework_maps.get(framework.id)
+        if existing is None:
+            framework_maps[framework.id] = (framework, contributor, [artifact])
+            continue
+        existing[2].append(artifact)
+    items.extend(
+        _near_duplicate_block_item(
+            framework=framework,
+            contributor=contributor,
+            blocked_artifacts=artifacts,
+            rarity_audits=rarity_audits_by_artifact,
+        )
+        for framework, contributor, artifacts in framework_maps.values()
+    )
+
+    pii_result = await db.execute(
+        select(Artifact, Framework, User)
+        .join(Framework, Framework.id == Artifact.framework_id)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
+            Artifact.current_for_framework.is_(True),
+            Artifact.pii_review_needed.is_(True),
+        )
+    )
+    pii_rows = list(pii_result.all())
+    latest_pii_audits = await _latest_pii_audits_by_artifact(
+        db,
+        [artifact.id for artifact, _, _ in pii_rows],
+    )
+    items.extend(
+        _pii_review_item(
+            artifact=artifact,
+            framework=framework,
+            contributor=contributor,
+            pii_audit=latest_pii_audits.get(artifact.id),
+        )
+        for artifact, framework, contributor in pii_rows
+    )
+
+    if queue_type != "all":
+        items = [item for item in items if item["queue_type"] == queue_type]
+    items.sort(
+        key=lambda item: (
+            item["signal_at"],
+            -MODERATION_QUEUE_SORT_PRIORITY[item["queue_type"]],
+        ),
+        reverse=True,
+    )
+    total = len(items)
+    offset = (page - 1) * page_size
+    paginated_items = items[offset : offset + page_size]
+
+    await write_audit(
+        db=db,
+        actor_id=admin.id,
+        action="moderation_queue_viewed",
+        target_type="moderation_queue",
+        metadata={
+            "type": queue_type,
+            "page": page,
+            "page_size": page_size,
+            "returned_count": len(paginated_items),
+            "total": total,
+        },
+    )
+    await db.commit()
+    return {
+        "items": paginated_items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 async def assign_user_role(

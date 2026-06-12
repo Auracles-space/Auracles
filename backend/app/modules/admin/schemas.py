@@ -1,8 +1,12 @@
-"""Pydantic schemas for admin endpoints."""
+"""Pydantic schemas for admin endpoints.
+
+Defines request and response contracts for configuration, analytics, moderation,
+and other back-office flows exposed under `/v1/admin/*`.
+"""
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -240,3 +244,37 @@ class AdminAnalyticsDashboardResponse(BaseModel):
     attestations_issued: AdminAnalyticsWindowCounts
     disputes_open: AdminAnalyticsDisputesOpen
     trend: list[AdminAnalyticsTrendPoint]
+
+
+class AdminModerationActionLink(BaseModel):
+    """Existing API action relevant to one moderation queue row."""
+
+    rel: str
+    method: Literal["POST"]
+    path: str
+    actor_role: Literal["admin", "contributor"]
+
+
+class AdminModerationQueueItem(BaseModel):
+    """One moderation queue row aggregated from existing platform signals."""
+
+    signal_id: str
+    queue_type: Literal["rarity_review", "near_duplicate_block", "pii_review"]
+    framework_id: UUID
+    framework_title: str
+    contributor_id: UUID
+    contributor_name: str
+    artifact_id: UUID | None = None
+    artifact_name: str | None = None
+    signal_at: datetime
+    details: dict[str, Any]
+    action_links: list[AdminModerationActionLink]
+
+
+class AdminModerationQueueResponse(BaseModel):
+    """Paginated moderation queue response for admin review surfaces."""
+
+    items: list[AdminModerationQueueItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

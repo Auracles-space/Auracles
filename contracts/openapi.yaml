@@ -105,6 +105,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/moderation/queue:
+    get:
+      tags:
+      - Admin
+      summary: List moderation queue rows
+      description: Aggregate current rarity, near-duplicate, and PII review signals
+        into one paginated admin moderation queue.
+      operationId: list_moderation_queue_v1_admin_moderation_queue_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|rarity_review|near_duplicate_block|pii_review)$
+          default: all
+          title: Type
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminModerationQueueResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/roles:
     patch:
       tags:
@@ -6617,6 +6666,122 @@ components:
       - expires_at
       title: AdminLicenseGrantResponse
       description: Response body for an admin-created license.
+    AdminModerationActionLink:
+      properties:
+        rel:
+          type: string
+          title: Rel
+        method:
+          type: string
+          const: POST
+          title: Method
+        path:
+          type: string
+          title: Path
+        actor_role:
+          type: string
+          enum:
+          - admin
+          - contributor
+          title: Actor Role
+      type: object
+      required:
+      - rel
+      - method
+      - path
+      - actor_role
+      title: AdminModerationActionLink
+      description: Existing API action relevant to one moderation queue row.
+    AdminModerationQueueItem:
+      properties:
+        signal_id:
+          type: string
+          title: Signal Id
+        queue_type:
+          type: string
+          enum:
+          - rarity_review
+          - near_duplicate_block
+          - pii_review
+          title: Queue Type
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        framework_title:
+          type: string
+          title: Framework Title
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        artifact_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Artifact Name
+        signal_at:
+          type: string
+          format: date-time
+          title: Signal At
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+        action_links:
+          items:
+            $ref: '#/components/schemas/AdminModerationActionLink'
+          type: array
+          title: Action Links
+      type: object
+      required:
+      - signal_id
+      - queue_type
+      - framework_id
+      - framework_title
+      - contributor_id
+      - contributor_name
+      - signal_at
+      - details
+      - action_links
+      title: AdminModerationQueueItem
+      description: One moderation queue row aggregated from existing platform signals.
+    AdminModerationQueueResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminModerationQueueItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminModerationQueueResponse
+      description: Paginated moderation queue response for admin review surfaces.
     AdminRarityBlockOverrideRequest:
       properties:
         reason:
