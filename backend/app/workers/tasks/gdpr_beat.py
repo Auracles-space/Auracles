@@ -215,13 +215,6 @@ async def _process_account_deletions_impl(
                     ]
                 continue
 
-            kyc_keys = await anonymise.collect_kyc_object_keys(db=db, user_id=user_id)
-            user = await db.get(User, user_id)
-            if user is not None:
-                await auth_service.revoke_all_user_sessions(cache, user)
-            for key in kyc_keys:
-                s3.storage.delete_object(settings.s3_artifacts_bucket, key)
-
             if db.in_transaction():
                 await db.rollback()
             async with db.begin():
@@ -242,6 +235,15 @@ async def _process_account_deletions_impl(
                     ]
                     skipped_count += 1
                     continue
+                kyc_keys = await anonymise.collect_kyc_object_keys(
+                    db=db,
+                    user_id=user_id,
+                )
+                user = await db.get(User, user_id)
+                if user is not None:
+                    await auth_service.revoke_all_user_sessions(cache, user)
+                for key in kyc_keys:
+                    s3.storage.delete_object(settings.s3_artifacts_bucket, key)
                 await anonymise.anonymise_user_records(
                     db=db,
                     user_id=user_id,

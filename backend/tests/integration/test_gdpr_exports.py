@@ -138,8 +138,6 @@ async def export_test_context(
     async with async_session_factory() as session:
         await session.execute(delete(DataExportRequest))
         await session.execute(delete(AuditLog))
-        await session.execute(delete(UserRole))
-        await session.execute(delete(User))
         await session.commit()
 
     app.dependency_overrides[get_redis] = lambda: fake_redis
@@ -310,6 +308,10 @@ async def test_generate_data_export_writes_redacted_json_bundle(
                     metadata_={
                         "safe": "kept",
                         "email": "counterparty@example.com",
+                        "summary": (
+                            "Coordinate with counterparty@example.com using "
+                            "https://counterparty.example.com/secure"
+                        ),
                         "token": "TOKEN_SHOULD_NOT_EXPORT",
                     },
                 )
@@ -338,6 +340,7 @@ async def test_generate_data_export_writes_redacted_json_bundle(
     assert "TOTP_SHOULD_NOT_EXPORT" not in serialized_bundle
     assert "TOKEN_SHOULD_NOT_EXPORT" not in serialized_bundle
     assert "counterparty@example.com" not in serialized_bundle
+    assert "counterparty.example.com" not in serialized_bundle
 
 
 async def test_ready_export_download_redirects_to_private_presigned_url(

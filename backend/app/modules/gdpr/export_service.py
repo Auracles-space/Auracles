@@ -44,6 +44,7 @@ from app.modules.financials.models import (
 )
 from app.modules.frameworks.models import Framework, License, Review
 from app.modules.gdpr.models import DataExportRequest
+from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
 from app.modules.projects.models import (
     Deliverable,
@@ -58,20 +59,6 @@ from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
 
 ACTIVE_EXPORT_STATUSES = {"pending", "processing"}
-REDACTED_METADATA_KEYS = {
-    "email",
-    "filename",
-    "ip",
-    "provider_account_id",
-    "provider_account_lookup_hash",
-    "provider_ref",
-    "raw_url",
-    "bundle_key",
-    "s3_key",
-    "secret",
-    "token",
-    "url",
-}
 EXPORT_REQUEST_LIMITER = RateLimiter(
     namespace="gdpr_export_request",
     limit=3,
@@ -110,21 +97,6 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}
     return value
-
-
-def _redact_metadata(value: Any) -> Any:
-    """Redact known secret/PII-bearing audit metadata keys recursively."""
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized_key = str(key).lower()
-            if any(sensitive in normalized_key for sensitive in REDACTED_METADATA_KEYS):
-                continue
-            redacted[str(key)] = _redact_metadata(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_metadata(item) for item in value]
-    return _json_value(value)
 
 
 async def _collect_profile(db: AsyncSession, user: User) -> dict[str, Any]:
@@ -731,7 +703,7 @@ async def _collect_security_audit(
             "action": row.action,
             "target_type": row.target_type,
             "target_id": str(row.target_id) if row.target_id else None,
-            "metadata": _redact_metadata(row.metadata_),
+            "metadata": _json_value(redact_metadata(row.metadata_)),
             "created_at": _json_value(row.created_at),
         }
         for row in audit_logs

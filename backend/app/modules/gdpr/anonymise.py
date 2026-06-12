@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, or_, select
@@ -22,27 +21,10 @@ from app.modules.auth.models import KycDocument, OAuthAccount, User, UserBackupC
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials.models import PayoutAccount
 from app.modules.gdpr.models import AccountDeletionRequest
+from app.modules.gdpr.redaction import redact_metadata
 from app.shared.models.audit_log import AuditLog
 
 TOMBSTONE_DISPLAY_NAME = "Deleted user"
-SENSITIVE_AUDIT_KEYS = {
-    "email",
-    "new_email",
-    "ip",
-    "ip_address",
-    "provider_ref",
-    "provider_account_id",
-    "provider_account_lookup_hash",
-    "raw_url",
-    "url",
-    "uploaded_filename",
-    "filename",
-    "note",
-    "notes",
-    "s3_key",
-    "secret",
-    "token",
-}
 
 
 def _tombstone_email(user_id: UUID) -> str:
@@ -53,32 +35,6 @@ def _tombstone_email(user_id: UUID) -> str:
 def _tombstone_payout_lookup_hash(account_id: UUID) -> str:
     """Return a unique irreversible lookup hash for one tombstoned payout account."""
     return hashlib.sha256(f"deleted:{account_id}".encode()).hexdigest()
-
-
-def _scrub_audit_metadata(value: Any, *, deleted_email: str) -> Any:
-    """Redact deleted-user PII from one audit metadata payload."""
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized_key = str(key).lower()
-            if normalized_key in SENSITIVE_AUDIT_KEYS:
-                continue
-            scrubbed = _scrub_audit_metadata(item, deleted_email=deleted_email)
-            if scrubbed is not None:
-                redacted[str(key)] = scrubbed
-        return redacted
-    if isinstance(value, list):
-        return [
-            scrubbed
-            for item in value
-            if (scrubbed := _scrub_audit_metadata(item, deleted_email=deleted_email))
-            is not None
-        ]
-    if isinstance(value, str):
-        lowered = value.lower()
-        if deleted_email in lowered or value.startswith(("http://", "https://")):
-            return None
-    return value
 
 
 async def collect_kyc_object_keys(
@@ -115,7 +71,7 @@ async def anonymise_user_records(
     if deletion_request.status == "completed":
         return
 
-    deleted_email = user.email.lower()
+    deleted_identity_fragments = (user.email, user.display_name)
     user.email = _tombstone_email(user.id)
     user.password_hash = hash_password(secrets.token_urlsafe(32))
     user.display_name = TOMBSTONE_DISPLAY_NAME
@@ -183,9 +139,9 @@ async def anonymise_user_records(
         ).scalars()
     )
     for audit_row in audit_rows:
-        audit_row.metadata_ = _scrub_audit_metadata(
+        audit_row.metadata_ = redact_metadata(
             audit_row.metadata_ or {},
-            deleted_email=deleted_email,
+            blocked_fragments=deleted_identity_fragments,
         )
         audit_row.ip_address = None
         audit_row.user_agent = None

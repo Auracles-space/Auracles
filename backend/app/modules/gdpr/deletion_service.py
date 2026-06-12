@@ -21,6 +21,7 @@ from app.core.security import verify_password
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
+from app.modules.developer.models import DeveloperAccount, PartnerPayout
 from app.modules.financials.models import Escrow, Payout, PlatformConfig
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import (
@@ -170,8 +171,8 @@ async def _count_held_escrows(db: AsyncSession, user_id: UUID) -> int:
 
 
 async def _count_pending_payouts(db: AsyncSession, user_id: UUID) -> int:
-    """Return how many pending or processing payouts belong to the user."""
-    return int(
+    """Return how many pending or processing payout flows still involve the user."""
+    contributor_count = int(
         await db.scalar(
             select(func.count(Payout.id)).where(
                 Payout.contributor_id == user_id,
@@ -180,6 +181,22 @@ async def _count_pending_payouts(db: AsyncSession, user_id: UUID) -> int:
         )
         or 0
     )
+    partner_count = int(
+        await db.scalar(
+            select(func.count(PartnerPayout.id))
+            .select_from(PartnerPayout)
+            .join(
+                DeveloperAccount,
+                DeveloperAccount.id == PartnerPayout.developer_account_id,
+            )
+            .where(
+                DeveloperAccount.user_id == user_id,
+                PartnerPayout.status.in_(("pending", "processing")),
+            )
+        )
+        or 0
+    )
+    return contributor_count + partner_count
 
 
 async def _count_open_disputes(db: AsyncSession, user_id: UUID) -> int:

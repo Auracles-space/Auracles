@@ -32,7 +32,12 @@ from app.modules.auth.models import (
     UserBackupCode,
     UserRole,
 )
-from app.modules.developer.models import ApiKey, DeveloperAccount, DeveloperApplication
+from app.modules.developer.models import (
+    ApiKey,
+    DeveloperAccount,
+    DeveloperApplication,
+    PartnerPayout,
+)
 from app.modules.financials.models import (
     Escrow,
     Payout,
@@ -41,6 +46,7 @@ from app.modules.financials.models import (
     Transaction,
 )
 from app.modules.gdpr.models import AccountDeletionRequest
+from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
@@ -164,6 +170,7 @@ async def account_deletion_test_context(
                 await session.execute(delete(AccountDeletionRequest))
                 await session.execute(delete(AuditLog))
                 await session.execute(delete(ApiKey))
+                await session.execute(delete(PartnerPayout))
                 await session.execute(delete(DeveloperAccount))
                 await session.execute(delete(DeveloperApplication))
                 await session.execute(delete(AttestationDispute))
@@ -334,16 +341,18 @@ async def seed_scrub_state(
                     action="account_email_change_requested",
                     target_type="user",
                     target_id=user_id,
-                    metadata_={
-                        "new_email": old_email,
-                        "uploaded_filename": "passport.pdf",
-                        "provider_ref": "pi_123456",
-                        "raw_url": "https://files.auracles.space/private",
-                        "note": f"Contact {old_email} before release",
-                    },
-                    ip_address="127.0.0.1",
-                    user_agent="Deletion test browser",
-                )
+                metadata_={
+                    "new_email": old_email,
+                    "uploaded_filename": "passport.pdf",
+                    "provider_ref": "pi_123456",
+                    "raw_url": "https://files.auracles.space/private",
+                    "safe": "retained",
+                    "summary": "Escalate with counterparty@example.com before release",
+                    "note": f"Contact {old_email} before release",
+                },
+                ip_address="127.0.0.1",
+                user_agent="Deletion test browser",
+            )
             )
 
             deletion_request = AccountDeletionRequest(
@@ -490,6 +499,50 @@ async def seed_blocking_state(user_id: UUID) -> None:
                 accepted_at=datetime.now(UTC),
             )
             session.add(attestation)
+
+
+async def seed_partner_payout_state(user_id: UUID) -> None:
+    """Create one pending Partner payout that must block GDPR deletion."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            application = DeveloperApplication(
+                user_id=user_id,
+                company_name="GDPR Partner Payout Co.",
+                use_case="Partner commission payout blocking test.",
+                status="approved",
+                reviewed_at=datetime.now(UTC),
+            )
+            session.add(application)
+            await session.flush()
+
+            account = DeveloperAccount(
+                user_id=user_id,
+                application_id=application.id,
+                company_name=application.company_name,
+            )
+            session.add(account)
+
+            payout_account = PayoutAccount(
+                user_id=user_id,
+                provider="stripe",
+                provider_account_id="acct_gdpr_partner_block",
+                provider_account_lookup_hash="lookup-gdpr-partner-block",
+                account_type="express",
+                is_default=True,
+                verified_at=datetime.now(UTC),
+            )
+            session.add(payout_account)
+            await session.flush()
+
+            session.add(
+                PartnerPayout(
+                    developer_account_id=account.id,
+                    payout_account_id=payout_account.id,
+                    amount=Decimal("55.00"),
+                    currency="USD",
+                    status="pending",
+                )
+            )
 
 
 async def clear_blocking_state(user_id: UUID) -> None:
@@ -709,6 +762,32 @@ async def test_request_account_deletion_requires_totp_when_enabled(
     )
 
 
+async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """Pending Partner payouts block GDPR deletion for Developer users."""
+    del migrated_database, account_deletion_test_context
+    user_id, _secret = await create_verified_user(
+        "partner-payout-block@auracles.space",
+        roles=["developer"],
+    )
+    await seed_partner_payout_state(user_id)
+
+    response = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id, ["developer"]),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["status"] == "blocked"
+    assert {
+        reason["code"] for reason in response.json()["blocked_reasons"]
+    } == {"pending_payout"}
+
+
 async def test_cancel_account_deletion_marks_scheduled_request_cancelled(
     client: AsyncClient,
     migrated_database: None,
@@ -922,7 +1001,7 @@ async def test_process_account_deletions_scrubs_due_scheduled_user_state(
     assert api_key.status == "revoked"
     assert api_key.revoked_at is not None
     assert audit is not None
-    assert audit.metadata_ == {}
+    assert audit.metadata_ == {"safe": "retained"}
     assert audit.ip_address is None
     assert audit.user_agent is None
     assert completion_audit is not None
@@ -1004,3 +1083,85 @@ async def test_process_account_deletions_skips_due_requests_with_live_obligation
     }
     assert request.completed_at is None
     assert completion_audit is None
+
+
+async def test_process_account_deletions_defers_side_effects_until_final_recheck(
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Late blockers must prevent pre-commit KYC deletion and session revocation."""
+    del migrated_database
+    user_id, _secret = await create_verified_user(
+        "worker-race@auracles.space",
+        roles=["operator", "developer"],
+        enable_totp=True,
+    )
+    seeded = await seed_scrub_state(
+        user_id=user_id,
+        redis=account_deletion_test_context["redis"],
+    )
+    reasons_by_call = [
+        [],
+        [
+            AccountDeletionBlockedReason(
+                code="pending_payout",
+                message=(
+                    "Wait for pending payouts to settle before requesting "
+                    "account deletion."
+                ),
+                count=1,
+            )
+        ],
+    ]
+
+    async def fake_collect_blocked_reasons(
+        *,
+        db: Any,
+        user_id: UUID,
+    ) -> list[AccountDeletionBlockedReason]:
+        """Simulate a blocker appearing between the two Beat checks."""
+        del db, user_id
+        return reasons_by_call.pop(0) if reasons_by_call else []
+
+    monkeypatch.setattr(
+        gdpr_beat.deletion_service,
+        "collect_blocked_reasons",
+        fake_collect_blocked_reasons,
+    )
+
+    result = await gdpr_beat._process_account_deletions_impl(
+        redis=account_deletion_test_context["redis"]
+    )
+
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        request = await session.scalar(
+            select(AccountDeletionRequest).where(
+                AccountDeletionRequest.user_id == user_id
+            )
+        )
+        kyc_documents = list(
+            (
+                await session.execute(
+                    select(KycDocument).where(KycDocument.user_id == user_id)
+                )
+            ).scalars()
+        )
+
+    assert result == {"processed_count": 0, "skipped_count": 1}
+    assert user is not None
+    assert user.deactivated_at is None
+    assert request is not None
+    assert request.status == "scheduled"
+    assert {reason["code"] for reason in (request.blocked_reasons or [])} == {
+        "pending_payout"
+    }
+    assert len(kyc_documents) == 1
+    assert account_deletion_test_context["s3"].deleted_objects == []
+    assert (
+        await account_deletion_test_context["redis"].get(
+            f"refresh:{seeded['refresh_session_id']}"
+        )
+        is not None
+    )
