@@ -10,7 +10,6 @@ import { BellIcon, TrashIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
   describeGeneratedError,

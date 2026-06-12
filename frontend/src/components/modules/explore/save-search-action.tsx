@@ -9,7 +9,6 @@
 import { BookmarkIcon } from "@radix-ui/react-icons";
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
   describeGeneratedError,
