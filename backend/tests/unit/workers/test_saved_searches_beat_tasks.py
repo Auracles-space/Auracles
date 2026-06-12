@@ -23,6 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import PlatformConfig
 from app.modules.frameworks.models import Framework
 from app.modules.notifications.models import Notification
 from app.modules.saved_searches.models import (
@@ -31,6 +32,7 @@ from app.modules.saved_searches.models import (
 )
 from app.shared.models.audit_log import AuditLog
 from app.workers.beat_schedule import BEAT_SCHEDULE
+from app.workers.schedules import PlatformConfigHoursSchedule
 from app.workers.tasks import saved_searches_beat
 
 
@@ -47,13 +49,41 @@ class FakeSavedSearchEmailTask:
 
 
 def test_saved_search_alert_task_is_registered_in_beat_schedule() -> None:
-    """Celery Beat includes the daily saved-search alert dispatcher."""
+    """Celery Beat includes a config-backed saved-search alert dispatcher."""
     schedule = BEAT_SCHEDULE["dispatch-saved-search-alerts-daily"]
 
     assert schedule["task"] == (
         "app.workers.tasks.saved_searches_beat.dispatch_saved_search_alerts"
     )
-    assert schedule["schedule"] == 86400.0
+    assert isinstance(schedule["schedule"], PlatformConfigHoursSchedule)
+    assert schedule["schedule"].key == "saved_search_alert_cadence_hours"
+    assert schedule["schedule"].default_hours == 24
+
+
+def test_saved_search_alert_schedule_reads_platform_config(
+    migrated_database: None,
+    saved_search_beat_context: dict[str, Any],
+) -> None:
+    """Saved-search Beat cadence follows the platform config row."""
+    session_factory = saved_search_beat_context["session_factory"]
+    with session_factory() as session:
+        session.merge(
+            PlatformConfig(
+                key="saved_search_alert_cadence_hours",
+                value="1",
+            )
+        )
+        session.commit()
+
+    schedule = PlatformConfigHoursSchedule(
+        key="saved_search_alert_cadence_hours",
+        default_hours=24,
+        refresh_seconds=0,
+    )
+    due, next_check = schedule.is_due(datetime.now(UTC) - timedelta(minutes=90))
+
+    assert due is True
+    assert next_check == 3600.0
 
 
 @pytest.fixture

@@ -156,6 +156,7 @@ class AdminConfigUpdateItem(BaseModel):
         "attestation_completion_sla_days_credential",
         "attestation_offer_accept_hours",
         "attestation_dispute_window_days",
+        "saved_search_alert_cadence_hours",
     ]
     value: str = Field(min_length=1, max_length=100)
 

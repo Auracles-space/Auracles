@@ -42,12 +42,15 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "attestation_completion_sla_days_credential",
     "attestation_offer_accept_hours",
     "attestation_dispute_window_days",
+    "saved_search_alert_cadence_hours",
 }
 COMMISSION_RATE_MAX = Decimal("0.50")
 MIN_PAYOUT_USD_MIN = Decimal("1.00")
 MIN_PAYOUT_USD_MAX = Decimal("100000.00")
 REFUND_WINDOW_HOURS_MIN = 0
 REFUND_WINDOW_HOURS_MAX = 720
+SAVED_SEARCH_ALERT_CADENCE_HOURS_MIN = 1
+SAVED_SEARCH_ALERT_CADENCE_HOURS_MAX = 168
 ATTESTATION_FEE_RANGES = {
     "attestation_fee_framework": (Decimal("25.00"), Decimal("100000.00")),
     "attestation_fee_contributor": (Decimal("25.00"), Decimal("100000.00")),
@@ -422,6 +425,18 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
                 ),
             )
         return str(integer_value)
+
+    if key == "saved_search_alert_cadence_hours":
+        hours = _parse_integer_config(key, raw_value)
+        if (
+            hours < SAVED_SEARCH_ALERT_CADENCE_HOURS_MIN
+            or hours > SAVED_SEARCH_ALERT_CADENCE_HOURS_MAX
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="saved_search_alert_cadence_hours must be between 1 and 168.",
+            )
+        return str(hours)
 
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

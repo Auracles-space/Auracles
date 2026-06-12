@@ -1,5 +1,7 @@
 """Celery Beat schedule for periodic maintenance tasks."""
 
+from app.workers.schedules import PlatformConfigHoursSchedule
+
 BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     "clear-expired-licenses-daily": {
         "task": "app.workers.tasks.scheduled.clear_expired_licenses",
@@ -19,7 +21,12 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     },
     "dispatch-saved-search-alerts-daily": {
         "task": "app.workers.tasks.saved_searches_beat.dispatch_saved_search_alerts",
-        "schedule": 86400.0,
+        "schedule": PlatformConfigHoursSchedule(
+            key="saved_search_alert_cadence_hours",
+            default_hours=24,
+            min_hours=1,
+            max_hours=168,
+        ),
     },
     "expire-open-proposals-hourly": {
         "task": "app.workers.tasks.projects_beat.expire_open_proposals",

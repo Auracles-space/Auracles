@@ -37,6 +37,7 @@ DEFAULT_PLATFORM_CONFIG = {
     "attestation_completion_sla_days_credential": "7",
     "attestation_offer_accept_hours": "48",
     "attestation_dispute_window_days": "14",
+    "saved_search_alert_cadence_hours": "24",
 }
 
 
@@ -183,6 +184,8 @@ async def test_admin_can_read_platform_config(
     assert config["attestation_fee_framework"]["editable"] is True
     assert config["attestation_cohort_size"]["value"] == "3"
     assert config["attestation_cohort_size"]["editable"] is True
+    assert config["saved_search_alert_cadence_hours"]["value"] == "24"
+    assert config["saved_search_alert_cadence_hours"]["editable"] is True
     assert config["min_payout_ngn"]["editable"] is False
 
 
@@ -370,3 +373,56 @@ async def test_admin_updates_attestation_config_with_range_validation(
     assert config_rows["attestation_cohort_size"] == "5"
     assert invalid_fee.status_code == 422
     assert invalid_integer.status_code == 422
+
+
+async def test_admin_updates_saved_search_alert_cadence_with_range_validation(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """Saved-search alert cadence is admin-editable within the 1-168h range."""
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    valid_update = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Run saved search alerts every six hours.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "saved_search_alert_cadence_hours", "value": "6"}],
+        },
+    )
+    invalid_low = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "saved_search_alert_cadence_hours", "value": "0"}],
+        },
+    )
+    invalid_high = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "saved_search_alert_cadence_hours", "value": "169"}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        cadence = await session.get(
+            PlatformConfig,
+            "saved_search_alert_cadence_hours",
+        )
+
+    assert valid_update.status_code == 200
+    response_config = {item["key"]: item for item in valid_update.json()["items"]}
+    assert response_config["saved_search_alert_cadence_hours"]["value"] == "6"
+    assert cadence is not None
+    assert cadence.value == "6"
+    assert invalid_low.status_code == 422
+    assert invalid_high.status_code == 422

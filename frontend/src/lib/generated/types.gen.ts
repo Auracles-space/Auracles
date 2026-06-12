@@ -78,11 +78,11 @@ export type AdminConfigResponse = {
  * Single admin platform configuration change request.
  */
 export type AdminConfigUpdateItem = {
-    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days';
+    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days' | 'saved_search_alert_cadence_hours';
     value: string;
 };
 
-export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days';
+export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days' | 'saved_search_alert_cadence_hours';
 
 /**
  * Request body for resolving a Project dispute.
