@@ -102,6 +102,16 @@ class User(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    suspended_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     roles: Mapped[list[UserRole]] = relationship(
         back_populates="user",
