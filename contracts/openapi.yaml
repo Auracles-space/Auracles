@@ -3580,6 +3580,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/gdpr/consent:
+    get:
+      tags:
+      - GDPR
+      summary: List Consent History
+      description: Return the user's consent status and append-only history.
+      operationId: list_consent_history_v1_gdpr_consent_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - GDPR
+      summary: Accept Current Consent
+      description: Record acceptance of the current legal document versions.
+      operationId: accept_current_consent_v1_gdpr_consent_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentAcceptRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/library:
     get:
       tags:
@@ -7421,6 +7464,70 @@ components:
       - status
       title: ComponentHealth
       description: Readiness status for a single platform component.
+    ConsentAcceptRequest:
+      properties:
+        accept_terms:
+          type: boolean
+          const: true
+          title: Accept Terms
+        accept_privacy_policy:
+          type: boolean
+          const: true
+          title: Accept Privacy Policy
+      type: object
+      required:
+      - accept_terms
+      - accept_privacy_policy
+      title: ConsentAcceptRequest
+      description: Request body for accepting the current legal document versions.
+    ConsentHistoryResponse:
+      properties:
+        current_versions:
+          additionalProperties:
+            type: string
+          type: object
+          title: Current Versions
+        missing_documents:
+          items:
+            type: string
+          type: array
+          title: Missing Documents
+        items:
+          items:
+            $ref: '#/components/schemas/ConsentLogItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - current_versions
+      - missing_documents
+      - items
+      title: ConsentHistoryResponse
+      description: Consent status and append-only history for the current user.
+    ConsentLogItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        document_type:
+          type: string
+          title: Document Type
+        version:
+          type: string
+          title: Version
+        accepted_at:
+          type: string
+          format: date-time
+          title: Accepted At
+      type: object
+      required:
+      - id
+      - document_type
+      - version
+      - accepted_at
+      title: ConsentLogItem
+      description: Single consent log entry returned to the owning user.
     CredentialCreateRequest:
       properties:
         title:

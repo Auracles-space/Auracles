@@ -18,6 +18,8 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import PlatformConfig
+from app.modules.gdpr.models import ConsentLog
 from app.shared.models.audit_log import AuditLog
 
 
@@ -46,8 +48,19 @@ async def role_test_context() -> AsyncIterator[dict[str, Any]]:
     await engine.dispose()
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(ConsentLog))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
+        config_defaults = {
+            "consent_version_terms_of_service": "1.0",
+            "consent_version_privacy_policy": "1.0",
+        }
+        for key, value in config_defaults.items():
+            config = await session.get(PlatformConfig, key)
+            if config is None:
+                session.add(PlatformConfig(key=key, value=value))
+            else:
+                config.value = value
         await session.commit()
 
     app.dependency_overrides[get_redis] = lambda: FakeRedis()
@@ -81,6 +94,21 @@ async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
+async def record_current_consent(user_id: UUID) -> None:
+    """Create current-version consent rows for role-gated test users."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            for document_type in ("terms_of_service", "privacy_policy"):
+                session.add(
+                    ConsentLog(
+                        user_id=user_id,
+                        document_type=document_type,
+                        version="1.0",
+                        accepted_at=datetime.now(UTC),
+                    )
+                )
+
+
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -94,6 +122,7 @@ async def test_user_can_self_add_contributor_or_operator_role(
 ) -> None:
     """Authenticated users can self-add Contributor or Operator roles."""
     user_id = await create_user_with_roles("operator@auracles.space", ["operator"])
+    await record_current_consent(user_id)
 
     response = await client.post(
         "/v1/auth/roles",
@@ -122,6 +151,7 @@ async def test_user_cannot_self_add_attestor_and_duplicate_returns_409(
         "contributor@auracles.space",
         ["contributor"],
     )
+    await record_current_consent(user_id)
 
     attestor = await client.post(
         "/v1/auth/roles",
@@ -136,6 +166,29 @@ async def test_user_cannot_self_add_attestor_and_duplicate_returns_409(
 
     assert attestor.status_code == 403
     assert duplicate.status_code == 409
+
+
+async def test_self_add_role_requires_current_consent(
+    client: AsyncClient,
+    migrated_database: None,
+    role_test_context: dict[str, Any],
+) -> None:
+    """Privileged self-role changes are blocked until current consent exists."""
+    del migrated_database, role_test_context
+    user_id = await create_user_with_roles("stale-consent@auracles.space", ["operator"])
+
+    response = await client.post(
+        "/v1/auth/roles",
+        json={"role": "contributor"},
+        headers=auth_headers(user_id, ["operator"]),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "consent_required"
+    assert response.json()["detail"]["missing_documents"] == [
+        "terms_of_service",
+        "privacy_policy",
+    ]
 
 
 async def test_admin_can_approve_attestor_role(

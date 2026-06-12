@@ -37,11 +37,13 @@ from app.modules.auth.schemas import (
     TotpStatusResponse,
     VerifyEmailRequest,
 )
+from app.modules.gdpr.dependencies import require_current_consent
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentConsentUser = Annotated[User, Depends(require_current_consent)]
 
 
 def _client_ip(request: Request) -> str | None:
@@ -236,7 +238,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
 @router.post("/roles", response_model=RoleAssignmentResponse)
 async def add_role(
     payload: AddRoleRequest,
-    current_user: CurrentUser,
+    current_user: CurrentConsentUser,
     db: DatabaseSession,
 ) -> RoleAssignmentResponse:
     """Self-add a non-privileged role."""

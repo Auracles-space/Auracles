@@ -35,6 +35,7 @@ from app.core.security import (
 )
 from app.modules.auth.models import User, UserBackupCode, UserRole
 from app.modules.auth.schemas import LoginResponse, RegisterRequest, TotpSetupResponse
+from app.modules.gdpr import consent_service
 from app.workers.tasks.notifications import (
     send_new_device_email,
     send_password_reset_email,
@@ -420,6 +421,12 @@ async def register_user(
                 target_type="user",
                 target_id=user.id,
                 metadata={"roles": list(request.roles)},
+                ip=ip,
+                ua=ua,
+            )
+            await consent_service.record_current_consents(
+                db=db,
+                user_id=user.id,
                 ip=ip,
                 ua=ua,
             )

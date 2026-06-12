@@ -631,6 +631,35 @@ export type ComponentHealth = {
 };
 
 /**
+ * Request body for accepting the current legal document versions.
+ */
+export type ConsentAcceptRequest = {
+    accept_terms: true;
+    accept_privacy_policy: true;
+};
+
+/**
+ * Consent status and append-only history for the current user.
+ */
+export type ConsentHistoryResponse = {
+    current_versions: {
+        [key: string]: (string);
+    };
+    missing_documents: Array<(string)>;
+    items: Array<ConsentLogItem>;
+};
+
+/**
+ * Single consent log entry returned to the owning user.
+ */
+export type ConsentLogItem = {
+    id: string;
+    document_type: string;
+    version: string;
+    accepted_at: string;
+};
+
+/**
  * Request body for creating a user-owned Credential.
  */
 export type CredentialCreateRequest = {
@@ -3337,6 +3366,18 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
 
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
+
+export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
+
+export type ListConsentHistoryV1GdprConsentGetError = unknown;
+
+export type AcceptCurrentConsentV1GdprConsentPostData = {
+    body: ConsentAcceptRequest;
+};
+
+export type AcceptCurrentConsentV1GdprConsentPostResponse = (ConsentHistoryResponse);
+
+export type AcceptCurrentConsentV1GdprConsentPostError = (HTTPValidationError);
 
 export type ListLibraryV1LibraryGetData = {
     query?: {

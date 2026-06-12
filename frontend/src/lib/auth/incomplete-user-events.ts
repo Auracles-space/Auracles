@@ -2,10 +2,10 @@
  * Typed event contract for backend incomplete-user 403 responses.
  *
  * Backend dependencies (`require_role`, `require_kyc_verified`,
- * `require_profile_complete`) return 403 + `{error_code, onboarding_url}` on
- * action endpoints. The browser-side response interceptor publishes this
- * event so a single listener can route the user to onboarding without
- * coupling every form to error-handling logic.
+ * `require_profile_complete`, GDPR consent gates) return 403 +
+ * `{error_code, onboarding_url}` on action endpoints. The browser-side
+ * response interceptor publishes this event so a single listener can route
+ * the user to onboarding without coupling every form to error-handling logic.
  *
  * Maps to: Phase 2 cross-cutting concern §6 (Incomplete-user rule).
  */
@@ -16,7 +16,8 @@ export type IncompleteUserErrorCode =
   | "kyc_required"
   | "email_unverified"
   | "profile_required"
-  | "role_required";
+  | "role_required"
+  | "consent_required";
 
 export type IncompleteUserEventDetail = {
   errorCode: IncompleteUserErrorCode;
@@ -29,6 +30,7 @@ const INCOMPLETE_USER_ERROR_CODES = new Set<string>([
   "email_unverified",
   "profile_required",
   "role_required",
+  "consent_required",
 ]);
 
 /**
