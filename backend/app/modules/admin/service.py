@@ -5,6 +5,8 @@ admin analytics read models for the Auracles back office, including the daily
 snapshot aggregates that back dashboard trend charts and exports.
 """
 
+import csv
+import io
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -340,6 +342,24 @@ async def list_dashboard_trend(
     return rows
 
 
+async def list_snapshot_history(
+    db: AsyncSession,
+    *,
+    from_date: date,
+    to_date: date,
+) -> list[AnalyticsDailySnapshot]:
+    """Return frozen snapshot rows for an inclusive UTC date range."""
+    result = await db.execute(
+        select(AnalyticsDailySnapshot)
+        .where(
+            AnalyticsDailySnapshot.snapshot_date >= from_date,
+            AnalyticsDailySnapshot.snapshot_date <= to_date,
+        )
+        .order_by(AnalyticsDailySnapshot.snapshot_date)
+    )
+    return list(result.scalars().all())
+
+
 async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
     """Return current-state analytics plus frozen trend rows for the admin dashboard."""
     now = datetime.now(UTC)
@@ -461,6 +481,222 @@ async def get_dashboard_analytics(db: AsyncSession) -> dict[str, object]:
             for row in trend_rows
         ],
     }
+
+
+def _csv_row(
+    *,
+    row_type: str,
+    snapshot_date: str = "",
+    window: str = "",
+    gmv_total: str = "",
+    gmv_framework_purchase: str = "",
+    gmv_collection_purchase: str = "",
+    gmv_project_milestone: str = "",
+    gmv_attestation_fee: str = "",
+    active_users: str = "",
+    new_registrations: str = "",
+    frameworks_published: str = "",
+    frameworks_published_total: str = "",
+    attestations_issued: str = "",
+    disputes_open_total: str = "",
+    disputes_open_projects: str = "",
+    disputes_open_attestations: str = "",
+    computed_at: str = "",
+) -> dict[str, str]:
+    """Build one flat admin analytics CSV row."""
+    return {
+        "row_type": row_type,
+        "snapshot_date": snapshot_date,
+        "window": window,
+        "gmv_total": gmv_total,
+        "gmv_framework_purchase": gmv_framework_purchase,
+        "gmv_collection_purchase": gmv_collection_purchase,
+        "gmv_project_milestone": gmv_project_milestone,
+        "gmv_attestation_fee": gmv_attestation_fee,
+        "active_users": active_users,
+        "new_registrations": new_registrations,
+        "frameworks_published": frameworks_published,
+        "frameworks_published_total": frameworks_published_total,
+        "attestations_issued": attestations_issued,
+        "disputes_open_total": disputes_open_total,
+        "disputes_open_projects": disputes_open_projects,
+        "disputes_open_attestations": disputes_open_attestations,
+        "computed_at": computed_at,
+    }
+
+
+def _serialize_snapshot_csv_row(snapshot: AnalyticsDailySnapshot) -> dict[str, str]:
+    """Convert one frozen snapshot row into the flat CSV contract."""
+    return _csv_row(
+        row_type="snapshot",
+        snapshot_date=snapshot.snapshot_date.isoformat(),
+        gmv_total=_money_string(snapshot.gmv_total),
+        gmv_framework_purchase=str(
+            snapshot.gmv_by_source.get("framework_purchase", "0.00")
+        ),
+        gmv_collection_purchase=str(
+            snapshot.gmv_by_source.get("collection_purchase", "0.00")
+        ),
+        gmv_project_milestone=str(
+            snapshot.gmv_by_source.get("project_milestone", "0.00")
+        ),
+        gmv_attestation_fee=str(snapshot.gmv_by_source.get("attestation_fee", "0.00")),
+        active_users=str(snapshot.active_users),
+        new_registrations=str(snapshot.new_registrations),
+        frameworks_published=str(snapshot.frameworks_published),
+        attestations_issued=str(snapshot.attestations_issued),
+        disputes_open_total=str(snapshot.disputes_open),
+        computed_at=snapshot.computed_at.isoformat(),
+    )
+
+
+def _serialize_window_csv_row(
+    dashboard: dict[str, object],
+    *,
+    window: str,
+    gmv_total_key: str,
+    gmv_sources_key: str,
+    active_users_key: str,
+    registrations_key: str,
+    frameworks_key: str,
+    attestations_key: str,
+) -> dict[str, str]:
+    """Convert one live dashboard window into the flat CSV contract."""
+    gmv = dashboard["gmv"]
+    active_users = dashboard["active_users"]
+    registrations = dashboard["new_registrations"]
+    frameworks = dashboard["frameworks_published"]
+    attestations = dashboard["attestations_issued"]
+    by_source = gmv[gmv_sources_key]
+    return _csv_row(
+        row_type="current_window",
+        window=window,
+        gmv_total=str(gmv[gmv_total_key]),
+        gmv_framework_purchase=str(by_source["framework_purchase"]),
+        gmv_collection_purchase=str(by_source["collection_purchase"]),
+        gmv_project_milestone=str(by_source["project_milestone"]),
+        gmv_attestation_fee=str(by_source["attestation_fee"]),
+        active_users=str(active_users[active_users_key]),
+        new_registrations=str(registrations[registrations_key]),
+        frameworks_published=str(frameworks[frameworks_key]),
+        attestations_issued=str(attestations[attestations_key]),
+    )
+
+
+def _serialize_current_state_csv_row(dashboard: dict[str, object]) -> dict[str, str]:
+    """Convert non-windowed live dashboard counts into the flat CSV contract."""
+    disputes = dashboard["disputes_open"]
+    frameworks = dashboard["frameworks_published"]
+    return _csv_row(
+        row_type="current_state",
+        frameworks_published_total=str(frameworks["total"]),
+        disputes_open_total=str(disputes["total"]),
+        disputes_open_projects=str(disputes["projects"]),
+        disputes_open_attestations=str(disputes["attestations"]),
+    )
+
+
+def _render_admin_analytics_csv(rows: list[dict[str, str]]) -> str:
+    """Render the flat admin analytics row set as CSV text."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=[
+            "row_type",
+            "snapshot_date",
+            "window",
+            "gmv_total",
+            "gmv_framework_purchase",
+            "gmv_collection_purchase",
+            "gmv_project_milestone",
+            "gmv_attestation_fee",
+            "active_users",
+            "new_registrations",
+            "frameworks_published",
+            "frameworks_published_total",
+            "attestations_issued",
+            "disputes_open_total",
+            "disputes_open_projects",
+            "disputes_open_attestations",
+            "computed_at",
+        ],
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    return buffer.getvalue()
+
+
+async def export_dashboard_csv(
+    db: AsyncSession,
+    *,
+    admin: User,
+    from_date: date,
+    to_date: date,
+) -> tuple[str, str]:
+    """Export admin analytics as one flat CSV stream and audit the export."""
+    if to_date < from_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="'to' must be on or after 'from'.",
+        )
+    if (to_date - from_date).days + 1 > 366:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Date range cannot exceed 366 days.",
+        )
+
+    snapshots = await list_snapshot_history(db, from_date=from_date, to_date=to_date)
+    dashboard = await get_dashboard_analytics(db)
+    rows = [_serialize_snapshot_csv_row(snapshot) for snapshot in snapshots]
+    rows.extend(
+        [
+            _serialize_window_csv_row(
+                dashboard,
+                window="today",
+                gmv_total_key="today_total",
+                gmv_sources_key="today_by_source",
+                active_users_key="last_24_hours",
+                registrations_key="last_24_hours",
+                frameworks_key="last_24_hours",
+                attestations_key="last_24_hours",
+            ),
+            _serialize_window_csv_row(
+                dashboard,
+                window="last_7_days",
+                gmv_total_key="last_7_days_total",
+                gmv_sources_key="last_7_days_by_source",
+                active_users_key="last_7_days",
+                registrations_key="last_7_days",
+                frameworks_key="last_7_days",
+                attestations_key="last_7_days",
+            ),
+            _serialize_window_csv_row(
+                dashboard,
+                window="last_30_days",
+                gmv_total_key="last_30_days_total",
+                gmv_sources_key="last_30_days_by_source",
+                active_users_key="last_30_days",
+                registrations_key="last_30_days",
+                frameworks_key="last_30_days",
+                attestations_key="last_30_days",
+            ),
+            _serialize_current_state_csv_row(dashboard),
+        ]
+    )
+    await write_audit(
+        db=db,
+        actor_id=admin.id,
+        action="analytics_exported",
+        target_type="analytics_export",
+        metadata={
+            "from": from_date.isoformat(),
+            "to": to_date.isoformat(),
+            "row_count": len(rows),
+        },
+    )
+    await db.commit()
+    filename = f"admin-analytics-{from_date.isoformat()}-to-{to_date.isoformat()}.csv"
+    return filename, _render_admin_analytics_csv(rows)
 
 
 async def assign_user_role(

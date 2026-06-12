@@ -1,9 +1,11 @@
 """FastAPI router for admin endpoints."""
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -99,6 +101,47 @@ async def get_admin_analytics_dashboard(
     del admin
     dashboard = await service.get_dashboard_analytics(db=db)
     return AdminAnalyticsDashboardResponse.model_validate(dashboard)
+
+
+@router.get(
+    "/analytics/export",
+    summary="Export admin analytics as CSV",
+    description=(
+        "Stream frozen snapshot history plus current live totals as one flat "
+        "CSV for bounded admin-selected UTC dates."
+    ),
+    responses={
+        200: {
+            "description": "CSV export stream",
+            "content": {
+                "text/csv": {
+                    "schema": {
+                        "type": "string",
+                        "format": "binary",
+                    }
+                }
+            },
+        }
+    },
+)
+async def export_admin_analytics(
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> StreamingResponse:
+    """Stream the admin analytics CSV export for a bounded UTC date range."""
+    filename, csv_payload = await service.export_dashboard_csv(
+        db=db,
+        admin=admin,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    return StreamingResponse(
+        iter([csv_payload]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/config", response_model=AdminConfigResponse)

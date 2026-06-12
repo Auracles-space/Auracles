@@ -64,6 +64,47 @@ paths:
                 $ref: '#/components/schemas/AdminAnalyticsDashboardResponse'
       security:
       - HTTPBearer: []
+  /v1/admin/analytics/export:
+    get:
+      tags:
+      - Admin
+      summary: Export admin analytics as CSV
+      description: Stream frozen snapshot history plus current live totals as one
+        flat CSV for bounded admin-selected UTC dates.
+      operationId: export_admin_analytics_v1_admin_analytics_export_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          title: From
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          title: To
+      responses:
+        '200':
+          description: CSV export stream
+          content:
+            application/json:
+              schema: {}
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/roles:
     patch:
       tags:

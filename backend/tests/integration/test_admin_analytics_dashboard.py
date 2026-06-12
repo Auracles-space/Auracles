@@ -8,6 +8,8 @@ snapshot boundaries, and rerun idempotency.
 
 from __future__ import annotations
 
+import csv
+import io
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -965,3 +967,231 @@ async def test_daily_snapshot_captures_prior_utc_day_and_dashboard_trend(
         "attestations_issued": 1,
         "disputes_open": 1,
     }
+
+
+async def test_admin_analytics_export_streams_flat_csv_and_audits(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """CSV export must stream flat rows for snapshots and current totals."""
+    del migrated_database
+    now = datetime(2026, 6, 12, 9, 0, tzinfo=UTC)
+    await engine.dispose()
+    await _cleanup_admin_dashboard_state()
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                admin = await _create_user(
+                    session,
+                    email=f"admin-export-{uuid4()}@auracles.space",
+                    roles=["admin"],
+                    created_at=now - timedelta(days=60),
+                )
+                operator = await _create_user(
+                    session,
+                    email=f"operator-export-{uuid4()}@auracles.space",
+                    roles=["operator"],
+                    created_at=now - timedelta(days=5),
+                )
+                contributor = await _create_user(
+                    session,
+                    email=f"contributor-export-{uuid4()}@auracles.space",
+                    roles=["contributor"],
+                    created_at=now - timedelta(days=5),
+                )
+
+                session.add_all(
+                    [
+                        AnalyticsDailySnapshot(
+                            snapshot_date=datetime(2026, 6, 10, tzinfo=UTC).date(),
+                            gmv_total=Decimal("180.00"),
+                            gmv_by_source={
+                                "framework_purchase": "100.00",
+                                "collection_purchase": "0.00",
+                                "project_milestone": "80.00",
+                                "attestation_fee": "0.00",
+                            },
+                            active_users=2,
+                            new_registrations=1,
+                            frameworks_published=1,
+                            attestations_issued=0,
+                            disputes_open=1,
+                            computed_at=datetime(2026, 6, 11, 0, 5, tzinfo=UTC),
+                        ),
+                        AnalyticsDailySnapshot(
+                            snapshot_date=datetime(2026, 6, 11, tzinfo=UTC).date(),
+                            gmv_total=Decimal("220.00"),
+                            gmv_by_source={
+                                "framework_purchase": "120.00",
+                                "collection_purchase": "0.00",
+                                "project_milestone": "50.00",
+                                "attestation_fee": "50.00",
+                            },
+                            active_users=3,
+                            new_registrations=2,
+                            frameworks_published=2,
+                            attestations_issued=1,
+                            disputes_open=0,
+                            computed_at=datetime(2026, 6, 12, 0, 5, tzinfo=UTC),
+                        ),
+                    ]
+                )
+                await session.flush()
+
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("100.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="framework",
+                    created_at=now - timedelta(hours=2),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("90.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    ref_type="collection",
+                    created_at=now - timedelta(days=2),
+                )
+                await _create_transaction(
+                    session,
+                    payer_id=operator.id,
+                    payee_id=contributor.id,
+                    amount=Decimal("70.00"),
+                    transaction_type="milestone",
+                    status="completed",
+                    ref_type="project_milestone",
+                    created_at=now - timedelta(days=10),
+                )
+
+            response = await client.get(
+                "/v1/admin/analytics/export?from=2026-06-10&to=2026-06-11",
+                headers=auth_headers(admin.id),
+            )
+
+            async with async_session_factory() as audit_session:
+                audit_rows = (
+                    (
+                        await audit_session.execute(
+                            select(AuditLog).where(
+                                AuditLog.action == "analytics_exported"
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+    finally:
+        await _cleanup_admin_dashboard_state()
+        await engine.dispose()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert (
+        response.headers["content-disposition"]
+        == 'attachment; filename="admin-analytics-2026-06-10-to-2026-06-11.csv"'
+    )
+
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert [row["row_type"] for row in rows] == [
+        "snapshot",
+        "snapshot",
+        "current_window",
+        "current_window",
+        "current_window",
+        "current_state",
+    ]
+    assert rows[0] == {
+        "row_type": "snapshot",
+        "snapshot_date": "2026-06-10",
+        "window": "",
+        "gmv_total": "180.00",
+        "gmv_framework_purchase": "100.00",
+        "gmv_collection_purchase": "0.00",
+        "gmv_project_milestone": "80.00",
+        "gmv_attestation_fee": "0.00",
+        "active_users": "2",
+        "new_registrations": "1",
+        "frameworks_published": "1",
+        "frameworks_published_total": "",
+        "attestations_issued": "0",
+        "disputes_open_total": "1",
+        "disputes_open_projects": "",
+        "disputes_open_attestations": "",
+        "computed_at": "2026-06-11T00:05:00+00:00",
+    }
+    assert rows[2]["row_type"] == "current_window"
+    assert rows[2]["window"] == "today"
+    assert rows[2]["gmv_total"] == "100.00"
+    assert rows[2]["gmv_framework_purchase"] == "100.00"
+    assert rows[2]["gmv_collection_purchase"] == "0.00"
+    assert rows[2]["gmv_project_milestone"] == "0.00"
+    assert rows[2]["gmv_attestation_fee"] == "0.00"
+    assert rows[3]["window"] == "last_7_days"
+    assert rows[3]["gmv_total"] == "190.00"
+    assert rows[4]["window"] == "last_30_days"
+    assert rows[4]["gmv_total"] == "260.00"
+    assert rows[5] == {
+        "row_type": "current_state",
+        "snapshot_date": "",
+        "window": "",
+        "gmv_total": "",
+        "gmv_framework_purchase": "",
+        "gmv_collection_purchase": "",
+        "gmv_project_milestone": "",
+        "gmv_attestation_fee": "",
+        "active_users": "",
+        "new_registrations": "",
+        "frameworks_published": "",
+        "frameworks_published_total": "0",
+        "attestations_issued": "",
+        "disputes_open_total": "0",
+        "disputes_open_projects": "0",
+        "disputes_open_attestations": "0",
+        "computed_at": "",
+    }
+
+    assert len(audit_rows) == 1
+    assert audit_rows[0].actor_id == admin.id
+    assert audit_rows[0].target_type == "analytics_export"
+    assert audit_rows[0].metadata_ == {
+        "from": "2026-06-10",
+        "to": "2026-06-11",
+        "row_count": 6,
+    }
+
+
+async def test_admin_analytics_export_rejects_ranges_longer_than_366_days(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """CSV export must reject unbounded date spans."""
+    del migrated_database
+    now = datetime.now(UTC)
+    await engine.dispose()
+    await _cleanup_admin_dashboard_state()
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                admin = await _create_user(
+                    session,
+                    email=f"admin-export-range-{uuid4()}@auracles.space",
+                    roles=["admin"],
+                    created_at=now - timedelta(days=10),
+                )
+
+            response = await client.get(
+                "/v1/admin/analytics/export?from=2025-01-01&to=2026-01-03",
+                headers=auth_headers(admin.id),
+            )
+    finally:
+        await _cleanup_admin_dashboard_state()
+        await engine.dispose()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Date range cannot exceed 366 days."
