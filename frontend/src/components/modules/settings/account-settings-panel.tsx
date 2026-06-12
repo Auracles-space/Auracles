@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Account identity settings panel.
+ * Account identity and exit settings panel.
  *
- * Provides email-change and deactivation workflows through generated client
- * calls. Backend endpoints enforce password checks, TOTP checks, session
- * revocation, and audit writes.
+ * Provides email-change controls plus the single user-facing GDPR delete-account
+ * flow. The legacy self-service deactivation action has been retired in favor
+ * of the cooling-off deletion workflow.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,26 +15,108 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { deactivateAccount, requestEmailChange } from "@/lib/generated/sdk.gen";
+import {
+  cancelAccountDeletion,
+  getAccountDeletionStatus,
+  requestAccountDeletion,
+  requestEmailChange,
+} from "@/lib/generated/sdk.gen";
+import type { AccountDeletionStatusResponse } from "@/lib/generated/types.gen";
 
 import { FormField } from "../auth/form-field";
 import { FormMessage } from "../auth/form-message";
 
+type PendingDeleteAction = "cancel" | "request" | null;
+
 /**
- * Render email-change and account-deactivation controls.
+ * Detect whether a generated-client error contains structured deletion status.
+ *
+ * @param value - Unknown generated-client error payload.
+ */
+function isAccountDeletionStatusResponse(
+  value: unknown,
+): value is AccountDeletionStatusResponse {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "blocked_reasons" in value &&
+      "status" in value,
+  );
+}
+
+/**
+ * Format a scheduled deletion timestamp for concise account-settings copy.
+ *
+ * @param value - ISO timestamp from the API.
+ */
+function formatScheduledFor(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+/**
+ * Render email-change and GDPR delete-account controls.
  */
 export function AccountSettingsPanel() {
-  const [deactivateMessage, setDeactivateMessage] = useState<string | null>(null);
-  const [deactivatePassword, setDeactivatePassword] = useState("");
-  const [deactivateTotp, setDeactivateTotp] = useState("");
+  const [deletionError, setDeletionError] = useState<string | null>(null);
+  const [deletionPassword, setDeletionPassword] = useState("");
+  const [deletionPending, setDeletionPending] = useState<PendingDeleteAction>(null);
+  const [deletionStatus, setDeletionStatus] =
+    useState<AccountDeletionStatusResponse | null>(null);
+  const [deletionTotp, setDeletionTotp] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailMessage, setEmailMessage] = useState<string | null>(null);
   const [newEmail, setNewEmail] = useState("");
+  const [statusLoading, setStatusLoading] = useState(true);
   const [totpCode, setTotpCode] = useState("");
 
-  async function submitEmailChange(
-    event: React.FormEvent<HTMLFormElement>,
-  ): Promise<void> {
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDeletionStatus(): Promise<void> {
+      configureBrowserClient();
+      const result = await getAccountDeletionStatus({
+        headers: getAccessTokenHeaders(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setStatusLoading(false);
+      if (!result.response.ok || !result.data) {
+        setDeletionError(describeGeneratedError(result.error));
+        return;
+      }
+
+      setDeletionError(null);
+      setDeletionStatus(result.data);
+    }
+
+    void loadDeletionStatus();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const scheduledDeletionDate = useMemo(
+    () => formatScheduledFor(deletionStatus?.scheduled_for),
+    [deletionStatus?.scheduled_for],
+  );
+  const hasScheduledDeletion = deletionStatus?.status === "scheduled";
+
+  async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setEmailError(null);
     setEmailMessage(null);
@@ -58,27 +140,56 @@ export function AccountSettingsPanel() {
     setEmailMessage(result.data?.message ?? "Email change verification sent.");
   }
 
-  async function submitDeactivate(
-    event: React.FormEvent<HTMLFormElement>,
+  async function submitDeletionRequest(
+    event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
-    setDeactivateMessage(null);
+    setDeletionError(null);
+    setDeletionPending("request");
 
     configureBrowserClient();
-    const result = await deactivateAccount({
+    const result = await requestAccountDeletion({
       body: {
-        password: deactivatePassword,
-        totp_code: deactivateTotp.trim() || null,
+        password: deletionPassword,
+        totp_code: deletionTotp.trim() || null,
       },
       headers: getAccessTokenHeaders(),
     });
+    setDeletionPending(null);
 
     if (!result.response.ok) {
-      setDeactivateMessage(describeGeneratedError(result.error));
+      if (isAccountDeletionStatusResponse(result.error)) {
+        setDeletionStatus(result.error);
+        setDeletionPassword("");
+        setDeletionTotp("");
+        return;
+      }
+
+      setDeletionError(describeGeneratedError(result.error));
       return;
     }
 
-    setDeactivateMessage(result.data?.message ?? "Account deactivated.");
+    setDeletionStatus(result.data ?? null);
+    setDeletionPassword("");
+    setDeletionTotp("");
+  }
+
+  async function submitDeletionCancel(): Promise<void> {
+    setDeletionError(null);
+    setDeletionPending("cancel");
+
+    configureBrowserClient();
+    const result = await cancelAccountDeletion({
+      headers: getAccessTokenHeaders(),
+    });
+    setDeletionPending(null);
+
+    if (!result.response.ok || !result.data) {
+      setDeletionError(describeGeneratedError(result.error));
+      return;
+    }
+
+    setDeletionStatus(result.data);
   }
 
   return (
@@ -118,42 +229,115 @@ export function AccountSettingsPanel() {
         <Button type="submit">Request email change</Button>
       </form>
 
-      <form className="space-y-5" onSubmit={submitDeactivate}>
+      <section
+        aria-labelledby="delete-account-heading"
+        className="space-y-5"
+        role="region"
+      >
         <div>
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            Deactivate account
+          <h2
+            className="font-heading text-xl font-semibold text-foreground"
+            id="delete-account-heading"
+          >
+            Delete account
           </h2>
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
-            Deactivation revokes active sessions. Published marketplace records
-            remain governed by their existing visibility rules.
+            Deletion starts a cooling-off window. Active escrow, payouts,
+            disputes, projects, or attestations must be resolved before the
+            request can proceed.
           </p>
         </div>
-        {deactivateMessage ? (
-          <FormMessage
-            kind={deactivateMessage.includes("deactivated") ? "success" : "error"}
-            message={deactivateMessage}
-          />
+
+        {statusLoading ? (
+          <p className="rounded-control border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
+            Loading deletion status...
+          </p>
         ) : null}
-        <FormField
-          autoComplete="current-password"
-          label="Current password"
-          name="password"
-          onChange={(event) => setDeactivatePassword(event.target.value)}
-          required
-          type="password"
-          value={deactivatePassword}
-        />
-        <FormField
-          autoComplete="one-time-code"
-          label="Confirmation code"
-          name="deactivate_totp_code"
-          onChange={(event) => setDeactivateTotp(event.target.value)}
-          value={deactivateTotp}
-        />
-        <Button type="submit" variant="destructive">
-          Deactivate account
-        </Button>
-      </form>
+
+        {deletionError ? (
+          <FormMessage kind="error" message={deletionError} />
+        ) : null}
+
+        {deletionStatus?.status === "scheduled" ? (
+          <div className="space-y-4 rounded-control border border-success/30 bg-success/10 p-4">
+            <p className="text-sm font-medium text-success">
+              Your account is scheduled for deletion.
+            </p>
+            <p className="text-sm leading-6 text-foreground-muted">
+              {scheduledDeletionDate
+                ? `You can cancel this request until ${scheduledDeletionDate}.`
+                : "You can cancel this request until the cooling-off window ends."}
+            </p>
+            <Button
+              disabled={deletionPending === "cancel"}
+              onClick={() => void submitDeletionCancel()}
+              type="button"
+              variant="secondary"
+            >
+              {deletionPending === "cancel"
+                ? "Cancelling..."
+                : "Cancel deletion request"}
+            </Button>
+          </div>
+        ) : (
+          <form className="space-y-5" onSubmit={submitDeletionRequest}>
+            {deletionStatus?.status === "blocked" ? (
+              <div className="space-y-3 rounded-control border border-error/30 bg-error/10 p-4">
+                <p className="text-sm font-medium text-error">
+                  Deletion is blocked until the obligations below are resolved.
+                </p>
+                <ul className="space-y-2 text-sm leading-6 text-foreground">
+                  {deletionStatus.blocked_reasons.map((reason) => (
+                    <li key={reason.code}>
+                      {reason.message}
+                      {reason.count ? ` (${reason.count})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {deletionStatus?.status === "cancelled" ? (
+              <FormMessage
+                kind="success"
+                message="Deletion request cancelled. Your account remains active."
+              />
+            ) : null}
+
+            {deletionStatus?.status === "completed" ? (
+              <FormMessage
+                kind="success"
+                message="Account deletion has completed."
+              />
+            ) : null}
+
+            <FormField
+              autoComplete="current-password"
+              label="Current password"
+              name="password"
+              onChange={(event) => setDeletionPassword(event.target.value)}
+              required
+              type="password"
+              value={deletionPassword}
+            />
+            <FormField
+              autoComplete="one-time-code"
+              helper="Required when 2FA is enabled on your account."
+              label="Confirmation code"
+              name="deletion_totp_code"
+              onChange={(event) => setDeletionTotp(event.target.value)}
+              value={deletionTotp}
+            />
+            <Button
+              disabled={deletionPending === "request" || hasScheduledDeletion}
+              type="submit"
+              variant="destructive"
+            >
+              {deletionPending === "request" ? "Submitting..." : "Delete account"}
+            </Button>
+          </form>
+        )}
+      </section>
     </div>
   );
 }

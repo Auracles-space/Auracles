@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SecretStr
 
 
 class ConsentAcceptRequest(BaseModel):
@@ -42,3 +42,29 @@ class DataExportRequestResponse(BaseModel):
     completed_at: datetime | None
     expires_at: datetime | None
     failure_reason: str | None
+
+
+class AccountDeletionRequestBody(BaseModel):
+    """Request body for starting the GDPR account-deletion cooling-off flow."""
+
+    password: SecretStr
+    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
+
+
+class AccountDeletionBlockedReason(BaseModel):
+    """One reason why GDPR account deletion is currently blocked."""
+
+    code: str
+    message: str
+    count: int | None = None
+
+
+class AccountDeletionStatusResponse(BaseModel):
+    """Latest GDPR account-deletion request state for the current user."""
+
+    id: UUID | None
+    status: str | None
+    blocked_reasons: list[AccountDeletionBlockedReason]
+    scheduled_for: datetime | None
+    requested_at: datetime | None
+    completed_at: datetime | None

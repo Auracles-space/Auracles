@@ -3704,6 +3704,76 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/gdpr/account-deletion:
+    get:
+      tags:
+      - GDPR
+      summary: Get account deletion status
+      description: Return the latest GDPR account-deletion request for the current
+        user.
+      operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - GDPR
+      summary: Request account deletion
+      description: Schedule GDPR account deletion after password confirmation and
+        the configured cooling-off period.
+      operationId: request_account_deletion_v1_gdpr_account_deletion_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequestBody'
+        required: true
+      responses:
+        '202':
+          description: Account deletion scheduled during cooling-off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '409':
+          description: Account deletion is blocked by active obligations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/gdpr/account-deletion/cancel:
+    post:
+      tags:
+      - GDPR
+      summary: Cancel account deletion
+      description: Cancel the current user's scheduled GDPR account deletion during
+        the cooling-off window.
+      operationId: cancel_account_deletion_v1_gdpr_account_deletion_cancel_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '404':
+          description: Account deletion request not found.
+      security:
+      - HTTPBearer: []
   /v1/library:
     get:
       tags:
@@ -5579,34 +5649,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/settings/account/deactivate:
-    post:
-      tags:
-      - Settings
-      summary: Deactivate Account
-      description: Deactivate the authenticated account and clear browser cookies.
-      operationId: deactivate_account_v1_settings_account_deactivate_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AccountDeactivateRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegisterResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/webhooks/stripe:
     post:
       tags:
@@ -5778,7 +5820,26 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
 components:
   schemas:
-    AccountDeactivateRequest:
+    AccountDeletionBlockedReason:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+        count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Count
+      type: object
+      required:
+      - code
+      - message
+      title: AccountDeletionBlockedReason
+      description: One reason why GDPR account deletion is currently blocked.
+    AccountDeletionRequestBody:
       properties:
         password:
           type: string
@@ -5795,8 +5856,55 @@ components:
       type: object
       required:
       - password
-      title: AccountDeactivateRequest
-      description: Request body for deactivating the authenticated account.
+      title: AccountDeletionRequestBody
+      description: Request body for starting the GDPR account-deletion cooling-off
+        flow.
+    AccountDeletionStatusResponse:
+      properties:
+        id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Id
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        blocked_reasons:
+          items:
+            $ref: '#/components/schemas/AccountDeletionBlockedReason'
+          type: array
+          title: Blocked Reasons
+        scheduled_for:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Scheduled For
+        requested_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Requested At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+      type: object
+      required:
+      - id
+      - status
+      - blocked_reasons
+      - scheduled_for
+      - requested_at
+      - completed_at
+      title: AccountDeletionStatusResponse
+      description: Latest GDPR account-deletion request state for the current user.
     AddRoleRequest:
       properties:
         role:

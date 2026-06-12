@@ -18,7 +18,6 @@ from app.modules.auth.models import User
 from app.modules.auth.schemas import RegisterResponse
 from app.modules.settings import service
 from app.modules.settings.schemas import (
-    AccountDeactivateRequest,
     EmailChangeConfirmRequest,
     EmailChangeRequest,
     KycStatusResponse,
@@ -154,24 +153,3 @@ async def confirm_email_change(
     """Confirm a new account email address from the emailed token."""
     await service.confirm_email_change(db=db, redis=redis, token=payload.token)
     return RegisterResponse(message="Email changed.")
-
-
-@router.post("/account/deactivate", response_model=RegisterResponse)
-async def deactivate_account(
-    payload: AccountDeactivateRequest,
-    response: Response,
-    current_user: CurrentUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> RegisterResponse:
-    """Deactivate the authenticated account and clear browser cookies."""
-    await service.deactivate_account(
-        db=db,
-        redis=redis,
-        user=current_user,
-        password=payload.password.get_secret_value(),
-        totp_code=payload.totp_code,
-    )
-    clear_refresh_cookie(response)
-    clear_session_hint_cookie(response)
-    return RegisterResponse(message="Account deactivated.")

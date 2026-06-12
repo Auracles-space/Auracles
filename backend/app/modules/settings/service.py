@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -14,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
-from app.core.security import generate_opaque_token, hash_token, verify_password
+from app.core.security import generate_opaque_token, hash_token
 from app.integrations import s3
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User
@@ -335,37 +334,3 @@ async def confirm_email_change(
             detail="Email is already in use.",
         ) from exc
     return user.id
-
-
-async def deactivate_account(
-    db: AsyncSession,
-    redis: Redis,
-    user: User,
-    password: str,
-    totp_code: str | None,
-) -> None:
-    """Deactivate the authenticated account and revoke all browser sessions."""
-    if user.password_hash is None or not verify_password(password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password.",
-        )
-
-    if user.totp_enabled:
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=user,
-            code=totp_code,
-        )
-
-    user.deactivated_at = datetime.now(UTC)
-    await auth_service.revoke_all_user_sessions(redis=redis, user=user)
-    await write_audit(
-        db=db,
-        actor_id=user.id,
-        action="account_deactivated",
-        target_type="user",
-        target_id=user.id,
-    )
-    await db.commit()

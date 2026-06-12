@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +12,10 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.gdpr import consent_service, export_service
+from app.modules.gdpr import consent_service, deletion_service, export_service
 from app.modules.gdpr.schemas import (
+    AccountDeletionRequestBody,
+    AccountDeletionStatusResponse,
     ConsentAcceptRequest,
     ConsentHistoryResponse,
     DataExportRequestResponse,
@@ -126,4 +128,84 @@ async def download_data_export(
         redis=redis,
         user_id=current_user.id,
         export_request_id=export_request_id,
+    )
+
+
+@router.post(
+    "/account-deletion",
+    response_model=AccountDeletionStatusResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request account deletion",
+    description=(
+        "Schedule GDPR account deletion after password confirmation and the "
+        "configured cooling-off period."
+    ),
+    responses={
+        status.HTTP_202_ACCEPTED: {
+            "description": "Account deletion scheduled during cooling-off."
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": AccountDeletionStatusResponse,
+            "description": "Account deletion is blocked by active obligations.",
+        },
+    },
+)
+async def request_account_deletion(
+    payload: AccountDeletionRequestBody,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> Response:
+    """Schedule account deletion for the current user."""
+    result, status_code = await deletion_service.request_account_deletion(
+        db=db,
+        redis=redis,
+        user=current_user,
+        payload=payload,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=result.model_dump(mode="json"),
+    )
+
+
+@router.get(
+    "/account-deletion",
+    response_model=AccountDeletionStatusResponse,
+    summary="Get account deletion status",
+    description="Return the latest GDPR account-deletion request for the current user.",
+)
+async def get_account_deletion_status(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AccountDeletionStatusResponse:
+    """Return the latest GDPR account-deletion request for the current user."""
+    return await deletion_service.get_account_deletion_status(
+        db=db,
+        user_id=current_user.id,
+    )
+
+
+@router.post(
+    "/account-deletion/cancel",
+    response_model=AccountDeletionStatusResponse,
+    summary="Cancel account deletion",
+    description=(
+        "Cancel the current user's scheduled GDPR account deletion during the "
+        "cooling-off window."
+    ),
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Account deletion request not found."
+        }
+    },
+)
+async def cancel_account_deletion(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> AccountDeletionStatusResponse:
+    """Cancel the current user's scheduled GDPR account deletion."""
+    return await deletion_service.cancel_account_deletion(
+        db=db,
+        user_id=current_user.id,
     )
