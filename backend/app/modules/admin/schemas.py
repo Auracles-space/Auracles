@@ -157,6 +157,10 @@ class AdminConfigUpdateItem(BaseModel):
         "attestation_offer_accept_hours",
         "attestation_dispute_window_days",
         "saved_search_alert_cadence_hours",
+        "consent_version_terms_of_service",
+        "consent_version_privacy_policy",
+        "account_deletion_grace_days",
+        "data_export_expiry_days",
     ]
     value: str = Field(min_length=1, max_length=100)
 

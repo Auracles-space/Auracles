@@ -43,6 +43,10 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "attestation_offer_accept_hours",
     "attestation_dispute_window_days",
     "saved_search_alert_cadence_hours",
+    "consent_version_terms_of_service",
+    "consent_version_privacy_policy",
+    "account_deletion_grace_days",
+    "data_export_expiry_days",
 }
 COMMISSION_RATE_MAX = Decimal("0.50")
 MIN_PAYOUT_USD_MIN = Decimal("1.00")
@@ -51,6 +55,16 @@ REFUND_WINDOW_HOURS_MIN = 0
 REFUND_WINDOW_HOURS_MAX = 720
 SAVED_SEARCH_ALERT_CADENCE_HOURS_MIN = 1
 SAVED_SEARCH_ALERT_CADENCE_HOURS_MAX = 168
+GDPR_RETENTION_DAYS_MIN = 1
+GDPR_RETENTION_DAYS_MAX = 30
+CONSENT_VERSION_KEYS = {
+    "consent_version_terms_of_service",
+    "consent_version_privacy_policy",
+}
+GDPR_RETENTION_DAY_KEYS = {
+    "account_deletion_grace_days",
+    "data_export_expiry_days",
+}
 ATTESTATION_FEE_RANGES = {
     "attestation_fee_framework": (Decimal("25.00"), Decimal("100000.00")),
     "attestation_fee_contributor": (Decimal("25.00"), Decimal("100000.00")),
@@ -437,6 +451,24 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
                 detail="saved_search_alert_cadence_hours must be between 1 and 168.",
             )
         return str(hours)
+
+    if key in CONSENT_VERSION_KEYS:
+        version = raw_value.strip()
+        if not version:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must not be empty.",
+            )
+        return version
+
+    if key in GDPR_RETENTION_DAY_KEYS:
+        days = _parse_integer_config(key, raw_value)
+        if days < GDPR_RETENTION_DAYS_MIN or days > GDPR_RETENTION_DAYS_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must be between 1 and 30.",
+            )
+        return str(days)
 
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

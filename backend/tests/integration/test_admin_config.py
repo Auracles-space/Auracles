@@ -38,6 +38,10 @@ DEFAULT_PLATFORM_CONFIG = {
     "attestation_offer_accept_hours": "48",
     "attestation_dispute_window_days": "14",
     "saved_search_alert_cadence_hours": "24",
+    "consent_version_terms_of_service": "1.0",
+    "consent_version_privacy_policy": "1.0",
+    "account_deletion_grace_days": "14",
+    "data_export_expiry_days": "7",
 }
 
 
@@ -186,6 +190,12 @@ async def test_admin_can_read_platform_config(
     assert config["attestation_cohort_size"]["editable"] is True
     assert config["saved_search_alert_cadence_hours"]["value"] == "24"
     assert config["saved_search_alert_cadence_hours"]["editable"] is True
+    assert config["consent_version_terms_of_service"]["value"] == "1.0"
+    assert config["consent_version_terms_of_service"]["editable"] is True
+    assert config["account_deletion_grace_days"]["value"] == "14"
+    assert config["account_deletion_grace_days"]["editable"] is True
+    assert config["data_export_expiry_days"]["value"] == "7"
+    assert config["data_export_expiry_days"]["editable"] is True
     assert config["min_payout_ngn"]["editable"] is False
 
 
@@ -426,3 +436,76 @@ async def test_admin_updates_saved_search_alert_cadence_with_range_validation(
     assert cadence.value == "6"
     assert invalid_low.status_code == 422
     assert invalid_high.status_code == 422
+
+
+async def test_admin_updates_gdpr_config_with_range_validation(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """GDPR consent and retention knobs are admin-editable within safe ranges."""
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    valid_update = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Update legal versions and deletion/export windows.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {"key": "consent_version_terms_of_service", "value": "2026.06"},
+                {"key": "consent_version_privacy_policy", "value": "2026.06"},
+                {"key": "account_deletion_grace_days", "value": "21"},
+                {"key": "data_export_expiry_days", "value": "10"},
+            ],
+        },
+    )
+    invalid_grace = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "account_deletion_grace_days", "value": "31"}],
+        },
+    )
+    invalid_expiry = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "data_export_expiry_days", "value": "0"}],
+        },
+    )
+    invalid_version = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "consent_version_privacy_policy", "value": " "}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        config_rows = {
+            row.key: row.value
+            for row in (
+                await session.execute(select(PlatformConfig))
+            ).scalars().all()
+        }
+
+    assert valid_update.status_code == 200
+    response_config = {item["key"]: item for item in valid_update.json()["items"]}
+    assert response_config["consent_version_terms_of_service"]["value"] == "2026.06"
+    assert response_config["consent_version_privacy_policy"]["value"] == "2026.06"
+    assert response_config["account_deletion_grace_days"]["value"] == "21"
+    assert response_config["data_export_expiry_days"]["value"] == "10"
+    assert config_rows["consent_version_terms_of_service"] == "2026.06"
+    assert config_rows["account_deletion_grace_days"] == "21"
+    assert invalid_grace.status_code == 422
+    assert invalid_expiry.status_code == 422
+    assert invalid_version.status_code == 422

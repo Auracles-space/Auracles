@@ -12,6 +12,7 @@ from app.modules.developer import models as _developer_models  # noqa: F401
 from app.modules.financials import models as _financials_models  # noqa: F401
 from app.modules.frameworks import models as _framework_models  # noqa: F401
 from app.modules.frameworks import models_artifact as _artifact_models  # noqa: F401
+from app.modules.gdpr import models as _gdpr_models  # noqa: F401
 from app.modules.notifications import models as _notification_models  # noqa: F401
 from app.modules.projects import models as _project_models  # noqa: F401
 from app.modules.saved_searches import models as _saved_search_models  # noqa: F401
