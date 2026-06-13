@@ -101,7 +101,7 @@ export function TotpChallengeForm({
       ) : (
         <TotpInput onChange={setCode} value={code} />
       )}
-      <label className="flex min-h-11 items-center gap-3 text-sm text-foreground-muted">
+      <label className="flex min-h-12 items-center gap-3 text-sm text-foreground-muted">
         <input
           checked={useBackup}
           className="h-4 w-4 accent-accent"

@@ -30,6 +30,7 @@ const appLinks = [
   { href: "/library", label: "Library" },
   { href: "/settings/credentials", label: "Credentials" },
   { href: "/settings/consent", label: "Consent" },
+  { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/saved-searches", label: "Saved Searches" },
   { href: "/admin/analytics", label: "Admin" },
   { href: "/settings/account", label: "Settings" },
@@ -103,11 +104,11 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
               <input 
                 type="text" 
                 placeholder="Search..." 
-                className="h-9 w-full rounded-xl border border-border-default bg-surface-1 pl-9 pr-4 text-sm text-foreground shadow-sm placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+                className="h-10 w-full rounded-xl border border-border-default bg-surface-1 pl-9 pr-4 text-sm text-foreground shadow-sm placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
               />
             </div>
             <ThemeToggle />
-            <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent">
+            <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-border-default bg-surface-1 shadow-sm text-foreground-muted outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent">
               <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
@@ -123,7 +124,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
               <ThemeToggle />
               {/* Native HTML details/summary for simple zero-JS mobile menu */}
               <details className="group relative">
-                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-border-default outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+                <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-border-default outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
                   <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />

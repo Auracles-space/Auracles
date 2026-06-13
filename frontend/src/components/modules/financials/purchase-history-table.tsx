@@ -143,7 +143,7 @@ export function PurchaseHistoryTable() {
             <div className="grid grid-cols-2 gap-2 md:w-[180px]">
               <RefundButton item={item} onRefunded={handleRefunded} />
               <button
-                className="min-h-11 rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={() => handleInvoice(item.transaction_id)}
                 type="button"
               >
@@ -195,7 +195,7 @@ export function RefundButton({ item, onRefunded }: RefundButtonProps) {
   return (
     <div>
       <button
-        className="min-h-11 w-full rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+        className="min-h-12 w-full rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
         disabled={!refundable || submitting}
         onClick={handleRefund}
         type="button"

@@ -182,7 +182,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           </h2>
           <div className="mt-4 flex flex-wrap gap-3">
             <button
-              className="min-h-11 rounded-[6px] border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
+              className="min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
               onClick={handleSubmitGate}
               type="button"
             >
@@ -204,7 +204,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
             <VersionRadios onChange={setChangeType} value={changeType} />
           </div>
           <button
-            className="mt-4 min-h-11 rounded-[6px] border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
+            className="mt-4 min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
             onClick={handleCreateVersion}
             type="button"
           >

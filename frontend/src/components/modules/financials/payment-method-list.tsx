@@ -127,7 +127,7 @@ export function PaymentMethodList() {
             <label className="grid gap-2 text-sm font-semibold text-foreground">
               Setup 2FA code
               <input
-                className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+                className="min-h-12 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus:border-accent focus:ring-0"
                 inputMode="numeric"
                 onChange={(event) => setSetupTotpCode(event.target.value)}
                 type="text"
@@ -135,7 +135,7 @@ export function PaymentMethodList() {
               />
             </label>
             <button
-              className="min-h-11 self-end rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-12 self-end rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
               disabled={submittingSetup || setupTotpCode.length < 6}
               onClick={handleStartSetup}
               type="button"
@@ -166,7 +166,7 @@ export function PaymentMethodList() {
           <label className="grid gap-2 text-sm font-semibold text-foreground md:w-56">
             Removal 2FA code
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+              className="min-h-12 rounded-xl border border-border-default bg-background px-3 text-sm font-medium text-foreground outline-none transition-all focus:border-accent focus:ring-0"
               inputMode="numeric"
               onChange={(event) => setRemovalTotpCode(event.target.value)}
               type="text"
@@ -199,7 +199,7 @@ export function PaymentMethodList() {
                 </div>
                 <button
                   aria-label={`Remove card ending ${method.last4 ?? "unknown"}`}
-                  className="min-h-11 rounded-xl border border-error px-4 text-sm font-semibold text-error outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-12 rounded-xl border border-error px-4 text-sm font-semibold text-error outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={removalTotpCode.length < 6}
                   onClick={() => handleRemove(method.id)}
                   type="button"
@@ -254,7 +254,7 @@ function SetupConfirmation({ setupIntentId }: SetupConfirmationProps) {
       <PaymentElement />
       {error ? <p className="text-sm text-error">{error}</p> : null}
       <button
-        className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
         disabled={submitting}
         onClick={handleConfirmSetup}
         type="button"

@@ -207,7 +207,7 @@ export function FrameworkForm({
             <input
               type="text"
               placeholder="250"
-              className="h-11 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
               onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
               required
               value={form.price}
@@ -228,7 +228,7 @@ export function FrameworkForm({
       />
 
       {prefill?.fileKeys?.length ? (
-        <div className="rounded-lg border border-border-default bg-surface-2 p-4 text-sm text-foreground">
+        <div className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground">
           <p className="font-semibold">Source files</p>
           <ul className="mt-2 grid gap-1 text-xs text-foreground-muted">
             {prefill.fileKeys.map((fileKey) => (
@@ -241,7 +241,7 @@ export function FrameworkForm({
       ) : null}
 
       {error ? (
-        <div className="rounded-lg bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
+        <div className="rounded-xl bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
           <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -251,7 +251,7 @@ export function FrameworkForm({
       
       <div className="mt-4 pt-6 border-t border-border-default flex items-center justify-end">
         <button
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
+          className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
           disabled={saving}
           type="submit"
         >
@@ -309,7 +309,7 @@ function FormSelectInput<TValue extends string>({
       </label>
       <div className="relative">
         <select
-          className="h-11 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+          className="min-h-12 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0"
           id={inputId}
           onChange={(event) => onChange(event.target.value as TValue)}
           required={required}
@@ -364,7 +364,7 @@ function FormTextInput({
         )}
       </span>
       <input
-        className="h-11 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+        className="min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
         onChange={(event) => onChange(event.target.value)}
         required={required}
         value={value}

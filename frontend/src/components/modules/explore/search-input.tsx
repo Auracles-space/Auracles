@@ -39,10 +39,10 @@ export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
         Search frameworks
       </span>
-      <span className="flex min-h-11 items-center gap-3 rounded-xl border border-border-default bg-surface-2 px-3 focus-within:border-accent">
+      <span className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-surface-2 px-3 focus-within:border-accent">
         <MagnifyingGlassIcon aria-hidden className="h-4 w-4 text-foreground-muted" />
         <input
-          className="min-h-11 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-foreground-subtle"
+          className="min-h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-foreground-subtle"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Risk, compliance, operating model"
           value={query}

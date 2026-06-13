@@ -62,7 +62,7 @@ export function PayoutPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={amountId}>
             Amount
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
               id={amountId}
               inputMode="decimal"
               onChange={(event) => setAmount(event.target.value)}
@@ -73,7 +73,7 @@ export function PayoutPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={accountId}>
             Payout account
             <select
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
               id={accountId}
               onChange={(event) => setPayoutAccountId(event.target.value)}
               value={payoutAccountId}
@@ -88,7 +88,7 @@ export function PayoutPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={totpId}>
             Authenticator code
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
               id={totpId}
               inputMode="numeric"
               maxLength={6}
@@ -99,7 +99,7 @@ export function PayoutPanel({
             />
           </label>
           <button
-            className="min-h-11 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
             type="submit"
           >
             Request payout

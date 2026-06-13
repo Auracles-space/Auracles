@@ -292,7 +292,7 @@ export function CollectionBuilder() {
               <p className="mt-3 text-sm leading-6 text-foreground-muted">
                 {activeCollection.description}
               </p>
-              <div className="mt-4 inline-flex items-center rounded-lg border border-success/30 bg-success/10 px-3 py-1.5 text-sm font-semibold text-success">
+              <div className="mt-4 inline-flex items-center rounded-xl border border-success/30 bg-success/10 px-3 py-1.5 text-sm font-semibold text-success">
                 {formatMoney(
                   activeCollection.bundle_price,
                   activeCollection.currency,
@@ -341,7 +341,7 @@ export function CollectionBuilder() {
                     </p>
                   </div>
                   <button
-                    className="min-h-11 rounded-lg border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={submitting}
                     onClick={() => handleRemoveMember(member.framework_id)}
                     type="button"

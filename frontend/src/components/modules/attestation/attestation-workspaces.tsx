@@ -810,16 +810,16 @@ function ApplicationList({
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               {onWithdraw && application.status === "pending" ? (
-                <button className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground shadow-sm outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onWithdraw(application.id)} type="button">
+                <button className="min-h-12 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground shadow-sm outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onWithdraw(application.id)} type="button">
                   Withdraw
                 </button>
               ) : null}
               {onReview ? (
                 <>
-                  <button className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onReview(application, "approved")} type="button">
+                  <button className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onReview(application, "approved")} type="button">
                     Approve
                   </button>
-                  <button className="min-h-11 rounded-xl border border-error px-4 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onReview(application, "rejected")} type="button">
+                  <button className="min-h-12 rounded-xl border border-error px-4 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onReview(application, "rejected")} type="button">
                     Reject
                   </button>
                 </>

@@ -146,7 +146,7 @@ export function PipelineStatusPanel({
             Publish is available only after the backend gate passes.
           </p>
         </div>
-        <span className="w-fit rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+        <span className="w-fit rounded-xl border border-border-default px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
           {frameworkStatus.replaceAll("_", " ")}
         </span>
       </div>
@@ -199,7 +199,7 @@ export function PipelineStatusPanel({
             <label className="grid gap-2 text-sm font-medium text-foreground">
               Differentiation note
               <textarea
-                className="min-h-28 rounded-[6px] border border-border-default bg-background px-3 py-2 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-28 rounded-xl border border-border-default bg-background px-3 py-2 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 maxLength={1000}
                 minLength={5}
                 onChange={(event) => setDifferentiationNote(event.target.value)}
@@ -212,7 +212,7 @@ export function PipelineStatusPanel({
               <p className="text-sm text-success">Similarity notice acknowledged.</p>
             ) : null}
             <button
-              className="min-h-11 rounded-[6px] bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={savingNotice}
               type="submit"
             >

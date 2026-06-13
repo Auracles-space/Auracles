@@ -47,7 +47,7 @@ export function DelistButton({ frameworkId }: DelistButtonProps) {
   return (
     <div>
       <button
-        className="inline-flex min-h-11 items-center justify-center rounded-[6px] border border-error px-4 py-2 text-sm font-semibold text-error transition hover:bg-error/10"
+        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-error px-4 py-2 text-sm font-semibold text-error transition hover:bg-error/10"
         onClick={() => setConfirming(true)}
         type="button"
       >
@@ -61,14 +61,14 @@ export function DelistButton({ frameworkId }: DelistButtonProps) {
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
-              className="min-h-11 rounded-[6px] border border-error px-4 py-2 text-sm font-semibold text-error hover:bg-error/10"
+              className="min-h-12 rounded-xl border border-error px-4 py-2 text-sm font-semibold text-error hover:bg-error/10"
               onClick={handleDelist}
               type="button"
             >
               Confirm delist
             </button>
             <button
-              className="min-h-11 rounded-[6px] border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-2"
+              className="min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-2"
               onClick={() => setConfirming(false)}
               type="button"
             >

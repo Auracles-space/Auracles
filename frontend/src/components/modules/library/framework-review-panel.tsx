@@ -173,7 +173,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
             <button
               aria-checked={score === value}
               className={[
-                "min-h-11 rounded-[6px] border px-3 text-sm font-semibold",
+                "min-h-12 rounded-xl border px-3 text-sm font-semibold",
                 score === value
                   ? "border-accent bg-accent text-background"
                   : "border-border-default bg-background text-foreground hover:bg-surface-3",
@@ -190,7 +190,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
         <label className="grid gap-2 text-sm font-medium text-foreground">
           Review body
           <textarea
-            className="min-h-28 rounded-[6px] border border-border-default bg-background px-3 py-2 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-28 rounded-xl border border-border-default bg-background px-3 py-2 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
             maxLength={4000}
             onChange={(event) => setBody(event.target.value)}
             placeholder="What changed after using this Framework?"
@@ -202,7 +202,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
           <p className="text-sm text-success">{savedMessage}</p>
         ) : null}
         <button
-          className="min-h-11 rounded-[6px] bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={saving}
           type="submit"
         >

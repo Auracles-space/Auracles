@@ -145,7 +145,7 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
 
       {!session ? (
         <button
-          className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
           disabled={submitting || availableLicenses.length === 0}
           onClick={handleStartCheckout}
           type="button"
@@ -316,7 +316,7 @@ export function CollectionCheckoutForm({
 
       {!session ? (
         <button
-          className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
           disabled={submitting}
           onClick={handleStartCheckout}
           type="button"
@@ -378,7 +378,7 @@ function CheckoutPaymentConfirmation({
       <PaymentElement />
       {error ? <p className="text-sm text-error">{error}</p> : null}
       <button
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
         disabled={submitting}
         onClick={handleConfirmPayment}
         type="button"

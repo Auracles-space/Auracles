@@ -180,7 +180,7 @@ function LibraryCard({ item }: LibraryCardProps) {
       <div className="mt-5 grid gap-2">
         {state.artifacts.map((artifact) => (
           <button
-            className="flex min-h-11 items-center justify-between gap-4 rounded-[6px] border border-border-default bg-background px-3 py-2 text-left text-sm text-foreground hover:bg-surface-3"
+            className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-border-default bg-background px-3 py-2 text-left text-sm text-foreground hover:bg-surface-3"
             key={artifact.id}
             onClick={() => handleDownload(artifact.id)}
             type="button"

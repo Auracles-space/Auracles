@@ -16,7 +16,7 @@ export function ThemeToggle() {
 
   return (
     <button
-      className="flex h-10 w-10 items-center justify-center rounded-control border border-border-default bg-surface-1 text-foreground-muted outline-none transition hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+      className="flex h-10 w-10 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted outline-none transition hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
       onClick={() => {
         const currentTheme = theme || "system";
         if (currentTheme === "system") setTheme("dark");

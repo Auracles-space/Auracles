@@ -51,7 +51,7 @@ export function SoftFailAcknowledgement({
         publish.
       </p>
       <button
-        className="mt-3 min-h-11 rounded-[6px] border border-warning px-4 py-2 text-sm font-semibold text-warning hover:bg-warning/10"
+        className="mt-3 min-h-12 rounded-xl border border-warning px-4 py-2 text-sm font-semibold text-warning hover:bg-warning/10"
         onClick={handleAcknowledge}
         type="button"
       >

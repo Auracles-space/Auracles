@@ -56,7 +56,7 @@ export default async function CollectionDetailPage({
               {collection.description}
             </p>
             <Link
-              className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
+              className="mt-4 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
               href={`/explore/contributors/${collection.contributor_id}`}
             >
               {collection.contributor_name}

@@ -54,7 +54,7 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                 <input 
                   type="text" 
                   placeholder="Search frameworks, projects..." 
-                  className="h-9 w-full rounded-lg border border-border-default bg-surface-2 pl-9 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+                  className="h-9 w-full rounded-xl border border-border-default bg-surface-2 pl-9 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
                 />
               </div>
             </div>
@@ -63,20 +63,20 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
             <div className="hidden items-center gap-2 md:flex">
               <ThemeToggle />
               <Link
-                className="inline-flex h-9 items-center justify-center rounded-lg border border-border-default bg-surface-1 px-4 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
+                className="inline-flex h-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
                 href="/dashboard/frameworks/new"
               >
                 Create Framework
               </Link>
               <div className="mx-1 h-4 w-px bg-border-default" />
               <Link
-                className="inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                className="inline-flex h-9 items-center justify-center rounded-xl px-4 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
                 href="/login"
               >
                 Log in
               </Link>
               <Link
-                className="inline-flex h-9 items-center justify-center rounded-lg bg-foreground px-4 text-sm font-medium text-background transition hover:bg-foreground/90"
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition hover:bg-foreground/90"
                 href="/register"
               >
                 Sign up
@@ -86,7 +86,7 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
             <div className="flex items-center gap-2 md:hidden">
               <ThemeToggle />
               <details className="group relative">
-                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-border-default hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
+                <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-border-default hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
                   <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" className="group-open:hidden" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
@@ -96,7 +96,7 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                   <nav className="flex flex-col space-y-2">
                     {topLinks.map((link) => (
                       <Link
-                        className="rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                        className="rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
                         href={link.href}
                         key={link.label}
                       >
@@ -105,20 +105,20 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                     ))}
                     <div className="my-2 h-px bg-border-default" />
                     <Link
-                      className="rounded-lg border border-border-default bg-surface-1 px-3 py-2 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
+                      className="rounded-xl border border-border-default bg-surface-1 px-3 py-2 text-sm font-medium text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition hover:bg-surface-2"
                       href="/dashboard/frameworks/new"
                     >
                       New Framework
                     </Link>
                     <div className="my-2 h-px bg-border-default" />
                     <Link
-                      className="rounded-lg px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                      className="rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
                       href="/login"
                     >
                       Log in
                     </Link>
                     <Link
-                      className="rounded-lg px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
+                      className="rounded-xl px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
                       href="/register"
                     >
                       Sign up

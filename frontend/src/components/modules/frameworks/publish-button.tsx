@@ -51,7 +51,7 @@ export function PublishButton({ disabled = false, frameworkId }: PublishButtonPr
   return (
     <div>
       <button
-        className="inline-flex min-h-11 items-center justify-center rounded-[6px] bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:opacity-60"
+        className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:opacity-60"
         disabled={disabled || submitting}
         onClick={handlePublish}
         type="button"

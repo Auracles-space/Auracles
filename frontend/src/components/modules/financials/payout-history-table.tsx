@@ -91,7 +91,7 @@ export function PayoutHistoryTable() {
           </p>
         </div>
         <button
-          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!accounts.some((account) => account.verified_at)}
           onClick={() => setModalOpen(true)}
           type="button"
@@ -255,7 +255,7 @@ export function PayoutRequestModal({
             </h2>
           </div>
           <button
-            className="rounded-lg px-3 py-2 text-sm font-semibold text-foreground-muted outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            className="rounded-xl px-3 py-2 text-sm font-semibold text-foreground-muted outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
             onClick={onClose}
             type="button"
           >
@@ -269,7 +269,7 @@ export function PayoutRequestModal({
           <label className="grid gap-2 text-sm font-semibold text-foreground" htmlFor={amountId}>
             Amount
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
               id={amountId}
               inputMode="decimal"
               onChange={(event) => setAmount(event.target.value)}
@@ -283,7 +283,7 @@ export function PayoutRequestModal({
           <label className="grid gap-2 text-sm font-semibold text-foreground" htmlFor={accountId}>
             Payout account
             <select
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
               id={accountId}
               onChange={(event) => setPayoutAccountId(event.target.value)}
               required
@@ -301,7 +301,7 @@ export function PayoutRequestModal({
             Authenticator code
             <input
               autoComplete="one-time-code"
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
               id={totpId}
               inputMode="numeric"
               maxLength={6}
@@ -316,14 +316,14 @@ export function PayoutRequestModal({
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button
-            className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
             disabled={submitting || !payoutAccountId}
             type="submit"
           >

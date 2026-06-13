@@ -173,7 +173,7 @@ export function SavedSearchesPanel() {
 
   if (loading) {
     return (
-      <p className="rounded-lg border border-border-default bg-surface-1 p-5 text-sm text-foreground-muted">
+      <p className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm text-sm text-foreground-muted">
         Loading saved searches...
       </p>
     );
@@ -250,13 +250,13 @@ export function SavedSearchesPanel() {
 
                   <div className="flex flex-wrap gap-2 pt-1 lg:justify-end">
                     <Link
-                      className="inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
                       href={savedSearchFiltersToHref(savedSearch.filters)}
                     >
                       Open
                     </Link>
                     <button
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                       disabled={pendingType === "toggle"}
                       onClick={() => void toggleAlerts(savedSearch)}
                       type="button"
@@ -265,7 +265,7 @@ export function SavedSearchesPanel() {
                       {savedSearch.alert_enabled ? "Disable alerts" : "Enable alerts"}
                     </button>
                     <button
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
                       disabled={pendingType === "delete"}
                       onClick={() => void removeSavedSearch(savedSearch)}
                       type="button"

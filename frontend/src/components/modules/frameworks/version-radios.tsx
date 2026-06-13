@@ -29,7 +29,7 @@ export function VersionRadios({ onChange, value }: VersionRadiosProps) {
       </legend>
       {options.map((option) => (
         <label
-          className="flex min-h-11 items-center gap-3 rounded-[6px] border border-border-default bg-surface-2 px-3 text-sm text-foreground"
+          className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-surface-2 px-3 text-sm text-foreground"
           key={option.value}
         >
           <input

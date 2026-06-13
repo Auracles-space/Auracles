@@ -60,7 +60,7 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
         <label className="grid flex-1 gap-2 text-sm font-semibold" htmlFor={nameId}>
           Key name
           <input
-            className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
             id={nameId}
             onChange={(event) => setName(event.target.value)}
             required
@@ -68,7 +68,7 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
           />
         </label>
         <button
-          className="min-h-11 self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+          className="min-h-12 self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
           type="submit"
         >
           Create key
@@ -133,7 +133,7 @@ export function WebhooksPanel({
         <label className="grid gap-2 text-sm font-semibold" htmlFor={urlId}>
           Endpoint URL
           <input
-            className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
             id={urlId}
             onChange={(event) => setUrl(event.target.value)}
             required
@@ -144,7 +144,7 @@ export function WebhooksPanel({
         <div className="grid gap-2">
           {webhookEvents.map((eventName) => (
             <label
-              className="flex min-h-11 items-center gap-3 text-sm"
+              className="flex min-h-12 items-center gap-3 text-sm"
               key={eventName}
             >
               <input
@@ -163,7 +163,7 @@ export function WebhooksPanel({
           ))}
         </div>
         <button
-          className="min-h-11 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+          className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
           type="submit"
         >
           Register webhook

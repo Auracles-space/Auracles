@@ -51,7 +51,7 @@ function RolePanel({ body, cta, eyebrow, reverse, title, visual }: RolePanelProp
           {body}
         </p>
         <Link
-          className="mt-6 inline-flex h-11 w-fit items-center rounded-control bg-foreground px-5 text-sm font-medium text-background transition hover:opacity-90"
+          className="mt-6 inline-flex min-h-12 w-fit items-center rounded-control bg-foreground px-5 text-sm font-medium text-background transition hover:opacity-90"
           href={cta.href}
         >
           {cta.label}

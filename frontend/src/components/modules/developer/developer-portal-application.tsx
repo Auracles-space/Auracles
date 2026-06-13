@@ -79,7 +79,7 @@ export function ApplicationPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={companyId}>
             Company
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
               id={companyId}
               onChange={(event) => setCompanyName(event.target.value)}
               required
@@ -89,7 +89,7 @@ export function ApplicationPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={websiteId}>
             Website
             <input
-              className="min-h-11 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
               id={websiteId}
               onChange={(event) => setWebsite(event.target.value)}
               type="url"
@@ -107,7 +107,7 @@ export function ApplicationPanel({
             />
           </label>
           <button
-            className="min-h-11 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
             type="submit"
           >
             Submit application

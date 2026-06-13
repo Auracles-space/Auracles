@@ -27,7 +27,7 @@ export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
       </p>
       {framework.preview_url ? (
         <a
-          className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
           href={framework.preview_url}
           rel="noreferrer"
           target="_blank"

@@ -98,7 +98,7 @@ export function PiiReviewResolution({
                 </p>
               </div>
               {artifact.redaction_available ? (
-                <span className="w-fit shrink-0 rounded-lg border border-info/20 bg-info/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-info">
+                <span className="w-fit shrink-0 rounded-xl border border-info/20 bg-info/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-info">
                   Redaction ready
                 </span>
               ) : null}
@@ -125,7 +125,7 @@ export function PiiReviewResolution({
         ))}
       </div>
       {error ? (
-        <div className="mt-4 rounded-lg bg-error/10 p-3 text-sm text-error border border-error/20 flex items-center gap-2">
+        <div className="mt-4 rounded-xl bg-error/10 p-3 text-sm text-error border border-error/20 flex items-center gap-2">
           <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
