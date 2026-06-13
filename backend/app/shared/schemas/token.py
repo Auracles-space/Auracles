@@ -18,5 +18,6 @@ class TokenPayload(BaseModel):
     roles: list[str]
     exp: int
     iat: int
+    iat_ms: int | None = None
     jti: str
     totp_verified: bool = False

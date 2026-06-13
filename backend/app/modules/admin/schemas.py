@@ -55,6 +55,29 @@ class AdminFrameworkStatusResponse(BaseModel):
     reason: str | None = None
 
 
+class AdminUserSuspendRequest(BaseModel):
+    """Request body for suspending a user account."""
+
+    reason: str = Field(min_length=1, max_length=1000)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminUserUnsuspendRequest(BaseModel):
+    """Request body for unsuspending a user account."""
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminUserSuspensionResponse(BaseModel):
+    """Response body for admin user suspension lifecycle changes."""
+
+    user_id: UUID
+    suspended: bool
+    suspended_at: datetime | None
+    suspended_by: UUID | None
+    suspension_reason: str | None
+
+
 class AdminRarityBlockOverrideRequest(BaseModel):
     """Request body for overriding a near-duplicate rarity hard block."""
 

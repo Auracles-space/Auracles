@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 
 
@@ -17,6 +18,8 @@ async def authenticate_websocket_token(db: AsyncSession, token: str) -> User | N
     except JWTError:
         return None
     user = await db.scalar(select(User).where(User.id == payload.sub))
-    if user is None or user.deactivated_at is not None:
+    if user is None or user.deactivated_at is not None or user.suspended_at is not None:
+        return None
+    if auth_service.is_access_token_revoked_for_user(user, payload):
         return None
     return user

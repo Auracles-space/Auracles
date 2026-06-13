@@ -242,6 +242,17 @@ async def create_partner_api_key(
             return api_key.id, account.id
 
 
+async def suspend_partner_account_user(developer_account_id: UUID) -> None:
+    """Suspend the user who owns one developer account."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            account = await session.get(DeveloperAccount, developer_account_id)
+            assert account is not None
+            user = await session.get(User, account.user_id)
+            assert user is not None
+            user.suspended_at = datetime.now(UTC)
+
+
 def build_test_app(fake_redis: FakeRedis) -> FastAPI:
     """Build a test-only app that uses the production Partner API dependency."""
     test_app = FastAPI()
@@ -358,6 +369,28 @@ async def test_partner_api_key_rejects_wrong_scope_and_revoked_key(
     assert wrong_scope.status_code == 403
     assert revoked.status_code == 401
     assert wrong_scope_log is not None
+
+
+async def test_partner_api_key_rejects_suspended_developer_accounts(
+    partner_client: AsyncClient,
+    migrated_database: None,
+    partner_auth_context: FakeRedis,
+) -> None:
+    """Partner API keys stop working once the owning user is suspended."""
+    del migrated_database, partner_auth_context
+    raw_key = "ak_suspended_partner_key"
+    _api_key_id, account_id = await create_partner_api_key(
+        raw_key=raw_key,
+        scopes=["catalog:read"],
+    )
+    await suspend_partner_account_user(account_id)
+
+    response = await partner_client.get(
+        "/partner/protected",
+        headers={"X-API-Key": raw_key},
+    )
+
+    assert response.status_code == 401
 
 
 async def test_partner_api_key_rate_limit_blocks_after_limit(

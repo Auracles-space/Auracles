@@ -165,6 +165,15 @@ async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
+async def suspend_user(user_id: UUID) -> None:
+    """Mark one user suspended for purchase visibility tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            user.suspended_at = datetime.now(UTC)
+
+
 async def create_published_framework(
     contributor_id: UUID,
     *,
@@ -306,6 +315,69 @@ async def test_operator_can_start_stripe_purchase_without_license_grant(
             "idempotency_key": f"purchase:{transaction.id}",
         }
     ]
+
+
+async def test_operator_cannot_purchase_framework_from_suspended_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Direct purchase routes treat suspended contributors as not found."""
+    del migrated_database, purchase_context
+    contributor_id = await create_user_with_roles(
+        "suspended-purchase-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "suspended-purchase-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(contributor_id)
+    await suspend_user(contributor_id)
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_operator_cannot_purchase_collection_from_suspended_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Collection checkout treats suspended contributors as not found."""
+    del migrated_database, purchase_context
+    contributor_id = await create_user_with_roles(
+        "suspended-collection-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "suspended-collection-operator@auracles.space",
+        ["operator"],
+    )
+    first_framework_id = await create_published_framework(contributor_id)
+    second_framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("199.00"),
+    )
+    collection_id = await create_published_collection(
+        contributor_id,
+        framework_ids=[first_framework_id, second_framework_id],
+        bundle_price=Decimal("250.00"),
+    )
+    await suspend_user(contributor_id)
+
+    response = await client.post(
+        f"/v1/financials/collections/{collection_id}/purchase",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert response.status_code == 404
 
 
 async def test_operator_can_start_collection_purchase_with_member_snapshot(

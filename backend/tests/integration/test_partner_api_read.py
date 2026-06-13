@@ -251,6 +251,15 @@ async def create_user(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
+async def suspend_user(user_id: UUID) -> None:
+    """Mark one user suspended for Partner API visibility tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            user.suspended_at = datetime.now(UTC)
+
+
 async def create_partner_key(raw_key: str, scopes: list[str]) -> UUID:
     """Create an active Partner API key with the requested scopes."""
     async with async_session_factory() as session:
@@ -766,3 +775,52 @@ async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
     assert buyer.stripe_customer_id == "cus_partner_invited"
     assert role is not None
     assert role.approved_at is not None
+
+
+async def test_partner_routes_hide_suspended_contributor_frameworks(
+    client: AsyncClient,
+    migrated_database: None,
+    partner_read_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Partner detail and purchase routes treat suspended contributors as hidden."""
+    del migrated_database, partner_read_context
+    raw_key = "ak_partner_suspended_visibility"
+    await create_partner_key(raw_key, ["catalog:read", "purchase:write"])
+    contributor_id = await create_user(
+        f"partner-suspended-seller-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    framework_id, _preview_id = await create_framework(
+        contributor_id,
+        title="Suspended Partner Framework",
+    )
+    await suspend_user(contributor_id)
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str,
+        idempotency_key: str,
+    ) -> FakeStripeCustomer:
+        """Fail the test if purchase reaches Stripe for a hidden Framework."""
+        del email, name, idempotency_key
+        raise AssertionError("Stripe customer creation should not run.")
+
+    monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
+
+    detail = await client.get(
+        f"/v1/partner/catalog/{framework_id}",
+        headers=api_key_headers(raw_key),
+    )
+    purchase = await client.post(
+        f"/v1/partner/frameworks/{framework_id}/purchase",
+        headers=api_key_headers(raw_key),
+        json={
+            "buyer_email": "hidden-partner-buyer@auracles.space",
+            "license_type": "single_user",
+        },
+    )
+
+    assert detail.status_code == 404
+    assert purchase.status_code == 404

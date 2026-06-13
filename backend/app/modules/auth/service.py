@@ -1,4 +1,8 @@
-"""Auth service layer for registration and email verification."""
+"""Auth service layer for registration and email verification.
+
+This module also centralizes session-state enforcement decisions such as
+account deactivation, suspension, and access-token revocation cutoffs.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +40,7 @@ from app.core.security import (
 from app.modules.auth.models import User, UserBackupCode, UserRole
 from app.modules.auth.schemas import LoginResponse, RegisterRequest, TotpSetupResponse
 from app.modules.gdpr import consent_service
+from app.shared.schemas.token import TokenPayload
 from app.workers.tasks.notifications import (
     send_new_device_email,
     send_password_reset_email,
@@ -172,6 +177,21 @@ def _redis_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
+
+
+def access_token_issued_at_ms(payload: TokenPayload) -> int:
+    """Return the access-token issued-at time in milliseconds."""
+    if payload.iat_ms is not None:
+        return payload.iat_ms
+    return payload.iat * 1000
+
+
+def is_access_token_revoked_for_user(user: User, payload: TokenPayload) -> bool:
+    """Return whether a user-level cutoff invalidates one access token."""
+    if user.access_revoked_before is None:
+        return False
+    revoked_before_ms = int(user.access_revoked_before.timestamp() * 1000)
+    return access_token_issued_at_ms(payload) < revoked_before_ms
 
 
 def _session_id_from_refresh_key(key: str) -> str:
@@ -650,6 +670,11 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated.",
         )
+    if user.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is suspended.",
+        )
 
     await redis.delete(failure_key)
     await _record_new_device_if_needed(db, redis, user, ip, ua)
@@ -765,6 +790,11 @@ async def refresh(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token.",
+        )
+    if user.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is suspended.",
         )
 
     roles = await _load_active_roles(db, user.id)
@@ -1056,6 +1086,11 @@ async def verify_totp_login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid 2FA challenge.",
+        )
+    if user.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is suspended.",
         )
 
     await _ensure_totp_not_locked(redis, user.id)

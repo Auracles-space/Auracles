@@ -26,6 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.audit import write_audit
 from app.core.database import async_session_factory, get_db
 from app.core.redis import get_redis
+from app.modules.auth.models import User
 from app.modules.developer.models import ApiKey, ApiRequestLog, DeveloperAccount
 from app.modules.notifications.service import create_notification
 
@@ -148,8 +149,9 @@ async def authenticate_partner_api_key(
         )
 
     result = await db.execute(
-        select(ApiKey, DeveloperAccount)
+        select(ApiKey, DeveloperAccount, User)
         .join(DeveloperAccount, DeveloperAccount.id == ApiKey.developer_account_id)
+        .join(User, User.id == DeveloperAccount.user_id)
         .where(ApiKey.key_hash == _hash_api_key(x_api_key))
     )
     row = result.one_or_none()
@@ -167,11 +169,16 @@ async def authenticate_partner_api_key(
             detail="Invalid API key.",
         )
 
-    api_key, developer_account = row
+    api_key, developer_account, user = row
     request.state.partner_api_key_id = api_key.id
 
     now = datetime.now(UTC)
-    if api_key.status != "active" or developer_account.status != "active":
+    if (
+        api_key.status != "active"
+        or developer_account.status != "active"
+        or user.deactivated_at is not None
+        or user.suspended_at is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key is not active.",

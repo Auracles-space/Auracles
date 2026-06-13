@@ -102,6 +102,10 @@ class User(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    access_revoked_before: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     suspended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

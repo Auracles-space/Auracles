@@ -179,6 +179,15 @@ async def create_user(
         return user.id
 
 
+async def suspend_user(user_id: UUID) -> None:
+    """Mark one user suspended for Explore visibility tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            user.suspended_at = datetime.now(UTC)
+
+
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -851,6 +860,71 @@ async def test_public_contributor_profile_visibility_guards_and_limit(
     assert prolific_response.status_code == 200
     assert prolific_response.json()["published_framework_count"] == 14
     assert len(prolific_response.json()["published_frameworks"]) == 12
+
+
+async def test_suspended_contributor_is_hidden_from_explore_reads(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Suspended Contributors disappear from catalog, detail, and profile reads."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "suspended-explore-contributor@auracles.space",
+        ["contributor"],
+        display_name="Suspended Seller",
+    )
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Suspended Explore Framework",
+    )
+    await suspend_user(contributor_id)
+
+    catalog_response = await client.get("/v1/explore/frameworks")
+    detail_response = await client.get(f"/v1/explore/frameworks/{framework_id}")
+    profile_response = await client.get(f"/v1/explore/contributors/{contributor_id}")
+
+    assert catalog_response.status_code == 200
+    assert [
+        item["title"] for item in catalog_response.json()["items"]
+    ] == []
+    assert detail_response.status_code == 404
+    assert profile_response.status_code == 404
+
+
+async def test_suspended_contributor_collections_are_hidden_from_explore(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Suspended Contributors' Collections disappear from public Explore."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        f"suspended-collection-contributor-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    first_framework_id, _ = await create_framework(
+        contributor_id,
+        title="Suspended Bundle Member A",
+    )
+    second_framework_id, _ = await create_framework(
+        contributor_id,
+        title="Suspended Bundle Member B",
+    )
+    collection_id = await create_collection(
+        contributor_id=contributor_id,
+        title="Suspended Collection",
+        framework_ids=[first_framework_id, second_framework_id],
+        bundle_price=Decimal("700.00"),
+    )
+    await suspend_user(contributor_id)
+
+    list_response = await client.get("/v1/explore/collections")
+    detail_response = await client.get(f"/v1/explore/collections/{collection_id}")
+
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
+    assert detail_response.status_code == 404
 
 
 async def test_authenticated_contributor_catalog_excludes_own_frameworks(

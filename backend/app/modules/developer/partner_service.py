@@ -365,9 +365,12 @@ async def get_detail(
 ) -> PartnerFrameworkDetailResponse:
     """Return Partner-safe public detail for one published Framework."""
     framework = await db.scalar(
-        select(Framework).where(
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
+            User.suspended_at.is_(None),
         )
     )
     if framework is None:
@@ -413,9 +416,12 @@ async def get_preview(
 ) -> PartnerPreviewArtifactResponse:
     """Return the designated preview Artifact and URL for a published Framework."""
     framework = await db.scalar(
-        select(Framework).where(
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
+            User.suspended_at.is_(None),
         )
     )
     if framework is None:
@@ -468,9 +474,12 @@ async def list_attestations(
 ) -> PartnerAttestationsResponse:
     """Return public Attestation report metadata for one published Framework."""
     framework_exists = await db.scalar(
-        select(Framework.id).where(
+        select(Framework.id)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
+            User.suspended_at.is_(None),
         )
     )
     if framework_exists is None:
@@ -519,10 +528,13 @@ async def initiate_purchase(
     """Create a Partner-attributed pending purchase and Stripe PaymentIntent."""
     buyer_email = auth_service.normalize_email(str(payload.buyer_email))
     framework = await db.scalar(
-        select(Framework).where(
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
             Framework.deleted_at.is_(None),
+            User.suspended_at.is_(None),
         )
     )
     if framework is None:

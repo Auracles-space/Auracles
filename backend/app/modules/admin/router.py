@@ -31,6 +31,9 @@ from app.modules.admin.schemas import (
     AdminRarityBlockOverrideRequest,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
+    AdminUserSuspendRequest,
+    AdminUserSuspensionResponse,
+    AdminUserUnsuspendRequest,
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
@@ -215,6 +218,63 @@ async def assign_role(
         user_id=user_id,
         role=assigned_role.role,
         approved=assigned_role.approved_at is not None,
+    )
+
+
+@router.post(
+    "/users/{user_id}/suspend",
+    response_model=AdminUserSuspensionResponse,
+)
+async def suspend_user(
+    user_id: UUID,
+    payload: AdminUserSuspendRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminUserSuspensionResponse:
+    """Suspend a user account and revoke their active session surface."""
+    user = await service.suspend_user(
+        db=db,
+        redis=redis,
+        admin=admin,
+        target_user_id=user_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return AdminUserSuspensionResponse(
+        user_id=user.id,
+        suspended=user.suspended_at is not None,
+        suspended_at=user.suspended_at,
+        suspended_by=user.suspended_by,
+        suspension_reason=user.suspension_reason,
+    )
+
+
+@router.post(
+    "/users/{user_id}/unsuspend",
+    response_model=AdminUserSuspensionResponse,
+)
+async def unsuspend_user(
+    user_id: UUID,
+    payload: AdminUserUnsuspendRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminUserSuspensionResponse:
+    """Restore a previously suspended user account."""
+    user = await service.unsuspend_user(
+        db=db,
+        redis=redis,
+        admin=admin,
+        target_user_id=user_id,
+        totp_code=payload.totp_code,
+    )
+    return AdminUserSuspensionResponse(
+        user_id=user.id,
+        suspended=user.suspended_at is not None,
+        suspended_at=user.suspended_at,
+        suspended_by=user.suspended_by,
+        suspension_reason=user.suspension_reason,
     )
 
 

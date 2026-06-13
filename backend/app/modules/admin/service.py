@@ -26,6 +26,7 @@ from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, License
@@ -1255,6 +1256,182 @@ async def override_rarity_block(
         framework_id=framework.id,
     ).info("rarity_block_overridden")
     return framework
+
+
+async def _is_active_admin(db: AsyncSession, user_id: UUID) -> bool:
+    """Return whether a user is currently an unsuspended approved admin."""
+    active_admin = await db.scalar(
+        select(UserRole.id)
+        .join(User, User.id == UserRole.user_id)
+        .where(
+            UserRole.user_id == user_id,
+            UserRole.role == "admin",
+            UserRole.approved_at.is_not(None),
+            User.deactivated_at.is_(None),
+            User.suspended_at.is_(None),
+        )
+        .limit(1)
+    )
+    return active_admin is not None
+
+
+async def _count_active_admins(db: AsyncSession) -> int:
+    """Return the number of currently active approved admin accounts."""
+    return int(
+        await db.scalar(
+            select(func.count(User.id))
+            .join(UserRole, UserRole.user_id == User.id)
+            .where(
+                UserRole.role == "admin",
+                UserRole.approved_at.is_not(None),
+                User.deactivated_at.is_(None),
+                User.suspended_at.is_(None),
+            )
+        )
+        or 0
+    )
+
+
+async def suspend_user(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    target_user_id: UUID,
+    reason: str,
+    totp_code: str,
+) -> User:
+    """Suspend one user, revoke sessions, and revoke developer API keys."""
+    admin_id = admin.id
+    normalized_reason = reason.strip()
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
+        target = await db.get(User, target_user_id, with_for_update=True)
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        if target.id == admin_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Admins cannot suspend themselves.",
+            )
+        if target.suspended_at is None and await _is_active_admin(db, target.id):
+            if await _count_active_admins(db) <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot suspend the final active admin.",
+                )
+
+        now = datetime.now(UTC)
+        developer_account = await db.scalar(
+            select(DeveloperAccount)
+            .where(DeveloperAccount.user_id == target.id)
+            .with_for_update()
+        )
+        if target.suspended_at is None:
+            target.suspended_at = now
+            target.suspended_by = admin_id
+            target.suspension_reason = normalized_reason
+            target.access_revoked_before = now
+            if developer_account is not None:
+                developer_account.status = "suspended"
+            api_keys = (
+                await db.execute(
+                    select(ApiKey).where(
+                        ApiKey.developer_account_id == developer_account.id
+                    )
+                )
+            ).scalars().all() if developer_account is not None else []
+            for api_key in api_keys:
+                if api_key.status != "revoked":
+                    api_key.status = "revoked"
+                    api_key.revoked_at = now
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="user_suspended",
+                target_type="user",
+                target_id=target.id,
+                metadata={"reason": normalized_reason, "idempotent": False},
+            )
+        else:
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="user_suspended",
+                target_type="user",
+                target_id=target.id,
+                metadata={
+                    "reason": target.suspension_reason,
+                    "idempotent": True,
+                },
+            )
+    await auth_service.revoke_all_user_sessions(redis, target)
+    return target
+
+
+async def unsuspend_user(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    target_user_id: UUID,
+    totp_code: str,
+) -> User:
+    """Clear suspension state for one user without restoring revoked keys."""
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
+        target = await db.get(User, target_user_id, with_for_update=True)
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        developer_account = await db.scalar(
+            select(DeveloperAccount)
+            .where(DeveloperAccount.user_id == target.id)
+            .with_for_update()
+        )
+        if target.suspended_at is None:
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="user_unsuspended",
+                target_type="user",
+                target_id=target.id,
+                metadata={"idempotent": True},
+            )
+            return target
+
+        target.suspended_at = None
+        target.suspended_by = None
+        target.suspension_reason = None
+        if developer_account is not None:
+            developer_account.status = "active"
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="user_unsuspended",
+            target_type="user",
+            target_id=target.id,
+            metadata={"idempotent": False},
+        )
+    return target
 
 
 async def grant_license(

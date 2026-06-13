@@ -187,7 +187,14 @@ def _search_match(framework: Framework, query: str) -> bool:
 
 def _base_catalog_query(current_user_id: UUID | None) -> Select[tuple[Framework]]:
     """Build the base query for public catalog reads."""
-    query = select(Framework).where(Framework.status == "published")
+    query = (
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
+            Framework.status == "published",
+            User.suspended_at.is_(None),
+        )
+    )
     if current_user_id is not None:
         query = query.where(Framework.contributor_id != current_user_id)
     return query
@@ -615,7 +622,14 @@ def _base_collection_query(
     current_user_id: UUID | None,
 ) -> Select[tuple[FrameworkCollection]]:
     """Build the base query for public Collection catalog reads."""
-    query = select(FrameworkCollection).where(FrameworkCollection.status == "published")
+    query = (
+        select(FrameworkCollection)
+        .join(User, User.id == FrameworkCollection.contributor_id)
+        .where(
+            FrameworkCollection.status == "published",
+            User.suspended_at.is_(None),
+        )
+    )
     if current_user_id is not None:
         query = query.where(FrameworkCollection.contributor_id != current_user_id)
     return query
@@ -1000,9 +1014,12 @@ async def related_frameworks(
 ) -> list[ExploreFrameworkCard]:
     """Return up to six related published Frameworks."""
     source = await db.scalar(
-        select(Framework).where(
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
+            User.suspended_at.is_(None),
         )
     )
     if source is None:
@@ -1061,6 +1078,7 @@ async def get_contributor_profile(
         .where(
             User.id == contributor_id,
             UserRole.role == "contributor",
+            User.suspended_at.is_(None),
         )
     )
     if contributor is None:

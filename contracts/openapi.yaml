@@ -190,6 +190,78 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/users/{user_id}/suspend:
+    post:
+      tags:
+      - Admin
+      summary: Suspend User
+      description: Suspend a user account and revoke their active session surface.
+      operationId: suspend_user_v1_admin_users__user_id__suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserSuspendRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserSuspensionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/users/{user_id}/unsuspend:
+    post:
+      tags:
+      - Admin
+      summary: Unsuspend User
+      description: Restore a previously suspended user account.
+      operationId: unsuspend_user_v1_admin_users__user_id__unsuspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserUnsuspendRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserSuspensionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/kyc:
     patch:
       tags:
@@ -6828,6 +6900,71 @@ components:
       - approved
       title: AdminRoleAssignmentResponse
       description: Response body for admin role assignment.
+    AdminUserSuspendRequest:
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Reason
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - reason
+      - totp_code
+      title: AdminUserSuspendRequest
+      description: Request body for suspending a user account.
+    AdminUserSuspensionResponse:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        suspended:
+          type: boolean
+          title: Suspended
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+        suspended_by:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Suspended By
+        suspension_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suspension Reason
+      type: object
+      required:
+      - user_id
+      - suspended
+      - suspended_at
+      - suspended_by
+      - suspension_reason
+      title: AdminUserSuspensionResponse
+      description: Response body for admin user suspension lifecycle changes.
+    AdminUserUnsuspendRequest:
+      properties:
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - totp_code
+      title: AdminUserUnsuspendRequest
+      description: Request body for unsuspending a user account.
     AmendmentCreateRequest:
       properties:
         change_type:

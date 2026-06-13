@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
@@ -198,6 +199,30 @@ def create_project_members(session_factory: sessionmaker) -> tuple[UUID, UUID, U
         return operator.id, outsider.id, project.id
 
 
+def create_suspended_user(session_factory: sessionmaker) -> UUID:
+    """Create one suspended Operator account for realtime auth tests."""
+    with session_factory() as session:
+        user = User(
+            email=f"ws-suspended-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="WS Suspended",
+            email_verified=True,
+            kyc_status="verified",
+            suspended_at=datetime.now(UTC),
+        )
+        session.add(user)
+        session.flush()
+        session.add(
+            UserRole(
+                user_id=user.id,
+                role="operator",
+                approved_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        return user.id
+
+
 def test_websocket_auth_and_project_subscription_authorization(
     migrated_database: None,
     realtime_context: tuple[sessionmaker, list[str]],
@@ -261,6 +286,29 @@ def test_websocket_authentication_times_out_without_first_message(
         {"type": "error", "error_code": "auth_timeout"},
     ]
     assert websocket.closed_code == 4401
+
+
+def test_suspended_user_cannot_authenticate_websocket(
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """Suspended accounts are rejected during realtime auth handshake."""
+    session_factory, _ = realtime_context
+    suspended_user_id = create_suspended_user(session_factory)
+    suspended_token = create_access_token(suspended_user_id, ["operator"])
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/v1/ws") as websocket:
+            assert websocket.receive_json() == {"type": "auth_required"}
+            websocket.send_json({"type": "auth", "token": suspended_token})
+            assert websocket.receive_json() == {
+                "type": "error",
+                "error_code": "invalid_token",
+            }
+            with pytest.raises(WebSocketDisconnect) as disconnect:
+                websocket.receive_json()
+
+    assert disconnect.value.code == 4401
 
 
 def test_websocket_ping_returns_pong(

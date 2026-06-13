@@ -540,9 +540,12 @@ async def create_collection_purchase(
     """Create a pending Collection transaction and Stripe PaymentIntent."""
     operator_id = operator.id
     collection = await db.scalar(
-        select(FrameworkCollection).where(
+        select(FrameworkCollection)
+        .join(User, User.id == FrameworkCollection.contributor_id)
+        .where(
             FrameworkCollection.id == collection_id,
             FrameworkCollection.status == "published",
+            User.suspended_at.is_(None),
         )
     )
     if collection is None:

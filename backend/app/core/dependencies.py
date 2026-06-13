@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.shared.schemas.token import TokenPayload
 
@@ -51,6 +52,16 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated.",
+        )
+    if user.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is suspended.",
+        )
+    if auth_service.is_access_token_revoked_for_user(user, payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
         )
     return user
 

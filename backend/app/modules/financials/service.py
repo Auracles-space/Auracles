@@ -740,10 +740,13 @@ async def create_framework_purchase(
     customer_id = operator.stripe_customer_id
 
     framework = await db.scalar(
-        select(Framework).where(
+        select(Framework)
+        .join(User, User.id == Framework.contributor_id)
+        .where(
             Framework.id == framework_id,
             Framework.status == "published",
             Framework.deleted_at.is_(None),
+            User.suspended_at.is_(None),
         )
     )
     if framework is None:

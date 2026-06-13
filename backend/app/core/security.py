@@ -61,6 +61,7 @@ def create_access_token(
         "totp_verified": totp_verified,
         "exp": int(expires_at.timestamp()),
         "iat": int(issued_at.timestamp()),
+        "iat_ms": int(issued_at.timestamp() * 1000),
         "jti": str(uuid4()),
     }
     return cast(str, jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM))
