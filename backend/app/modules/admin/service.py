@@ -16,8 +16,9 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.integrations import stripe
@@ -112,6 +113,7 @@ MODERATION_QUEUE_SORT_PRIORITY = {
     "near_duplicate_block": 1,
     "rarity_review": 2,
 }
+ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended")
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -1057,6 +1059,67 @@ async def list_moderation_queue(
     return {
         "items": paginated_items,
         "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_users(
+    db: AsyncSession,
+    *,
+    query: str | None,
+    status_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated admin-facing user directory."""
+    if status_filter not in ADMIN_USER_DIRECTORY_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported user directory filter.",
+        )
+
+    filters = []
+    if status_filter == "active":
+        filters.append(User.suspended_at.is_(None))
+    elif status_filter == "suspended":
+        filters.append(User.suspended_at.is_not(None))
+
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        like_value = f"%{normalized_query}%"
+        filters.append(
+            or_(
+                User.display_name.ilike(like_value),
+                User.email.ilike(like_value),
+            )
+        )
+
+    total = await db.scalar(select(func.count(User.id)).where(*filters))
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.roles))
+        .where(*filters)
+        .order_by(desc(User.created_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    users = list(result.scalars().all())
+
+    return {
+        "items": [
+            {
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "email": user.email,
+                "roles": sorted(role.role for role in user.roles),
+                "created_at": user.created_at,
+                "suspended": user.suspended_at is not None,
+                "suspended_at": user.suspended_at,
+            }
+            for user in users
+        ],
+        "total": int(total or 0),
         "page": page,
         "page_size": page_size,
     }

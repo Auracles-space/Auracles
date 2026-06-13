@@ -39,6 +39,82 @@ export type AddRoleRequest = {
 export type role = 'contributor' | 'operator' | 'attestor';
 
 /**
+ * Current-state admin analytics plus frozen historical trend rows.
+ */
+export type AdminAnalyticsDashboardResponse = {
+    gmv: AdminAnalyticsGmvResponse;
+    active_users: AdminAnalyticsWindowCounts;
+    new_registrations: AdminAnalyticsWindowCounts;
+    frameworks_published: AdminAnalyticsPublishedFrameworks;
+    attestations_issued: AdminAnalyticsWindowCounts;
+    disputes_open: AdminAnalyticsDisputesOpen;
+    trend: Array<AdminAnalyticsTrendPoint>;
+};
+
+/**
+ * Current open dispute counts split by dispute source.
+ */
+export type AdminAnalyticsDisputesOpen = {
+    total: number;
+    projects: number;
+    attestations: number;
+};
+
+/**
+ * Money totals for each marketplace revenue source within one window.
+ */
+export type AdminAnalyticsGmvBreakdown = {
+    framework_purchase: string;
+    collection_purchase: string;
+    project_milestone: string;
+    attestation_fee: string;
+};
+
+/**
+ * GMV totals and by-source breakdowns for the admin dashboard.
+ */
+export type AdminAnalyticsGmvResponse = {
+    today_total: string;
+    last_7_days_total: string;
+    last_30_days_total: string;
+    today_by_source: AdminAnalyticsGmvBreakdown;
+    last_7_days_by_source: AdminAnalyticsGmvBreakdown;
+    last_30_days_by_source: AdminAnalyticsGmvBreakdown;
+};
+
+/**
+ * Published Framework totals and recent publication counts.
+ */
+export type AdminAnalyticsPublishedFrameworks = {
+    total: number;
+    last_24_hours: number;
+    last_7_days: number;
+    last_30_days: number;
+};
+
+/**
+ * One frozen UTC daily analytics row for dashboard trend charts.
+ */
+export type AdminAnalyticsTrendPoint = {
+    snapshot_date: string;
+    gmv_total: string;
+    active_users: number;
+    new_registrations: number;
+    frameworks_published: number;
+    attestations_issued: number;
+    disputes_open: number;
+};
+
+/**
+ * Three standard recency windows used across current-state analytics.
+ */
+export type AdminAnalyticsWindowCounts = {
+    last_24_hours: number;
+    last_7_days: number;
+    last_30_days: number;
+};
+
+/**
  * Admin request body for manually assigning a needs-admin Attestation.
  */
 export type AdminAttestationAssignRequest = {
@@ -203,6 +279,49 @@ export type AdminLicenseGrantResponse = {
 };
 
 /**
+ * Existing API action relevant to one moderation queue row.
+ */
+export type AdminModerationActionLink = {
+    rel: string;
+    method: "POST";
+    path: string;
+    actor_role: 'admin' | 'contributor';
+};
+
+export type actor_role = 'admin' | 'contributor';
+
+/**
+ * One moderation queue row aggregated from existing platform signals.
+ */
+export type AdminModerationQueueItem = {
+    signal_id: string;
+    queue_type: 'rarity_review' | 'near_duplicate_block' | 'pii_review';
+    framework_id: string;
+    framework_title: string;
+    contributor_id: string;
+    contributor_name: string;
+    artifact_id?: (string | null);
+    artifact_name?: (string | null);
+    signal_at: string;
+    details: {
+        [key: string]: unknown;
+    };
+    action_links: Array<AdminModerationActionLink>;
+};
+
+export type queue_type = 'rarity_review' | 'near_duplicate_block' | 'pii_review';
+
+/**
+ * Paginated moderation queue response for admin review surfaces.
+ */
+export type AdminModerationQueueResponse = {
+    items: Array<AdminModerationQueueItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Request body for overriding a near-duplicate rarity hard block.
  */
 export type AdminRarityBlockOverrideRequest = {
@@ -225,6 +344,55 @@ export type AdminRoleAssignmentResponse = {
     user_id: string;
     role: string;
     approved: boolean;
+};
+
+/**
+ * One user row visible in the admin account directory.
+ */
+export type AdminUserDirectoryItem = {
+    user_id: string;
+    display_name: string;
+    email: string;
+    roles: Array<(string)>;
+    created_at: string;
+    suspended: boolean;
+    suspended_at: (string | null);
+};
+
+/**
+ * Paginated admin user directory response.
+ */
+export type AdminUserDirectoryResponse = {
+    items: Array<AdminUserDirectoryItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * Request body for suspending a user account.
+ */
+export type AdminUserSuspendRequest = {
+    reason: string;
+    totp_code: string;
+};
+
+/**
+ * Response body for admin user suspension lifecycle changes.
+ */
+export type AdminUserSuspensionResponse = {
+    user_id: string;
+    suspended: boolean;
+    suspended_at: (string | null);
+    suspended_by: (string | null);
+    suspension_reason: (string | null);
+};
+
+/**
+ * Request body for unsuspending a user account.
+ */
+export type AdminUserUnsuspendRequest = {
+    totp_code: string;
 };
 
 /**
@@ -2364,6 +2532,33 @@ export type UpdatePlatformConfigV1AdminConfigPatchResponse = (AdminConfigRespons
 
 export type UpdatePlatformConfigV1AdminConfigPatchError = (HTTPValidationError);
 
+export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetResponse = (AdminAnalyticsDashboardResponse);
+
+export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetError = unknown;
+
+export type ExportAdminAnalyticsV1AdminAnalyticsExportGetData = {
+    query: {
+        from: string;
+        to: string;
+    };
+};
+
+export type ExportAdminAnalyticsV1AdminAnalyticsExportGetResponse = (unknown);
+
+export type ExportAdminAnalyticsV1AdminAnalyticsExportGetError = (HTTPValidationError);
+
+export type ListModerationQueueV1AdminModerationQueueGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        type?: string;
+    };
+};
+
+export type ListModerationQueueV1AdminModerationQueueGetResponse = (AdminModerationQueueResponse);
+
+export type ListModerationQueueV1AdminModerationQueueGetError = (HTTPValidationError);
+
 export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
     body: AdminRoleAssignmentRequest;
     path: {
@@ -2374,6 +2569,41 @@ export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
 export type AssignRoleV1AdminUsersUserIdRolesPatchResponse = (AdminRoleAssignmentResponse);
 
 export type AssignRoleV1AdminUsersUserIdRolesPatchError = (HTTPValidationError);
+
+export type ListAdminUsersV1AdminUsersGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+        status?: string;
+    };
+};
+
+export type ListAdminUsersV1AdminUsersGetResponse = (AdminUserDirectoryResponse);
+
+export type ListAdminUsersV1AdminUsersGetError = (HTTPValidationError);
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
+    body: AdminUserSuspendRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostResponse = (AdminUserSuspensionResponse);
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostError = (HTTPValidationError);
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostData = {
+    body: AdminUserUnsuspendRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostResponse = (AdminUserSuspensionResponse);
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostError = (HTTPValidationError);
 
 export type ReviewKycV1AdminUsersUserIdKycPatchData = {
     body: AdminKycReviewRequest;
@@ -3415,6 +3645,10 @@ export type AcceptCurrentConsentV1GdprConsentPostError = (HTTPValidationError);
 export type RequestDataExportV1GdprExportsPostResponse = (DataExportRequestResponse);
 
 export type RequestDataExportV1GdprExportsPostError = unknown;
+
+export type GetLatestDataExportStatusV1GdprExportsLatestGetResponse = (DataExportRequestResponse);
+
+export type GetLatestDataExportStatusV1GdprExportsLatestGetError = unknown;
 
 export type GetDataExportStatusV1GdprExportsExportRequestIdGetData = {
     path: {

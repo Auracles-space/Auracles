@@ -31,7 +31,7 @@ const appLinks = [
   { href: "/settings/credentials", label: "Credentials" },
   { href: "/settings/consent", label: "Consent" },
   { href: "/settings/saved-searches", label: "Saved Searches" },
-  { href: "/admin/attestations", label: "Admin" },
+  { href: "/admin/analytics", label: "Admin" },
   { href: "/settings/account", label: "Settings" },
 ];
 

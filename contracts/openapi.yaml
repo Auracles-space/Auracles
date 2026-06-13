@@ -190,6 +190,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/users:
+    get:
+      tags:
+      - Admin
+      summary: List users for admin account controls
+      description: Return a paginated admin user directory with search and suspension
+        status filters for account moderation workflows.
+      operationId: list_admin_users_v1_admin_users_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 255
+          - type: 'null'
+          title: Query
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|suspended)$
+          default: all
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDirectoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/suspend:
     post:
       tags:
@@ -6900,6 +6959,74 @@ components:
       - approved
       title: AdminRoleAssignmentResponse
       description: Response body for admin role assignment.
+    AdminUserDirectoryItem:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        display_name:
+          type: string
+          title: Display Name
+        email:
+          type: string
+          title: Email
+        roles:
+          items:
+            type: string
+          type: array
+          title: Roles
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        suspended:
+          type: boolean
+          title: Suspended
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+      type: object
+      required:
+      - user_id
+      - display_name
+      - email
+      - roles
+      - created_at
+      - suspended
+      - suspended_at
+      title: AdminUserDirectoryItem
+      description: One user row visible in the admin account directory.
+    AdminUserDirectoryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminUserDirectoryItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminUserDirectoryResponse
+      description: Paginated admin user directory response.
     AdminUserSuspendRequest:
       properties:
         reason:

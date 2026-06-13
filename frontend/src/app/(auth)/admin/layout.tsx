@@ -3,6 +3,7 @@
  */
 import type { ReactNode } from "react";
 
+import { AdminWorkspaceShell } from "@/components/modules/admin/admin-workspace-shell";
 import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
 
 type AdminLayoutProps = {
@@ -15,5 +16,9 @@ type AdminLayoutProps = {
  * @param props - Nested route content.
  */
 export default function AdminLayout({ children }: AdminLayoutProps) {
-  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+  return (
+    <AuthenticatedAppShell>
+      <AdminWorkspaceShell>{children}</AdminWorkspaceShell>
+    </AuthenticatedAppShell>
+  );
 }

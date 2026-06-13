@@ -31,6 +31,7 @@ from app.modules.admin.schemas import (
     AdminRarityBlockOverrideRequest,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
+    AdminUserDirectoryResponse,
     AdminUserSuspendRequest,
     AdminUserSuspensionResponse,
     AdminUserUnsuspendRequest,
@@ -219,6 +220,38 @@ async def assign_role(
         role=assigned_role.role,
         approved=assigned_role.approved_at is not None,
     )
+
+
+@router.get(
+    "/users",
+    response_model=AdminUserDirectoryResponse,
+    summary="List users for admin account controls",
+    description=(
+        "Return a paginated admin user directory with search and suspension "
+        "status filters for account moderation workflows."
+    ),
+)
+async def list_admin_users(
+    admin: AdminUser,
+    db: DatabaseSession,
+    query: Annotated[str | None, Query(min_length=1, max_length=255)] = None,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|active|suspended)$"),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminUserDirectoryResponse:
+    """Return the admin user directory."""
+    del admin
+    users = await service.list_admin_users(
+        db=db,
+        query=query,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminUserDirectoryResponse.model_validate(users)
 
 
 @router.post(

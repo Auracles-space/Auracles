@@ -78,6 +78,27 @@ class AdminUserSuspensionResponse(BaseModel):
     suspension_reason: str | None
 
 
+class AdminUserDirectoryItem(BaseModel):
+    """One user row visible in the admin account directory."""
+
+    user_id: UUID
+    display_name: str
+    email: str
+    roles: list[str]
+    created_at: datetime
+    suspended: bool
+    suspended_at: datetime | None
+
+
+class AdminUserDirectoryResponse(BaseModel):
+    """Paginated admin user directory response."""
+
+    items: list[AdminUserDirectoryItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
 class AdminRarityBlockOverrideRequest(BaseModel):
     """Request body for overriding a near-duplicate rarity hard block."""
 
