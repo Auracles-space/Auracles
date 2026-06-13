@@ -39,6 +39,7 @@ from app.modules.explore.schemas import (
 )
 from app.modules.frameworks.models import Framework, License, Review
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.reputation import service as reputation_service
 
 PREVIEW_URL_TTL_SECONDS = 900
 PREVIEW_RATE_LIMIT = 60
@@ -53,6 +54,7 @@ def _card_from_framework(
     attestation_badge: ExploreAttestationBadge | None,
     review_aggregate: tuple[Decimal | None, int] | None,
     contributor_name: str,
+    reputation: dict[str, object] | None = None,
 ) -> ExploreFrameworkCard:
     """Map a published Framework row into a public catalog card."""
     average_review_score, review_count = review_aggregate or (None, 0)
@@ -80,6 +82,7 @@ def _card_from_framework(
         average_review_score=average_review_score,
         review_count=review_count,
         attestation_badge=attestation_badge,
+        reputation=reputation,
         owned=False,
         published_at=framework.published_at,
     )
@@ -595,6 +598,11 @@ async def list_catalog_from_filters(
         db,
         [framework.id for framework in frameworks],
     )
+    reputations = await reputation_service.summaries_for_subjects(
+        db,
+        subject_type="framework",
+        subject_ids=[framework.id for framework in frameworks],
+    )
     contributor_names = await _user_display_names(
         db,
         [framework.contributor_id for framework in frameworks],
@@ -607,6 +615,7 @@ async def list_catalog_from_filters(
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
                 contributor_names.get(framework.contributor_id, "Contributor"),
+                reputations.get(framework.id),
             )
             for framework in frameworks
         ],
@@ -836,6 +845,11 @@ async def list_mixed_catalog(
         db,
         [framework.id for framework in frameworks],
     )
+    reputations = await reputation_service.summaries_for_subjects(
+        db,
+        subject_type="framework",
+        subject_ids=[framework.id for framework in frameworks],
+    )
     framework_contributor_names = await _user_display_names(
         db,
         [framework.contributor_id for framework in frameworks],
@@ -851,6 +865,7 @@ async def list_mixed_catalog(
                     framework.contributor_id,
                     "Contributor",
                 ),
+                reputations.get(framework.id),
             )
         )
         for framework in frameworks
@@ -957,6 +972,9 @@ async def get_detail(
     rarity_scores = await _framework_rarity_scores(db, [framework.id])
     attestation_badges = await _framework_attestation_badges(db, [framework.id])
     review_aggregates = await _framework_review_aggregates(db, [framework.id])
+    reputations = await reputation_service.summaries_for_subjects(
+        db, subject_type="framework", subject_ids=[framework.id]
+    )
     contributor_names = await _user_display_names(db, [framework.contributor_id])
     preview_artifact = next(
         (
@@ -972,6 +990,7 @@ async def get_detail(
         attestation_badges.get(framework.id),
         review_aggregates.get(framework.id),
         contributor_names.get(framework.contributor_id, "Contributor"),
+        reputations.get(framework.id),
     )
     return ExploreFrameworkDetail(
         **card.model_dump(),
@@ -1050,6 +1069,11 @@ async def related_frameworks(
         db,
         [framework.id for framework in ranked],
     )
+    reputations = await reputation_service.summaries_for_subjects(
+        db,
+        subject_type="framework",
+        subject_ids=[framework.id for framework in ranked],
+    )
     contributor_names = await _user_display_names(
         db,
         [framework.contributor_id for framework in ranked],
@@ -1061,6 +1085,7 @@ async def related_frameworks(
             attestation_badges.get(framework.id),
             review_aggregates.get(framework.id),
             contributor_names.get(framework.contributor_id, "Contributor"),
+            reputations.get(framework.id),
         )
         for framework in ranked
     ]
@@ -1116,6 +1141,12 @@ async def get_contributor_profile(
     rarity_scores = await _framework_rarity_scores(db, framework_ids)
     attestation_badges = await _framework_attestation_badges(db, framework_ids)
     review_aggregates = await _framework_review_aggregates(db, framework_ids)
+    reputations = await reputation_service.summaries_for_subjects(
+        db, subject_type="framework", subject_ids=framework_ids
+    )
+    contributor_reputations = await reputation_service.summaries_for_subjects(
+        db, subject_type="contributor", subject_ids=[contributor_id]
+    )
     contributor_badges, contributor_badge_counts = await _public_attestation_badges(
         db,
         target_type="contributor",
@@ -1131,6 +1162,7 @@ async def get_contributor_profile(
         website=contributor.website,
         attestation_badge=contributor_badges.get(contributor_id),
         attestation_count=contributor_badge_counts.get(contributor_id, 0),
+        reputation=contributor_reputations.get(contributor_id),
         is_deactivated=contributor.deactivated_at is not None,
         published_framework_count=published_count,
         published_frameworks=[
@@ -1140,6 +1172,7 @@ async def get_contributor_profile(
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
                 contributor.display_name,
+                reputations.get(framework.id),
             )
             for framework in frameworks
         ],

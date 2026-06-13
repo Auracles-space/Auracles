@@ -226,6 +226,27 @@ async def _create_deal(operator_id: UUID, contributor_id: UUID) -> None:
             )
 
 
+async def _create_open_project(operator_id: UUID) -> UUID:
+    """Create one open project owned by ``operator_id`` and return its id."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            project = Project(
+                id=uuid4(),
+                operator_id=operator_id,
+                title="Open Project",
+                description="Open project for operator reputation surface test.",
+                category="advisory",
+                required_deliverables=[{"name": "report"}],
+                budget_min=Decimal("1000.00"),
+                budget_max=Decimal("5000.00"),
+                currency="USD",
+                status="open",
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+            session.add(project)
+        return project.id
+
+
 def _auth(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Build bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
@@ -400,3 +421,115 @@ async def test_admin_recompute_queues_with_valid_2fa(
 
     assert response.status_code == 202
     assert dispatched == [("framework", str(framework_id))]
+
+
+@pytest.mark.asyncio
+async def test_explore_framework_card_includes_reputation(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """The public Explore catalog embeds a framework's reputation summary."""
+    contributor_id = await _create_user("rep-card-owner@example.com", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    await _seed_score(
+        "framework",
+        framework_id,
+        score="81.00",
+        is_provisional=False,
+        components=_COMPONENTS,
+    )
+
+    response = await client.get("/v1/explore/frameworks")
+
+    assert response.status_code == 200
+    card = next(
+        item for item in response.json()["items"] if item["id"] == str(framework_id)
+    )
+    assert card["reputation"] is not None
+    assert card["reputation"]["score"] == "81.00"
+    assert card["reputation"]["is_provisional"] is False
+    factor_names = {f["factor"] for f in card["reputation"]["factors"]}
+    assert factor_names == {"reviews", "attestations", "adoption"}
+
+
+@pytest.mark.asyncio
+async def test_contributor_profile_includes_reputation(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """The public contributor profile embeds the contributor's reputation."""
+    contributor_id = await _create_user("rep-prof-owner@example.com", ["contributor"])
+    await _create_framework(contributor_id)
+    await _seed_score(
+        "contributor",
+        contributor_id,
+        score="72.00",
+        is_provisional=False,
+        components={"verification": {"value": "1.0000", "label": "strong"}},
+    )
+
+    response = await client.get(f"/v1/explore/contributors/{contributor_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reputation"] is not None
+    assert body["reputation"]["score"] == "72.00"
+
+
+@pytest.mark.asyncio
+async def test_provisional_framework_card_hides_numeric_score(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """A provisional framework reads as "New": score suppressed on the card."""
+    contributor_id = await _create_user("rep-card-new@example.com", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    await _seed_score(
+        "framework",
+        framework_id,
+        score="50.00",
+        is_provisional=True,
+        components=_COMPONENTS,
+    )
+
+    response = await client.get("/v1/explore/frameworks")
+
+    card = next(
+        item for item in response.json()["items"] if item["id"] == str(framework_id)
+    )
+    assert card["reputation"]["score"] is None
+    assert card["reputation"]["is_provisional"] is True
+
+
+@pytest.mark.asyncio
+async def test_operator_reputation_on_project_for_contributor_not_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """Operator reputation rides the Project detail for a contributor, not self."""
+    operator_id = await _create_user("rep-proj-operator@example.com", ["operator"])
+    contributor_id = await _create_user("rep-proj-bidder@example.com", ["contributor"])
+    project_id = await _create_open_project(operator_id)
+    await _seed_score(
+        "operator",
+        operator_id,
+        score="66.00",
+        is_provisional=False,
+        components={"purchase_activity": {"value": "0.9000", "label": "strong"}},
+    )
+
+    path = f"/v1/projects/{project_id}"
+    contributor_resp = await client.get(
+        path, headers=_auth(contributor_id, ["contributor"])
+    )
+    operator_resp = await client.get(path, headers=_auth(operator_id, ["operator"]))
+
+    assert contributor_resp.status_code == 200
+    assert contributor_resp.json()["operator_reputation"] is not None
+    assert contributor_resp.json()["operator_reputation"]["score"] == "66.00"
+    assert operator_resp.status_code == 200
+    assert operator_resp.json()["operator_reputation"] is None

@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.reputation.schemas import ReputationSummary
+
 ExploreSort = Literal[
     "newest",
     "top-rated",
@@ -61,6 +63,7 @@ class ExploreFrameworkCard(BaseModel):
     average_review_score: Decimal | None = Field(default=None, decimal_places=2)
     review_count: int = 0
     attestation_badge: ExploreAttestationBadge | None = None
+    reputation: ReputationSummary | None = None
     owned: bool = False
     published_at: datetime | None
 
@@ -177,6 +180,7 @@ class ExploreContributorProfile(BaseModel):
     website: str | None
     attestation_badge: ExploreAttestationBadge | None = None
     attestation_count: int = 0
+    reputation: ReputationSummary | None = None
     is_deactivated: bool = False
     published_framework_count: int
     published_frameworks: list[ExploreFrameworkCard]

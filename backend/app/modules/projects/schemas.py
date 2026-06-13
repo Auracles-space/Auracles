@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.reputation.schemas import ReputationSummary
+
 
 class DeliverableSpec(BaseModel):
     """Small deliverable description embedded in Project and Proposal payloads."""
@@ -285,6 +287,7 @@ class ProjectResponse(BaseModel):
     closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    operator_reputation: ReputationSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

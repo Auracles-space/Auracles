@@ -38,6 +38,8 @@ from app.modules.projects.schemas import (
     ProposalResponse,
     ProposalsResponse,
 )
+from app.modules.reputation import service as reputation_service
+from app.modules.reputation.schemas import ReputationSummary
 from app.shared.schemas.token import TokenPayload
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -98,7 +100,17 @@ async def get_project(
         token_roles=token.roles,
         project_id=project_id,
     )
-    return ProjectResponse.model_validate(project)
+    response = ProjectResponse.model_validate(project)
+    # Surface the Operator's reputation only to a bidding/assigned Contributor —
+    # never on the Operator's own view or any public surface (BR-ATT-005).
+    if project.operator_id != current_user.id:
+        summaries = await reputation_service.summaries_for_subjects(
+            db, subject_type="operator", subject_ids=[project.operator_id]
+        )
+        summary = summaries.get(project.operator_id)
+        if summary is not None:
+            response.operator_reputation = ReputationSummary.model_validate(summary)
+    return response
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

@@ -224,6 +224,44 @@ async def read_reputation(
     }
 
 
+def summary_payload(
+    cfg: ReputationConfig, score: ReputationScore | None
+) -> dict[str, Any]:
+    """Build an embeddable reputation summary; hide the number while provisional."""
+    provisional = score.is_provisional if score is not None else True
+    return {
+        "score": None if (score is None or provisional) else score.score,
+        "is_provisional": provisional,
+        "factors": _public_factors(cfg, score),
+    }
+
+
+async def summaries_for_subjects(
+    db: AsyncSession,
+    *,
+    subject_type: str,
+    subject_ids: list[UUID],
+) -> dict[UUID, dict[str, Any]]:
+    """Batch-load embeddable reputation summaries keyed by subject id.
+
+    Subjects without a stored score are omitted; callers treat a missing key as
+    "New" (provisional). Mirrors the batched-aggregate pattern used elsewhere in
+    the Explore service.
+    """
+    if not subject_ids:
+        return {}
+    cfg = await load_config(db, subject_type=subject_type)
+    rows = (
+        await db.execute(
+            select(ReputationScore).where(
+                ReputationScore.subject_type == subject_type,
+                ReputationScore.subject_id.in_(subject_ids),
+            )
+        )
+    ).scalars()
+    return {row.subject_id: summary_payload(cfg, row) for row in rows}
+
+
 async def operator_reputation_visible(
     db: AsyncSession,
     *,

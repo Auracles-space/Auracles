@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReputationFactorLabel(BaseModel):
@@ -21,6 +21,18 @@ class ReputationFactorLabel(BaseModel):
 
     factor: str
     label: str  # strong | moderate | weak
+
+
+class ReputationSummary(BaseModel):
+    """Compact reputation badge embedded in other responses (cards, profiles).
+
+    Numeric ``score`` is suppressed while ``is_provisional`` so low-evidence
+    subjects render as "New" rather than a misleading number.
+    """
+
+    score: Decimal | None = None
+    is_provisional: bool = True
+    factors: list[ReputationFactorLabel] = Field(default_factory=list)
 
 
 class ReputationResponse(BaseModel):
