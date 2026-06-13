@@ -64,7 +64,14 @@ def create_access_token(
         "iat_ms": int(issued_at.timestamp() * 1000),
         "jti": str(uuid4()),
     }
-    return cast(str, jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM))
+    return cast(
+        str,
+        jwt.encode(
+            payload,
+            settings.secret_key.get_secret_value(),
+            algorithm=JWT_ALGORITHM,
+        ),
+    )
 
 
 def decode_access_token(token: str) -> TokenPayload:
@@ -72,7 +79,11 @@ def decode_access_token(token: str) -> TokenPayload:
     settings = get_settings()
     payload = cast(
         dict[str, Any],
-        jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM]),
+        jwt.decode(
+            token,
+            settings.secret_key.get_secret_value(),
+            algorithms=[JWT_ALGORITHM],
+        ),
     )
     return TokenPayload.model_validate(payload)
 

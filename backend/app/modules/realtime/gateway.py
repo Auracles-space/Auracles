@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -34,8 +35,13 @@ async def _project_membership_checker(project_id: UUID, user_id: UUID) -> bool:
         return await is_project_member(db, project_id=project_id, user_id=user_id)
 
 
-async def _authenticate(websocket: WebSocket) -> User | None:
-    """Perform the first-message auth handshake for one WebSocket."""
+async def _authenticate(websocket: WebSocket) -> tuple[User, str, int] | None:
+    """Perform the first-message auth handshake for one WebSocket.
+
+    Returns the authenticated user, the raw access token (kept for per-message
+    re-validation), and the token's expiry epoch seconds, or None when the
+    handshake fails and the socket has already been closed.
+    """
     await websocket.send_json({"type": "auth_required"})
     try:
         message = await asyncio.wait_for(
@@ -65,15 +71,22 @@ async def _authenticate(websocket: WebSocket) -> User | None:
         return None
 
     async with async_session_factory() as db:
-        user = await authenticate_websocket_token(db, token)
-    if user is None:
+        authenticated = await authenticate_websocket_token(db, token)
+    if authenticated is None:
         await websocket.send_json(
             {"type": "error", "error_code": "invalid_token"},
         )
         await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return None
+    user, payload = authenticated
     await websocket.send_json({"type": "auth_ok", "user_id": str(user.id)})
-    return user
+    return user, token, payload.exp
+
+
+async def _session_still_valid(token: str) -> bool:
+    """Re-check token expiry, revocation, and account status mid-session."""
+    async with async_session_factory() as db:
+        return await authenticate_websocket_token(db, token) is not None
 
 
 async def _subscribe(
@@ -141,15 +154,41 @@ async def _close_subscriptions(subscriptions: dict[str, SubscriptionHandle]) -> 
 async def websocket_gateway(websocket: WebSocket) -> None:
     """Serve the global authenticated realtime WebSocket endpoint."""
     await websocket.accept()
-    user = await _authenticate(websocket)
-    if user is None:
+    authenticated = await _authenticate(websocket)
+    if authenticated is None:
         return
+    user, token, token_exp = authenticated
 
     subscriptions: dict[str, SubscriptionHandle] = {}
     log = logger.bind(module="realtime", action="websocket_gateway", user_id=user.id)
     try:
         while True:
-            message = await websocket.receive_json()
+            remaining = token_exp - datetime.now(UTC).timestamp()
+            if remaining <= 0:
+                await websocket.send_json(
+                    {"type": "error", "error_code": "token_expired"},
+                )
+                await websocket.close(code=WS_AUTH_CLOSE_CODE)
+                break
+            try:
+                # Idle sockets are torn down when the access token expires.
+                message = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                await websocket.send_json(
+                    {"type": "error", "error_code": "token_expired"},
+                )
+                await websocket.close(code=WS_AUTH_CLOSE_CODE)
+                break
+            # Re-validate each message so revocation/suspension ends the session.
+            if not await _session_still_valid(token):
+                await websocket.send_json(
+                    {"type": "error", "error_code": "session_revoked"},
+                )
+                await websocket.close(code=WS_AUTH_CLOSE_CODE)
+                break
             if not isinstance(message, dict):
                 await websocket.send_json(
                     {"type": "error", "error_code": "invalid_message"},

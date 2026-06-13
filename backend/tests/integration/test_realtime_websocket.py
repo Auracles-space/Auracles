@@ -311,6 +311,46 @@ def test_suspended_user_cannot_authenticate_websocket(
     assert disconnect.value.code == 4401
 
 
+def test_websocket_session_revoked_when_user_suspended_midsession(
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """A live socket is torn down once the account is suspended mid-session.
+
+    The handshake authorizes off a token snapshot; without per-message
+    re-validation a suspended user would keep receiving events until they
+    disconnect. The next inbound message must close the socket with 4401.
+    """
+    session_factory, _ = realtime_context
+    operator_id, _, _ = create_project_members(session_factory)
+    operator_token = create_access_token(operator_id, ["operator"])
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/v1/ws") as websocket:
+            assert websocket.receive_json() == {"type": "auth_required"}
+            websocket.send_json({"type": "auth", "token": operator_token})
+            assert websocket.receive_json() == {
+                "type": "auth_ok",
+                "user_id": str(operator_id),
+            }
+
+            with session_factory() as session:
+                user = session.get(User, operator_id)
+                assert user is not None
+                user.suspended_at = datetime.now(UTC)
+                session.commit()
+
+            websocket.send_json({"type": "ping"})
+            assert websocket.receive_json() == {
+                "type": "error",
+                "error_code": "session_revoked",
+            }
+            with pytest.raises(WebSocketDisconnect) as disconnect:
+                websocket.receive_json()
+
+    assert disconnect.value.code == 4401
+
+
 def test_websocket_ping_returns_pong(
     migrated_database: None,
     realtime_context: tuple[sessionmaker, list[str]],

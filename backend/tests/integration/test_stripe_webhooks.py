@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -1088,6 +1088,124 @@ async def test_purchase_webhook_fails_duplicate_active_license_transaction(
     assert duplicate_event.status == "failed"
     assert duplicate_event.error is not None
     assert "different transaction" in duplicate_event.error
+
+
+async def test_stripe_webhook_reprocesses_after_transient_failure(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A failed event must reprocess on redelivery, not be dropped as duplicate.
+
+    Stripe retries deliver the same event id. If the first dispatch fails for a
+    transient reason (here, the event arrives before its transaction row is
+    committed), the durable idempotency row must not turn the retry into a
+    silent no-op or money-side effects are permanently lost.
+    """
+    contributor_id = await create_user_with_roles(
+        "retry-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "retry-operator@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Retry Framework",
+                description="Framework used by webhook retry tests.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["retry"],
+                price=Decimal("149.00"),
+                currency="USD",
+                license_types=["single_user", "team", "organizational"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            framework_id = framework.id
+
+    transaction_id = uuid4()
+    webhook_context["event"] = payment_intent_event(
+        "evt_retry_after_failure",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+
+    # First delivery: transaction row does not exist yet -> dispatch fails.
+    first = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+    assert first.status_code == 500
+    async with async_session_factory() as session:
+        failed_event = await session.scalar(
+            select(WebhookEvent).where(
+                WebhookEvent.provider_event_id == "evt_retry_after_failure"
+            )
+        )
+    assert failed_event is not None
+    assert failed_event.status == "failed"
+
+    # The transaction the event referenced now exists (write race resolved).
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Transaction(
+                    id=transaction_id,
+                    payer_id=operator_id,
+                    payee_id=contributor_id,
+                    amount=Decimal("149.00"),
+                    currency="USD",
+                    platform_commission=Decimal("0.00"),
+                    net_amount=Decimal("149.00"),
+                    transaction_type="purchase",
+                    status="pending",
+                    provider="stripe",
+                    provider_ref="pi_webhook_123",
+                    ref_id=framework_id,
+                    ref_type="framework",
+                )
+            )
+
+    # Redelivery of the same event must now reprocess and grant the License.
+    retry = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        completed = await session.get(Transaction, transaction_id)
+        licenses = (
+            (
+                await session.execute(
+                    select(License).where(License.framework_id == framework_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        processed_event = await session.scalar(
+            select(WebhookEvent).where(
+                WebhookEvent.provider_event_id == "evt_retry_after_failure"
+            )
+        )
+
+    assert retry.status_code == 200
+    assert retry.json() == {"received": True, "status": "processed"}
+    assert completed is not None
+    assert completed.status == "completed"
+    assert len(licenses) == 1
+    assert processed_event is not None
+    assert processed_event.status == "processed"
 
 
 async def test_stripe_payment_intent_success_funds_escrow_once(

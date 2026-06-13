@@ -178,7 +178,7 @@ async def refund(
     admin_override: bool = False,
 ) -> Escrow:
     """Mark held escrow funds refunded after dispute resolution or cancellation."""
-    escrow = await db.get(Escrow, escrow_id)
+    escrow = await db.get(Escrow, escrow_id, with_for_update=True)
     if escrow is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

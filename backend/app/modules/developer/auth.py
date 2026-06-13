@@ -25,6 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory, get_db
+from app.core.network import client_ip
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.developer.models import ApiKey, ApiRequestLog, DeveloperAccount
@@ -272,7 +273,7 @@ class PartnerApiRequestLoggingMiddleware(BaseHTTPMiddleware):
                         method=request.method,
                         status_code=response.status_code,
                         response_ms=response_ms,
-                        ip=request.client.host if request.client else None,
+                        ip=client_ip(request),
                     )
                 )
         return response

@@ -499,7 +499,11 @@ def verify_webhook(
     if abs(current_timestamp - timestamp) > tolerance_seconds:
         raise StripeProviderError("Stripe signature timestamp is outside tolerance.")
 
-    signed_payload = f"{timestamp}.{payload.decode()}".encode()
+    try:
+        decoded_payload = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise StripeProviderError("Stripe webhook payload is not valid UTF-8.") from exc
+    signed_payload = f"{timestamp}.{decoded_payload}".encode()
     expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
     if not any(hmac.compare_digest(expected, candidate) for candidate in signatures):
         raise StripeProviderError("Stripe webhook signature verification failed.")

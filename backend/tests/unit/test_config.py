@@ -137,7 +137,7 @@ def test_settings_allows_dev_secret_key_in_local() -> None:
     """Local env keeps the dev SECRET_KEY default for convenience."""
     settings = Settings(ENVIRONMENT="local", SECRET_KEY="dev-only-change-me")
 
-    assert settings.secret_key == "dev-only-change-me"
+    assert settings.secret_key.get_secret_value() == "dev-only-change-me"
 
 
 def test_settings_allows_real_secret_key_in_production() -> None:
@@ -152,7 +152,7 @@ def test_settings_allows_real_secret_key_in_production() -> None:
     )
 
     assert settings.environment == "production"
-    assert settings.secret_key.startswith("a-real")
+    assert settings.secret_key.get_secret_value().startswith("a-real")
 
 
 def test_settings_rejects_placeholder_provider_secrets_outside_local() -> None:

@@ -46,7 +46,7 @@ def _base64url_encode(payload: bytes) -> str:
 def _sign(value: str, settings: Settings) -> str:
     """Create an HMAC signature for a session-hint payload."""
     digest = hmac.new(
-        settings.secret_key.encode("utf-8"),
+        settings.secret_key.get_secret_value().encode("utf-8"),
         value.encode("utf-8"),
         hashlib.sha256,
     ).digest()

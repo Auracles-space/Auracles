@@ -16,6 +16,7 @@ from app.core.cookies import (
 )
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.network import client_ip
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.modules.auth import service
@@ -47,8 +48,8 @@ CurrentConsentUser = Annotated[User, Depends(require_current_consent)]
 
 
 def _client_ip(request: Request) -> str | None:
-    """Return the client IP address when available."""
-    return request.client.host if request.client else None
+    """Return the originating client IP, honouring a trusted proxy header."""
+    return client_ip(request)
 
 
 def _set_session_hint_from_access_token(response: Response, access_token: str) -> None:

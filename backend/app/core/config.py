@@ -65,7 +65,10 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
-    secret_key: str = Field(default="dev-only-change-me", alias="SECRET_KEY")
+    secret_key: SecretStr = Field(
+        default=SecretStr(DEV_SECRET_KEY),
+        alias="SECRET_KEY",
+    )
     totp_encryption_key: SecretStr = Field(
         default=SecretStr(DEV_TOTP_ENCRYPTION_KEY),
         alias="TOTP_ENCRYPTION_KEY",
@@ -85,6 +88,10 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["strict", "none"] = Field(
         default="strict",
         alias="COOKIE_SAMESITE",
+    )
+    trust_proxy_headers: bool = Field(
+        default=False,
+        alias="TRUST_PROXY_HEADERS",
     )
     aws_access_key_id: SecretStr | None = Field(
         default=None, alias="AWS_ACCESS_KEY_ID"
@@ -228,7 +235,8 @@ class Settings(BaseSettings):
         """
         if (
             self.environment != "local"
-            and self.secret_key in {DEV_SECRET_KEY, PLACEHOLDER_SECRET_KEY}
+            and self.secret_key.get_secret_value()
+            in {DEV_SECRET_KEY, PLACEHOLDER_SECRET_KEY}
         ):
             raise ValueError("SECRET_KEY must be set outside local.")
         return self

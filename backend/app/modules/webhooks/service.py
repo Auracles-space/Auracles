@@ -142,14 +142,20 @@ async def _audit_invalid_signature(db: AsyncSession) -> None:
         )
 
 
-async def _insert_verified_event(
+async def _ensure_verified_event_row(
     db: AsyncSession,
     *,
     event_id: str,
     event_type: str,
     payload_hash: str,
-) -> bool:
-    """Store a verified Stripe event once; return False for replay delivery."""
+) -> None:
+    """Persist a verified Stripe event row once, ignoring concurrent inserts.
+
+    The row is the durable idempotency anchor. A row that already exists is
+    left untouched here; whether it represents a replay or a retry of a failed
+    dispatch is decided under a row lock during dispatch so transient failures
+    can be safely reprocessed instead of silently dropped.
+    """
     if db.in_transaction():
         await db.rollback()
     try:
@@ -165,8 +171,6 @@ async def _insert_verified_event(
             )
     except IntegrityError:
         await db.rollback()
-        return False
-    return True
 
 
 async def _mark_event_status(
@@ -769,19 +773,12 @@ async def handle_stripe_webhook(
     event_id = _required_event_field(event, "id")
     event_type = _required_event_field(event, "type")
     payload_hash = hashlib.sha256(payload).hexdigest()
-    inserted = await _insert_verified_event(
+    await _ensure_verified_event_row(
         db=db,
         event_id=event_id,
         event_type=event_type,
         payload_hash=payload_hash,
     )
-    if not inserted:
-        logger.bind(
-            module="webhooks",
-            action="stripe_webhook_replay",
-            provider_event_id=event_id,
-        ).info("webhook_replay")
-        return WebhookIngestResponse(received=True, status="duplicate")
 
     try:
         if db.in_transaction():
@@ -789,6 +786,29 @@ async def handle_stripe_webhook(
         invoice_transaction_id: UUID | None = None
         after_commit_notifications: list[Callable[[], None]] = []
         async with db.begin():
+            # Lock the idempotency row so concurrent deliveries serialize and a
+            # retry only short-circuits when the event already fully processed.
+            # Rows in `received`/`failed` (e.g. a transient dispatch error) are
+            # reprocessed; the dispatch handlers are individually idempotent.
+            locked_event = await db.scalar(
+                select(WebhookEvent)
+                .where(
+                    WebhookEvent.provider == "stripe",
+                    WebhookEvent.provider_event_id == event_id,
+                )
+                .with_for_update()
+            )
+            if locked_event is None:
+                raise WebhookProcessingError(
+                    "webhook event row missing during dispatch"
+                )
+            if locked_event.status == "processed":
+                logger.bind(
+                    module="webhooks",
+                    action="stripe_webhook_replay",
+                    provider_event_id=event_id,
+                ).info("webhook_replay")
+                return WebhookIngestResponse(received=True, status="duplicate")
             (
                 event_status,
                 invoice_transaction_id,

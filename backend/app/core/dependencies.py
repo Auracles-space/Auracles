@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError  # type: ignore[import-untyped]
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +37,7 @@ async def get_current_user(
         )
     try:
         payload = decode_access_token(credentials.credentials)
-    except JWTError as exc:
+    except (JWTError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired access token.",
@@ -77,7 +78,7 @@ async def get_current_token_payload(
         )
     try:
         return decode_access_token(credentials.credentials)
-    except JWTError as exc:
+    except (JWTError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired access token.",
