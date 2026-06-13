@@ -1,7 +1,8 @@
-"""SQLAlchemy model for in-app notifications.
+"""SQLAlchemy models for notification delivery and user preferences.
 
 Notifications are persisted before realtime fanout or email dispatch, so
 clients can recover missed Redis pub/sub events by refetching from Postgres.
+User preference rows stay event-type based and default to enabled when absent.
 """
 
 from __future__ import annotations
@@ -10,13 +11,21 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Text, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.shared.models.base import CreatedAtMixin
+from app.shared.models.base import CreatedAtMixin, UpdatedAtMixin
 
 NOTIFICATION_TYPE_ENUM = ENUM(
     "project_created",
@@ -66,6 +75,21 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     name="notification_type_enum",
     create_type=False,
 )
+NOTIFICATION_CHANNEL_ENUM = ENUM(
+    "email",
+    "in_app",
+    name="notification_channel_enum",
+    create_type=False,
+)
+NOTIFICATION_CATEGORY_ENUM = ENUM(
+    "project",
+    "attestation",
+    "financial",
+    "discovery",
+    "account",
+    name="notification_category_enum",
+    create_type=False,
+)
 
 
 class Notification(CreatedAtMixin, Base):
@@ -111,4 +135,51 @@ class Notification(CreatedAtMixin, Base):
     read_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+
+class NotificationPreference(UpdatedAtMixin, Base):
+    """Per-user per-event per-channel notification preference override."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "notification_type",
+            "channel",
+            name="uq_notification_preferences_user_type_channel",
+        ),
+        Index(
+            "idx_notification_preferences_user_type",
+            "user_id",
+            "notification_type",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notification_type: Mapped[str] = mapped_column(
+        NOTIFICATION_TYPE_ENUM,
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(
+        NOTIFICATION_CATEGORY_ENUM,
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(
+        NOTIFICATION_CHANNEL_ENUM,
+        nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
     )
