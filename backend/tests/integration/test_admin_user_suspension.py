@@ -17,7 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -25,7 +25,7 @@ from app.core.security import create_access_token, encrypt_totp_secret, hash_pas
 from app.main import app
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
-from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeRedis:
@@ -113,9 +113,7 @@ class FakeRedis:
 async def _reset_admin_user_suspension_state() -> None:
     """Delete auth and audit rows created by suspension tests."""
     async with async_session_factory() as session:
-        await session.execute(delete(AuditLog))
-        await session.execute(delete(UserRole))
-        await session.execute(delete(User))
+        await clear_identity_state_async(session)
         await session.commit()
 
 

@@ -35,6 +35,7 @@ from app.modules.projects.models import (
 from app.modules.workspace import service as workspace_service
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeStripeCustomer:
@@ -147,8 +148,7 @@ async def project_context() -> AsyncIterator[dict[str, Any]]:
             await session.execute(delete(Framework))
             await session.execute(delete(Project))
             await session.execute(delete(Proposal))
-            await session.execute(delete(UserRole))
-            await session.execute(delete(User))
+            await clear_identity_state_async(session)
             await session.commit()
 
     await cleanup()

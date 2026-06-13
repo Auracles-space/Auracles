@@ -7,13 +7,14 @@ from collections.abc import Iterator
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import verify_password
 from app.modules.auth.models import User, UserRole
 from scripts.bootstrap_admin import BootstrapConfigError, bootstrap_admin
+from tests.support.db_cleanup import clear_identity_state_sync
 
 
 @pytest.fixture
@@ -23,12 +24,14 @@ def migrated_database() -> Iterator[None]:
     alembic_config = Config("alembic.ini")
 
     command.upgrade(alembic_config, "head")
+    with Session(engine) as session:
+        clear_identity_state_sync(session)
+        session.commit()
     try:
         yield
     finally:
         with Session(engine) as session:
-            session.execute(delete(UserRole))
-            session.execute(delete(User))
+            clear_identity_state_sync(session)
             session.commit()
         engine.dispose()
 

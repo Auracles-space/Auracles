@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, select
 
 from app.core.database import async_session_factory, engine
 from app.core.dependencies import require_kyc_verified
@@ -21,6 +21,7 @@ from app.main import app
 from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.settings import service as settings_service
 from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeRedis:
@@ -80,12 +81,14 @@ async def kyc_test_context() -> AsyncIterator[dict[str, Any]]:
     """Reset auth/KYC state and install a Redis override."""
     fake_storage = FakeKycStorage()
     await engine.dispose()
-    async with async_session_factory() as session:
-        await session.execute(delete(AuditLog))
-        await session.execute(delete(KycDocument))
-        await session.execute(delete(UserRole))
-        await session.execute(delete(User))
-        await session.commit()
+
+    async def cleanup() -> None:
+        """Delete KYC and identity rows in FK-safe order."""
+        async with async_session_factory() as session:
+            await clear_identity_state_async(session)
+            await session.commit()
+
+    await cleanup()
 
     app.dependency_overrides[get_redis] = lambda: FakeRedis()
     original_storage = settings_service.s3.storage
@@ -95,6 +98,7 @@ async def kyc_test_context() -> AsyncIterator[dict[str, Any]]:
     finally:
         settings_service.s3.storage = original_storage
         app.dependency_overrides.pop(get_redis, None)
+        await cleanup()
         await engine.dispose()
 
 

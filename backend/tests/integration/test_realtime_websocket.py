@@ -25,6 +25,7 @@ from app.modules.financials.models import Escrow, Transaction
 from app.modules.projects.models import Project, Proposal
 from app.modules.realtime import gateway
 from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_sync
 
 
 class FakeSubscriptionHandle:
@@ -107,8 +108,7 @@ def realtime_context(
             session.execute(delete(Transaction))
             session.execute(delete(Project))
             session.execute(delete(Proposal))
-            session.execute(delete(UserRole))
-            session.execute(delete(User))
+            clear_identity_state_sync(session)
             session.commit()
 
     cleanup()

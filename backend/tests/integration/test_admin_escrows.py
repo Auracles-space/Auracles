@@ -23,6 +23,7 @@ from app.modules.admin import service as admin_service
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeRedis:
@@ -77,8 +78,7 @@ async def reset_admin_escrow_state() -> None:
         await session.execute(delete(AuditLog))
         await session.execute(delete(Escrow))
         await session.execute(delete(Transaction))
-        await session.execute(delete(UserRole))
-        await session.execute(delete(User))
+        await clear_identity_state_async(session)
         await session.commit()
 
 

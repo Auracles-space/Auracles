@@ -45,6 +45,7 @@ from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeInvoiceTask:
@@ -85,8 +86,7 @@ async def reset_webhook_state() -> None:
         await session.execute(delete(Framework))
         await session.execute(delete(Project))
         await session.execute(delete(Proposal))
-        await session.execute(delete(UserRole))
-        await session.execute(delete(User))
+        await clear_identity_state_async(session)
         await session.commit()
 
 
