@@ -5937,6 +5937,50 @@ paths:
                 $ref: '#/components/schemas/RegisterResponse'
       security:
       - HTTPBearer: []
+  /v1/settings/notification-preferences:
+    get:
+      tags:
+      - Settings
+      summary: Get Notification Preferences
+      description: Return the authenticated user's effective notification preference
+        matrix.
+      operationId: get_notification_preferences_v1_settings_notification_preferences_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+      security:
+      - HTTPBearer: []
+    patch:
+      tags:
+      - Settings
+      summary: Update Notification Preferences
+      description: Persist owner-scoped notification preference updates.
+      operationId: update_notification_preferences_v1_settings_notification_preferences_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/sessions/{session_id}:
     delete:
       tags:
@@ -11657,6 +11701,113 @@ components:
       - created_at
       title: NotificationItem
       description: Serializable notification row returned to the owning user.
+    NotificationPreferenceCategory:
+      properties:
+        category:
+          type: string
+          title: Category
+        label:
+          type: string
+          title: Label
+        preferences:
+          items:
+            $ref: '#/components/schemas/NotificationPreferenceItem'
+          type: array
+          title: Preferences
+      type: object
+      required:
+      - category
+      - label
+      - preferences
+      title: NotificationPreferenceCategory
+      description: One settings category grouping multiple notification event types.
+    NotificationPreferenceChannelItem:
+      properties:
+        channel:
+          type: string
+          title: Channel
+        enabled:
+          type: boolean
+          title: Enabled
+        locked:
+          type: boolean
+          title: Locked
+      type: object
+      required:
+      - channel
+      - enabled
+      - locked
+      title: NotificationPreferenceChannelItem
+      description: One channel toggle for a single notification event type.
+    NotificationPreferenceItem:
+      properties:
+        notification_type:
+          type: string
+          title: Notification Type
+        label:
+          type: string
+          title: Label
+        description:
+          type: string
+          title: Description
+        channels:
+          items:
+            $ref: '#/components/schemas/NotificationPreferenceChannelItem'
+          type: array
+          title: Channels
+      type: object
+      required:
+      - notification_type
+      - label
+      - description
+      - channels
+      title: NotificationPreferenceItem
+      description: One notification event type grouped under a settings category.
+    NotificationPreferenceUpdateItem:
+      properties:
+        notification_type:
+          type: string
+          minLength: 1
+          title: Notification Type
+        channel:
+          type: string
+          minLength: 1
+          title: Channel
+        enabled:
+          type: boolean
+          title: Enabled
+      type: object
+      required:
+      - notification_type
+      - channel
+      - enabled
+      title: NotificationPreferenceUpdateItem
+      description: One per-event per-channel preference change requested by the owner.
+    NotificationPreferencesResponse:
+      properties:
+        categories:
+          items:
+            $ref: '#/components/schemas/NotificationPreferenceCategory'
+          type: array
+          title: Categories
+      type: object
+      required:
+      - categories
+      title: NotificationPreferencesResponse
+      description: Effective notification preference matrix for the current user.
+    NotificationPreferencesUpdateRequest:
+      properties:
+        updates:
+          items:
+            $ref: '#/components/schemas/NotificationPreferenceUpdateItem'
+          type: array
+          minItems: 1
+          title: Updates
+      type: object
+      required:
+      - updates
+      title: NotificationPreferencesUpdateRequest
+      description: PATCH body for notification preference updates.
     NotificationsResponse:
       properties:
         notifications:

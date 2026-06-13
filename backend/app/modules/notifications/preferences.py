@@ -1,4 +1,4 @@
-"""Notification preference mapping and delivery-gate helpers.
+"""Notification preference mapping, matrix building, and delivery gates.
 
 Phase 5 settings preferences stay event-type based in storage, but expose
 display categories for later Settings UI grouping. Delivery is opt-out:
@@ -7,15 +7,28 @@ missing preference rows still allow delivery.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Final
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy import Select, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.modules.notifications.models import (
+    NOTIFICATION_CATEGORY_ENUM,
+    NOTIFICATION_CHANNEL_ENUM,
     NOTIFICATION_TYPE_ENUM,
     NotificationPreference,
+)
+from app.modules.notifications.schemas import (
+    NotificationPreferenceCategory,
+    NotificationPreferenceChannelItem,
+    NotificationPreferenceItem,
+    NotificationPreferencesResponse,
+    NotificationPreferenceUpdateItem,
 )
 
 DEFAULT_NOTIFICATION_CATEGORY: Final[str] = "account"
@@ -80,6 +93,10 @@ NOTIFICATION_TYPE_DESCRIPTIONS: Final[dict[str, str]] = {
     )
     for notification_type in NOTIFICATION_TYPE_ENUM.enums
 }
+NOTIFICATION_CATEGORY_LABELS: Final[dict[str, str]] = {
+    category: category.replace("_", " ").title()
+    for category in NOTIFICATION_CATEGORY_ENUM.enums
+}
 
 
 def category_for_notification_type(notification_type: str) -> str:
@@ -92,6 +109,156 @@ def category_for_notification_type(notification_type: str) -> str:
         notification_type,
         DEFAULT_NOTIFICATION_CATEGORY,
     )
+
+
+def _channel_items(
+    *,
+    notification_type: str,
+    enabled_by_channel: dict[str, bool],
+) -> list[NotificationPreferenceChannelItem]:
+    """Build ordered channel items for one notification type."""
+    locked = notification_type in CRITICAL_NOTIFICATION_TYPES
+    return [
+        NotificationPreferenceChannelItem(
+            channel=channel,
+            enabled=True if locked else enabled_by_channel.get(channel, True),
+            locked=locked,
+        )
+        for channel in NOTIFICATION_CHANNEL_ENUM.enums
+    ]
+
+
+def _validate_notification_type(notification_type: str) -> None:
+    """Reject notification types that are not part of the product enum."""
+    if notification_type not in NOTIFICATION_TYPE_ENUM.enums:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unsupported notification type: {notification_type}.",
+        )
+
+
+def _validate_channel(channel: str) -> None:
+    """Reject channels that are not part of the stored preference enum."""
+    if channel not in NOTIFICATION_CHANNEL_ENUM.enums:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unsupported notification channel: {channel}.",
+        )
+
+
+async def build_preference_matrix(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+) -> NotificationPreferencesResponse:
+    """Return the effective grouped preference matrix for one user."""
+    rows = (
+        await db.execute(
+            select(NotificationPreference).where(
+                NotificationPreference.user_id == user_id
+            )
+        )
+    ).scalars().all()
+
+    enabled_lookup = {
+        (row.notification_type, row.channel): bool(row.enabled)
+        for row in rows
+    }
+    grouped_preferences: dict[str, list[NotificationPreferenceItem]] = defaultdict(list)
+
+    for notification_type in NOTIFICATION_TYPE_ENUM.enums:
+        category = category_for_notification_type(notification_type)
+        grouped_preferences[category].append(
+            NotificationPreferenceItem(
+                notification_type=notification_type,
+                label=NOTIFICATION_TYPE_LABELS[notification_type],
+                description=NOTIFICATION_TYPE_DESCRIPTIONS[notification_type],
+                channels=_channel_items(
+                    notification_type=notification_type,
+                    enabled_by_channel={
+                        channel: enabled_lookup.get((notification_type, channel), True)
+                        for channel in NOTIFICATION_CHANNEL_ENUM.enums
+                    },
+                ),
+            )
+        )
+
+    return NotificationPreferencesResponse(
+        categories=[
+            NotificationPreferenceCategory(
+                category=category,
+                label=NOTIFICATION_CATEGORY_LABELS[category],
+                preferences=grouped_preferences.get(category, []),
+            )
+            for category in NOTIFICATION_CATEGORY_ENUM.enums
+        ]
+    )
+
+
+async def update_preferences(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    updates: list[NotificationPreferenceUpdateItem],
+) -> NotificationPreferencesResponse:
+    """Upsert owner-scoped notification preferences and return the new matrix."""
+    deduped_updates: dict[tuple[str, str], NotificationPreferenceUpdateItem] = {}
+    for update in updates:
+        _validate_notification_type(update.notification_type)
+        _validate_channel(update.channel)
+        if (
+            update.notification_type in CRITICAL_NOTIFICATION_TYPES
+            and update.enabled is False
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Critical notification preferences cannot be disabled.",
+            )
+        deduped_updates[(update.notification_type, update.channel)] = update
+
+    try:
+        for update in deduped_updates.values():
+            statement = (
+                pg_insert(NotificationPreference)
+                .values(
+                    user_id=user_id,
+                    notification_type=update.notification_type,
+                    category=category_for_notification_type(update.notification_type),
+                    channel=update.channel,
+                    enabled=update.enabled,
+                )
+                .on_conflict_do_update(
+                    constraint="uq_notification_preferences_user_type_channel",
+                    set_={
+                        "category": category_for_notification_type(
+                            update.notification_type
+                        ),
+                        "enabled": update.enabled,
+                    },
+                )
+            )
+            await db.execute(statement)
+
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="notification_preferences_updated",
+            target_type="user",
+            target_id=user_id,
+            metadata={
+                "updated_count": len(deduped_updates),
+                "keys": [
+                    f"{notification_type}:{channel}"
+                    for notification_type, channel in deduped_updates
+                ],
+            },
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return await build_preference_matrix(db=db, user_id=user_id)
 
 
 def _enabled_query(

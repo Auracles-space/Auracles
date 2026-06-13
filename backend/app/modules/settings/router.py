@@ -16,6 +16,11 @@ from app.core.dependencies import get_current_user
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.auth.schemas import RegisterResponse
+from app.modules.notifications import preferences as notification_preferences
+from app.modules.notifications.schemas import (
+    NotificationPreferencesResponse,
+    NotificationPreferencesUpdateRequest,
+)
 from app.modules.settings import service
 from app.modules.settings.schemas import (
     EmailChangeConfirmRequest,
@@ -83,6 +88,38 @@ async def list_sessions(
         redis=redis,
         user=current_user,
         current_refresh_token=request.cookies.get(REFRESH_COOKIE_NAME),
+    )
+
+
+@router.get(
+    "/notification-preferences",
+    response_model=NotificationPreferencesResponse,
+)
+async def get_notification_preferences(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> NotificationPreferencesResponse:
+    """Return the authenticated user's effective notification preference matrix."""
+    return await notification_preferences.build_preference_matrix(
+        db=db,
+        user_id=current_user.id,
+    )
+
+
+@router.patch(
+    "/notification-preferences",
+    response_model=NotificationPreferencesResponse,
+)
+async def update_notification_preferences(
+    payload: NotificationPreferencesUpdateRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> NotificationPreferencesResponse:
+    """Persist owner-scoped notification preference updates."""
+    return await notification_preferences.update_preferences(
+        db=db,
+        user_id=current_user.id,
+        updates=payload.updates,
     )
 
 

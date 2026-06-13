@@ -1789,6 +1789,57 @@ export type NotificationItem = {
 };
 
 /**
+ * One settings category grouping multiple notification event types.
+ */
+export type NotificationPreferenceCategory = {
+    category: string;
+    label: string;
+    preferences: Array<NotificationPreferenceItem>;
+};
+
+/**
+ * One channel toggle for a single notification event type.
+ */
+export type NotificationPreferenceChannelItem = {
+    channel: string;
+    enabled: boolean;
+    locked: boolean;
+};
+
+/**
+ * One notification event type grouped under a settings category.
+ */
+export type NotificationPreferenceItem = {
+    notification_type: string;
+    label: string;
+    description: string;
+    channels: Array<NotificationPreferenceChannelItem>;
+};
+
+/**
+ * Effective notification preference matrix for the current user.
+ */
+export type NotificationPreferencesResponse = {
+    categories: Array<NotificationPreferenceCategory>;
+};
+
+/**
+ * PATCH body for notification preference updates.
+ */
+export type NotificationPreferencesUpdateRequest = {
+    updates: Array<NotificationPreferenceUpdateItem>;
+};
+
+/**
+ * One per-event per-channel preference change requested by the owner.
+ */
+export type NotificationPreferenceUpdateItem = {
+    notification_type: string;
+    channel: string;
+    enabled: boolean;
+};
+
+/**
  * Paginated notification list plus unread badge count.
  */
 export type NotificationsResponse = {
@@ -4292,6 +4343,18 @@ export type ListSessionsV1SettingsSessionsGetError = unknown;
 export type RevokeOtherSessionsV1SettingsSessionsDeleteResponse = (RegisterResponse);
 
 export type RevokeOtherSessionsV1SettingsSessionsDeleteError = unknown;
+
+export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetResponse = (NotificationPreferencesResponse);
+
+export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError = unknown;
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchData = {
+    body: NotificationPreferencesUpdateRequest;
+};
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchResponse = (NotificationPreferencesResponse);
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchError = (HTTPValidationError);
 
 export type RevokeSessionV1SettingsSessionsSessionIdDeleteData = {
     path: {
