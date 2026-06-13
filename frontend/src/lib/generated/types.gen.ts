@@ -329,6 +329,27 @@ export type AdminRarityBlockOverrideRequest = {
 };
 
 /**
+ * Request body for an audited single-subject reputation recompute.
+ */
+export type AdminReputationRecomputeRequest = {
+    subject_type: 'framework' | 'contributor' | 'operator';
+    subject_id: string;
+    reason: string;
+    totp_code: string;
+};
+
+export type subject_type = 'framework' | 'contributor' | 'operator';
+
+/**
+ * Acknowledgement that a recompute was queued.
+ */
+export type AdminReputationRecomputeResponse = {
+    status: string;
+    subject_type: string;
+    subject_id: string;
+};
+
+/**
  * Request body for assigning or approving a user role.
  */
 export type AdminRoleAssignmentRequest = {
@@ -1272,6 +1293,7 @@ export type ExploreContributorProfile = {
     website: (string | null);
     attestation_badge?: (ExploreAttestationBadge | null);
     attestation_count?: number;
+    reputation?: (ReputationSummary | null);
     is_deactivated?: boolean;
     published_framework_count: number;
     published_frameworks: Array<ExploreFrameworkCard>;
@@ -1304,6 +1326,7 @@ export type ExploreFrameworkCard = {
     average_review_score?: (string | null);
     review_count?: number;
     attestation_badge?: (ExploreAttestationBadge | null);
+    reputation?: (ReputationSummary | null);
     owned?: boolean;
     published_at: (string | null);
 };
@@ -1335,6 +1358,7 @@ export type ExploreFrameworkCatalogItem = {
     average_review_score?: (string | null);
     review_count?: number;
     attestation_badge?: (ExploreAttestationBadge | null);
+    reputation?: (ReputationSummary | null);
     owned?: boolean;
     published_at: (string | null);
     item_type?: "framework";
@@ -1367,6 +1391,7 @@ export type ExploreFrameworkDetail = {
     average_review_score?: (string | null);
     review_count?: number;
     attestation_badge?: (ExploreAttestationBadge | null);
+    reputation?: (ReputationSummary | null);
     owned?: boolean;
     published_at: (string | null);
     preview_artifact_id: (string | null);
@@ -2170,6 +2195,7 @@ export type ProjectResponse = {
     closed_at: (string | null);
     created_at: string;
     updated_at: string;
+    operator_reputation?: (ReputationSummary | null);
 };
 
 /**
@@ -2300,6 +2326,38 @@ export type RegisterRequest = {
  */
 export type RegisterResponse = {
     message?: string;
+};
+
+/**
+ * One contributing factor and its public strength label.
+ */
+export type ReputationFactorLabel = {
+    factor: string;
+    label: string;
+};
+
+/**
+ * Public reputation payload for one subject.
+ */
+export type ReputationResponse = {
+    subject_type: string;
+    subject_id: string;
+    score: (string | null);
+    is_provisional: boolean;
+    factors: Array<ReputationFactorLabel>;
+    last_calculated_at: (string | null);
+};
+
+/**
+ * Compact reputation badge embedded in other responses (cards, profiles).
+ *
+ * Numeric ``score`` is suppressed while ``is_provisional`` so low-evidence
+ * subjects render as "New" rather than a misleading number.
+ */
+export type ReputationSummary = {
+    score?: (string | null);
+    is_provisional?: boolean;
+    factors?: Array<ReputationFactorLabel>;
 };
 
 /**
@@ -2667,6 +2725,14 @@ export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostData = {
 export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostResponse = (AdminEscrowResponse);
 
 export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostError = (HTTPValidationError);
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostData = {
+    body: AdminReputationRecomputeRequest;
+};
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostResponse = (AdminReputationRecomputeResponse);
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostError = (HTTPValidationError);
 
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData = {
     body: AdminDisputeResolveRequest;
@@ -4121,6 +4187,36 @@ export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetData = {
 export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetResponse = (PartnerPurchaseStatusResponse);
 
 export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetError = (HTTPValidationError);
+
+export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetResponse = (ReputationResponse);
+
+export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetError = (HTTPValidationError);
+
+export type GetContributorReputationV1ReputationContributorContributorIdGetData = {
+    path: {
+        contributor_id: string;
+    };
+};
+
+export type GetContributorReputationV1ReputationContributorContributorIdGetResponse = (ReputationResponse);
+
+export type GetContributorReputationV1ReputationContributorContributorIdGetError = (HTTPValidationError);
+
+export type GetOperatorReputationV1ReputationOperatorOperatorIdGetData = {
+    path: {
+        operator_id: string;
+    };
+};
+
+export type GetOperatorReputationV1ReputationOperatorOperatorIdGetResponse = (ReputationResponse);
+
+export type GetOperatorReputationV1ReputationOperatorOperatorIdGetError = (HTTPValidationError);
 
 export type ListSavedSearchesV1SavedSearchesGetResponse = (SavedSearchListResponse);
 

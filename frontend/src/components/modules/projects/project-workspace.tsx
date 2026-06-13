@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
+import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -327,8 +328,22 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
               {project?.description ?? "Project detail is loading."}
             </p>
           </div>
-          <div className="grid gap-2 text-right">
+          <div className="grid justify-items-end gap-2 text-right">
             {project ? <StatusBadge status={project.status} /> : null}
+            {project?.operator_reputation ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-[0.05em] text-foreground-subtle">
+                  Operator
+                </span>
+                <ReputationBadge
+                  score={project.operator_reputation.score ?? null}
+                  isProvisional={
+                    project.operator_reputation.is_provisional ?? true
+                  }
+                  factors={project.operator_reputation.factors ?? []}
+                />
+              </div>
+            ) : null}
             <span className="text-xs text-foreground-muted">
               Realtime {realtime.connected ? "connected" : "offline"}
             </span>
@@ -364,13 +379,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             <label className="grid gap-1 text-sm font-semibold text-foreground">
               Budget
               <input
-                className="h-11 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
+                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
                 onChange={(event) => setProposalBudget(event.target.value)}
                 value={proposalBudget}
               />
             </label>
             <button
-              className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
               type="submit"
             >
               Submit proposal
@@ -392,7 +407,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
                 {proposal.status === "pending" ? (
                   <button
-                    className="mt-3 min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                    className="mt-3 min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                     onClick={() => void acceptProjectProposal(proposal.id)}
                     type="button"
                   >
@@ -412,7 +427,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             <div className="grid gap-3 md:grid-cols-3">
               <input
                 aria-label="Milestone sequence"
-                className="h-11 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
                 onChange={(event) =>
                   setMilestoneForm((current) => ({
                     ...current,
@@ -423,7 +438,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
               />
               <input
                 aria-label="Milestone name"
-                className="h-11 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
                 onChange={(event) =>
                   setMilestoneForm((current) => ({
                     ...current,
@@ -434,7 +449,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
               />
               <input
                 aria-label="Milestone budget"
-                className="h-11 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
                 onChange={(event) =>
                   setMilestoneForm((current) => ({
                     ...current,
@@ -457,13 +472,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             />
             <div className="flex flex-wrap gap-3">
               <button
-                className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
                 type="submit"
               >
                 Add milestone
               </button>
               <button
-                className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={() => void finalizePlan()}
                 type="button"
               >
@@ -489,14 +504,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                    className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                     onClick={() => void fundProjectMilestone(milestone.id)}
                     type="button"
                   >
                     Fund milestone
                   </button>
                   <button
-                    className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                    className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                     onClick={() => void submitMilestoneDeliverable(milestone.id)}
                     type="button"
                   >
@@ -528,12 +543,12 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={postWorkspaceMessage}>
           <input
             aria-label="Workspace message"
-            className="h-11 flex-1 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+            className="min-h-12 flex-1 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
             onChange={(event) => setMessageBody(event.target.value)}
             value={messageBody}
           />
           <button
-            className="min-h-11 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
             type="submit"
           >
             Post message
@@ -542,7 +557,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
         {deliverableApprovalActions.map((action) => (
           <button
-            className="min-h-11 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-4 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
             key={action.messageId}
             onClick={() =>
               void approveMilestoneDeliverable(

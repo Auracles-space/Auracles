@@ -13,6 +13,7 @@ import {
 } from "@/components/modules/explore/framework-card";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
+import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import {
   getExploreFrameworkDetail,
   getRelatedExploreFrameworks,
@@ -66,12 +67,19 @@ export default async function ExploreDetailPage({
               {framework.description}
             </p>
             <Link
-              className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
+              className="mt-4 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
               href={`/explore/contributors/${framework.contributor_id}`}
             >
               {framework.contributor_name}
             </Link>
             <div className="mt-6 flex flex-wrap gap-2">
+              {framework.reputation ? (
+                <ReputationBadge
+                  score={framework.reputation.score ?? null}
+                  isProvisional={framework.reputation.is_provisional ?? true}
+                  factors={framework.reputation.factors ?? []}
+                />
+              ) : null}
               {framework.attestation_badge ? (
                 <AttestationBadge badge={framework.attestation_badge} />
               ) : null}

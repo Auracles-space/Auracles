@@ -27,6 +27,7 @@
 - Tests under `backend/tests/unit/modules/test_reputation_*.py` and `backend/tests/integration/test_reputation_endpoints.py`.
 
 Current repo alignment, verified on 2026-06-11:
+
 - Latest migration is `2026_06_11_0016_rarity_override_state.py`; Task 1 must create `2026_06_11_0017_reputation_scores.py` with `down_revision = "2026_06_11_0016"`. Still confirm with `ls backend/migrations/versions | sort | tail -3` before writing because migrations may move while this plan waits.
 - ORM models inherit from `app.core.database.Base`; do not import `app.shared.base`.
 - `License` lives in `app.modules.frameworks.models`, not `app.modules.financials.models`.
@@ -40,6 +41,7 @@ Test snippet convention: names such as `db_session`, `async_client`, `framework_
 ## Task 1: Schema foundation + platform_config seeds
 
 **Files:**
+
 - Create: `backend/app/modules/reputation/__init__.py`
 - Create: `backend/app/modules/reputation/models.py`
 - Create: `backend/migrations/versions/2026_06_11_0017_reputation_scores.py`
@@ -48,6 +50,7 @@ Test snippet convention: names such as `db_session`, `async_client`, `framework_
 - [ ] **Step 1: Write the ORM model**
 
 `backend/app/modules/reputation/models.py`:
+
 ```python
 """Reputation scoring ORM models.
 
@@ -95,11 +98,13 @@ class ReputationScore(Base):
         Index("ix_reputation_subject_type_score", "subject_type", score.desc().nullslast()),
     )
 ```
+
 `gen_random_uuid()` is already used by other migrations so the extension is present.
 
 - [ ] **Step 2: Write the migration**
 
 `backend/migrations/versions/2026_06_11_0017_reputation_scores.py`:
+
 ```python
 """Create reputation_scores table and seed reputation platform_config.
 
@@ -172,6 +177,7 @@ def downgrade() -> None:
 No central model-import registry exists in the current repo. If one is introduced before implementation, add `from app.modules.reputation import models as reputation_models  # noqa: F401` there. Otherwise the manual migration above is enough; do not create a model registry just for this slice.
 
 `backend/tests/integration/test_reputation_schema.py`:
+
 ```python
 """Reputation schema migration smoke test."""
 
@@ -194,6 +200,7 @@ async def test_reputation_scores_table_and_seeds(db_session):
     assert "reputation_weights_framework" in seeded
     assert "reputation_prior" in seeded
 ```
+
 Use the project's current test harness. Today there is no global `db_session` fixture; either add a local fixture backed by `app.core.database.async_session_factory` in this test file, or open an `async_session_factory()` session directly inside the test. Do not depend on missing factory fixtures.
 
 - [ ] **Step 4: Run migration up/down + test**
@@ -215,6 +222,7 @@ git commit -m "feat(reputation): schema foundation + platform_config seeds"
 ## Task 2: Config loader + admin config validation
 
 **Files:**
+
 - Create: `backend/app/modules/reputation/weights.py`
 - Modify: `backend/app/modules/admin/service.py` (add reputation keys to `_normalise_platform_config_value` + allowed-key set near line 31/368)
 - Test: `backend/tests/unit/modules/test_reputation_weights.py`
@@ -222,6 +230,7 @@ git commit -m "feat(reputation): schema foundation + platform_config seeds"
 - [ ] **Step 1: Write the failing test**
 
 `backend/tests/unit/modules/test_reputation_weights.py`:
+
 ```python
 """Reputation config loader tests."""
 
@@ -262,6 +271,7 @@ Expected: FAIL (module `weights` not found).
 - [ ] **Step 3: Implement the loader**
 
 `backend/app/modules/reputation/weights.py`:
+
 ```python
 """Load and validate reputation weights/thresholds from platform_config."""
 
@@ -339,6 +349,7 @@ async def load_config(db: AsyncSession, *, subject_type: str) -> ReputationConfi
 - [ ] **Step 4: Extend admin config validation**
 
 In `backend/app/modules/admin/service.py`: add the reputation keys to the editable allow-list (the set near line 31) and a branch in `_normalise_platform_config_value` (mirror the `refund_window_hours`/`commission_rate` branches). Add:
+
 ```python
 # near the allow-list constant
 REPUTATION_WEIGHT_FACTORS = {
@@ -371,7 +382,9 @@ if key == "reputation_prior":
         raise HTTPException(status_code=422, detail="reputation_prior must be between 0 and 1.")
     return _format_decimal_config(value.quantize(Decimal("0.0001")))
 ```
+
 Also validate the scalar keys:
+
 - `reputation_min_activity_*`: integer >= 1.
 - `reputation_prior_strength_k`: decimal >= 0.
 - `reputation_decay_halflife_days`: integer >= 1.
@@ -398,6 +411,7 @@ git commit -m "feat(reputation): config loader + admin config validation"
 This is the math core. Factors return `(normalized_value: Decimal in [0,1], evidence_count: int)`. The engine combines them with weights + shrinkage and decides provisional.
 
 **Files:**
+
 - Create: `backend/app/modules/reputation/factors.py`
 - Create: `backend/app/modules/reputation/service.py`
 - Test: `backend/tests/unit/modules/test_reputation_engine.py`
@@ -405,6 +419,7 @@ This is the math core. Factors return `(normalized_value: Decimal in [0,1], evid
 - [ ] **Step 1: Write failing tests for the engine math**
 
 `backend/tests/unit/modules/test_reputation_engine.py`:
+
 ```python
 """Reputation compute-engine math tests (pure, no DB)."""
 
@@ -460,6 +475,7 @@ Expected: FAIL (no `service` module / `combine_factors`).
 - [ ] **Step 3: Implement the engine**
 
 `backend/app/modules/reputation/service.py`:
+
 ```python
 """Reputation compute engine + persistence + reads.
 
@@ -738,11 +754,13 @@ async def operator_factors(db: AsyncSession, user_id: UUID, cfg: ReputationConfi
     return {"purchase_activity": purchase_activity, "license_compliance": license_compliance,
             "review_quality": review_quality, "engagement": engagement}
 ```
+
 Before relying on column names, confirm each against the models: `Review.operator_id/score/framework_id`, `License.operator_id/framework_id/status`, `Transaction.payer_id/transaction_type/status`, `Attestation.target_type/target_id/outcome/status`, `Dispute.resolution_type/status/project_id`, `Proposal.contributor_id`, `Framework.contributor_id/status`, `UserRole.role/approved_at`, `User.kyc_status`. Grep each model file and fix any mismatch — these are the highest-risk lines in the plan. `License` is already verified to live in `app.modules.frameworks.models`.
 
 - [ ] **Step 6: Write a DB-backed factor test (framework)**
 
 `backend/tests/unit/modules/test_reputation_factors.py`:
+
 ```python
 """DB-backed factor aggregator smoke test for frameworks."""
 
@@ -764,6 +782,7 @@ async def test_framework_factors_reviews_and_adoption(db_session, framework_fact
     assert result["reviews"].value > 0
     assert result["adoption"].evidence == 1
 ```
+
 Use existing factories if present (grep `backend/tests/factories`); if a needed factory is missing, build the rows inline with the ORM models instead of a factory.
 
 - [ ] **Step 7: Run tests**
@@ -783,6 +802,7 @@ git commit -m "feat(reputation): factor aggregators + compute engine"
 ## Task 4: Recompute Beat task + single-subject recompute
 
 **Files:**
+
 - Modify: `backend/app/workers/tasks/reputation.py` (replace stub)
 - Modify: `backend/app/workers/beat_schedule.py`
 - Test: `backend/tests/unit/workers/test_reputation_tasks.py`
@@ -790,6 +810,7 @@ git commit -m "feat(reputation): factor aggregators + compute engine"
 - [ ] **Step 1: Write the failing test**
 
 `backend/tests/unit/workers/test_reputation_tasks.py`:
+
 ```python
 """recompute_reputation task tests (synchronous .apply())."""
 
@@ -823,6 +844,7 @@ Expected: FAIL (`recompute_subject` missing).
 - [ ] **Step 3: Implement the task module**
 
 `backend/app/workers/tasks/reputation.py`:
+
 ```python
 """Reputation recompute Celery tasks (Phase 5e).
 
@@ -925,17 +947,20 @@ def recompute_subject_task(self: Any, subject_type: str, subject_id: str) -> dic
     log.info("task_completed")
     return {"status": "completed"}
 ```
+
 Note: contributor framework_performance reads framework scores, so the full recompute does frameworks **before** contributors (order above is correct).
 
 - [ ] **Step 4: Wire Beat schedule**
 
 In `backend/app/workers/beat_schedule.py` add:
+
 ```python
     "recompute-reputation-daily": {
         "task": "app.workers.tasks.reputation.recompute_reputation",
         "schedule": 86400.0,
     },
 ```
+
 Confirm `app.workers.tasks.reputation` is in the Celery `include`/autodiscover list (`app/workers/celery_app.py` already lists `app.workers.tasks.reputation` — verified).
 
 - [ ] **Step 5: Run tests**
@@ -955,6 +980,7 @@ git commit -m "feat(reputation): daily recompute Beat task + single-subject reco
 ## Task 5: Read API (framework/contributor public, operator gated) + admin recompute
 
 **Files:**
+
 - Create: `backend/app/modules/reputation/schemas.py`
 - Create: `backend/app/modules/reputation/router.py`
 - Modify: `backend/app/main.py` (mount router)
@@ -963,6 +989,7 @@ git commit -m "feat(reputation): daily recompute Beat task + single-subject reco
 - [ ] **Step 1: Write the failing integration test**
 
 `backend/tests/integration/test_reputation_endpoints.py`:
+
 ```python
 """Reputation read endpoint tests."""
 
@@ -998,6 +1025,7 @@ async def test_operator_reputation_forbidden_to_stranger(async_client, user_fact
     )
     assert resp.status_code in (403, 404)
 ```
+
 Match fixture names to `conftest.py`. In the current repo, replace `async_client` with the existing `client` fixture and build/authenticate users with the same helpers used by nearby auth-gated integration tests. If a contextual-membership fixture is needed for the positive operator case, defer that assertion to Task 6 where the Project-membership surface lands.
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1008,6 +1036,7 @@ Expected: FAIL (404 route not mounted).
 - [ ] **Step 3: Implement schemas**
 
 `backend/app/modules/reputation/schemas.py`:
+
 ```python
 """Reputation response schemas (headline + factor labels, no weights)."""
 
@@ -1049,11 +1078,13 @@ def to_response(row) -> "ReputationResponse":
         last_calculated_at=row.last_calculated_at,
     )
 ```
+
 Note: provisional subjects return `score=null` so the UI shows a "New" state (per design cold-start decision).
 
 - [ ] **Step 4: Implement router**
 
 `backend/app/modules/reputation/router.py`:
+
 ```python
 """Reputation read + admin recompute endpoints."""
 
@@ -1127,11 +1158,13 @@ async def admin_recompute(
     recompute_subject_task.delay(subject_type, str(subject_id))
     return {"status": "queued"}
 ```
+
 Add a thin Celery task `recompute_subject_task(subject_type, subject_id)` in Task 4 wrapping `recompute_subject` (mirror the `@app.task` pattern used for `recompute_reputation`) and `.delay(...)` it here. Match `get_db` / `get_current_user` / `require_role` import paths to those used in `app/modules/explore/router.py` and `app/modules/admin/router.py`. Do not import unused membership helpers.
 
 - [ ] **Step 5: Mount the router**
 
 In `backend/app/main.py`, mirror existing `include_router` calls:
+
 ```python
 from app.modules.reputation.router import router as reputation_router
 application.include_router(reputation_router, prefix="/v1")
@@ -1154,6 +1187,7 @@ git commit -m "feat(reputation): read API + gated operator access + admin recomp
 ## Task 6: Surface reputation in Explore + contributor profile + operator context
 
 **Files:**
+
 - Modify: `backend/app/modules/explore/schemas.py` (add `reputation` to `ExploreFrameworkCard` + contributor profile response)
 - Modify: `backend/app/modules/explore/service.py` (batch-load framework + contributor reputation, attach)
 - Modify: `backend/app/modules/projects/schemas.py` + `service.py` (attach operator reputation to proposal/project detail seen by the contributor)
@@ -1162,6 +1196,7 @@ git commit -m "feat(reputation): read API + gated operator access + admin recomp
 - [ ] **Step 1: Write failing tests**
 
 Add to `backend/tests/integration/test_explore_endpoints.py`:
+
 ```python
 @pytest.mark.asyncio
 async def test_explore_card_includes_framework_reputation(
@@ -1179,6 +1214,7 @@ async def test_explore_card_includes_framework_reputation(
     card = next(c for c in resp.json()["items"] if c["id"] == str(fw.id))
     assert "reputation" in card  # {score|null, is_provisional, factors:[...]}
 ```
+
 Adjust the list path/response envelope (`items` vs other) to match the actual Explore list response.
 
 - [ ] **Step 2: Run to verify fail**
@@ -1189,6 +1225,7 @@ Expected: FAIL (`reputation` key absent).
 - [ ] **Step 3: Add schema fields**
 
 In `backend/app/modules/explore/schemas.py`, add an optional nested model and field on `ExploreFrameworkCard` and the contributor-profile response:
+
 ```python
 class ExploreReputation(BaseModel):
     score: Decimal | None = None
@@ -1246,6 +1283,7 @@ git commit -m "feat(reputation): surface in Explore, contributor profile, operat
 ## Task 7: OpenAPI sync + frontend reputation component + E2E
 
 **Files:**
+
 - Modify: `contracts/openapi.yaml` (regen), `frontend/src/lib/generated/*` (codegen)
 - Create: `frontend/src/components/modules/reputation/reputation-badge.tsx`
 - Modify: Explore card + framework detail + contributor profile + project workspace components to render the badge
@@ -1260,6 +1298,7 @@ Expected: `types.gen.ts` includes `ReputationResponse`/`ExploreReputation`.
 - [ ] **Step 2: Write the failing component test**
 
 `frontend/tests/unit/components/reputation/reputation-badge.test.tsx`:
+
 ```tsx
 import { render, screen } from "@testing-library/react";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
@@ -1270,8 +1309,13 @@ describe("ReputationBadge", () => {
     expect(screen.getByText(/new/i)).toBeInTheDocument();
   });
   it("shows score and strong factor when present", () => {
-    render(<ReputationBadge score={90} isProvisional={false}
-      factors={[{ name: "attestations", label: "strong" }]} />);
+    render(
+      <ReputationBadge
+        score={90}
+        isProvisional={false}
+        factors={[{ name: "attestations", label: "strong" }]}
+      />,
+    );
     expect(screen.getByText(/90/)).toBeInTheDocument();
     expect(screen.getByText(/attestations/i)).toBeInTheDocument();
   });
@@ -1286,27 +1330,42 @@ Expected: FAIL (component missing).
 - [ ] **Step 4: Implement the component (mobile-first)**
 
 `frontend/src/components/modules/reputation/reputation-badge.tsx`:
+
 ```tsx
 /**
  * Reputation badge — headline score + factor labels, or a "New" state when
  * provisional. Maps to Phase 5e (FR ReputationScore, full-spec §3234).
  */
-interface ReputationFactor { name: string; label: "strong" | "moderate" | "weak"; }
-interface Props { score: number | null; isProvisional: boolean; factors: ReputationFactor[]; }
+interface ReputationFactor {
+  name: string;
+  label: "strong" | "moderate" | "weak";
+}
+interface Props {
+  score: number | null;
+  isProvisional: boolean;
+  factors: ReputationFactor[];
+}
 
 export function ReputationBadge({ score, isProvisional, factors }: Props) {
   if (isProvisional || score === null) {
-    return <span className="inline-flex min-h-6 items-center rounded-[4px] border border-border bg-surface-subtle px-2 text-xs text-muted-foreground">New</span>;
+    return (
+      <span className="inline-flex min-h-6 items-center rounded-[4px] border border-border bg-surface-subtle px-2 text-xs text-muted-foreground">
+        New
+      </span>
+    );
   }
   const strong = factors.filter((f) => f.label === "strong").map((f) => f.name);
   return (
     <span className="inline-flex min-h-6 items-center gap-2 rounded-[4px] border border-success/30 bg-success/10 px-2 text-xs text-success">
       <span className="font-semibold">{Math.round(score)}</span>
-      {strong.length > 0 && <span className="text-success/80">· {strong.join(", ")}</span>}
+      {strong.length > 0 && (
+        <span className="text-success/80">· {strong.join(", ")}</span>
+      )}
     </span>
   );
 }
 ```
+
 Render it on the Explore card, framework detail, contributor profile (`/explore/contributors/[id]`), and the Project workspace where the contributor sees the operator. Before writing UI code, invoke the repo `frontend-design` skill and adapt token names to the existing Tailwind/theme tokens if `bg-surface-subtle`, `text-success`, or `border-border` differ in this app. Test at 375px.
 
 - [ ] **Step 5: Run component test**

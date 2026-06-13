@@ -17,6 +17,8 @@ node_modules/
 frontend/.next/
 frontend/out/
 frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
 frontend/.env.local
 frontend/tsconfig.tsbuildinfo
 

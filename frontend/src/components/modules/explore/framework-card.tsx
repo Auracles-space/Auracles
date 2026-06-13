@@ -18,6 +18,8 @@ import type {
 } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
+import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
+
 type FrameworkCardProps = {
   framework: ExploreFrameworkCard;
 };
@@ -125,16 +127,23 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
           {framework.description}
         </p>
         <Link
-          className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
+          className="mt-3 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
           href={`/explore/contributors/${framework.contributor_id}`}
         >
           {framework.contributor_name}
         </Link>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <ReviewSummary
             averageScore={framework.average_review_score ?? null}
             reviewCount={framework.review_count ?? 0}
           />
+          {framework.reputation ? (
+            <ReputationBadge
+              score={framework.reputation.score ?? null}
+              isProvisional={framework.reputation.is_provisional ?? true}
+              factors={framework.reputation.factors ?? []}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -192,7 +201,7 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
  */
 export function CollectionCard({ collection }: CollectionCardProps) {
   return (
-    <article className="group relative flex flex-col justify-between overflow-hidden rounded-lg border border-border-default bg-surface-1 p-5 transition-colors hover:border-accent/50 hover:bg-surface-2">
+    <article className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border-default bg-surface-1 p-5 shadow-bento transition duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-hero">
       <div>
         <div className="mb-3 flex items-start justify-between gap-4">
           <h2 className="font-heading text-lg font-semibold leading-tight text-foreground transition-colors group-hover:text-accent">
@@ -213,7 +222,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
           {collection.description}
         </p>
         <Link
-          className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
+          className="mt-3 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition-colors hover:text-accent/80"
           href={`/explore/contributors/${collection.contributor_id}`}
         >
           {collection.contributor_name}

@@ -11,6 +11,7 @@ import {
   AttestationBadge,
   FrameworkCard,
 } from "@/components/modules/explore/framework-card";
+import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { getExploreContributorProfile } from "@/lib/generated/sdk.gen";
 import type { ExploreContributorProfile } from "@/lib/generated/types.gen";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
@@ -69,11 +70,18 @@ export default async function ContributorProfilePage({
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
+                {profile.reputation ? (
+                  <ReputationBadge
+                    score={profile.reputation.score ?? null}
+                    isProvisional={profile.reputation.is_provisional ?? true}
+                    factors={profile.reputation.factors ?? []}
+                  />
+                ) : null}
                 {profile.attestation_badge ? (
                   <AttestationBadge badge={profile.attestation_badge} />
                 ) : null}
                 {profile.is_deactivated ? (
-                  <span className="rounded-[4px] border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+                  <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
                     Read-only profile
                   </span>
                 ) : null}
@@ -106,7 +114,7 @@ export default async function ContributorProfilePage({
 
               {profile.website ? (
                 <a
-                  className="mt-5 inline-flex min-h-11 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
+                  className="mt-5 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
                   href={profile.website}
                   rel="noreferrer"
                   target="_blank"

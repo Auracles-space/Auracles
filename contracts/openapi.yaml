@@ -529,6 +529,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/reputation/recompute:
+    post:
+      tags:
+      - Admin
+      summary: Recompute Reputation Subject
+      description: Queue an audited, 2FA-gated recompute for one reputation subject.
+      operationId: recompute_reputation_subject_v1_admin_reputation_recompute_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReputationRecomputeRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminReputationRecomputeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/projects/disputes/{dispute_id}/resolve:
     post:
       tags:
@@ -5566,6 +5594,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/reputation/framework/{framework_id}:
+    get:
+      tags:
+      - Reputation
+      summary: Get a framework's public reputation
+      description: Return the public reputation score + factor labels for one framework.
+      operationId: get_framework_reputation_v1_reputation_framework__framework_id__get
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReputationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/reputation/contributor/{contributor_id}:
+    get:
+      tags:
+      - Reputation
+      summary: Get a contributor's public reputation
+      description: Return the public reputation score + factor labels for one contributor.
+      operationId: get_contributor_reputation_v1_reputation_contributor__contributor_id__get
+      parameters:
+      - name: contributor_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Contributor Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReputationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/reputation/operator/{operator_id}:
+    get:
+      tags:
+      - Reputation
+      summary: Get an operator's reputation (gated)
+      description: "Return an operator's reputation to self, an in-deal contributor,\
+        \ or admin.\n\nRaises:\n    HTTPException(403): Requester is not entitled\
+        \ to this operator's score.\n    HTTPException(404): Operator subject does\
+        \ not exist."
+      operationId: get_operator_reputation_v1_reputation_operator__operator_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: operator_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Operator Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReputationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/saved-searches:
     get:
       tags:
@@ -6935,6 +7052,56 @@ components:
       - reason
       title: AdminRarityBlockOverrideRequest
       description: Request body for overriding a near-duplicate rarity hard block.
+    AdminReputationRecomputeRequest:
+      properties:
+        subject_type:
+          type: string
+          enum:
+          - framework
+          - contributor
+          - operator
+          title: Subject Type
+        subject_id:
+          type: string
+          format: uuid
+          title: Subject Id
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - reason
+      - totp_code
+      title: AdminReputationRecomputeRequest
+      description: Request body for an audited single-subject reputation recompute.
+    AdminReputationRecomputeResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        subject_type:
+          type: string
+          title: Subject Type
+        subject_id:
+          type: string
+          format: uuid
+          title: Subject Id
+      type: object
+      required:
+      - status
+      - subject_type
+      - subject_id
+      title: AdminReputationRecomputeResponse
+      description: Acknowledgement that a recompute was queued.
     AdminRoleAssignmentRequest:
       properties:
         role:
@@ -9692,6 +9859,10 @@ components:
           type: integer
           title: Attestation Count
           default: 0
+        reputation:
+          anyOf:
+          - $ref: '#/components/schemas/ReputationSummary'
+          - type: 'null'
         is_deactivated:
           type: boolean
           title: Is Deactivated
@@ -9817,6 +9988,10 @@ components:
         attestation_badge:
           anyOf:
           - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
+        reputation:
+          anyOf:
+          - $ref: '#/components/schemas/ReputationSummary'
           - type: 'null'
         owned:
           type: boolean
@@ -9954,6 +10129,10 @@ components:
         attestation_badge:
           anyOf:
           - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
+        reputation:
+          anyOf:
+          - $ref: '#/components/schemas/ReputationSummary'
           - type: 'null'
         owned:
           type: boolean
@@ -10096,6 +10275,10 @@ components:
         attestation_badge:
           anyOf:
           - $ref: '#/components/schemas/ExploreAttestationBadge'
+          - type: 'null'
+        reputation:
+          anyOf:
+          - $ref: '#/components/schemas/ReputationSummary'
           - type: 'null'
         owned:
           type: boolean
@@ -12648,6 +12831,10 @@ components:
           type: string
           format: date-time
           title: Updated At
+        operator_reputation:
+          anyOf:
+          - $ref: '#/components/schemas/ReputationSummary'
+          - type: 'null'
       type: object
       required:
       - id
@@ -13052,6 +13239,84 @@ components:
       type: object
       title: RegisterResponse
       description: No-enumeration registration response.
+    ReputationFactorLabel:
+      properties:
+        factor:
+          type: string
+          title: Factor
+        label:
+          type: string
+          title: Label
+      type: object
+      required:
+      - factor
+      - label
+      title: ReputationFactorLabel
+      description: One contributing factor and its public strength label.
+    ReputationResponse:
+      properties:
+        subject_type:
+          type: string
+          title: Subject Type
+        subject_id:
+          type: string
+          format: uuid
+          title: Subject Id
+        score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Score
+        is_provisional:
+          type: boolean
+          title: Is Provisional
+        factors:
+          items:
+            $ref: '#/components/schemas/ReputationFactorLabel'
+          type: array
+          title: Factors
+        last_calculated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Calculated At
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - score
+      - is_provisional
+      - factors
+      - last_calculated_at
+      title: ReputationResponse
+      description: Public reputation payload for one subject.
+    ReputationSummary:
+      properties:
+        score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Score
+        is_provisional:
+          type: boolean
+          title: Is Provisional
+          default: true
+        factors:
+          items:
+            $ref: '#/components/schemas/ReputationFactorLabel'
+          type: array
+          title: Factors
+      type: object
+      title: ReputationSummary
+      description: 'Compact reputation badge embedded in other responses (cards, profiles).
+
+
+        Numeric ``score`` is suppressed while ``is_provisional`` so low-evidence
+
+        subjects render as "New" rather than a misleading number.'
     ResendVerificationRequest:
       properties:
         email:
