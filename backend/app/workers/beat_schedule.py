@@ -82,4 +82,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.attestation_beat.escalate_attestation_disputes",
         "schedule": 3600.0,
     },
+    "recompute-reputation-daily": {
+        "task": "app.workers.tasks.reputation.recompute_reputation",
+        "schedule": crontab(hour=1, minute=0),
+    },
 }
