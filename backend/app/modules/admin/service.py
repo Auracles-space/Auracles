@@ -7,6 +7,7 @@ snapshot aggregates that back dashboard trend charts and exports.
 
 import csv
 import io
+import json
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -41,6 +42,7 @@ from app.modules.frameworks.pipeline_gate import (
     evaluate_framework_pipeline,
 )
 from app.modules.projects.models import Dispute
+from app.modules.reputation import weights as reputation_weights
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks.processing.minhash_index import (
     remove_framework_artifacts_from_index,
@@ -66,6 +68,16 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "consent_version_privacy_policy",
     "account_deletion_grace_days",
     "data_export_expiry_days",
+    "reputation_weights_framework",
+    "reputation_weights_contributor",
+    "reputation_weights_operator",
+    "reputation_min_activity_framework",
+    "reputation_min_activity_contributor",
+    "reputation_min_activity_operator",
+    "reputation_prior",
+    "reputation_prior_strength_k",
+    "reputation_decay_halflife_days",
+    "reputation_dispute_penalty",
 }
 COMMISSION_RATE_MAX = Decimal("0.50")
 MIN_PAYOUT_USD_MIN = Decimal("1.00")
@@ -83,6 +95,16 @@ CONSENT_VERSION_KEYS = {
 GDPR_RETENTION_DAY_KEYS = {
     "account_deletion_grace_days",
     "data_export_expiry_days",
+}
+REPUTATION_WEIGHT_KEYS = {
+    "reputation_weights_framework",
+    "reputation_weights_contributor",
+    "reputation_weights_operator",
+}
+REPUTATION_MIN_ACTIVITY_KEYS = {
+    "reputation_min_activity_framework",
+    "reputation_min_activity_contributor",
+    "reputation_min_activity_operator",
 }
 ATTESTATION_FEE_RANGES = {
     "attestation_fee_framework": (Decimal("25.00"), Decimal("100000.00")),
@@ -1688,6 +1710,99 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
                 detail=f"{key} must be between 1 and 30.",
             )
         return str(days)
+
+    if key in REPUTATION_WEIGHT_KEYS:
+        subject_type = key.removeprefix("reputation_weights_")
+        try:
+            parsed_json = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must be a JSON object of factor weights.",
+            ) from exc
+        if not isinstance(parsed_json, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must be a JSON object of factor weights.",
+            )
+        try:
+            parsed = {
+                factor: Decimal(str(value))
+                for factor, value in parsed_json.items()
+            }
+            reputation_weights.validate_weight_map(
+                parsed,
+                subject_type=subject_type,
+            )
+        except (ArithmeticError, ValueError) as exc:
+            detail = str(exc)
+            if "must use keys" in detail:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=(
+                        f"{key} must contain exactly these factors: "
+                        f"{sorted(reputation_weights.expected_weight_keys(subject_type))}."
+                    ),
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} weights must be non-negative and sum to 1.0.",
+            ) from exc
+        return json.dumps(
+            {
+                factor: f"{value.quantize(Decimal('0.0001')):.4f}"
+                for factor, value in sorted(parsed.items())
+            },
+            separators=(",", ":"),
+        )
+
+    if key in REPUTATION_MIN_ACTIVITY_KEYS:
+        count = _parse_integer_config(key, raw_value)
+        if count < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{key} must be at least 1.",
+            )
+        return str(count)
+
+    if key == "reputation_prior":
+        value = _parse_decimal_config(key, raw_value)
+        if value < Decimal("0") or value > Decimal("1"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="reputation_prior must be between 0 and 1.",
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.0001")))
+
+    if key == "reputation_prior_strength_k":
+        value = _parse_decimal_config(key, raw_value)
+        if value < Decimal("0"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "reputation_prior_strength_k must be greater than or equal "
+                    "to 0."
+                ),
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.0001")))
+
+    if key == "reputation_decay_halflife_days":
+        days = _parse_integer_config(key, raw_value)
+        if days < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="reputation_decay_halflife_days must be at least 1.",
+            )
+        return str(days)
+
+    if key == "reputation_dispute_penalty":
+        value = _parse_decimal_config(key, raw_value)
+        if value < Decimal("0") or value > Decimal("1"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="reputation_dispute_penalty must be between 0 and 1.",
+            )
+        return _format_decimal_config(value.quantize(Decimal("0.0001")))
 
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -209,8 +209,18 @@ class AdminConfigUpdateItem(BaseModel):
         "consent_version_privacy_policy",
         "account_deletion_grace_days",
         "data_export_expiry_days",
+        "reputation_weights_framework",
+        "reputation_weights_contributor",
+        "reputation_weights_operator",
+        "reputation_min_activity_framework",
+        "reputation_min_activity_contributor",
+        "reputation_min_activity_operator",
+        "reputation_prior",
+        "reputation_prior_strength_k",
+        "reputation_decay_halflife_days",
+        "reputation_dispute_penalty",
     ]
-    value: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=1000)
 
 
 class AdminConfigPatchRequest(BaseModel):

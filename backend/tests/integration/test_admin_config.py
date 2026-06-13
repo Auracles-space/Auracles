@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -42,6 +43,26 @@ DEFAULT_PLATFORM_CONFIG = {
     "consent_version_privacy_policy": "1.0",
     "account_deletion_grace_days": "14",
     "data_export_expiry_days": "7",
+    "reputation_weights_framework": (
+        '{"reviews":"0.3500","attestations":"0.3000",'
+        '"adoption":"0.3500","completion":"0.0000","recency":"0.0000"}'
+    ),
+    "reputation_weights_contributor": (
+        '{"activity":"0.1500","attestations_received":"0.2000",'
+        '"framework_performance":"0.3000","reviews_received":"0.2000",'
+        '"verification":"0.1500"}'
+    ),
+    "reputation_weights_operator": (
+        '{"engagement":"0.1500","license_compliance":"0.2500",'
+        '"purchase_activity":"0.4000","review_quality":"0.2000"}'
+    ),
+    "reputation_min_activity_framework": "3",
+    "reputation_min_activity_contributor": "1",
+    "reputation_min_activity_operator": "1",
+    "reputation_prior": "0.5",
+    "reputation_prior_strength_k": "5",
+    "reputation_decay_halflife_days": "180",
+    "reputation_dispute_penalty": "0.2",
 }
 
 
@@ -196,6 +217,16 @@ async def test_admin_can_read_platform_config(
     assert config["account_deletion_grace_days"]["editable"] is True
     assert config["data_export_expiry_days"]["value"] == "7"
     assert config["data_export_expiry_days"]["editable"] is True
+    assert config["reputation_prior"]["value"] == "0.5"
+    assert config["reputation_prior"]["editable"] is True
+    assert config["reputation_weights_framework"]["editable"] is True
+    assert json.loads(config["reputation_weights_framework"]["value"]) == {
+        "reviews": "0.3500",
+        "attestations": "0.3000",
+        "adoption": "0.3500",
+        "completion": "0.0000",
+        "recency": "0.0000",
+    }
     assert config["min_payout_ngn"]["editable"] is False
 
 
@@ -509,3 +540,87 @@ async def test_admin_updates_gdpr_config_with_range_validation(
     assert invalid_grace.status_code == 422
     assert invalid_expiry.status_code == 422
     assert invalid_version.status_code == 422
+
+
+async def test_admin_updates_reputation_config_with_shape_and_range_validation(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """Reputation config updates enforce valid factor shapes and scalar bounds."""
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    valid_update = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Tune reputation scoring launch defaults.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {
+                    "key": "reputation_weights_framework",
+                    "value": (
+                        '{"reviews":"0.4000","attestations":"0.2500",'
+                        '"adoption":"0.3500","completion":"0.0000","recency":"0.0000"}'
+                    ),
+                },
+                {"key": "reputation_prior", "value": "0.65"},
+                {"key": "reputation_min_activity_framework", "value": "4"},
+                {"key": "reputation_prior_strength_k", "value": "8.5"},
+                {"key": "reputation_decay_halflife_days", "value": "365"},
+                {"key": "reputation_dispute_penalty", "value": "0.15"},
+            ],
+        },
+    )
+    invalid_weights = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {
+                    "key": "reputation_weights_framework",
+                    "value": '{"reviews":"0.50","attestations":"0.50"}',
+                }
+            ],
+        },
+    )
+    invalid_prior = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "reputation_prior", "value": "1.2"}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        config_rows = {
+            row.key: row.value
+            for row in (
+                await session.execute(select(PlatformConfig))
+            ).scalars().all()
+        }
+
+    assert valid_update.status_code == 200
+    response_config = {item["key"]: item for item in valid_update.json()["items"]}
+    assert json.loads(response_config["reputation_weights_framework"]["value"]) == {
+        "adoption": "0.3500",
+        "attestations": "0.2500",
+        "completion": "0.0000",
+        "recency": "0.0000",
+        "reviews": "0.4000",
+    }
+    assert response_config["reputation_prior"]["value"] == "0.65"
+    assert response_config["reputation_min_activity_framework"]["value"] == "4"
+    assert response_config["reputation_prior_strength_k"]["value"] == "8.5"
+    assert response_config["reputation_decay_halflife_days"]["value"] == "365"
+    assert response_config["reputation_dispute_penalty"]["value"] == "0.15"
+    assert config_rows["reputation_prior"] == "0.65"
+    assert config_rows["reputation_decay_halflife_days"] == "365"
+    assert invalid_weights.status_code == 422
+    assert invalid_prior.status_code == 422

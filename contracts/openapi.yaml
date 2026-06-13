@@ -6520,10 +6520,20 @@ components:
           - consent_version_privacy_policy
           - account_deletion_grace_days
           - data_export_expiry_days
+          - reputation_weights_framework
+          - reputation_weights_contributor
+          - reputation_weights_operator
+          - reputation_min_activity_framework
+          - reputation_min_activity_contributor
+          - reputation_min_activity_operator
+          - reputation_prior
+          - reputation_prior_strength_k
+          - reputation_decay_halflife_days
+          - reputation_dispute_penalty
           title: Key
         value:
           type: string
-          maxLength: 100
+          maxLength: 1000
           minLength: 1
           title: Value
       type: object
