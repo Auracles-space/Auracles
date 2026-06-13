@@ -2,13 +2,14 @@
 
 ## Context
 
-The notification *delivery* system shipped in Phase 4a (`app/modules/notifications/`
-+ `dispatch_project_notification`: in-app DB row + WS push + email). Product
-notifications currently fire every supported channel for every event
-unconditionally — FR-SET-008 ("configure notification preferences by channel
-(email, in-app) and by event type") was never built. Several Phase 5 specs
-(notably 5b-2 saved searches) already assume a preference check exists. This spec
-closes that gap. Small, Settings-module-scoped.
+The notification _delivery_ system shipped in Phase 4a (`app/modules/notifications/`
+
+- `dispatch_project_notification`: in-app DB row + WS push + email). Product
+  notifications currently fire every supported channel for every event
+  unconditionally — FR-SET-008 ("configure notification preferences by channel
+  (email, in-app) and by event type") was never built. Several Phase 5 specs
+  (notably 5b-2 saved searches) already assume a preference check exists. This spec
+  closes that gap. Small, Settings-module-scoped.
 
 Reuses: the existing notifications dispatch path (`app/workers/tasks/
 project_notifications.py`), transactional email tasks that must remain ungated
@@ -18,14 +19,14 @@ project_notifications.py`), transactional email tasks that must remain ungated
 
 ## Locked decisions
 
-| # | Decision | Value |
-|---|---|---|
-| 1 | Model | `notification_preferences` table keyed (user_id, notification_type, channel) → enabled bool. Notification types map to user-facing **categories** only for grouping in the Settings UI; storage and enforcement stay event-type based to satisfy FR-SET-008. |
-| 2 | Default | **Opt-out**: a missing row means enabled. No backfill; preferences are created lazily on first toggle. |
-| 3 | Critical always-on | A fixed set of notification types bypasses preferences entirely (non-toggleable, enforced server-side): payout, escrow, account-deletion, dispute resolution, and other legally/financially required platform events. Auth/security emails such as verification, password reset, 2FA, and new-device login are not product notifications and bypass this system entirely. |
-| 4 | In-app suppression | Disabling the `in_app` channel for an event type **skips the DB row + WS push** for that event (nothing in the bell). Disabling `email` skips the email only. Category toggles, if exposed, expand into per-event updates server-side. |
-| 5 | Enforcement | A single `should_deliver(user_id, notification_type, channel)` gate, called in **every** product-notification dispatch path before each channel's side effect. |
-| 6 | Out of scope | Transactional/security emails (verification, password reset, 2FA, new-device) are NOT notifications — always sent, never gated. |
+| #   | Decision           | Value                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Model              | `notification_preferences` table keyed (user_id, notification_type, channel) → enabled bool. Notification types map to user-facing **categories** only for grouping in the Settings UI; storage and enforcement stay event-type based to satisfy FR-SET-008.                                                                                                              |
+| 2   | Default            | **Opt-out**: a missing row means enabled. No backfill; preferences are created lazily on first toggle.                                                                                                                                                                                                                                                                    |
+| 3   | Critical always-on | A fixed set of notification types bypasses preferences entirely (non-toggleable, enforced server-side): payout, escrow, account-deletion, dispute resolution, and other legally/financially required platform events. Auth/security emails such as verification, password reset, 2FA, and new-device login are not product notifications and bypass this system entirely. |
+| 4   | In-app suppression | Disabling the `in_app` channel for an event type **skips the DB row + WS push** for that event (nothing in the bell). Disabling `email` skips the email only. Category toggles, if exposed, expand into per-event updates server-side.                                                                                                                                    |
+| 5   | Enforcement        | A single `should_deliver(user_id, notification_type, channel)` gate, called in **every** product-notification dispatch path before each channel's side effect.                                                                                                                                                                                                            |
+| 6   | Out of scope       | Transactional/security emails (verification, password reset, 2FA, new-device) are NOT notifications — always sent, never gated.                                                                                                                                                                                                                                           |
 
 ## Categories + mapping
 
@@ -63,11 +64,13 @@ preference spec must include that new type in the mapping when present.
 ## Enforcement
 
 Add `should_deliver(db, user_id, notification_type, channel) -> bool`:
+
 - if `notification_type` is critical → return True (bypass).
 - else look up the `(user_id, notification_type, channel)` row; missing → True;
   else its `enabled`.
 
 Wire into the dispatch impl (`_dispatch_project_notification_impl`):
+
 - resolve `category` from the notification type.
 - **in_app:** create the DB row + `publish_to_channel` only if
   `should_deliver(..., notification_type, 'in_app')`.
@@ -89,9 +92,9 @@ session.
 
 ## API (Settings)
 
-| Verb | Path | Auth |
-|---|---|---|
-| GET | /v1/settings/notification-preferences | self |
+| Verb  | Path                                  | Auth |
+| ----- | ------------------------------------- | ---- |
+| GET   | /v1/settings/notification-preferences | self |
 | PATCH | /v1/settings/notification-preferences | self |
 
 - **GET** returns the full effective matrix grouped by category: every
@@ -126,7 +129,7 @@ backend/app/workers/tasks/notifications.py          # transactional emails stay 
   and notification_type/channel keys only.
 - Audit `notification_preferences_updated`.
 
-## Slice plan (~4)
+## Slice plan (~4)/
 
 1. Schema + mapping — `notification_preferences` table +
    `notification_channel_enum` + `notification_category_enum` + ORM + migration;
