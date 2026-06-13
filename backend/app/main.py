@@ -24,6 +24,7 @@ from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.projects.router import router as projects_router
 from app.modules.realtime.gateway import router as realtime_router
+from app.modules.reputation.router import router as reputation_router
 from app.modules.saved_searches.router import router as saved_searches_router
 from app.modules.settings.router import router as settings_router
 from app.modules.webhooks.router import router as webhooks_router
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     application.include_router(projects_router, prefix="/v1")
     application.include_router(partner_router, prefix="/v1")
     application.include_router(realtime_router, prefix="/v1")
+    application.include_router(reputation_router, prefix="/v1")
     application.include_router(saved_searches_router, prefix="/v1")
     application.include_router(settings_router, prefix="/v1")
     application.include_router(webhooks_router, prefix="/v1")

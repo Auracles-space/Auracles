@@ -29,6 +29,8 @@ from app.modules.admin.schemas import (
     AdminLicenseGrantResponse,
     AdminModerationQueueResponse,
     AdminRarityBlockOverrideRequest,
+    AdminReputationRecomputeRequest,
+    AdminReputationRecomputeResponse,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
     AdminUserDirectoryResponse,
@@ -458,6 +460,34 @@ async def refund_escrow(
         totp_code=payload.totp_code,
     )
     return _escrow_response(escrow)
+
+
+@router.post(
+    "/reputation/recompute",
+    response_model=AdminReputationRecomputeResponse,
+    status_code=202,
+)
+async def recompute_reputation_subject(
+    payload: AdminReputationRecomputeRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AdminReputationRecomputeResponse:
+    """Queue an audited, 2FA-gated recompute for one reputation subject."""
+    await service.recompute_reputation_subject(
+        db=db,
+        redis=redis,
+        admin=admin,
+        subject_type=payload.subject_type,
+        subject_id=payload.subject_id,
+        reason=payload.reason,
+        totp_code=payload.totp_code,
+    )
+    return AdminReputationRecomputeResponse(
+        status="queued",
+        subject_type=payload.subject_type,
+        subject_id=payload.subject_id,
+    )
 
 
 @router.post(

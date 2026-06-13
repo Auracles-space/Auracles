@@ -1995,3 +1995,66 @@ async def refund_escrow_override(
             admin_override=True,
         )
     return escrow
+
+
+async def recompute_reputation_subject(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    subject_type: str,
+    subject_id: UUID,
+    reason: str,
+    totp_code: str,
+) -> None:
+    """Queue a single-subject reputation recompute behind an audited 2FA gate.
+
+    Verifies the admin's TOTP, confirms the subject exists, records an audit
+    entry, then dispatches the idempotent Celery recompute task. Raises before
+    dispatch on any failure so a denied request never enqueues work.
+
+    Args:
+        db: Async session.
+        redis: Redis client for the TOTP rate-limit guard.
+        admin: The authenticated admin user.
+        subject_type: One of ``framework``, ``contributor``, ``operator``.
+        subject_id: UUID of the subject to recompute.
+        reason: Human-readable justification, recorded in the audit log.
+        totp_code: Admin TOTP or backup code.
+
+    Raises:
+        HTTPException(404): Subject type unknown or subject does not exist.
+    """
+    from app.modules.reputation import service as reputation_service
+    from app.workers.tasks.reputation import recompute_subject_task
+
+    admin_id = admin.id
+    if subject_type not in reputation_service.VALID_SUBJECT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Unknown reputation subject type.",
+        )
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
+        if not await reputation_service.subject_exists(
+            db, subject_type=subject_type, subject_id=subject_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Reputation subject not found.",
+            )
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="reputation_recompute_requested",
+            target_type=subject_type,
+            target_id=subject_id,
+            metadata={"reason": reason},
+        )
+    recompute_subject_task.delay(subject_type, str(subject_id))

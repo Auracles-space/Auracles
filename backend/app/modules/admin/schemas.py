@@ -231,6 +231,23 @@ class AdminConfigPatchRequest(BaseModel):
     updates: list[AdminConfigUpdateItem] = Field(min_length=1, max_length=10)
 
 
+class AdminReputationRecomputeRequest(BaseModel):
+    """Request body for an audited single-subject reputation recompute."""
+
+    subject_type: Literal["framework", "contributor", "operator"]
+    subject_id: UUID
+    reason: str = Field(min_length=1, max_length=500)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminReputationRecomputeResponse(BaseModel):
+    """Acknowledgement that a recompute was queued."""
+
+    status: str
+    subject_type: str
+    subject_id: UUID
+
+
 class AdminAnalyticsGmvBreakdown(BaseModel):
     """Money totals for each marketplace revenue source within one window."""
 

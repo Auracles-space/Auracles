@@ -20,7 +20,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.reputation.models import ReputationScore
-from app.modules.reputation.weights import ReputationConfig
+from app.modules.reputation.weights import ReputationConfig, load_config
+
+VALID_SUBJECT_TYPES = ("framework", "contributor", "operator")
 
 _TWO = Decimal("0.01")
 _FOUR = Decimal("0.0001")
@@ -146,3 +148,107 @@ async def get_score(
             ReputationScore.subject_id == subject_id,
         )
     )
+
+
+async def subject_exists(
+    db: AsyncSession, *, subject_type: str, subject_id: UUID
+) -> bool:
+    """Return whether the scored subject (framework/user) exists."""
+    from app.modules.auth.models import User
+    from app.modules.frameworks.models import Framework
+
+    if subject_type == "framework":
+        return await db.scalar(
+            select(Framework.id).where(Framework.id == subject_id)
+        ) is not None
+    return await db.scalar(select(User.id).where(User.id == subject_id)) is not None
+
+
+def _public_factors(
+    cfg: ReputationConfig, score: ReputationScore | None
+) -> list[dict[str, str]]:
+    """Project stored components onto public {factor, label} entries.
+
+    Only factors with a positive weight are surfaced; zero-weight launch
+    placeholders (e.g. completion/recency) stay internal. Sub-values and
+    weights are never exposed.
+    """
+    if score is None or not score.components:
+        return []
+    out: list[dict[str, str]] = []
+    for name, weight in cfg.weights.items():
+        if weight <= 0:
+            continue
+        component = score.components.get(name)
+        if not component or "label" not in component:
+            continue
+        out.append({"factor": name, "label": component["label"]})
+    return out
+
+
+async def read_reputation(
+    db: AsyncSession,
+    *,
+    subject_type: str,
+    subject_id: UUID,
+) -> dict[str, Any] | None:
+    """Build the public reputation payload for one subject.
+
+    Returns ``None`` when the subject does not exist (router maps to 404). A
+    subject that exists but was never scored reads as provisional with an empty
+    factor list ("New").
+
+    Args:
+        db: Async session.
+        subject_type: One of ``framework``, ``contributor``, ``operator``.
+        subject_id: UUID of the subject.
+
+    Returns:
+        A mapping suitable for ``ReputationResponse``, or ``None`` if missing.
+    """
+    if not await subject_exists(
+        db, subject_type=subject_type, subject_id=subject_id
+    ):
+        return None
+    score = await get_score(db, subject_type=subject_type, subject_id=subject_id)
+    cfg = await load_config(db, subject_type=subject_type)
+    return {
+        "subject_type": subject_type,
+        "subject_id": subject_id,
+        "score": score.score if score is not None else None,
+        "is_provisional": score.is_provisional if score is not None else True,
+        "factors": _public_factors(cfg, score),
+        "last_calculated_at": (
+            score.last_calculated_at if score is not None else None
+        ),
+    }
+
+
+async def operator_reputation_visible(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    requester_id: UUID,
+    requester_roles: list[str],
+) -> bool:
+    """Return whether ``requester`` may read ``operator``'s reputation.
+
+    Visible to the operator themselves, to any admin, and to a contributor who
+    is in a deal with the operator — i.e. holds a pending or accepted Proposal
+    on one of that operator's Projects (BR-ATT-005, contextual visibility).
+    """
+    from app.modules.projects.models import Project, Proposal
+
+    if requester_id == operator_id or "admin" in requester_roles:
+        return True
+    in_deal = await db.scalar(
+        select(Proposal.id)
+        .join(Project, Project.id == Proposal.project_id)
+        .where(
+            Project.operator_id == operator_id,
+            Proposal.contributor_id == requester_id,
+            Proposal.status.in_(("pending", "accepted")),
+        )
+        .limit(1)
+    )
+    return in_deal is not None
