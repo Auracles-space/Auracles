@@ -6645,7 +6645,6 @@ components:
           - reputation_min_activity_operator
           - reputation_prior
           - reputation_prior_strength_k
-          - reputation_decay_halflife_days
           - reputation_dispute_penalty
           title: Key
         value:

@@ -217,7 +217,6 @@ class AdminConfigUpdateItem(BaseModel):
         "reputation_min_activity_operator",
         "reputation_prior",
         "reputation_prior_strength_k",
-        "reputation_decay_halflife_days",
         "reputation_dispute_penalty",
     ]
     value: str = Field(min_length=1, max_length=1000)

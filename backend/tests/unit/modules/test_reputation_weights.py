@@ -82,7 +82,6 @@ def test_admin_normalises_reputation_weight_config_json() -> None:
         ("reputation_prior", "0.65", "0.65"),
         ("reputation_min_activity_framework", "4", "4"),
         ("reputation_prior_strength_k", "6.5000", "6.5"),
-        ("reputation_decay_halflife_days", "365", "365"),
         ("reputation_dispute_penalty", "0.15", "0.15"),
     ],
 )
@@ -119,11 +118,6 @@ def test_admin_rejects_invalid_reputation_weight_factor_set() -> None:
             "reputation_prior_strength_k must be greater than or equal to 0.",
         ),
         (
-            "reputation_decay_halflife_days",
-            "0",
-            "reputation_decay_halflife_days must be at least 1.",
-        ),
-        (
             "reputation_dispute_penalty",
             "-0.1",
             "reputation_dispute_penalty must be between 0 and 1.",
@@ -138,3 +132,12 @@ def test_admin_rejects_invalid_reputation_scalar_config_values(
     """Admin config enforces reputation scalar bounds before persistence."""
     with pytest.raises(HTTPException, match=detail):
         admin_service._normalise_platform_config_value(key, raw_value)
+
+
+def test_admin_rejects_decay_halflife_until_decay_is_implemented() -> None:
+    """Admin config must not expose a no-op decay knob before the engine uses it."""
+    with pytest.raises(HTTPException, match="is not editable"):
+        admin_service._normalise_platform_config_value(
+            "reputation_decay_halflife_days",
+            "365",
+        )

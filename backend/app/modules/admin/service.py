@@ -76,7 +76,6 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "reputation_min_activity_operator",
     "reputation_prior",
     "reputation_prior_strength_k",
-    "reputation_decay_halflife_days",
     "reputation_dispute_penalty",
 }
 COMMISSION_RATE_MAX = Decimal("0.50")
@@ -1785,15 +1784,6 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
                 ),
             )
         return _format_decimal_config(value.quantize(Decimal("0.0001")))
-
-    if key == "reputation_decay_halflife_days":
-        days = _parse_integer_config(key, raw_value)
-        if days < 1:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="reputation_decay_halflife_days must be at least 1.",
-            )
-        return str(days)
 
     if key == "reputation_dispute_penalty":
         value = _parse_decimal_config(key, raw_value)

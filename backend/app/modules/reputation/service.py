@@ -153,15 +153,68 @@ async def get_score(
 async def subject_exists(
     db: AsyncSession, *, subject_type: str, subject_id: UUID
 ) -> bool:
-    """Return whether the scored subject (framework/user) exists."""
-    from app.modules.auth.models import User
+    """Return whether the scored subject exists for recompute/admin flows.
+
+    This check is intentionally broader than public visibility. It validates the
+    subject's type contract (framework vs contributor vs operator) without
+    applying marketplace-public filters such as published status or suspension.
+    """
+    from app.modules.auth.models import UserRole
     from app.modules.frameworks.models import Framework
 
     if subject_type == "framework":
         return await db.scalar(
             select(Framework.id).where(Framework.id == subject_id)
         ) is not None
-    return await db.scalar(select(User.id).where(User.id == subject_id)) is not None
+    role = "contributor" if subject_type == "contributor" else "operator"
+    return await db.scalar(
+        select(UserRole.id).where(
+            UserRole.user_id == subject_id,
+            UserRole.role == role,
+        )
+    ) is not None
+
+
+async def _public_subject_exists(
+    db: AsyncSession, *, subject_type: str, subject_id: UUID
+) -> bool:
+    """Return whether a reputation subject is visible on public read routes."""
+    from app.modules.auth.models import User, UserRole
+    from app.modules.frameworks.models import Framework
+
+    if subject_type == "framework":
+        return await db.scalar(
+            select(Framework.id)
+            .join(User, User.id == Framework.contributor_id)
+            .where(
+                Framework.id == subject_id,
+                Framework.status == "published",
+                User.suspended_at.is_(None),
+            )
+        ) is not None
+
+    if subject_type == "contributor":
+        contributor = await db.scalar(
+            select(User.id)
+            .join(UserRole, UserRole.user_id == User.id)
+            .where(
+                User.id == subject_id,
+                UserRole.role == "contributor",
+                User.suspended_at.is_(None),
+            )
+        )
+        if contributor is None:
+            return False
+        return await db.scalar(
+            select(Framework.id).where(
+                Framework.contributor_id == subject_id,
+                Framework.status == "published",
+            )
+        ) is not None
+
+    return await subject_exists(
+        db, subject_type=subject_type, subject_id=subject_id
+    )
 
 
 def _public_factors(
@@ -191,6 +244,7 @@ async def read_reputation(
     *,
     subject_type: str,
     subject_id: UUID,
+    public: bool = False,
 ) -> dict[str, Any] | None:
     """Build the public reputation payload for one subject.
 
@@ -202,21 +256,31 @@ async def read_reputation(
         db: Async session.
         subject_type: One of ``framework``, ``contributor``, ``operator``.
         subject_id: UUID of the subject.
+        public: When true, enforce public-surface visibility rules instead of
+            broad recompute/admin existence checks.
 
     Returns:
         A mapping suitable for ``ReputationResponse``, or ``None`` if missing.
     """
-    if not await subject_exists(
-        db, subject_type=subject_type, subject_id=subject_id
-    ):
+    exists = (
+        await _public_subject_exists(
+            db, subject_type=subject_type, subject_id=subject_id
+        )
+        if public
+        else await subject_exists(
+            db, subject_type=subject_type, subject_id=subject_id
+        )
+    )
+    if not exists:
         return None
     score = await get_score(db, subject_type=subject_type, subject_id=subject_id)
     cfg = await load_config(db, subject_type=subject_type)
+    provisional = score.is_provisional if score is not None else True
     return {
         "subject_type": subject_type,
         "subject_id": subject_id,
-        "score": score.score if score is not None else None,
-        "is_provisional": score.is_provisional if score is not None else True,
+        "score": None if (score is None or provisional) else score.score,
+        "is_provisional": provisional,
         "factors": _public_factors(cfg, score),
         "last_calculated_at": (
             score.last_calculated_at if score is not None else None
@@ -244,9 +308,9 @@ async def summaries_for_subjects(
 ) -> dict[UUID, dict[str, Any]]:
     """Batch-load embeddable reputation summaries keyed by subject id.
 
-    Subjects without a stored score are omitted; callers treat a missing key as
-    "New" (provisional). Mirrors the batched-aggregate pattern used elsewhere in
-    the Explore service.
+    Subjects without a stored score still receive a provisional "New" summary so
+    embedded surfaces can render the cold-start badge before the first daily
+    recompute.
     """
     if not subject_ids:
         return {}
@@ -258,8 +322,12 @@ async def summaries_for_subjects(
                 ReputationScore.subject_id.in_(subject_ids),
             )
         )
-    ).scalars()
-    return {row.subject_id: summary_payload(cfg, row) for row in rows}
+    ).scalars().all()
+    row_map = {row.subject_id: row for row in rows}
+    return {
+        subject_id: summary_payload(cfg, row_map.get(subject_id))
+        for subject_id in subject_ids
+    }
 
 
 async def operator_reputation_visible(

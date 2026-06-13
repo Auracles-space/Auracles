@@ -138,8 +138,12 @@ async def _create_user(
         return user.id
 
 
-async def _create_framework(contributor_id: UUID) -> UUID:
-    """Create one published framework owned by ``contributor_id``."""
+async def _create_framework(
+    contributor_id: UUID,
+    *,
+    status: str = "published",
+) -> UUID:
+    """Create one framework owned by ``contributor_id``."""
     async with async_session_factory() as session:
         async with session.begin():
             framework = Framework(
@@ -148,7 +152,7 @@ async def _create_framework(contributor_id: UUID) -> UUID:
                 title="Reputation API Framework",
                 description="Framework used by reputation API tests.",
                 version="1.0.0",
-                status="published",
+                status=status,
                 category="framework",
                 sector="financial_services",
                 industry="fund_management",
@@ -324,6 +328,24 @@ async def test_framework_reputation_unknown_subject_returns_404(
 
 
 @pytest.mark.asyncio
+async def test_framework_reputation_unpublished_subject_returns_404(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """Public framework reputation only resolves published marketplace content."""
+    contributor_id = await _create_user(
+        "rep-fw-hidden@example.com",
+        ["contributor"],
+    )
+    framework_id = await _create_framework(contributor_id, status="draft")
+
+    response = await client.get(f"/v1/reputation/framework/{framework_id}")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_operator_reputation_visibility_gating(
     client: AsyncClient,
     migrated_database: None,
@@ -357,6 +379,20 @@ async def test_operator_reputation_visibility_gating(
     assert admin_resp.status_code == 200
     assert stranger_resp.status_code == 403
     assert anon_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_contributor_reputation_non_contributor_subject_returns_404(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """Public contributor reputation does not resolve arbitrary user ids."""
+    operator_id = await _create_user("rep-only-operator@example.com", ["operator"])
+
+    response = await client.get(f"/v1/reputation/contributor/{operator_id}")
+
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -502,6 +538,51 @@ async def test_provisional_framework_card_hides_numeric_score(
     )
     assert card["reputation"]["score"] is None
     assert card["reputation"]["is_provisional"] is True
+
+
+@pytest.mark.asyncio
+async def test_framework_reputation_provisional_route_hides_numeric_score(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """Direct reputation reads also suppress numeric score while provisional."""
+    contributor_id = await _create_user("rep-route-new@example.com", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    await _seed_score(
+        "framework",
+        framework_id,
+        score="50.00",
+        is_provisional=True,
+        components=_COMPONENTS,
+    )
+
+    response = await client.get(f"/v1/reputation/framework/{framework_id}")
+
+    assert response.status_code == 200
+    assert response.json()["score"] is None
+    assert response.json()["is_provisional"] is True
+
+
+@pytest.mark.asyncio
+async def test_unscored_framework_card_still_embeds_new_reputation(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """Explore cards expose a provisional reputation payload before first recompute."""
+    contributor_id = await _create_user("rep-card-cold@example.com", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.get("/v1/explore/frameworks")
+
+    card = next(
+        item for item in response.json()["items"] if item["id"] == str(framework_id)
+    )
+    assert card["reputation"] is not None
+    assert card["reputation"]["score"] is None
+    assert card["reputation"]["is_provisional"] is True
+    assert card["reputation"]["factors"] == []
 
 
 @pytest.mark.asyncio

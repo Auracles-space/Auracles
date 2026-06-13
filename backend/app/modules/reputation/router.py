@@ -27,11 +27,14 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 async def _read_or_404(
-    db: AsyncSession, *, subject_type: str, subject_id: UUID
+    db: AsyncSession, *, subject_type: str, subject_id: UUID, public: bool = False
 ) -> ReputationResponse:
     """Return a reputation response or raise 404 when the subject is unknown."""
     payload = await service.read_reputation(
-        db, subject_type=subject_type, subject_id=subject_id
+        db,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        public=public,
     )
     if payload is None:
         raise HTTPException(
@@ -51,7 +54,12 @@ async def get_framework_reputation(
     db: DatabaseSession,
 ) -> ReputationResponse:
     """Return the public reputation score + factor labels for one framework."""
-    return await _read_or_404(db, subject_type="framework", subject_id=framework_id)
+    return await _read_or_404(
+        db,
+        subject_type="framework",
+        subject_id=framework_id,
+        public=True,
+    )
 
 
 @router.get(
@@ -65,7 +73,10 @@ async def get_contributor_reputation(
 ) -> ReputationResponse:
     """Return the public reputation score + factor labels for one contributor."""
     return await _read_or_404(
-        db, subject_type="contributor", subject_id=contributor_id
+        db,
+        subject_type="contributor",
+        subject_id=contributor_id,
+        public=True,
     )
 
 

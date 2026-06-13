@@ -569,7 +569,6 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
                 {"key": "reputation_prior", "value": "0.65"},
                 {"key": "reputation_min_activity_framework", "value": "4"},
                 {"key": "reputation_prior_strength_k", "value": "8.5"},
-                {"key": "reputation_decay_halflife_days", "value": "365"},
                 {"key": "reputation_dispute_penalty", "value": "0.15"},
             ],
         },
@@ -597,6 +596,17 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
             "updates": [{"key": "reputation_prior", "value": "1.2"}],
         },
     )
+    invalid_decay = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Decay is not wired into the engine yet.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {"key": "reputation_decay_halflife_days", "value": "365"}
+            ],
+        },
+    )
 
     async with async_session_factory() as session:
         config_rows = {
@@ -618,9 +628,8 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
     assert response_config["reputation_prior"]["value"] == "0.65"
     assert response_config["reputation_min_activity_framework"]["value"] == "4"
     assert response_config["reputation_prior_strength_k"]["value"] == "8.5"
-    assert response_config["reputation_decay_halflife_days"]["value"] == "365"
     assert response_config["reputation_dispute_penalty"]["value"] == "0.15"
     assert config_rows["reputation_prior"] == "0.65"
-    assert config_rows["reputation_decay_halflife_days"] == "365"
     assert invalid_weights.status_code == 422
     assert invalid_prior.status_code == 422
+    assert invalid_decay.status_code == 422
