@@ -32,7 +32,7 @@ from app.modules.developer.models import (
     DeveloperAccount,
     DeveloperApplication,
 )
-from app.modules.notifications.models import Notification
+from app.modules.notifications.models import Notification, NotificationPreference
 from app.shared.models.audit_log import AuditLog
 
 CatalogReadContext = Annotated[
@@ -163,6 +163,7 @@ async def partner_auth_context() -> AsyncIterator[FakeRedis]:
     async with async_session_factory() as session:
         async with session.begin():
             await session.execute(delete(ApiRequestLog))
+            await session.execute(delete(NotificationPreference))
             await session.execute(delete(Notification))
             await session.execute(delete(ApiKey))
             await session.execute(delete(DeveloperAccount))
@@ -177,6 +178,7 @@ async def partner_auth_context() -> AsyncIterator[FakeRedis]:
         async with async_session_factory() as session:
             async with session.begin():
                 await session.execute(delete(ApiRequestLog))
+                await session.execute(delete(NotificationPreference))
                 await session.execute(delete(Notification))
                 await session.execute(delete(ApiKey))
                 await session.execute(delete(DeveloperAccount))
@@ -251,6 +253,28 @@ async def suspend_partner_account_user(developer_account_id: UUID) -> None:
             user = await session.get(User, account.user_id)
             assert user is not None
             user.suspended_at = datetime.now(UTC)
+
+
+async def create_notification_preference(
+    *,
+    user_id: UUID,
+    notification_type: str,
+    category: str,
+    channel: str,
+    enabled: bool,
+) -> None:
+    """Persist one notification-preference override for Partner auth tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                NotificationPreference(
+                    user_id=user_id,
+                    notification_type=notification_type,
+                    category=category,
+                    channel=channel,
+                    enabled=enabled,
+                )
+            )
 
 
 def build_test_app(fake_redis: FakeRedis) -> FastAPI:
@@ -391,6 +415,64 @@ async def test_partner_api_key_rejects_suspended_developer_accounts(
     )
 
     assert response.status_code == 401
+
+
+async def test_partner_api_threshold_notification_respects_in_app_preferences(
+    partner_client: AsyncClient,
+    migrated_database: None,
+    partner_auth_context: FakeRedis,
+) -> None:
+    """Threshold notifications are skipped when the Developer disables in-app."""
+    del migrated_database, partner_auth_context
+    raw_key = "ak_pref_threshold_key"
+    api_key_id, account_id = await create_partner_api_key(
+        raw_key=raw_key,
+        scopes=["catalog:read"],
+        rate_limit_per_min=5,
+    )
+
+    async with async_session_factory() as session:
+        account = await session.get(DeveloperAccount, account_id)
+        assert account is not None
+        user_id = account.user_id
+
+    await create_notification_preference(
+        user_id=user_id,
+        notification_type="api_rate_limit_threshold",
+        category="account",
+        channel="in_app",
+        enabled=False,
+    )
+
+    responses = [
+        await partner_client.get(
+            "/partner/protected",
+            headers={"X-API-Key": raw_key},
+        )
+        for _ in range(4)
+    ]
+
+    async with async_session_factory() as session:
+        logs = (
+            (
+                await session.execute(
+                    select(ApiRequestLog)
+                    .where(ApiRequestLog.api_key_id == api_key_id)
+                    .order_by(ApiRequestLog.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        notification = await session.scalar(
+            select(Notification).where(
+                Notification.notification_type == "api_rate_limit_threshold"
+            )
+        )
+
+    assert [response.status_code for response in responses] == [200, 200, 200, 200]
+    assert len(logs) == 4
+    assert notification is None
 
 
 async def test_partner_api_key_rate_limit_blocks_after_limit(

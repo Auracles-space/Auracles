@@ -25,7 +25,7 @@ from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig
 from app.modules.frameworks.models import Framework
-from app.modules.notifications.models import Notification
+from app.modules.notifications.models import Notification, NotificationPreference
 from app.modules.saved_searches.models import (
     SavedSearch,
     SavedSearchAlertDelivery,
@@ -229,6 +229,28 @@ def create_saved_search(
         session.add(saved_search)
         session.commit()
         return saved_search.id
+
+
+def create_preference(
+    session_factory: sessionmaker,
+    *,
+    user_id: UUID,
+    notification_type: str,
+    channel: str,
+    enabled: bool,
+) -> None:
+    """Persist one notification-preference override for saved-search tests."""
+    with session_factory() as session:
+        session.add(
+            NotificationPreference(
+                user_id=user_id,
+                notification_type=notification_type,
+                category="discovery",
+                channel=channel,
+                enabled=enabled,
+            )
+        )
+        session.commit()
 
 
 def test_dispatch_saved_search_alerts_sends_digest_and_advances_cursor(
@@ -458,3 +480,91 @@ def test_dispatch_saved_search_alerts_skips_inactive_and_unverified_email_users(
     assert unverified_search is not None
     assert unverified_search.last_alerted_framework_id == matching_framework_id
     assert saved_search_beat_context["email_task"].calls == []
+
+
+def test_dispatch_saved_search_alerts_skips_email_when_email_channel_disabled(
+    migrated_database: None,
+    saved_search_beat_context: dict[str, Any],
+) -> None:
+    """Saved-search alerts keep in-app delivery when only email is disabled."""
+    session_factory = saved_search_beat_context["session_factory"]
+    contributor_id = create_user(
+        session_factory,
+        email="alert-pref-contributor@auracles.space",
+        roles=["contributor"],
+    )
+    operator_id = create_user(session_factory, email="alert-pref@auracles.space")
+    create_preference(
+        session_factory,
+        user_id=operator_id,
+        notification_type="saved_search_alert",
+        channel="email",
+        enabled=False,
+    )
+    created_at = datetime.now(UTC) - timedelta(hours=2)
+    create_saved_search(
+        session_factory,
+        operator_id,
+        created_at=created_at,
+    )
+    create_framework(
+        session_factory,
+        contributor_id,
+        title="Preference Risk Playbook",
+        published_at=created_at + timedelta(minutes=5),
+    )
+
+    result = saved_searches_beat.dispatch_saved_search_alerts.apply().get()
+
+    with session_factory() as session:
+        notifications = session.scalars(select(Notification)).all()
+        deliveries = session.scalars(select(SavedSearchAlertDelivery)).all()
+
+    assert result == {"processed_count": 1, "sent_count": 1, "match_count": 1}
+    assert len(notifications) == 1
+    assert len(deliveries) == 1
+    assert saved_search_beat_context["email_task"].calls == []
+
+
+def test_dispatch_saved_search_alerts_skips_in_app_when_in_app_channel_disabled(
+    migrated_database: None,
+    saved_search_beat_context: dict[str, Any],
+) -> None:
+    """Saved-search alerts can email without creating a durable notification."""
+    session_factory = saved_search_beat_context["session_factory"]
+    contributor_id = create_user(
+        session_factory,
+        email="alert-no-bell-contributor@auracles.space",
+        roles=["contributor"],
+    )
+    operator_id = create_user(session_factory, email="alert-no-bell@auracles.space")
+    create_preference(
+        session_factory,
+        user_id=operator_id,
+        notification_type="saved_search_alert",
+        channel="in_app",
+        enabled=False,
+    )
+    created_at = datetime.now(UTC) - timedelta(hours=2)
+    create_saved_search(
+        session_factory,
+        operator_id,
+        created_at=created_at,
+    )
+    create_framework(
+        session_factory,
+        contributor_id,
+        title="Email Only Risk Playbook",
+        published_at=created_at + timedelta(minutes=5),
+    )
+
+    result = saved_searches_beat.dispatch_saved_search_alerts.apply().get()
+
+    with session_factory() as session:
+        notifications = session.scalars(select(Notification)).all()
+        deliveries = session.scalars(select(SavedSearchAlertDelivery)).all()
+
+    assert result == {"processed_count": 1, "sent_count": 1, "match_count": 1}
+    assert notifications == []
+    assert len(deliveries) == 1
+    assert len(saved_search_beat_context["email_task"].calls) == 1

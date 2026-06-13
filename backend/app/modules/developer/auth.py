@@ -28,6 +28,7 @@ from app.core.database import async_session_factory, get_db
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.developer.models import ApiKey, ApiRequestLog, DeveloperAccount
+from app.modules.notifications.preferences import should_deliver
 from app.modules.notifications.service import create_notification
 
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -113,6 +114,14 @@ async def _notify_rate_limit_threshold_once(
         nx=True,
     )
     if not should_notify:
+        return
+
+    if not await should_deliver(
+        db=db,
+        user_id=developer_account.user_id,
+        notification_type="api_rate_limit_threshold",
+        channel="in_app",
+    ):
         return
 
     await create_notification(

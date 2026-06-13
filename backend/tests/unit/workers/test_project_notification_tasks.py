@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
-from app.modules.notifications.models import Notification
+from app.modules.notifications.models import Notification, NotificationPreference
 from app.workers.tasks import project_notifications
 
 
@@ -117,6 +117,31 @@ def create_user(email: str) -> UUID:
         user_id = user.id
     sync_engine.dispose()
     return user_id
+
+
+def create_preference(
+    *,
+    user_id: UUID,
+    notification_type: str,
+    channel: str,
+    enabled: bool,
+) -> None:
+    """Persist one notification-preference override for worker tests."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        session.add(
+            NotificationPreference(
+                user_id=user_id,
+                notification_type=notification_type,
+                category="project",
+                channel=channel,
+                enabled=enabled,
+            )
+        )
+        session.commit()
+    sync_engine.dispose()
 
 
 def test_dispatch_project_notification_dedupes_and_fans_out(
@@ -228,3 +253,168 @@ def test_dispatch_project_notification_accepts_attestation_types(
     assert notification is not None
     assert notification.notification_type == "attestation_fee_funded"
     assert project_notification_context["published"][0]["channel"] == f"user:{user_id}"
+
+
+def test_dispatch_project_notification_skips_email_when_email_channel_disabled(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Project dispatch keeps in-app delivery when only email is disabled."""
+    user_id = create_user("project-no-email@auracles.space")
+    create_preference(
+        user_id=user_id,
+        notification_type="proposal_accepted",
+        channel="email",
+        enabled=False,
+    )
+
+    result = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "proposal_accepted",
+            "title": "Proposal accepted",
+            "body": "Your proposal was accepted.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "proposal_accepted:no-email",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification_count = session.scalar(select(func.count(Notification.id)))
+    sync_engine.dispose()
+
+    assert result["status"] == "dispatched"
+    assert notification_count == 1
+    assert len(project_notification_context["published"]) == 1
+    assert project_notification_context["email_task"].calls == []
+
+
+def test_dispatch_project_notification_skips_in_app_when_in_app_channel_disabled(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Project dispatch can send email without creating an in-app notification."""
+    user_id = create_user("project-no-bell@auracles.space")
+    create_preference(
+        user_id=user_id,
+        notification_type="proposal_accepted",
+        channel="in_app",
+        enabled=False,
+    )
+
+    result = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "proposal_accepted",
+            "title": "Proposal accepted",
+            "body": "Your proposal was accepted.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "proposal_accepted:no-bell",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification_count = session.scalar(select(func.count(Notification.id)))
+    sync_engine.dispose()
+
+    assert result["status"] == "in_app_suppressed"
+    assert result["notification_id"] is None
+    assert notification_count == 0
+    assert project_notification_context["published"] == []
+    assert len(project_notification_context["email_task"].calls) == 1
+
+
+def test_dispatch_project_notification_suppresses_when_both_channels_disabled(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Project dispatch returns suppressed when both channels are disabled."""
+    user_id = create_user("project-quiet@auracles.space")
+    create_preference(
+        user_id=user_id,
+        notification_type="proposal_accepted",
+        channel="in_app",
+        enabled=False,
+    )
+    create_preference(
+        user_id=user_id,
+        notification_type="proposal_accepted",
+        channel="email",
+        enabled=False,
+    )
+
+    result = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "proposal_accepted",
+            "title": "Proposal accepted",
+            "body": "Your proposal was accepted.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "proposal_accepted:quiet",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification_count = session.scalar(select(func.count(Notification.id)))
+    sync_engine.dispose()
+
+    assert result["status"] == "suppressed"
+    assert notification_count == 0
+    assert project_notification_context["published"] == []
+    assert project_notification_context["email_task"].calls == []
+
+
+def test_dispatch_project_notification_critical_types_bypass_preferences(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Critical notification types must ignore stored disabled preferences."""
+    user_id = create_user("project-critical@auracles.space")
+    create_preference(
+        user_id=user_id,
+        notification_type="dispute_resolved_release",
+        channel="in_app",
+        enabled=False,
+    )
+    create_preference(
+        user_id=user_id,
+        notification_type="dispute_resolved_release",
+        channel="email",
+        enabled=False,
+    )
+
+    result = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "dispute_resolved_release",
+            "title": "Dispute resolved",
+            "body": "Escrow was released after dispute resolution.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "dispute_resolved_release:critical",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification_count = session.scalar(select(func.count(Notification.id)))
+    sync_engine.dispose()
+
+    assert result["status"] == "dispatched"
+    assert notification_count == 1
+    assert len(project_notification_context["published"]) == 1
+    assert len(project_notification_context["email_task"].calls) == 1

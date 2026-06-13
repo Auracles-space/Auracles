@@ -20,6 +20,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.explore import service as explore_service
 from app.modules.explore.schemas import ExploreSearchFilters
 from app.modules.frameworks.models import Framework
+from app.modules.notifications import preferences as notification_preferences
 from app.modules.notifications import service as notification_service
 from app.modules.saved_searches.models import (
     SavedSearch,
@@ -124,20 +125,34 @@ async def _send_saved_search_alert(
     ]
     dedupe_key = f"saved-search-alert:{saved_search.id}:{final_framework.id}"
     title_suffix = "es" if len(matches) != 1 else ""
-    notification = await notification_service.create_notification(
+    in_app_enabled = await notification_preferences.should_deliver(
         db=db,
         user_id=user.id,
         notification_type="saved_search_alert",
-        title=f"{len(matches)} new saved-search match{title_suffix}",
-        body=f"New Frameworks match your saved search: {saved_search.name}.",
-        link=f"/settings/saved-searches/{saved_search.id}",
-        payload={
-            "saved_search_id": str(saved_search.id),
-            "matches": match_payload,
-        },
-        dedupe_key=dedupe_key,
+        channel="in_app",
     )
-    if notification is not None and user.email_verified:
+    email_enabled = await notification_preferences.should_deliver(
+        db=db,
+        user_id=user.id,
+        notification_type="saved_search_alert",
+        channel="email",
+    )
+    notification = None
+    if in_app_enabled:
+        notification = await notification_service.create_notification(
+            db=db,
+            user_id=user.id,
+            notification_type="saved_search_alert",
+            title=f"{len(matches)} new saved-search match{title_suffix}",
+            body=f"New Frameworks match your saved search: {saved_search.name}.",
+            link=f"/settings/saved-searches/{saved_search.id}",
+            payload={
+                "saved_search_id": str(saved_search.id),
+                "matches": match_payload,
+            },
+            dedupe_key=dedupe_key,
+        )
+    if email_enabled and user.email_verified:
         send_saved_search_alert_email.delay(
             email=user.email,
             saved_search_name=saved_search.name,
