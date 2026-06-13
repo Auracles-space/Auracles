@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -321,12 +322,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
               Project workspace
             </p>
-            <h1 className="mt-2 font-heading text-3xl font-bold text-foreground">
-              {project?.title ?? "Loading Project"}
+            <h1 className="mt-2 flex items-center font-heading text-3xl font-bold text-foreground">
+              {project ? project.title : <Skeleton className="h-9 w-64 rounded-xl" />}
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
-              {project?.description ?? "Project detail is loading."}
-            </p>
+            <div className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
+              {project ? project.description : (
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-full rounded-md" />
+                  <Skeleton className="h-5 w-3/4 rounded-md" />
+                </div>
+              )}
+            </div>
           </div>
           <div className="grid justify-items-end gap-2 text-right">
             {project ? <StatusBadge status={project.status} /> : null}

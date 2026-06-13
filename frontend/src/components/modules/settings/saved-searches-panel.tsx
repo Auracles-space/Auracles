@@ -15,6 +15,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
   deleteSavedSearch,
   listSavedSearches,
@@ -172,11 +173,7 @@ export function SavedSearchesPanel() {
   }
 
   if (loading) {
-    return (
-      <p className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm text-sm text-foreground-muted">
-        Loading saved searches...
-      </p>
-    );
+    return <TableSkeleton />;
   }
 
   return (

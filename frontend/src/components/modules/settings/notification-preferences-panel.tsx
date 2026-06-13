@@ -14,6 +14,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
   getNotificationPreferencesV1SettingsNotificationPreferencesGet,
   updateNotificationPreferencesV1SettingsNotificationPreferencesPatch,
@@ -113,11 +114,7 @@ export function NotificationPreferencesPanel() {
   }
 
   if (loading) {
-    return (
-      <p className="rounded-xl border border-border-default bg-surface-1 p-5 text-sm text-foreground-muted">
-        Loading notification preferences...
-      </p>
-    );
+    return <TableSkeleton />;
   }
 
   return (

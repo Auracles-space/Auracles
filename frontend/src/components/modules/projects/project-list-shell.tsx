@@ -15,6 +15,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { authTokenStore } from "@/lib/auth/token-store";
+import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { listProjects } from "@/lib/generated/sdk.gen";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
 
@@ -153,7 +154,7 @@ export function ProjectListShell() {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             My posted Projects
           </h2>
-          {loading ? <p className="text-sm text-foreground-muted">Loading.</p> : null}
+          {loading ? <CardSkeleton /> : null}
           {!loading && operatorProjects.length === 0 ? (
             <p className="rounded-xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               No posted Projects yet.
@@ -168,7 +169,7 @@ export function ProjectListShell() {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             Open Projects
           </h2>
-          {loading ? <p className="text-sm text-foreground-muted">Loading.</p> : null}
+          {loading ? <CardSkeleton /> : null}
           {!loading && openProjects.length === 0 ? (
             <p className="rounded-xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               No open Projects available.

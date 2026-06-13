@@ -20,6 +20,7 @@ import {
   suspendUserV1AdminUsersUserIdSuspendPost,
   unsuspendUserV1AdminUsersUserIdUnsuspendPost,
 } from "@/lib/generated/sdk.gen";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type {
   AdminUserDirectoryItem,
   AdminUserDirectoryResponse,
@@ -190,7 +191,7 @@ export function AdminUserDirectoryPanel() {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading user controls.</p>;
+    return <TableSkeleton />;
   }
 
   return (

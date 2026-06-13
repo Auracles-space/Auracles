@@ -7,6 +7,7 @@
  * components that call generated backend endpoints.
  */
 import { useEffect, useState } from "react";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploader";
 import { DelistButton } from "@/components/modules/frameworks/delist-button";
@@ -128,7 +129,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading workspace.</p>;
+    return <TableSkeleton />;
   }
 
   if (error || !framework) {

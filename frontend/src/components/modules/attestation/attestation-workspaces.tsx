@@ -14,6 +14,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
   acceptAttestationOffer,
   acceptAttestationReport,
@@ -176,7 +177,7 @@ export function AttestationRequestorPanel() {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading Attestations.</p>;
+    return <TableSkeleton />;
   }
 
   return (
@@ -364,7 +365,7 @@ export function AttestorApplicationPanel() {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading applications.</p>;
+    return <TableSkeleton />;
   }
 
   return (

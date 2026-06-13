@@ -26,6 +26,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type CollectionFormState = {
@@ -201,7 +202,7 @@ export function CollectionBuilder() {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading collections.</p>;
+    return <CardSkeleton />;
   }
 
   return (

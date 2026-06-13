@@ -7,6 +7,8 @@
  * in-memory access token.
  */
 import Link from "next/link";
+import { SearchInput } from "../explore/search-input";
+import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { useEffect, useState } from "react";
 
 import { listContributorFrameworks } from "@/lib/generated/sdk.gen";
@@ -50,7 +52,7 @@ export function FrameworkList() {
   }, []);
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading frameworks.</p>;
+    return <CardSkeleton />;
   }
 
   if (error) {

@@ -24,6 +24,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 type FrameworkReviewPanelProps = {
   frameworkId: string;
@@ -152,7 +153,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
   }
 
   if (state.loading) {
-    return <p className="mt-4 text-sm text-foreground-muted">Loading reviews.</p>;
+    return <TableSkeleton />;
   }
 
   const aggregate = state.reviews?.average_score

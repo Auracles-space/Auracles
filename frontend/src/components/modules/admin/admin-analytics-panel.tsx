@@ -14,6 +14,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { getAdminAnalyticsDashboardV1AdminAnalyticsDashboardGet } from "@/lib/generated/sdk.gen";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type { AdminAnalyticsDashboardResponse } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
@@ -94,7 +95,7 @@ export function AdminAnalyticsPanel() {
   }, [dashboard?.trend]);
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading platform analytics.</p>;
+    return <TableSkeleton />;
   }
 
   return (

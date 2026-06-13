@@ -14,6 +14,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { listModerationQueueV1AdminModerationQueueGet } from "@/lib/generated/sdk.gen";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type { AdminModerationQueueResponse } from "@/lib/generated/types.gen";
 import { formatLabel } from "@/lib/marketplace/format";
 
@@ -65,7 +66,7 @@ export function AdminModerationPanel() {
   }, [queueType]);
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading moderation queue.</p>;
+    return <TableSkeleton />;
   }
 
   return (

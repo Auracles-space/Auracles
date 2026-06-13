@@ -14,6 +14,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
   createCredential,
   deleteCredential,
@@ -102,7 +103,7 @@ export function CredentialManager() {
   }
 
   if (loading) {
-    return <p className="text-sm text-foreground-muted">Loading credentials.</p>;
+    return <TableSkeleton />;
   }
 
   return (

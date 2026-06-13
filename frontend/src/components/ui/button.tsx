@@ -6,12 +6,14 @@
  * pulling business logic into `components/ui`.
  */
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { Spinner } from "./spinner";
 
 type ButtonVariant = "primary" | "secondary" | "destructive";
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   variant?: ButtonVariant;
+  loading?: boolean;
 };
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -33,8 +35,10 @@ export function Button({
   className = "",
   variant = "primary",
   type = "button",
+  loading = false,
   ...props
 }: ButtonProps) {
+  // Import Spinner dynamically or place it at the top. Let's make sure Spinner is imported.
   return (
     <button
       className={[
@@ -43,9 +47,11 @@ export function Button({
         variantClasses[variant],
         className,
       ].join(" ")}
+      disabled={loading || props.disabled}
       type={type}
       {...props}
     >
+      {loading && <Spinner className="mr-2 h-4 w-4" />}
       {children}
     </button>
   );
