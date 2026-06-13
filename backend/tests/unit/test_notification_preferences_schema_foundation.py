@@ -16,7 +16,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import configure_mappers
 
 from app.core.config import get_settings
-from app.modules.notifications.models import NotificationPreference
+from app.modules.notifications.models import (
+    NotificationDeliveryMarker,
+    NotificationPreference,
+)
 
 PHASE_5E_HEAD = "2026_06_13_0025"
 
@@ -38,15 +41,19 @@ def migrated_engine() -> Iterator[Engine]:
         engine.dispose()
 
 
-def test_notification_preferences_migration_creates_table_indexes_and_enums(
+def test_notification_preferences_migration_creates_tables_indexes_and_enums(
     migrated_engine: Engine,
 ) -> None:
-    """Alembic creates the preference table and supporting enums."""
+    """Alembic creates notification preference tables and supporting enums."""
     inspector = inspect(migrated_engine)
     table_names = set(inspector.get_table_names())
-    columns = {
+    preference_columns = {
         column["name"]
         for column in inspector.get_columns("notification_preferences")
+    }
+    marker_columns = {
+        column["name"]
+        for column in inspector.get_columns("notification_delivery_markers")
     }
     indexes = {
         index["name"]
@@ -56,6 +63,12 @@ def test_notification_preferences_migration_creates_table_indexes_and_enums(
         constraint["name"]
         for constraint in inspector.get_unique_constraints(
             "notification_preferences"
+        )
+    }
+    marker_uniques = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "notification_delivery_markers"
         )
     }
 
@@ -79,15 +92,20 @@ def test_notification_preferences_migration_creates_table_indexes_and_enums(
             enum_labels.setdefault(type_name, []).append(label)
 
     assert "notification_preferences" in table_names
+    assert "notification_delivery_markers" in table_names
     assert {
         "user_id",
         "notification_type",
         "category",
         "channel",
         "enabled",
-    }.issubset(columns)
+    }.issubset(preference_columns)
+    assert {"user_id", "dedupe_key", "channel"}.issubset(marker_columns)
     assert "idx_notification_preferences_user_type" in indexes
     assert "uq_notification_preferences_user_type_channel" in uniques
+    assert (
+        "uq_notification_delivery_markers_user_dedupe_channel" in marker_uniques
+    )
     assert enum_labels["notification_channel_enum"] == ["email", "in_app"]
     assert enum_labels["notification_category_enum"] == [
         "project",
@@ -128,6 +146,7 @@ def test_notification_preferences_migration_downgrade_removes_slice_one_schema(
             }
 
         assert "notification_preferences" not in table_names
+        assert "notification_delivery_markers" not in table_names
         assert enum_names == set()
     finally:
         command.upgrade(alembic_config, "head")
@@ -135,7 +154,7 @@ def test_notification_preferences_migration_downgrade_removes_slice_one_schema(
 
 
 def test_notification_preference_orm_model_binds_to_slice_one_table() -> None:
-    """ORM metadata exposes the durable preference table contract."""
+    """ORM metadata exposes the durable notification preference contract."""
     configure_mappers()
 
     assert NotificationPreference.__tablename__ == "notification_preferences"
@@ -146,3 +165,13 @@ def test_notification_preference_orm_model_binds_to_slice_one_table() -> None:
         "channel",
         "enabled",
     }.issubset(NotificationPreference.__table__.columns.keys())
+
+
+def test_notification_delivery_marker_orm_model_binds_to_marker_table() -> None:
+    """ORM metadata exposes the durable email-only delivery marker contract."""
+    configure_mappers()
+
+    assert NotificationDeliveryMarker.__tablename__ == "notification_delivery_markers"
+    assert {"user_id", "dedupe_key", "channel"}.issubset(
+        NotificationDeliveryMarker.__table__.columns.keys()
+    )

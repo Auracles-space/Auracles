@@ -1,4 +1,4 @@
-"""SQLAlchemy models for notification delivery and user preferences.
+"""SQLAlchemy models for notification delivery, delivery markers, and preferences.
 
 Notifications are persisted before realtime fanout or email dispatch, so
 clients can recover missed Redis pub/sub events by refetching from Postgres.
@@ -182,4 +182,34 @@ class NotificationPreference(UpdatedAtMixin, Base):
         Boolean,
         nullable=False,
         server_default=text("true"),
+    )
+
+
+class NotificationDeliveryMarker(CreatedAtMixin, Base):
+    """Durable dedup marker for notification channels without in-app rows."""
+
+    __tablename__ = "notification_delivery_markers"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "dedupe_key",
+            "channel",
+            name="uq_notification_delivery_markers_user_dedupe_channel",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(
+        NOTIFICATION_CHANNEL_ENUM,
+        nullable=False,
     )

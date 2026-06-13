@@ -82,6 +82,19 @@ async def _dispatch_project_notification_impl(
                         "type": notification_type,
                     }
                 notification_id = notification.id
+            elif email_enabled and dedupe_key is not None:
+                marker_claimed = await notification_service.claim_delivery_marker(
+                    db=db,
+                    user_id=parsed_user_id,
+                    dedupe_key=dedupe_key,
+                    channel="email",
+                )
+                if not marker_claimed:
+                    return {
+                        "status": "duplicate",
+                        "user_id": user_id,
+                        "type": notification_type,
+                    }
 
     if notification_id is not None:
         event_payload = {

@@ -33,6 +33,12 @@ from app.modules.notifications.schemas import (
 
 DEFAULT_NOTIFICATION_CATEGORY: Final[str] = "account"
 CRITICAL_NOTIFICATION_TYPES: Final[set[str]] = {
+    "milestone_funded",
+    "deliverable_approved",
+    "deliverable_auto_approved",
+    "attestation_fee_funded",
+    "attestation_released",
+    "attestation_refunded",
     "dispute_resolved_release",
     "dispute_resolved_refund",
     "dispute_resolved_split",

@@ -63,3 +63,25 @@ async def test_should_deliver_bypasses_preferences_for_critical_types() -> None:
     )
 
     assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_should_deliver_bypasses_money_state_critical_types(
+) -> None:
+    """Escrow and payout state notifications chosen as critical bypass storage."""
+    for notification_type in (
+        "milestone_funded",
+        "deliverable_approved",
+        "deliverable_auto_approved",
+        "attestation_fee_funded",
+        "attestation_released",
+        "attestation_refunded",
+    ):
+        allowed = await preferences.should_deliver(
+            _ExplodingSession(),
+            user_id=uuid4(),
+            notification_type=notification_type,
+            channel="email",
+        )
+
+        assert allowed is True

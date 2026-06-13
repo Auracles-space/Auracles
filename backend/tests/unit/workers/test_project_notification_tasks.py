@@ -17,7 +17,9 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
 from app.modules.notifications.models import Notification, NotificationPreference
+from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import project_notifications
+from tests.support.db_cleanup import clear_identity_state_sync
 
 
 class FakeProjectEmailTask:
@@ -69,9 +71,9 @@ def project_notification_context(
     def cleanup() -> None:
         """Delete notifications and users in dependency order."""
         with session_factory() as session:
+            session.execute(delete(AuditLog))
             session.execute(delete(Notification))
-            session.execute(delete(UserRole))
-            session.execute(delete(User))
+            clear_identity_state_sync(session)
             session.commit()
 
     cleanup()
@@ -417,4 +419,54 @@ def test_dispatch_project_notification_critical_types_bypass_preferences(
     assert result["status"] == "dispatched"
     assert notification_count == 1
     assert len(project_notification_context["published"]) == 1
+    assert len(project_notification_context["email_task"].calls) == 1
+
+
+def test_dispatch_project_notification_email_only_mode_keeps_deduplication(
+    migrated_database: None,
+    project_notification_context: dict[str, Any],
+) -> None:
+    """Email-only delivery with a dedupe key must not queue duplicate emails."""
+    user_id = create_user("project-email-dedup@auracles.space")
+    create_preference(
+        user_id=user_id,
+        notification_type="proposal_accepted",
+        channel="in_app",
+        enabled=False,
+    )
+
+    first = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "proposal_accepted",
+            "title": "Proposal accepted",
+            "body": "Your proposal was accepted.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "proposal_accepted:email-only-dedup",
+        }
+    ).get()
+    duplicate = project_notifications.dispatch_project_notification.apply(
+        kwargs={
+            "user_id": str(user_id),
+            "notification_type": "proposal_accepted",
+            "title": "Proposal accepted",
+            "body": "Your proposal was accepted.",
+            "payload": {"project_id": str(uuid4())},
+            "link": "/projects/example",
+            "dedupe_key": "proposal_accepted:email-only-dedup",
+        }
+    ).get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        notification_count = session.scalar(select(func.count(Notification.id)))
+    sync_engine.dispose()
+
+    assert first["status"] == "in_app_suppressed"
+    assert duplicate["status"] == "duplicate"
+    assert notification_count == 0
+    assert project_notification_context["published"] == []
     assert len(project_notification_context["email_task"].calls) == 1

@@ -2,7 +2,8 @@
 
 All public reads and mutations are scoped to the authenticated user. Background
 tasks use this module to create durable notification rows before realtime or
-email dispatch occurs.
+email dispatch occurs. Email-only dispatches can also claim a durable delivery
+marker so Celery retries do not resend the same message indefinitely.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import User
-from app.modules.notifications.models import Notification
+from app.modules.notifications.models import Notification, NotificationDeliveryMarker
 from app.modules.notifications.schemas import NotificationItem, NotificationsResponse
 
 
@@ -153,3 +154,37 @@ async def create_notification(
     if notification_id is None:
         return None
     return await db.get(Notification, notification_id)
+
+
+async def claim_delivery_marker(
+    *,
+    db: AsyncSession,
+    user_id: UUID,
+    dedupe_key: str,
+    channel: str,
+) -> bool:
+    """Claim one durable channel-delivery marker for idempotent fanout.
+
+    Args:
+        db: Async database session.
+        user_id: Notification recipient id.
+        dedupe_key: Caller-provided dedupe key for the notification event.
+        channel: Notification channel being marked.
+
+    Returns:
+        True when the marker was inserted by this call. False when a previous
+        dispatch already claimed the same user/dedupe/channel combination.
+    """
+    marker_id = await db.scalar(
+        pg_insert(NotificationDeliveryMarker)
+        .values(
+            user_id=user_id,
+            dedupe_key=dedupe_key,
+            channel=channel,
+        )
+        .on_conflict_do_nothing(
+            constraint="uq_notification_delivery_markers_user_dedupe_channel"
+        )
+        .returning(NotificationDeliveryMarker.id)
+    )
+    return marker_id is not None

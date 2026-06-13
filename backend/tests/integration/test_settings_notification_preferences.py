@@ -308,3 +308,34 @@ async def test_patch_notification_preferences_rejects_disabling_critical_rows(
     assert response.json()["detail"] == (
         "Critical notification preferences cannot be disabled."
     )
+
+
+async def test_patch_rejects_disabling_money_state_critical_rows(
+    client: AsyncClient,
+    migrated_database: None,
+    notification_preferences_context: None,
+) -> None:
+    """PATCH must reject disabling escrow and payout state notifications."""
+    current_user_id = await _create_user(
+        email="money-critical-owner@auracles.space",
+        roles=["contributor"],
+    )
+
+    response = await client.patch(
+        "/v1/settings/notification-preferences",
+        headers=_auth_headers(current_user_id, ["contributor"]),
+        json={
+            "updates": [
+                {
+                    "notification_type": "deliverable_approved",
+                    "channel": "email",
+                    "enabled": False,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Critical notification preferences cannot be disabled."
+    )
