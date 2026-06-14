@@ -1,10 +1,11 @@
 """Redis-backed MinHash LSH index helper tests.
 
-Covers the band-key derivation and the Redis index/remove lifecycle in
+Covers band-key derivation and the index/remove lifecycle in
 ``app/workers/tasks/processing/minhash_index.py``. The index is an
-acceleration structure; the database stays the source of truth. Tests run
-against the real cache client returned by ``get_redis`` and clean up the keys
-they create, using a unique Artifact id per test to avoid collisions.
+acceleration structure; the database stays the source of truth. A small
+in-memory async fake stands in for the cache client so the tests are
+deterministic and never bind a shared connection pool to a per-test event
+loop.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from alembic.config import Config
 from sqlalchemy import create_engine, delete
 
 from app.core.database import async_session_factory, engine
-from app.core.redis import get_redis
 from app.core.security import hash_password
 from app.main import app
 from app.modules.auth.models import User
@@ -29,6 +29,47 @@ from app.modules.frameworks.models_artifact import Artifact
 from app.workers.tasks.processing import minhash_index
 
 _SIGNATURE_BYTES = minhash_index.MINHASH_PERMUTATIONS * minhash_index.MINHASH_WORD_BYTES
+
+
+class _FakeRedis:
+    """Minimal in-memory async Redis set store for LSH index tests."""
+
+    def __init__(self) -> None:
+        """Start with no sets."""
+        self.sets: dict[str, set[str]] = {}
+
+    async def sadd(self, key: str, *members: str) -> int:
+        """Add members to a set."""
+        self.sets.setdefault(key, set()).update(members)
+        return len(members)
+
+    async def srem(self, key: str, *members: str) -> int:
+        """Remove members from a set if present."""
+        bucket = self.sets.get(key)
+        if bucket is not None:
+            bucket.difference_update(members)
+        return 0
+
+    async def smembers(self, key: str) -> set[str]:
+        """Return a copy of the set's members."""
+        return set(self.sets.get(key, set()))
+
+    async def scard(self, key: str) -> int:
+        """Return the set cardinality."""
+        return len(self.sets.get(key, set()))
+
+    async def delete(self, *keys: str) -> int:
+        """Delete keys, returning how many existed."""
+        removed = 0
+        for key in keys:
+            if key in self.sets:
+                del self.sets[key]
+                removed += 1
+        return removed
+
+    async def exists(self, key: str) -> int:
+        """Return 1 if the key exists, else 0."""
+        return 1 if key in self.sets else 0
 
 
 def _signature() -> bytes:
@@ -51,34 +92,40 @@ def test_band_keys_rejects_wrong_length_signature() -> None:
     assert minhash_index._band_keys(b"too-short") == []
 
 
-async def test_index_then_remove_artifact_signature_roundtrip() -> None:
+async def test_index_then_remove_artifact_signature_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Indexing registers band membership; re-indexing is idempotent; remove clears."""
+    fake = _FakeRedis()
+    monkeypatch.setattr(minhash_index, "get_redis", lambda: fake)
     artifact_id = uuid4()
     signature = _signature()
-    redis = get_redis()
     artifact_key = minhash_index._artifact_key(artifact_id)
     band_keys = minhash_index._band_keys(signature)
 
-    try:
-        await minhash_index.index_artifact_signature(artifact_id, signature)
-        # Re-index to exercise the existing-membership cleanup branch.
-        await minhash_index.index_artifact_signature(artifact_id, signature)
+    await minhash_index.index_artifact_signature(artifact_id, signature)
+    # Re-index to exercise the existing-membership cleanup branch.
+    await minhash_index.index_artifact_signature(artifact_id, signature)
 
-        member_count = await redis.scard(artifact_key)
-        first_band_members = await redis.smembers(band_keys[0])
+    assert await fake.scard(artifact_key) == minhash_index.LSH_BANDS
+    assert str(artifact_id) in await fake.smembers(band_keys[0])
 
-        assert int(member_count) == minhash_index.LSH_BANDS
-        assert str(artifact_id).encode() in {
-            member if isinstance(member, bytes) else member.encode()
-            for member in first_band_members
-        }
+    await minhash_index.remove_artifact_signature(artifact_id)
+    assert await fake.exists(artifact_key) == 0
+    assert await fake.scard(band_keys[0]) == 0
 
-        await minhash_index.remove_artifact_signature(artifact_id)
-        assert await redis.exists(artifact_key) == 0
-        assert await redis.scard(band_keys[0]) == 0
-    finally:
-        await redis.delete(artifact_key, *band_keys)
-        await redis.aclose()
+
+async def test_index_artifact_signature_ignores_malformed_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wrong-length signature indexes nothing rather than raising."""
+    fake = _FakeRedis()
+    monkeypatch.setattr(minhash_index, "get_redis", lambda: fake)
+    artifact_id = uuid4()
+
+    await minhash_index.index_artifact_signature(artifact_id, b"too-short")
+
+    assert fake.sets == {}
 
 
 @pytest.fixture
@@ -115,9 +162,12 @@ async def framework_artifact_state() -> AsyncIterator[None]:
 async def test_index_framework_artifacts_indexes_current_signed_artifacts(
     migrated_database: None,
     framework_artifact_state: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only current Artifacts with a stored signature get indexed for a Framework."""
     del migrated_database, framework_artifact_state
+    fake = _FakeRedis()
+    monkeypatch.setattr(minhash_index, "get_redis", lambda: fake)
     signature = _signature()
     async with async_session_factory() as session:
         async with session.begin():
@@ -168,12 +218,7 @@ async def test_index_framework_artifacts_indexes_current_signed_artifacts(
             artifact_id = artifact.id
             framework_id = framework.id
 
-    redis = get_redis()
+    await minhash_index.index_framework_artifacts(framework_id)
+
     artifact_key = minhash_index._artifact_key(artifact_id)
-    band_keys = minhash_index._band_keys(signature)
-    try:
-        await minhash_index.index_framework_artifacts(framework_id)
-        assert int(await redis.scard(artifact_key)) == minhash_index.LSH_BANDS
-    finally:
-        await redis.delete(artifact_key, *band_keys)
-        await redis.aclose()
+    assert await fake.scard(artifact_key) == minhash_index.LSH_BANDS

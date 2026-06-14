@@ -212,3 +212,72 @@ async def test_notify_licensees_of_new_version_counts_active_licenses(
         "new_version": "2.0.0",
         "active_license_count": 0,
     }
+
+
+@pytest.mark.parametrize(
+    ("task", "resend_attr", "apply_kwargs"),
+    [
+        (
+            notifications.send_password_reset_email,
+            "send_password_reset_via_resend",
+            {"args": ["user@auracles.space", "reset-1"]},
+        ),
+        (
+            notifications.send_email_change_verification,
+            "send_email_change_via_resend",
+            {"args": ["new@auracles.space", "change-1"]},
+        ),
+        (
+            notifications.send_new_device_email,
+            "send_new_device_via_resend",
+            {"args": ["user@auracles.space", "203.0.113.4", "Firefox"]},
+        ),
+        (
+            notifications.send_project_notification_email,
+            "send_project_notification_via_resend",
+            {"kwargs": {"email": "op@auracles.space", "title": "t", "body": "b"}},
+        ),
+        (
+            notifications.send_saved_search_alert_email,
+            "send_project_notification_via_resend",
+            {
+                "kwargs": {
+                    "email": "op@auracles.space",
+                    "saved_search_name": "Risk",
+                    "matches": [{"title": "F", "link": "https://a.test/f"}],
+                }
+            },
+        ),
+    ],
+)
+def test_notification_wrappers_retry_when_resend_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    task: Any,
+    resend_attr: str,
+    apply_kwargs: dict[str, Any],
+) -> None:
+    """Every Resend-backed wrapper raises Celery Retry on a provider failure."""
+
+    def _boom(**_kwargs: Any) -> None:
+        raise RuntimeError("resend down")
+
+    monkeypatch.setattr(notifications, resend_attr, _boom)
+
+    with pytest.raises(Retry):
+        task.apply(throw=True, **apply_kwargs)
+
+
+def test_notify_licensees_retries_on_db_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure inside the licensee-count query raises Celery Retry."""
+
+    async def _boom(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(notifications, "_notify_licensees_of_new_version_impl", _boom)
+
+    with pytest.raises(Retry):
+        notifications.notify_licensees_of_new_version.apply(
+            args=["00000000-0000-0000-0000-0000000000aa", "2.0.0"], throw=True
+        )
