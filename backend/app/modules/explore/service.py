@@ -46,6 +46,26 @@ PREVIEW_RATE_LIMIT = 60
 PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
 PUBLIC_POSITIVE_ATTESTATION_OUTCOMES = ("approved", "conditional")
 PUBLIC_ATTESTATION_REPORT_STATUSES = ("report_submitted", "closed")
+PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _safe_public_url(value: str | None) -> str | None:
+    """Return a stored URL only when it uses a safe web scheme.
+
+    Defends public profile responses against `javascript:`/`data:` URLs reaching
+    clients that render them as links. The profile website field is plain text in
+    storage, so the scheme is validated here at the read boundary regardless of
+    how the value was persisted.
+    """
+    if value is None:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    scheme, separator, _ = candidate.partition("://")
+    if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
+        return None
+    return candidate
 
 
 def _card_from_framework(
@@ -1159,7 +1179,7 @@ async def get_contributor_profile(
         avatar_url=contributor.avatar_url,
         bio=contributor.bio,
         location=contributor.location,
-        website=contributor.website,
+        website=_safe_public_url(contributor.website),
         attestation_badge=contributor_badges.get(contributor_id),
         attestation_count=contributor_badge_counts.get(contributor_id, 0),
         reputation=contributor_reputations.get(contributor_id),

@@ -16,6 +16,7 @@ import {
 } from "@/lib/auth/token-store";
 import { getOnboardingDestination } from "@/lib/auth/onboarding";
 import { getRoleLandingPath } from "@/lib/auth/route-guards";
+import { safeInternalPath } from "@/lib/url/safe-href";
 import { getCurrentUser, login } from "@/lib/generated/sdk.gen";
 
 import {
@@ -27,6 +28,7 @@ import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
 
 type LoginFormProps = {
+  next?: string;
   onAuthenticated?: (location: string) => void;
   onChallenge?: (challengeToken: string) => void;
 };
@@ -34,9 +36,10 @@ type LoginFormProps = {
 /**
  * Render the email/password login form and handle token or 2FA responses.
  *
- * @param props - Optional navigation callbacks for tests and host pages.
+ * @param props - Resume-intent path plus optional navigation callbacks.
  */
-export function LoginForm({ onAuthenticated, onChallenge }: LoginFormProps) {
+export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps) {
+  const safeNext = safeInternalPath(next);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,8 +58,9 @@ export function LoginForm({ onAuthenticated, onChallenge }: LoginFormProps) {
       onChallenge(challengeToken);
       return;
     }
+    const nextParam = safeNext ? `&next=${encodeURIComponent(safeNext)}` : "";
     window.location.assign(
-      `/2fa-challenge?challenge=${encodeURIComponent(challengeToken)}`,
+      `/2fa-challenge?challenge=${encodeURIComponent(challengeToken)}${nextParam}`,
     );
   }
 
@@ -98,11 +102,21 @@ export function LoginForm({ onAuthenticated, onChallenge }: LoginFormProps) {
     });
 
     if (!currentUser.response.ok || !currentUser.data) {
-      navigateTo(roleLandingPath);
+      navigateTo(safeNext ?? roleLandingPath);
       return;
     }
 
-    navigateTo(getOnboardingDestination(currentUser.data, roleLandingPath));
+    const onboardingDestination = getOnboardingDestination(
+      currentUser.data,
+      roleLandingPath,
+    );
+    // Honor the resume-intent target only when the account is fully onboarded;
+    // otherwise the onboarding gate takes precedence.
+    navigateTo(
+      onboardingDestination === roleLandingPath
+        ? safeNext ?? roleLandingPath
+        : onboardingDestination,
+    );
   }
 
   return (

@@ -15,6 +15,7 @@ import { ReputationBadge } from "@/components/modules/reputation/reputation-badg
 import { getExploreContributorProfile } from "@/lib/generated/sdk.gen";
 import type { ExploreContributorProfile } from "@/lib/generated/types.gen";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
+import { safeHref } from "@/lib/url/safe-href";
 
 type ContributorProfilePageProps = {
   params: Promise<{ id: string }>;
@@ -112,11 +113,11 @@ export default async function ContributorProfilePage({
                 </div>
               </dl>
 
-              {profile.website ? (
+              {safeHref(profile.website) ? (
                 <a
                   className="mt-5 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
-                  href={profile.website}
-                  rel="noreferrer"
+                  href={safeHref(profile.website)}
+                  rel="noreferrer noopener"
                   target="_blank"
                 >
                   Visit website

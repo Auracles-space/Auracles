@@ -19,6 +19,7 @@ import {
   describeGeneratedError,
 } from "@/lib/auth/form-client";
 import { getRoleLandingPath } from "@/lib/auth/route-guards";
+import { safeInternalPath } from "@/lib/url/safe-href";
 import { verifyTotpLogin } from "@/lib/generated/sdk.gen";
 
 import { BackupCodeInput } from "./backup-code-input";
@@ -27,18 +28,21 @@ import { TotpInput } from "./totp-input";
 
 type TotpChallengeFormProps = {
   challengeToken: string;
+  next?: string;
   onAuthenticated?: (location: string) => void;
 };
 
 /**
  * Render the login 2FA challenge form.
  *
- * @param props - Challenge token from the login response and optional router.
+ * @param props - Challenge token, resume-intent path, and optional router.
  */
 export function TotpChallengeForm({
   challengeToken,
+  next,
   onAuthenticated,
 }: TotpChallengeFormProps) {
+  const safeNext = safeInternalPath(next);
   const [backupCode, setBackupCode] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +86,7 @@ export function TotpChallengeForm({
     }
 
     setAccessTokenFromJwt(result.data.access_token);
-    navigateTo(getRoleLandingPath(authTokenStore.getState().roles));
+    navigateTo(safeNext ?? getRoleLandingPath(authTokenStore.getState().roles));
   }
 
   return (

@@ -27,7 +27,10 @@ export default async function TotpChallengePage({
       summary="Complete this short challenge before the browser receives a refresh cookie and signed session hint."
       title="Confirm this login with your second factor."
     >
-      <TotpChallengeForm challengeToken={firstParam(params.challenge)} />
+      <TotpChallengeForm
+        challengeToken={firstParam(params.challenge)}
+        next={firstParam(params.next)}
+      />
     </AuthPageShell>
   );
 }

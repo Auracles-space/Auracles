@@ -748,6 +748,27 @@ async def test_public_contributor_profile_returns_safe_fields_and_frameworks(
     assert "payout" not in body
 
 
+async def test_public_contributor_profile_nulls_unsafe_website_scheme(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """A stored javascript: website must not reach clients as a usable link."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "xss-contributor@auracles.space",
+        ["contributor"],
+        display_name="Eve Attacker",
+        website="javascript:alert(document.cookie)",
+    )
+    await create_framework(contributor_id, title="Published Governance System")
+
+    response = await client.get(f"/v1/explore/contributors/{contributor_id}")
+
+    assert response.status_code == 200
+    assert response.json()["website"] is None
+
+
 async def test_public_contributor_profile_uses_best_attestation_badge(
     client: AsyncClient,
     migrated_database: None,

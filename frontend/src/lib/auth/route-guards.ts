@@ -24,8 +24,11 @@ const protectedPathPrefixes = [
   "/2fa-setup",
   "/admin",
   "/assignments",
+  "/attestations",
+  "/attestor",
   "/checkout",
   "/dashboard",
+  "/library",
   "/projects",
   "/settings",
 ];
