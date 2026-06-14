@@ -135,6 +135,21 @@ Optional / deferred: `PAYSTACK_SECRET_KEY`, `PAYSTACK_WEBHOOK_SECRET` (Nigeria r
 
 ---
 
+## G6 — Performance (<3s on /explore + /explore/[id])
+
+Measured locally 2026-06-14: prod build (`pnpm build`), `next start` on :3100, backend on :8000 against docker Postgres/Redis, 12 seeded published frameworks.
+
+| Route | Warm SSR TTFB (6 samples) | HTML size | First-load JS |
+|---|---|---|---|
+| `/explore` | ~48–50 ms | 254 KB | 116 KB |
+| `/explore/[id]` | ~32–34 ms | 104 KB | 105 KB |
+
+Backend `/v1/explore/frameworks?limit=12` = 325 ms cold / faster warm. Both pages **far under the 3s gate** — ~50× headroom on server render.
+
+**Caveat:** local, single-host, light data (12 rows), warm Next prod server. Authoritative G6 sign-off = re-measure on **staging** with prod-like data volume + real Vercel↔Render↔Neon network RTT (Neon serverless cold-start can add 100s of ms) + Lighthouse LCP. Local result establishes the app is not the bottleneck; network/data scale is the remaining risk to confirm post-provisioning.
+
+**Status:** ✅ passes locally; confirm on staging.
+
 ## Next
 
-G4+G5 close once the human completes the checklists and a `main` push deploys green. Then **G6 — perf <3s on `/explore` + `/explore/[id]`** (unmeasured).
+G4+G5 close once the human completes the checklists and a `main` push deploys green. G6 confirmed locally; re-run on staging with prod-like data. That is the last Phase 6 gate.
