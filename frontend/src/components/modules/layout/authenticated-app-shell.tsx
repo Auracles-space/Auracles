@@ -91,7 +91,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex w-full flex-col md:ml-[260px] h-screen">
+      <div className="flex w-full flex-col md:ml-[260px] md:w-[calc(100%-260px)] h-screen">
         {/* Desktop Header Container (sits above the bento card) */}
         <header className="shrink-0 sticky top-0 z-30 hidden h-[72px] items-center justify-between bg-background px-8 md:flex">
           <div className="flex-1" />
@@ -130,7 +130,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
                   </svg>
                 </summary>
-                <div className="absolute right-0 top-12 w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
+                <div className="absolute right-0 top-12 w-[calc(100vw-2rem)] sm:w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
                   <nav className="flex flex-col space-y-2">
                     {appLinks.map((link) => (
                       <Link

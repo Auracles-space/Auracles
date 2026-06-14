@@ -159,7 +159,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
   const { catalog, unavailable } = await loadExploreCatalog(query);
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] bg-background p-6 text-foreground">
+    <main className="min-h-[calc(100vh-4rem)] bg-background px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto w-full max-w-[1600px]">
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full lg:w-64 lg:shrink-0">
