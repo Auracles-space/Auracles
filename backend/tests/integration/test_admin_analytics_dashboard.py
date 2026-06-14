@@ -1069,10 +1069,14 @@ async def test_admin_analytics_export_streams_flat_csv_and_audits(
                     created_at=now - timedelta(days=10),
                 )
 
-            response = await client.get(
-                "/v1/admin/analytics/export?from=2026-06-10&to=2026-06-11",
-                headers=auth_headers(admin.id),
-            )
+            # Freeze the wall clock so the service's live "today/last_7/last_30"
+            # windows resolve against the same `now` used to seed transactions.
+            # Without this the test only passes on the authoring date.
+            with freeze_time(now):
+                response = await client.get(
+                    "/v1/admin/analytics/export?from=2026-06-10&to=2026-06-11",
+                    headers=auth_headers(admin.id),
+                )
 
             async with async_session_factory() as audit_session:
                 audit_rows = (
