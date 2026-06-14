@@ -23,14 +23,14 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 
 ### Key Docs
 
-| Doc             | Path                                                          | Purpose                                             |
-| --------------- | ------------------------------------------------------------- | --------------------------------------------------- |
-| PRD             | `docs/auracles-prd.md`                                        | Short PRD — start here for onboarding               |
-| Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)    |
-| FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
-| TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
-| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend |
-| Brand Book      | `docs/auracles-brand-book.pdf`                                | Brand Book v1.0 — visual identity, typography, voice. Source of truth for `frontend-design` skill. Note: Colors updated to Trillo dual-mode bento aesthetic (warm orange accent, bento-box shadows, solid black/white buttons). |
+| Doc             | Path                                                          | Purpose                                                                                                                   |
+| --------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| PRD             | `docs/auracles-prd.md`                                        | Short PRD — start here for onboarding                                                                                     |
+| Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)                                                                          |
+| FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)                                                                                |
+| TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security                                                                            |
+| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend                                                                       |
+| Brand Book      | `docs/auracles-brand-book.pdf`                                | Brand Book v1.0 — visual identity, colors (light + dark), typography, voice. Source of truth for `frontend-design` skill. |
 
 ---
 
@@ -589,7 +589,7 @@ Never process a webhook without signature verification. Drop unverified payloads
 - **RBAC enforced at dependency layer.** Never check roles inside service layer — use FastAPI dependencies.
 - **Audit artifact downloads.** Every download logged to `artifact_downloads` — no exceptions.
 - **Webhook verification.** Stripe webhooks verified via `stripe-signature` header. Paystack via HMAC SHA-512. Reject unverified payloads with `400`.
-- **Escrow is sacred.** Never release Escrow funds without explicit Operator approval or Admin override. No automatic release.
+- **Escrow is sacred.** Never release Escrow funds without explicit Operator approval or Admin override. The one exception is the published Deliverable auto-approval window: if an Operator does not act on a submitted Deliverable before the timeout and no dispute is open, escrow auto-releases to the Contributor (operator inaction = implicit approval). This dispute-guarded window is the only automatic release; every other path requires explicit Operator approval or Admin override.
 - **Pydantic on all inputs.** No raw dict access on any API input. Pydantic schema always.
 
 ---

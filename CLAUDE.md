@@ -589,7 +589,7 @@ Never process a webhook without signature verification. Drop unverified payloads
 - **RBAC enforced at dependency layer.** Never check roles inside service layer — use FastAPI dependencies.
 - **Audit artifact downloads.** Every download logged to `artifact_downloads` — no exceptions.
 - **Webhook verification.** Stripe webhooks verified via `stripe-signature` header. Paystack via HMAC SHA-512. Reject unverified payloads with `400`.
-- **Escrow is sacred.** Never release Escrow funds without explicit Operator approval or Admin override. No automatic release.
+- **Escrow is sacred.** Never release Escrow funds without explicit Operator approval or Admin override. The one exception is the published Deliverable auto-approval window: if an Operator does not act on a submitted Deliverable before the timeout and no dispute is open, escrow auto-releases to the Contributor (operator inaction = implicit approval). This dispute-guarded window is the only automatic release; every other path requires explicit Operator approval or Admin override.
 - **Pydantic on all inputs.** No raw dict access on any API input. Pydantic schema always.
 
 ---
