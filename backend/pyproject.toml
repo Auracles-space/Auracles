@@ -78,3 +78,11 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+# SQLAlchemy's async engine runs ORM work inside greenlets (greenlet_spawn
+# bridges its sync internals to asyncio). Without greenlet concurrency tracking
+# coverage.py misses every async service body that awaits the DB, badly
+# under-reporting integration-test coverage. Thread is included for the few
+# tasks dispatched via asyncio.to_thread in tests.
+concurrency = ["greenlet", "thread"]
