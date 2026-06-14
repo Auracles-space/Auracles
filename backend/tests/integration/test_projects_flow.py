@@ -1507,3 +1507,238 @@ async def test_admin_resolves_dispute_refund_to_operator(
         "dispute_resolved_refund",
         "dispute_resolved_refund",
     ]
+
+
+async def _assigned_finalized_project_with_amendment(
+    client: AsyncClient,
+    operator_headers: dict[str, str],
+    contributor_headers: dict[str, str],
+) -> tuple[str, str, str]:
+    """Drive a Project to assigned+finalized and propose a budget amendment.
+
+    Returns the project, proposal, and amendment ids. The amendment is proposed
+    by the Contributor, leaving the Operator as the accepting counterparty.
+    """
+    created = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    async with async_session_factory() as session:
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        assert project is not None
+        project.milestone_plan_status = "finalized"
+        await session.commit()
+
+    amendment = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+        headers=contributor_headers,
+        json={
+            "change_type": "budget",
+            "after": {"budget": "1750.00"},
+            "reason": "Scope needs deeper implementation support.",
+        },
+    )
+    return project_id, proposal_id, amendment.json()["id"]
+
+
+async def test_operator_edits_open_project_and_validates_budget_and_status(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Open Projects accept field edits; bad budgets and assigned state are blocked."""
+    operator_id = await create_user("edit-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "edit-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    created = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    project_id = created.json()["id"]
+
+    edited = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={"title": "Procurement Playbook v2", "budget_max": "2500.00"},
+    )
+    bad_budget = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={"budget_min": "3000.00"},
+    )
+
+    # Assign the Project, after which it can no longer be edited.
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=proposal_payload(),
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposed.json()['id']}/accept",
+        headers=operator_headers,
+    )
+    edit_after_assign = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={"title": "Too late"},
+    )
+
+    assert edited.status_code == 200
+    assert edited.json()["title"] == "Procurement Playbook v2"
+    assert edited.json()["budget_max"] == "2500.00"
+    assert bad_budget.status_code == 422
+    assert edit_after_assign.status_code == 409
+
+
+async def test_operator_lists_all_proposals_and_contributor_lists_own(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Operators see every Proposal; Contributors see only their own."""
+    operator_id = await create_user("list-operator@auracles.space", ["operator"])
+    first_id = await create_user("list-first@auracles.space", ["contributor"])
+    second_id = await create_user("list-second@auracles.space", ["contributor"])
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    created = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    project_id = created.json()["id"]
+    for contributor in (first_id, second_id):
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=auth_headers(contributor, ["contributor"]),
+            json=proposal_payload(),
+        )
+
+    all_proposals = await client.get(
+        f"/v1/projects/{project_id}/proposals", headers=operator_headers
+    )
+    mine = await client.get(
+        f"/v1/projects/{project_id}/proposals/mine",
+        headers=auth_headers(first_id, ["contributor"]),
+    )
+
+    assert all_proposals.status_code == 200
+    assert len(all_proposals.json()["proposals"]) == 2
+    assert mine.status_code == 200
+    mine_ids = {item["contributor_id"] for item in mine.json()["proposals"]}
+    assert mine_ids == {str(first_id)}
+
+
+async def test_contributor_withdraws_pending_proposal_only_once(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A pending Proposal can be withdrawn once; a second attempt conflicts."""
+    operator_id = await create_user("wd-operator@auracles.space", ["operator"])
+    contributor_id = await create_user("wd-contributor@auracles.space", ["contributor"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    created = await client.post(
+        "/v1/projects",
+        headers=auth_headers(operator_id, ["operator"]),
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+
+    withdrawn = await client.patch(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/withdraw",
+        headers=contributor_headers,
+    )
+    withdrawn_again = await client.patch(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/withdraw",
+        headers=contributor_headers,
+    )
+
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["status"] == "withdrawn"
+    assert withdrawn_again.status_code == 409
+
+
+async def test_counterparty_rejects_amendment_and_proposer_cannot(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Only the counterparty may reject a pending amendment."""
+    operator_id = await create_user("rej-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "rej-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    (
+        project_id,
+        proposal_id,
+        amendment_id,
+    ) = await _assigned_finalized_project_with_amendment(
+        client, operator_headers, contributor_headers
+    )
+    base = (
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/{amendment_id}"
+    )
+
+    proposer_reject = await client.post(f"{base}/reject", headers=contributor_headers)
+    counterparty_reject = await client.post(f"{base}/reject", headers=operator_headers)
+
+    assert proposer_reject.status_code == 403
+    assert counterparty_reject.status_code == 200
+    assert counterparty_reject.json()["status"] == "rejected"
+
+
+async def test_proposer_withdraws_amendment_and_counterparty_cannot(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Only the proposer may withdraw their own pending amendment."""
+    operator_id = await create_user("amw-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "amw-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    (
+        project_id,
+        proposal_id,
+        amendment_id,
+    ) = await _assigned_finalized_project_with_amendment(
+        client, operator_headers, contributor_headers
+    )
+    base = (
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/{amendment_id}"
+    )
+
+    counterparty_withdraw = await client.patch(
+        f"{base}/withdraw", headers=operator_headers
+    )
+    proposer_withdraw = await client.patch(
+        f"{base}/withdraw", headers=contributor_headers
+    )
+
+    assert counterparty_withdraw.status_code == 403
+    assert proposer_withdraw.status_code == 200
+    assert proposer_withdraw.json()["status"] == "withdrawn"
