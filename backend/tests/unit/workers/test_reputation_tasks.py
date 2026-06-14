@@ -7,6 +7,7 @@ evidence, and stable across reruns.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -25,7 +26,11 @@ from app.modules.frameworks.models import Framework, License, Review
 from app.modules.reputation import service as reputation_service
 from app.modules.reputation.models import ReputationScore
 from app.shared.models.audit_log import AuditLog
-from app.workers.tasks.reputation import recompute_subject
+from app.workers.tasks.reputation import (
+    recompute_reputation,
+    recompute_subject,
+    recompute_subject_task,
+)
 
 
 @pytest.fixture
@@ -165,3 +170,61 @@ async def test_recompute_subject_upserts_and_is_idempotent(
         )
     assert second is not None
     assert second.score == first.score
+
+
+async def _add_role(user_id: UUID, role: str) -> None:
+    """Approve one role for a user so the batch recompute enumerates them."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                UserRole(user_id=user_id, role=role, approved_at=datetime.now(UTC))
+            )
+
+
+@pytest.mark.asyncio
+async def test_recompute_reputation_batch_scores_every_subject_type(
+    migrated_database: None,
+    reputation_test_context: None,
+) -> None:
+    """The daily Beat task recomputes frameworks, contributors, and operators.
+
+    Runs the Celery wrapper through ``asyncio.to_thread`` so its worker event
+    loop is isolated from the test loop, with the shared engine disposed around
+    the hop.
+    """
+    contributor_id = await _create_user("batch-contributor@example.com")
+    await _add_role(contributor_id, "contributor")
+    operator_id = await _create_user("batch-operator@example.com")
+    await _add_role(operator_id, "operator")
+    fw_id = await _create_published_framework(contributor_id)
+    await _grant_active_license_and_review(fw_id, operator_id, score=5)
+
+    await engine.dispose()
+    result = await asyncio.to_thread(lambda: recompute_reputation.apply().get())
+    await engine.dispose()
+
+    assert result == {"framework": 1, "contributor": 1, "operator": 1}
+
+    async with async_session_factory() as session:
+        framework_score = await reputation_service.get_score(
+            session, subject_type="framework", subject_id=fw_id
+        )
+    assert framework_score is not None
+
+
+@pytest.mark.asyncio
+async def test_recompute_subject_task_wrapper_completes(
+    migrated_database: None,
+    reputation_test_context: None,
+) -> None:
+    """The admin single-subject recompute wrapper scores one framework."""
+    contributor_id = await _create_user("single-contributor@example.com")
+    fw_id = await _create_published_framework(contributor_id)
+
+    await engine.dispose()
+    result = await asyncio.to_thread(
+        lambda: recompute_subject_task.apply(args=["framework", str(fw_id)]).get()
+    )
+    await engine.dispose()
+
+    assert result == {"status": "completed"}
