@@ -1,0 +1,128 @@
+# Render Blueprint — Auracles Phase 1 (pre-scale) PRODUCTION.
+#
+# Three services share one Dockerfile (backend/Dockerfile) and one secret group.
+# Secrets (sync: false) are NOT stored here — set them in the Render dashboard
+# Environment Group "auracles-secrets". Non-secret runtime flags are inline.
+#
+# Staging: duplicate this blueprint on branch `develop` (or use a second Render
+# environment) pointed at the Neon `develop` branch + Upstash staging DB.
+#
+# Deploy is CI-gated: autoDeploy is false, so a commit only ships after the
+# Checks workflow passes and deploy.yml fires the service deploy hooks.
+#
+# Maps to: docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md §3.1, §5.
+
+envVarGroups:
+  - name: auracles-secrets
+    envVars:
+      # --- Core ---
+      - key: DATABASE_URL # Neon main branch, postgresql+asyncpg://...?sslmode=require
+        sync: false
+      - key: REDIS_URL # Upstash rediss://... (app derives broker /0, cache /1)
+        sync: false
+      - key: SECRET_KEY # openssl rand -hex 32 — JWT signing
+        sync: false
+      # --- Encryption keys (Fernet) — prod boot FAILS if placeholder ---
+      - key: TOTP_ENCRYPTION_KEY
+        sync: false
+      - key: PAYOUT_ACCOUNT_ENCRYPTION_KEY
+        sync: false
+      - key: PARTNER_WEBHOOK_ENCRYPTION_KEY
+        sync: false
+      # --- Bootstrap admin ---
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # --- AWS S3 ---
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        sync: false
+      - key: S3_ARTIFACTS_BUCKET
+        sync: false
+      - key: S3_AVATARS_BUCKET
+        sync: false
+      - key: S3_REPORTS_BUCKET
+        sync: false
+      - key: S3_THUMBNAILS_BUCKET
+        sync: false
+      # --- Email (Resend) ---
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_ADDRESS
+        sync: false
+      # --- Payments (Stripe) ---
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # --- Search (Brave) ---
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      # --- CORS (prod frontend origin, comma-separated, no '*') ---
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+services:
+  # FastAPI web service — runs migrations on boot, serves the API.
+  - type: web
+    name: auracles-api
+    runtime: docker
+    repo: https://github.com/Auracles-space/Auracles
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    healthCheckPath: /v1/health
+    startCommand: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    envVars:
+      - fromGroup: auracles-secrets
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_FORMAT
+        value: json
+      - key: TRUST_PROXY_HEADERS # behind Render's proxy → trust X-Forwarded-*
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: none # cross-site: Vercel frontend ↔ Render API
+
+  # Celery worker — artifact pipeline, notifications, payouts, reputation.
+  # Workers do NOT run migrations (API owns schema).
+  - type: worker
+    name: auracles-worker
+    runtime: docker
+    repo: https://github.com/Auracles-space/Auracles
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    startCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    envVars:
+      - fromGroup: auracles-secrets
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_FORMAT
+        value: json
+
+  # Celery Beat — scheduled tasks. Render runs a single instance (singleton).
+  - type: worker
+    name: auracles-beat
+    runtime: docker
+    repo: https://github.com/Auracles-space/Auracles
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    autoDeploy: false
+    startCommand: celery -A app.workers.celery_app beat --loglevel=info --scheduler=celery.beat.PersistentScheduler
+    envVars:
+      - fromGroup: auracles-secrets
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_FORMAT
+        value: json
