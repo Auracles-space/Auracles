@@ -164,14 +164,33 @@ async def update_credential(
             user_id=user_id,
             credential_id=credential_id,
         )
-        if payload.title is not None:
+        material_changed = False
+        if payload.title is not None and payload.title != credential.title:
             credential.title = payload.title
-        if payload.issuer is not None:
+            material_changed = True
+        if payload.issuer is not None and payload.issuer != credential.issuer:
             credential.issuer = payload.issuer
-        if payload.issued_date is not None:
+            material_changed = True
+        if (
+            payload.issued_date is not None
+            and payload.issued_date != credential.issued_date
+        ):
             credential.issued_date = payload.issued_date
+            material_changed = True
         if "expires_date" in payload.model_fields_set:
             credential.expires_date = payload.expires_date
+        if payload.credential_type is not None:
+            credential.credential_type = payload.credential_type
+        if payload.verification_url is not None:
+            credential.verification_url = payload.verification_url
+        if (
+            payload.reference_number is not None
+            and payload.reference_number != credential.reference_number
+        ):
+            credential.reference_number = payload.reference_number
+            material_changed = True
+        if payload.issuer_type is not None:
+            credential.issuer_type = payload.issuer_type
         if payload.evidence_file_keys is not None:
             await _consume_credential_evidence_sessions(
                 db=db,
@@ -181,6 +200,23 @@ async def update_credential(
                 now=datetime.now(UTC),
             )
             credential.evidence_file_keys = payload.evidence_file_keys
+        if material_changed and credential.verification_status in {
+            "pending",
+            "verified",
+        }:
+            credential.verification_status = "unverified"
+            credential.submitted_at = None
+            credential.verified_at = None
+            credential.reviewed_by = None
+            credential.rejection_reason = None
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="credential_verification_reset",
+                target_type="credential",
+                target_id=credential.id,
+                metadata={"title": credential.title},
+            )
         await db.flush()
         await db.refresh(credential)
     return credential

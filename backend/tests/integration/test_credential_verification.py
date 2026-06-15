@@ -235,3 +235,51 @@ async def test_reject_requires_pending_and_sets_reason(
     assert result.verification_status == "rejected"
     assert result.rejection_reason == "Issuer could not confirm."
     assert result.reviewed_by == admin_id
+
+
+async def test_editing_material_field_resets_verification(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Editing title on a verified credential resets it to unverified."""
+    del migrated_database, credential_context
+    owner_id = await create_user("reset-owner@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(
+        owner_id,
+        reference_number="PMP-1",
+        verification_status="verified",
+    )
+    from app.modules.attestation.schemas import CredentialUpdateRequest
+
+    async with async_session_factory() as session:
+        user = await session.get(User, owner_id)
+        result = await credential_service.update_credential(
+            db=session,
+            user=user,
+            credential_id=credential_id,
+            payload=CredentialUpdateRequest(title="PMP Renewed"),
+        )
+    assert result.verification_status == "unverified"
+    assert result.verified_at is None
+    assert result.reviewed_by is None
+
+
+async def test_editing_non_material_field_keeps_verification(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Editing expires_date does not reset a verified credential."""
+    del migrated_database, credential_context
+    owner_id = await create_user("keep-owner@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(
+        owner_id, reference_number="PMP-1", verification_status="verified"
+    )
+    from app.modules.attestation.schemas import CredentialUpdateRequest
+
+    async with async_session_factory() as session:
+        user = await session.get(User, owner_id)
+        result = await credential_service.update_credential(
+            db=session,
+            user=user,
+            credential_id=credential_id,
+            payload=CredentialUpdateRequest(expires_date="2030-01-01"),
+        )
+    assert result.verification_status == "verified"
