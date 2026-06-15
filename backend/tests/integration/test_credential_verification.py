@@ -367,3 +367,44 @@ async def test_admin_reject_requires_reason(
     assert empty.status_code == 422
     assert ok.status_code == 200
     assert ok.json()["verification_status"] == "rejected"
+
+
+async def test_verify_blocks_admin_self_review(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """An admin who owns a credential cannot self-verify it (403)."""
+    del migrated_database, credential_context
+    admin_id = await create_user(
+        "self-verify-admin@auracles.space", ["admin", "contributor"]
+    )
+    credential_id = await _seed_credential(
+        admin_id, reference_number="PMP-1", verification_status="pending"
+    )
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await credential_service.verify_credential(
+                db=session, admin_id=admin_id, credential_id=credential_id
+            )
+    assert exc.value.status_code == 403
+
+
+async def test_reject_blocks_admin_self_review(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """An admin who owns a credential cannot self-reject it (403)."""
+    del migrated_database, credential_context
+    admin_id = await create_user(
+        "self-reject-admin@auracles.space", ["admin", "contributor"]
+    )
+    credential_id = await _seed_credential(
+        admin_id, reference_number="PMP-1", verification_status="pending"
+    )
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await credential_service.reject_credential(
+                db=session,
+                admin_id=admin_id,
+                credential_id=credential_id,
+                reason="should not be allowed",
+            )
+    assert exc.value.status_code == 403

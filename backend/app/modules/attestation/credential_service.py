@@ -476,6 +476,11 @@ async def verify_credential(
         await db.rollback()
     async with db.begin():
         credential = await _load_credential_for_review(db, credential_id)
+        if credential.user_id == admin_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admins cannot review their own credentials.",
+            )
         if credential.verification_status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -522,6 +527,11 @@ async def reject_credential(
         await db.rollback()
     async with db.begin():
         credential = await _load_credential_for_review(db, credential_id)
+        if credential.user_id == admin_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admins cannot review their own credentials.",
+            )
         if credential.verification_status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
