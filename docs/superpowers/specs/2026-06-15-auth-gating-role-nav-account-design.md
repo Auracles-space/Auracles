@@ -103,7 +103,7 @@ local `.env` for the frontend; middleware verification fails closed without it
   Payouts        -> ["contributor"]
   Developer      -> ["contributor"]
   Library        -> ["operator"]
-  Credentials    -> ["attestor"]            # verify intent during impl
+  Credentials    -> null   # user-owned credentials for Attestation; any logged-in user
   Consent        -> null
   Notifications  -> null
   Saved Searches -> null
