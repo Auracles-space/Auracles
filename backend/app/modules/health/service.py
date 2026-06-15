@@ -8,6 +8,7 @@ The API component is implicitly OK if this code is executing.
 import asyncio
 
 import redis.asyncio as redis
+from loguru import logger
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -18,7 +19,10 @@ async def _check_database() -> dict[str, str]:
     try:
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
-    except Exception:
+    except Exception as exc:
+        logger.bind(module="health", action="check_database").error(
+            "database_ping_failed", error=str(exc)
+        )
         return {"status": "unavailable", "detail": "database ping failed"}
 
     return {"status": "ok"}
@@ -31,7 +35,10 @@ async def _check_redis() -> dict[str, str]:
     )
     try:
         await client.ping()
-    except Exception:
+    except Exception as exc:
+        logger.bind(module="health", action="check_redis").error(
+            "redis_ping_failed", error=str(exc)
+        )
         return {"status": "unavailable", "detail": "redis ping failed"}
     finally:
         await client.aclose()

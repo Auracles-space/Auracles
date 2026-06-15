@@ -8,6 +8,7 @@ Maps to: pre-scale infra design Section 4 (secrets management) and
 TDD Section 5 (configuration).
 """
 
+import os
 from functools import lru_cache
 from typing import Literal, Self
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -24,6 +25,16 @@ PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY = "replace-with-fernet-generate-key-o
 DEV_SECRET_KEY = "dev-only-change-me"
 PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
 PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
+
+
+def _resolve_env_file() -> str:
+    """Return the dotenv file to load (`.env` by default).
+
+    Set ``ENV_FILE=.env.prod`` to deliberately point a local process at
+    remote/production values. Tests never rely on this; they pin localhost
+    values in conftest regardless of the selected file.
+    """
+    return os.getenv("ENV_FILE", ".env")
 
 
 def _replace_database(url: str, database: int) -> str:
@@ -74,7 +85,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_resolve_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

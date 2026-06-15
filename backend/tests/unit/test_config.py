@@ -1,4 +1,19 @@
+from app.core import config
 from app.core.config import Settings
+
+
+def test_resolve_env_file_defaults_to_dotenv(monkeypatch) -> None:
+    """With ENV_FILE unset, settings load the local `.env` file."""
+    monkeypatch.delenv("ENV_FILE", raising=False)
+
+    assert config._resolve_env_file() == ".env"
+
+
+def test_resolve_env_file_honors_override(monkeypatch) -> None:
+    """ENV_FILE selects an alternate env file (e.g. `.env.prod`) deliberately."""
+    monkeypatch.setenv("ENV_FILE", ".env.prod")
+
+    assert config._resolve_env_file() == ".env.prod"
 
 
 def test_settings_derives_celery_and_cache_redis_databases() -> None:

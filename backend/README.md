@@ -23,3 +23,23 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 
 Rotating this key without re-enrolling users makes existing TOTP secrets
 unreadable.
+
+## Environment files & local testing
+
+`config.py` loads `.env` by default. Keep `.env` for **local/dev values only**
+(copy from `.env.example`). Production secrets live in the Render
+`auracles-secrets` env group — never commit them to `.env`.
+
+To run a local process against remote/production values deliberately, put those
+values in `.env.prod` (gitignored; template in `.env.prod.example`) and select
+it with `ENV_FILE`:
+
+```bash
+ENV_FILE=.env.prod uv run uvicorn app.main:app
+ENV_FILE=.env.prod uv run celery -A app.workers.celery_app worker
+```
+
+The test suite is always local and never reads `.env`/`.env.prod`:
+`tests/conftest.py` pins localhost datastores and dev keys before settings load,
+and a session guard (`tests/_guard.py`) hard-aborts `pytest` if a non-local
+database or Redis host is ever resolved. Run tests with a plain `uv run pytest`.

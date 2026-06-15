@@ -1,3 +1,5 @@
+from loguru import logger
+
 from app.modules.health import service
 
 
@@ -76,3 +78,47 @@ async def test_run_health_checks_reports_redis_failure(monkeypatch) -> None:
         "status": "unavailable",
         "detail": "redis ping failed",
     }
+
+
+async def test_database_failure_logs_error(monkeypatch) -> None:
+    """A failed database ping logs at ERROR with the cause for prod diagnosis."""
+    records: list[dict] = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="ERROR")
+    monkeypatch.setattr(service, "async_session_factory", lambda: FailingSession())
+    monkeypatch.setattr(
+        service.redis, "from_url", lambda *args, **kwargs: HealthyRedis()
+    )
+
+    try:
+        await service.run_health_checks()
+    finally:
+        logger.remove(sink_id)
+
+    assert any(
+        record["message"] == "database_ping_failed"
+        and record["extra"].get("module") == "health"
+        and record["extra"].get("error") == "database unavailable"
+        for record in records
+    )
+
+
+async def test_redis_failure_logs_error(monkeypatch) -> None:
+    """A failed Redis ping logs at ERROR with the cause for prod diagnosis."""
+    records: list[dict] = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="ERROR")
+    monkeypatch.setattr(service, "async_session_factory", lambda: HealthySession())
+    monkeypatch.setattr(
+        service.redis, "from_url", lambda *args, **kwargs: FailingRedis()
+    )
+
+    try:
+        await service.run_health_checks()
+    finally:
+        logger.remove(sink_id)
+
+    assert any(
+        record["message"] == "redis_ping_failed"
+        and record["extra"].get("module") == "health"
+        and record["extra"].get("error") == "redis unavailable"
+        for record in records
+    )
