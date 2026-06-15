@@ -8,7 +8,7 @@ import { EarningsSummary } from "@/components/modules/financials/earnings-summar
  */
 export default function ContributorEarningsPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <header className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">

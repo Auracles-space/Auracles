@@ -3,17 +3,15 @@
  */
 import type { ReactNode } from "react";
 
-import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
-
 type AttestationLayoutProps = {
   children: ReactNode;
 };
 
 /**
- * Wrap Attestation routes in persistent authenticated navigation.
+ * Render attestation routes inside the shared authenticated shell.
  *
  * @param props - Nested route content.
  */
 export default function AttestationLayout({ children }: AttestationLayoutProps) {
-  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+  return children;
 }

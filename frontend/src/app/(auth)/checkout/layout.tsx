@@ -3,17 +3,15 @@
  */
 import type { ReactNode } from "react";
 
-import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
-
 type CheckoutLayoutProps = {
   children: ReactNode;
 };
 
 /**
- * Wrap checkout routes in persistent authenticated navigation.
+ * Render checkout routes inside the shared authenticated shell.
  *
  * @param props - Nested checkout content.
  */
 export default function CheckoutLayout({ children }: CheckoutLayoutProps) {
-  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+  return children;
 }

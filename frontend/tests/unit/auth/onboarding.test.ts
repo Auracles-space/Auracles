@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/onboarding";
 
 const baseUser = {
+  avatar_url: null,
   deactivated_at: null,
   display_name: "Ada Markets",
   email: "ada@example.com",

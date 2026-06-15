@@ -37,6 +37,12 @@ describe("RegisterForm", () => {
     expect(registerUser).not.toHaveBeenCalled();
   });
 
+  it("does not expose admin as a self-assignable registration role", () => {
+    render(<RegisterForm />);
+
+    expect(screen.queryByText(/^admin$/i)).not.toBeInTheDocument();
+  });
+
   it("submits valid registration details through the generated client", async () => {
     vi.mocked(registerUser).mockResolvedValue({
       data: { message: "If email is new, verification sent." },

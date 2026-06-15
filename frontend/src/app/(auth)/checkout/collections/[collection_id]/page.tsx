@@ -38,7 +38,7 @@ export default async function CollectionCheckoutPage({
   const collection = result.data;
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto grid max-w-[1280px] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
           <Link

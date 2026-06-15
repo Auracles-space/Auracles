@@ -101,6 +101,7 @@ class CurrentUserResponse(BaseModel):
     id: UUID
     email: EmailStr
     display_name: str
+    avatar_url: str | None
     roles: list[str]
     email_verified: bool
     kyc_status: str

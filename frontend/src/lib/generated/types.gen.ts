@@ -943,6 +943,7 @@ export type CurrentUserResponse = {
     id: string;
     email: string;
     display_name: string;
+    avatar_url: (string | null);
     roles: Array<(string)>;
     email_verified: boolean;
     kyc_status: string;

@@ -3,17 +3,15 @@
  */
 import type { ReactNode } from "react";
 
-import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
-
 type AttestorLayoutProps = {
   children: ReactNode;
 };
 
 /**
- * Wrap Attestor routes in persistent authenticated navigation.
+ * Render attestor routes inside the shared authenticated shell.
  *
  * @param props - Nested route content.
  */
 export default function AttestorLayout({ children }: AttestorLayoutProps) {
-  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+  return children;
 }

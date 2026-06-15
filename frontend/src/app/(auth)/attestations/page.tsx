@@ -8,7 +8,7 @@ import { AttestationRequestorPanel } from "@/components/modules/attestation/atte
  */
 export default function AttestationsPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <AttestationRequestorPanel />
       </div>

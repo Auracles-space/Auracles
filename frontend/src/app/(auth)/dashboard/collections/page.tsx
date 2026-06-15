@@ -11,7 +11,7 @@ import { CollectionBuilder } from "@/components/modules/collections/collection-b
  */
 export default function ContributorCollectionsPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <header className="mb-6 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">

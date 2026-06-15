@@ -189,6 +189,7 @@ async def test_login_sets_refresh_cookie_and_me_accepts_access_token(
 
     assert me_response.status_code == 200
     assert me_response.json()["id"] == str(user_id)
+    assert me_response.json()["avatar_url"] is None
 
 
 async def test_login_rejects_unverified_and_deactivated_accounts(

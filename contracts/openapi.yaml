@@ -8818,6 +8818,11 @@ components:
         display_name:
           type: string
           title: Display Name
+        avatar_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Avatar Url
         roles:
           items:
             type: string
@@ -8840,6 +8845,7 @@ components:
       - id
       - email
       - display_name
+      - avatar_url
       - roles
       - email_verified
       - kyc_status

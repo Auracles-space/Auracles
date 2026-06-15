@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { cookies } from "next/headers";
 
 import { PublicMarketplaceShell } from "@/components/modules/layout/public-marketplace-shell";
 import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
+import { getVerifiedSessionHintFromCookies } from "@/lib/auth/server-session";
 
 type ExploreLayoutProps = {
   children: ReactNode;
@@ -15,11 +15,10 @@ type ExploreLayoutProps = {
  * @param props - Nested Explore route content.
  */
 export default async function ExploreLayout({ children }: ExploreLayoutProps) {
-  const cookieStore = await cookies();
-  const isAuthenticated = !!cookieStore.get("session_hint")?.value;
+  const hint = await getVerifiedSessionHintFromCookies();
 
-  if (isAuthenticated) {
-    return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+  if (hint) {
+    return <AuthenticatedAppShell roles={hint.roles}>{children}</AuthenticatedAppShell>;
   }
 
   return <PublicMarketplaceShell>{children}</PublicMarketplaceShell>;

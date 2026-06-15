@@ -10,7 +10,7 @@ import { FrameworkList } from "@/components/modules/frameworks/framework-list";
  */
 export default function ContributorFrameworksPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

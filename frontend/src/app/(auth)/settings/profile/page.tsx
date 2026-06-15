@@ -1,32 +1,33 @@
 /**
- * Authenticated account settings route.
+ * Authenticated private profile route.
  *
- * Hosts authenticated identity, GDPR export, and delete-account controls backed
- * by settings and GDPR endpoints.
+ * Surfaces the user's own identity, email-verification state, and KYC summary
+ * using existing auth/settings APIs. This route is private and distinct from
+ * the public contributor profile surface.
  */
-import { AccountSettingsPanel } from "@/components/modules/settings/account-settings-panel";
+import { ProfileSettingsPanel } from "@/components/modules/settings/profile-settings-panel";
 
 /**
- * Render authenticated account settings.
+ * Render the authenticated private profile page.
  */
-export default function AccountSettingsPage() {
+export default function ProfileSettingsPage() {
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-4xl">
         <header className="mb-6 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-            Account settings
+            Private profile
           </p>
           <h1 className="mt-2 font-heading text-3xl font-bold text-foreground md:text-4xl">
-            Identity and access
+            Identity and verification
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-foreground-muted">
-            Manage verified account details, GDPR export access, and the
-            cooling-off delete-account workflow.
+            Review the private identity details attached to your account, along
+            with email verification and KYC progress.
           </p>
         </header>
         <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm md:p-6">
-          <AccountSettingsPanel />
+          <ProfileSettingsPanel />
         </section>
       </div>
     </main>

@@ -55,7 +55,7 @@ export default async function NewFrameworkPage({
   const prefill = buildPrefill((await searchParams) ?? {});
 
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-background px-4 py-12 text-foreground md:px-8">
+    <main className="px-4 py-12 text-foreground md:px-8">
       <div className="mx-auto max-w-5xl">
         <div className="grid gap-12 lg:grid-cols-[1fr_2fr]">
           <div className="lg:sticky lg:top-24 lg:self-start">

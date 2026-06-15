@@ -229,6 +229,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
+        avatar_url=current_user.avatar_url,
         roles=roles,
         email_verified=current_user.email_verified,
         kyc_status=current_user.kyc_status,

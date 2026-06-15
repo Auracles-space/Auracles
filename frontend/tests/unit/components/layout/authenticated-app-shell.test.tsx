@@ -1,12 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { vi } from "vitest";
 
 import { AuthenticatedAppShell } from "@/components/modules/layout/authenticated-app-shell";
+
+vi.mock("@/components/modules/layout/authenticated-account-menu", () => ({
+  AuthenticatedAccountMenu: () => <div>Account menu</div>,
+}));
 
 describe("AuthenticatedAppShell", () => {
   it("renders persistent product navigation around app pages", () => {
     render(
-      <AuthenticatedAppShell>
+      <AuthenticatedAppShell roles={["operator", "contributor"]}>
         <h1>Frameworks</h1>
       </AuthenticatedAppShell>,
     );
@@ -35,13 +40,25 @@ describe("AuthenticatedAppShell", () => {
       "href",
       "/projects",
     );
-    expect(within(appNav).getByRole("link", { name: /^admin$/i })).toHaveAttribute(
-      "href",
-      "/admin/analytics",
-    );
     expect(within(appNav).getByRole("link", { name: /settings/i })).toHaveAttribute(
       "href",
-      "/settings/account",
+      "/settings/profile",
     );
+  });
+
+  it("hides admin navigation for non-admin roles", () => {
+    render(
+      <AuthenticatedAppShell roles={["operator"]}>
+        <h1>Library</h1>
+      </AuthenticatedAppShell>,
+    );
+
+    const appNav = screen.getByRole("navigation", {
+      name: /^application navigation$/i,
+    });
+
+    expect(
+      within(appNav).queryByRole("link", { name: /^admin$/i }),
+    ).not.toBeInTheDocument();
   });
 });

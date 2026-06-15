@@ -10,39 +10,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AuthenticatedAccountMenu } from "@/components/modules/layout/authenticated-account-menu";
 import { BrandLogo } from "@/components/ui/brand-logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { appLinks, visibleNavLinks } from "@/components/modules/layout/app-navigation";
 
 type AuthenticatedAppShellProps = {
   children: ReactNode;
+  roles: string[];
 };
-
-const appLinks = [
-  { href: "/explore", label: "Explore" },
-  { href: "/projects", label: "Projects" },
-  { href: "/attestations", label: "Attestations" },
-  { href: "/attestor/assignments", label: "Attestor" },
-  { href: "/dashboard/frameworks", label: "Frameworks" },
-  { href: "/dashboard/collections", label: "Collections" },
-  { href: "/dashboard/earnings", label: "Earnings" },
-  { href: "/dashboard/payouts", label: "Payouts" },
-  { href: "/dashboard/developer", label: "Developer" },
-  { href: "/library", label: "Library" },
-  { href: "/settings/credentials", label: "Credentials" },
-  { href: "/settings/consent", label: "Consent" },
-  { href: "/settings/notifications", label: "Notifications" },
-  { href: "/settings/saved-searches", label: "Saved Searches" },
-  { href: "/admin/analytics", label: "Admin" },
-  { href: "/settings/account", label: "Settings" },
-];
 
 /**
  * Render shared chrome for authenticated application routes.
  *
  * @param props - App route content.
  */
-export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) {
+export function AuthenticatedAppShell({
+  children,
+  roles,
+}: AuthenticatedAppShellProps) {
   const pathname = usePathname() ?? "";
+  const links = visibleNavLinks(appLinks, roles);
 
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden">
@@ -52,7 +40,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
           <BrandLogo href="/explore" className="h-7 w-[120px]" />
         </div>
         <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6">
-          {appLinks.map((link) => {
+          {links.map((link) => {
             const isActive = pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore");
             return (
               <Link
@@ -71,22 +59,8 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
           })}
         </nav>
         
-        {/* User profile widget at the bottom of the sidebar */}
         <div className="p-4 mt-auto">
-          <button className="flex w-full items-center gap-3 rounded-xl p-2 hover:bg-black/5 dark:hover:bg-white/5 transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent border border-transparent hover:border-border-default text-left">
-            <div className="h-9 w-9 shrink-0 rounded-full bg-surface-3 flex items-center justify-center border border-border-default">
-              <svg className="h-4 w-4 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">Account</p>
-              <p className="text-xs text-foreground-muted truncate">Manage settings</p>
-            </div>
-            <svg className="h-4 w-4 shrink-0 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-            </svg>
-          </button>
+          <AuthenticatedAccountMenu roles={roles} />
         </div>
       </aside>
 
@@ -132,7 +106,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                 </summary>
                 <div className="absolute right-0 top-12 w-[calc(100vw-2rem)] sm:w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
                   <nav className="flex flex-col space-y-2">
-                    {appLinks.map((link) => (
+                    {links.map((link) => (
                       <Link
                         className={[
                           "rounded-xl px-3 py-2 text-sm font-medium transition-colors",
@@ -147,9 +121,7 @@ export function AuthenticatedAppShell({ children }: AuthenticatedAppShellProps) 
                       </Link>
                     ))}
                     <div className="my-2 h-px bg-border-default" />
-                    <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted outline-none transition-all hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent text-left">
-                      Sign out
-                    </button>
+                    <AuthenticatedAccountMenu roles={roles} />
                   </nav>
                 </div>
               </details>

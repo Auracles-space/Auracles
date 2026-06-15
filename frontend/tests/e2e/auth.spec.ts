@@ -7,9 +7,17 @@
  */
 import { createHmac } from "node:crypto";
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type BrowserContext, type Page, test } from "@playwright/test";
 
 type MockAuthMode = "2fa" | "operator-login";
+type MockCurrentUser = {
+  avatar_url?: string | null;
+  display_name: string;
+  email: string;
+  email_verified: boolean;
+  kyc_status: string;
+  roles: string[];
+};
 
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
@@ -66,6 +74,29 @@ function sessionHintCookie(roles: string[]): string {
 }
 
 /**
+ * Seed the browser with a verified session-hint cookie before navigation.
+ *
+ * @param context - Active Playwright browser context.
+ * @param roles - Roles encoded into the middleware hint.
+ */
+async function seedSessionHint(
+  context: BrowserContext,
+  roles: string[],
+): Promise<void> {
+  await context.addCookies([
+    {
+      domain: "127.0.0.1",
+      httpOnly: false,
+      name: "session_hint",
+      path: "/",
+      sameSite: "Lax",
+      secure: false,
+      value: sessionHintCookie(roles).replace("session_hint=", "").split(";")[0] ?? "",
+    },
+  ]);
+}
+
+/**
  * Fulfill mocked API responses with CORS headers accepted by the browser.
  *
  * @param route - Playwright route object.
@@ -113,13 +144,9 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
       return;
     }
 
-    if (path === "/v1/auth/verify-email") {
-      await fulfillJson(route, { message: "Email verified." });
-      return;
-    }
-
     if (path === "/v1/auth/me") {
       await fulfillJson(route, {
+        avatar_url: null,
         deactivated_at: null,
         display_name: "Ada Markets",
         email: "ada@example.com",
@@ -131,6 +158,11 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
       return;
     }
 
+    if (path === "/v1/auth/verify-email") {
+      await fulfillJson(route, { message: "Email verified." });
+      return;
+    }
+
     if (path === "/v1/auth/forgot-password") {
       await fulfillJson(route, { message: "If email is valid, reset link sent." });
       return;
@@ -138,6 +170,15 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
 
     if (path === "/v1/auth/reset-password") {
       await fulfillJson(route, { message: "Password reset." });
+      return;
+    }
+
+    if (path === "/v1/auth/refresh") {
+      await fulfillJson(route, {
+        access_token: fakeAccessToken(["operator"]),
+        expires_in: 900,
+        token_type: "bearer",
+      });
       return;
     }
 
@@ -179,7 +220,48 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
       return;
     }
 
+    if (path === "/v1/auth/logout") {
+      await fulfillJson(route, { message: "Logged out." });
+      return;
+    }
+
     await fulfillJson(route, { detail: "Unhandled mocked auth route." }, 404);
+  });
+}
+
+/**
+ * Mock refresh and current-user reads used by authenticated shell/profile UI.
+ *
+ * @param page - Active Playwright page.
+ * @param currentUser - Authenticated user payload returned by `/v1/auth/me`.
+ */
+async function mockAuthenticatedShellApi(
+  page: Page,
+  currentUser: MockCurrentUser,
+): Promise<void> {
+  await page.route(`${apiOrigin}/v1/auth/me`, async (route) => {
+    await fulfillJson(route, {
+      avatar_url: currentUser.avatar_url ?? null,
+      deactivated_at: null,
+      display_name: currentUser.display_name,
+      email: currentUser.email,
+      email_verified: currentUser.email_verified,
+      id: "00000000-0000-4000-8000-000000000001",
+      kyc_status: currentUser.kyc_status,
+      roles: currentUser.roles,
+    });
+  });
+
+  await page.route(`${apiOrigin}/v1/auth/refresh`, async (route) => {
+    await fulfillJson(route, {
+      access_token: fakeAccessToken(currentUser.roles),
+      expires_in: 900,
+      token_type: "bearer",
+    });
+  });
+
+  await page.route(`${apiOrigin}/v1/auth/logout`, async (route) => {
+    await fulfillJson(route, { message: "Logged out." });
   });
 }
 
@@ -234,4 +316,73 @@ test("runs the password reset browser loop", async ({ page }) => {
   await page.getByLabel("New password").fill("NewStrongPass123!");
   await page.getByRole("button", { name: "Save password" }).click();
   await expect(page.getByText("Password reset.")).toBeVisible();
+});
+
+test("redirects logged-out visitors from protected routes to login", async ({ page }) => {
+  await page.goto("/library");
+
+  await expect(page).toHaveURL(/\/login\?next=%2Flibrary$/);
+});
+
+test("redirects wrong-role users away from admin and hides the Admin nav link", async ({
+  context,
+  page,
+}) => {
+  await mockAuthenticatedShellApi(page, {
+    display_name: "Ada Markets",
+    email: "ada@example.com",
+    email_verified: true,
+    kyc_status: "verified",
+    roles: ["operator"],
+  });
+  await seedSessionHint(context, ["operator"]);
+
+  await page.goto("/admin");
+
+  await expect(page).toHaveURL(/\/explore$/);
+  await expect(page.getByRole("link", { name: /^admin$/i })).toHaveCount(0);
+});
+
+test("allows admins into admin routes and shows the Admin nav link", async ({
+  context,
+  page,
+}) => {
+  await mockAuthenticatedShellApi(page, {
+    display_name: "Root Admin",
+    email: "admin@example.com",
+    email_verified: true,
+    kyc_status: "verified",
+    roles: ["admin"],
+  });
+  await seedSessionHint(context, ["admin"]);
+
+  await page.goto("/admin/analytics");
+
+  await expect(page).toHaveURL(`${appOrigin}/admin/analytics`);
+  await expect(page.getByRole("link", { name: /^admin$/i })).toBeVisible();
+});
+
+test("signs out and forces protected routes back through login", async ({
+  context,
+  page,
+}) => {
+  await mockAuthenticatedShellApi(page, {
+    display_name: "Ada Markets",
+    email: "ada@example.com",
+    email_verified: false,
+    kyc_status: "pending",
+    roles: ["operator"],
+  });
+  await seedSessionHint(context, ["operator"]);
+
+  await page.goto("/settings/profile");
+  await page.getByText("Ada Markets").first().click();
+  await page
+    .locator("aside")
+    .getByRole("button", { name: /sign out/i })
+    .click({ force: true });
+  await expect(page).toHaveURL(`${appOrigin}/login`);
+
+  await page.goto("/library");
+  await expect(page).toHaveURL(/\/login\?next=%2Flibrary$/);
 });
