@@ -10,7 +10,7 @@ TDD Section 5 (configuration).
 
 from functools import lru_cache
 from typing import Literal, Self
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +29,22 @@ PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
 def _replace_database(url: str, database: int) -> str:
     parsed = urlsplit(url)
     return urlunsplit(parsed._replace(path=f"/{database}"))
+
+
+def _celery_redis_url(url: str, database: int) -> str:
+    """Build a Celery broker/backend URL, adding TLS verification for ``rediss://``.
+
+    Celery (kombu) refuses a ``rediss://`` URL that lacks ``ssl_cert_reqs``. Upstash
+    presents valid certificates, so we require verification (``CERT_REQUIRED``).
+    Plain ``redis://`` (local dev) is returned untouched.
+    """
+    parsed = urlsplit(url)
+    parsed = parsed._replace(path=f"/{database}")
+    if parsed.scheme == "rediss":
+        query = dict(parse_qsl(parsed.query))
+        query.setdefault("ssl_cert_reqs", "CERT_REQUIRED")
+        parsed = parsed._replace(query=urlencode(query))
+    return urlunsplit(parsed)
 
 
 def _to_async_postgres_url(url: str) -> str:
@@ -287,12 +303,12 @@ class Settings(BaseSettings):
     @property
     def celery_broker_url(self) -> str:
         """Use Redis database 0 for Celery broker traffic."""
-        return _replace_database(self.redis_url, 0)
+        return _celery_redis_url(self.redis_url, 0)
 
     @property
     def celery_result_backend(self) -> str:
         """Use Redis database 0 for Celery result storage."""
-        return _replace_database(self.redis_url, 0)
+        return _celery_redis_url(self.redis_url, 0)
 
     @property
     def cache_redis_url(self) -> str:

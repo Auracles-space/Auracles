@@ -10,6 +10,23 @@ def test_settings_derives_celery_and_cache_redis_databases() -> None:
     assert settings.cache_redis_url == "redis://localhost:6379/1"
 
 
+def test_settings_appends_ssl_cert_reqs_for_rediss_celery_urls() -> None:
+    """Celery rejects rediss:// without ssl_cert_reqs; broker+backend must carry it."""
+    settings = Settings(REDIS_URL="rediss://default:pw@host.upstash.io:6379")
+
+    expected = "rediss://default:pw@host.upstash.io:6379/0?ssl_cert_reqs=CERT_REQUIRED"
+    assert settings.celery_broker_url == expected
+    assert settings.celery_result_backend == expected
+
+
+def test_settings_plain_redis_celery_urls_have_no_ssl_param() -> None:
+    """Local redis:// (no TLS) must not gain ssl_cert_reqs params."""
+    settings = Settings(REDIS_URL="redis://localhost:6379/3")
+
+    assert settings.celery_broker_url == "redis://localhost:6379/0"
+    assert "ssl_cert_reqs" not in settings.cache_redis_url
+
+
 def test_settings_normalizes_database_urls_for_app_and_alembic() -> None:
     """FastAPI uses asyncpg URLs while Alembic receives a sync PostgreSQL URL."""
     settings = Settings(DATABASE_URL="postgresql://user:pass@host/auracles")
