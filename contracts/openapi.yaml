@@ -357,6 +357,109 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/credentials:
+    get:
+      tags:
+      - Admin
+      summary: List Credential Review Queue
+      description: List credentials awaiting (or filtered by) verification status.
+      operationId: list_credential_review_queue_v1_admin_credentials_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+            type: string
+          - type: 'null'
+          default: pending
+          title: Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCredentialsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/credentials/{credential_id}/verify:
+    post:
+      tags:
+      - Admin
+      summary: Verify Credential
+      description: Mark a pending Credential verified.
+      operationId: verify_credential_v1_admin_credentials__credential_id__verify_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCredentialResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/credentials/{credential_id}/reject:
+    post:
+      tags:
+      - Admin
+      summary: Reject Credential
+      description: Reject a pending Credential with a reason.
+      operationId: reject_credential_v1_admin_credentials__credential_id__reject_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCredentialRejectRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCredentialResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/frameworks/{framework_id}/suspend:
     post:
       tags:
@@ -1287,6 +1390,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/credentials/{credential_id}/submit:
+    post:
+      tags:
+      - Attestation
+      summary: Submit Credential
+      description: Submit an owned Credential for manual Admin verification.
+      operationId: submit_credential_v1_credentials__credential_id__submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResponse'
         '422':
           description: Validation Error
           content:
@@ -6702,6 +6835,137 @@ components:
       - value
       title: AdminConfigUpdateItem
       description: Single admin platform configuration change request.
+    AdminCredentialRejectRequest:
+      properties:
+        reason:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Reason
+      type: object
+      required:
+      - reason
+      title: AdminCredentialRejectRequest
+      description: Admin request body for rejecting a pending Credential.
+    AdminCredentialResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        title:
+          type: string
+          title: Title
+        issuer:
+          type: string
+          title: Issuer
+        issued_date:
+          type: string
+          format: date
+          title: Issued Date
+        expires_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Expires Date
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+        verification_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Verification Url
+        reference_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reference Number
+        issuer_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issuer Type
+        evidence_file_keys:
+          items:
+            type: string
+          type: array
+          title: Evidence File Keys
+        verification_status:
+          type: string
+          title: Verification Status
+        submitted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Submitted At
+        verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verified At
+        reviewed_by:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Reviewed By
+        rejection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rejection Reason
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - user_id
+      - title
+      - issuer
+      - issued_date
+      - expires_date
+      - credential_type
+      - verification_url
+      - reference_number
+      - issuer_type
+      - evidence_file_keys
+      - verification_status
+      - submitted_at
+      - verified_at
+      - reviewed_by
+      - rejection_reason
+      - created_at
+      - updated_at
+      title: AdminCredentialResponse
+      description: Credential detail for the admin review queue (includes review evidence).
+    AdminCredentialsResponse:
+      properties:
+        credentials:
+          items:
+            $ref: '#/components/schemas/AdminCredentialResponse'
+          type: array
+          title: Credentials
+      type: object
+      required:
+      - credentials
+      title: AdminCredentialsResponse
+      description: Paginated admin credential review queue.
     AdminDisputeResolveRequest:
       properties:
         resolution_type:
@@ -8634,6 +8898,34 @@ components:
             format: date
           - type: 'null'
           title: Expires Date
+        credential_type:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Credential Type
+        verification_url:
+          anyOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+          title: Verification Url
+        reference_number:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Reference Number
+        issuer_type:
+          anyOf:
+          - type: string
+            enum:
+            - institution
+            - organisation
+            - government
+            - association
+          - type: 'null'
+          title: Issuer Type
       type: object
       required:
       - title
@@ -8733,6 +9025,55 @@ components:
             type: string
           type: array
           title: Evidence File Keys
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+        verification_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Verification Url
+        reference_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reference Number
+        issuer_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issuer Type
+        verification_status:
+          type: string
+          title: Verification Status
+        submitted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Submitted At
+        verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verified At
+        reviewed_by:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Reviewed By
+        rejection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rejection Reason
+        expired:
+          type: boolean
+          title: Expired
         created_at:
           type: string
           format: date-time
@@ -8750,6 +9091,16 @@ components:
       - issued_date
       - expires_date
       - evidence_file_keys
+      - credential_type
+      - verification_url
+      - reference_number
+      - issuer_type
+      - verification_status
+      - submitted_at
+      - verified_at
+      - reviewed_by
+      - rejection_reason
+      - expired
       - created_at
       - updated_at
       title: CredentialResponse
@@ -8782,6 +9133,34 @@ components:
             format: date
           - type: 'null'
           title: Expires Date
+        credential_type:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Credential Type
+        verification_url:
+          anyOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+          title: Verification Url
+        reference_number:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Reference Number
+        issuer_type:
+          anyOf:
+          - type: string
+            enum:
+            - institution
+            - organisation
+            - government
+            - association
+          - type: 'null'
+          title: Issuer Type
         evidence_file_keys:
           anyOf:
           - items:
@@ -9924,6 +10303,12 @@ components:
             $ref: '#/components/schemas/ExploreFrameworkCard'
           type: array
           title: Published Frameworks
+        verified_credentials:
+          items:
+            $ref: '#/components/schemas/PublicCredentialResponse'
+          type: array
+          title: Verified Credentials
+          default: []
       type: object
       required:
       - id
@@ -13212,6 +13597,44 @@ components:
       - proposals
       title: ProposalsResponse
       description: List response for Project proposals.
+    PublicCredentialResponse:
+      properties:
+        title:
+          type: string
+          title: Title
+        issuer:
+          type: string
+          title: Issuer
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+        issued_date:
+          type: string
+          format: date
+          title: Issued Date
+        expires_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Expires Date
+        expired:
+          type: boolean
+          title: Expired
+      type: object
+      required:
+      - title
+      - issuer
+      - credential_type
+      - issued_date
+      - expires_date
+      - expired
+      title: PublicCredentialResponse
+      description: "Verified Credential fields safe for public profile display.\n\n\
+        Never exposes evidence keys, verification URL, reference number, or review\n\
+        metadata — anti-gaming and PII protection."
     PurchaseHistoryItem:
       properties:
         transaction_id:

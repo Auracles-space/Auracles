@@ -182,6 +182,44 @@ export type AdminConfigUpdateItem = {
 export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
 
 /**
+ * Admin request body for rejecting a pending Credential.
+ */
+export type AdminCredentialRejectRequest = {
+    reason: string;
+};
+
+/**
+ * Credential detail for the admin review queue (includes review evidence).
+ */
+export type AdminCredentialResponse = {
+    id: string;
+    user_id: string;
+    title: string;
+    issuer: string;
+    issued_date: string;
+    expires_date: (string | null);
+    credential_type: (string | null);
+    verification_url: (string | null);
+    reference_number: (string | null);
+    issuer_type: (string | null);
+    evidence_file_keys: Array<(string)>;
+    verification_status: string;
+    submitted_at: (string | null);
+    verified_at: (string | null);
+    reviewed_by: (string | null);
+    rejection_reason: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Paginated admin credential review queue.
+ */
+export type AdminCredentialsResponse = {
+    credentials: Array<AdminCredentialResponse>;
+};
+
+/**
  * Request body for resolving a Project dispute.
  */
 export type AdminDisputeResolveRequest = {
@@ -877,6 +915,10 @@ export type CredentialCreateRequest = {
     issuer: string;
     issued_date: string;
     expires_date?: (string | null);
+    credential_type?: (string | null);
+    verification_url?: (string | null);
+    reference_number?: (string | null);
+    issuer_type?: ('institution' | 'organisation' | 'government' | 'association' | null);
 };
 
 /**
@@ -914,6 +956,16 @@ export type CredentialResponse = {
     issued_date: string;
     expires_date: (string | null);
     evidence_file_keys: Array<(string)>;
+    credential_type: (string | null);
+    verification_url: (string | null);
+    reference_number: (string | null);
+    issuer_type: (string | null);
+    verification_status: string;
+    submitted_at: (string | null);
+    verified_at: (string | null);
+    reviewed_by: (string | null);
+    rejection_reason: (string | null);
+    expired: boolean;
     created_at: string;
     updated_at: string;
 };
@@ -933,6 +985,10 @@ export type CredentialUpdateRequest = {
     issuer?: (string | null);
     issued_date?: (string | null);
     expires_date?: (string | null);
+    credential_type?: (string | null);
+    verification_url?: (string | null);
+    reference_number?: (string | null);
+    issuer_type?: ('institution' | 'organisation' | 'government' | 'association' | null);
     evidence_file_keys?: (Array<(string)> | null);
 };
 
@@ -1298,6 +1354,7 @@ export type ExploreContributorProfile = {
     is_deactivated?: boolean;
     published_framework_count: number;
     published_frameworks: Array<ExploreFrameworkCard>;
+    verified_credentials?: Array<PublicCredentialResponse>;
 };
 
 /**
@@ -2312,6 +2369,21 @@ export type ProposalsResponse = {
 };
 
 /**
+ * Verified Credential fields safe for public profile display.
+ *
+ * Never exposes evidence keys, verification URL, reference number, or review
+ * metadata — anti-gaming and PII protection.
+ */
+export type PublicCredentialResponse = {
+    title: string;
+    issuer: string;
+    credential_type: (string | null);
+    issued_date: string;
+    expires_date: (string | null);
+    expired: boolean;
+};
+
+/**
  * Operator-facing purchase history row.
  */
 export type PurchaseHistoryItem = {
@@ -2726,6 +2798,37 @@ export type ReviewKycV1AdminUsersUserIdKycPatchResponse = (AdminKycReviewRespons
 
 export type ReviewKycV1AdminUsersUserIdKycPatchError = (HTTPValidationError);
 
+export type ListCredentialReviewQueueV1AdminCredentialsGetData = {
+    query?: {
+        status?: ('unverified' | 'pending' | 'verified' | 'rejected' | null);
+    };
+};
+
+export type ListCredentialReviewQueueV1AdminCredentialsGetResponse = (AdminCredentialsResponse);
+
+export type ListCredentialReviewQueueV1AdminCredentialsGetError = (HTTPValidationError);
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostResponse = (AdminCredentialResponse);
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostError = (HTTPValidationError);
+
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostData = {
+    body: AdminCredentialRejectRequest;
+    path: {
+        credential_id: string;
+    };
+};
+
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse = (AdminCredentialResponse);
+
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostError = (HTTPValidationError);
+
 export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
     body: AdminFrameworkSuspendRequest;
     path: {
@@ -3011,6 +3114,16 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostResponse = (CredentialResponse);
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostError = (HTTPValidationError);
 
 export type RegisterV1AuthRegisterPostData = {
     body: RegisterRequest;
