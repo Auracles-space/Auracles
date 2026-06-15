@@ -109,6 +109,22 @@ ATTESTATION_UPLOAD_SCAN_STATUS_ENUM = ENUM(
     name="attestation_upload_scan_status_enum",
     create_type=False,
 )
+CREDENTIAL_VERIFICATION_STATUS_ENUM = ENUM(
+    "unverified",
+    "pending",
+    "verified",
+    "rejected",
+    name="credential_verification_status_enum",
+    create_type=False,
+)
+CREDENTIAL_ISSUER_TYPE_ENUM = ENUM(
+    "institution",
+    "organisation",
+    "government",
+    "association",
+    name="credential_issuer_type_enum",
+    create_type=False,
+)
 
 
 class AttestorApplication(CreatedAtMixin, Base):
@@ -224,6 +240,29 @@ class Credential(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("'{}'::text[]"),
     )
+    verification_status: Mapped[str] = mapped_column(
+        CREDENTIAL_VERIFICATION_STATUS_ENUM,
+        nullable=False,
+        server_default="unverified",
+    )
+    credential_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reference_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issuer_type: Mapped[str | None] = mapped_column(
+        CREDENTIAL_ISSUER_TYPE_ENUM, nullable=True
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Attestation(UpdatedAtMixin, Base):
