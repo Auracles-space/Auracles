@@ -35,6 +35,15 @@ def test_settings_normalizes_database_urls_for_app_and_alembic() -> None:
     assert settings.sync_database_url == "postgresql+psycopg://user:pass@host/auracles"
 
 
+def test_async_url_translates_sslmode_for_asyncpg() -> None:
+    """asyncpg rejects libpq's `sslmode`; the async URL must use `ssl` instead."""
+    settings = Settings(DATABASE_URL="postgresql://u:p@host/db?sslmode=require")
+
+    assert settings.async_database_url == "postgresql+asyncpg://u:p@host/db?ssl=require"
+    # Alembic uses psycopg, which understands `sslmode` natively — keep it.
+    assert settings.sync_database_url == "postgresql+psycopg://u:p@host/db?sslmode=require"
+
+
 def test_settings_ignores_script_only_environment_keys() -> None:
     """Script-only env vars should not break app settings loading."""
     settings = Settings(ADMIN_EMAIL="admin@auracles.space", ADMIN_PASSWORD="secret")

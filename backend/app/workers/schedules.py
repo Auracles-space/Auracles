@@ -20,6 +20,13 @@ from app.core.config import get_settings
 from app.modules.financials.models import PlatformConfig
 
 
+def _rebuild_platform_config_schedule(
+    cls: type[PlatformConfigHoursSchedule],
+) -> PlatformConfigHoursSchedule:
+    """Create a bare instance for unpickling; state is applied via __setstate__."""
+    return cls.__new__(cls)
+
+
 class PlatformConfigHoursSchedule(schedule):
     """Celery schedule backed by an integer `platform_config` hour value.
 
@@ -55,6 +62,20 @@ class PlatformConfigHoursSchedule(schedule):
         state = dict(self.__dict__)
         state["_engine"] = None
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore pickled state directly, bypassing the keyword-only __init__."""
+        self.__dict__.update(state)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle via state, not positional args.
+
+        Celery's base ``schedule.__reduce__`` reconstructs with positional
+        ``(run_every, relative, nowfun, app)`` args, which this class's
+        keyword-only constructor rejects. Rebuild without calling ``__init__``
+        and let ``__setstate__`` restore every field instead.
+        """
+        return (_rebuild_platform_config_schedule, (type(self),), self.__getstate__())
 
     def _get_engine(self) -> Engine:
         """Return a lazily-created sync engine for Beat's sync process."""

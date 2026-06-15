@@ -48,11 +48,16 @@ def _celery_redis_url(url: str, database: int) -> str:
 
 
 def _to_async_postgres_url(url: str) -> str:
-    if url.startswith("postgresql+asyncpg://"):
+    if not (url.startswith("postgresql://") or url.startswith("postgresql+asyncpg://")):
         return url
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+    parsed = urlsplit(url)
+    query = dict(parse_qsl(parsed.query))
+    # asyncpg has no `sslmode`; translate libpq's value to its `ssl` parameter.
+    sslmode = query.pop("sslmode", None)
+    if sslmode and "ssl" not in query:
+        query["ssl"] = sslmode
+    parsed = parsed._replace(scheme="postgresql+asyncpg", query=urlencode(query))
+    return urlunsplit(parsed)
 
 
 def _to_sync_postgres_url(url: str) -> str:
