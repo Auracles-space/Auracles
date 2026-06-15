@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+IssuerType = Literal["institution", "organisation", "government", "association"]
+
 
 class AttestorApplicationCreateRequest(BaseModel):
     """Request body for submitting an Attestor role application."""
@@ -60,6 +62,10 @@ class CredentialCreateRequest(BaseModel):
     issuer: str = Field(min_length=1, max_length=255)
     issued_date: date
     expires_date: date | None = None
+    credential_type: str | None = Field(default=None, max_length=255)
+    verification_url: str | None = Field(default=None, max_length=2048)
+    reference_number: str | None = Field(default=None, max_length=255)
+    issuer_type: IssuerType | None = None
 
     @field_validator("expires_date")
     @classmethod
@@ -82,6 +88,10 @@ class CredentialUpdateRequest(BaseModel):
     issuer: str | None = Field(default=None, min_length=1, max_length=255)
     issued_date: date | None = None
     expires_date: date | None = None
+    credential_type: str | None = Field(default=None, max_length=255)
+    verification_url: str | None = Field(default=None, max_length=2048)
+    reference_number: str | None = Field(default=None, max_length=255)
+    issuer_type: IssuerType | None = None
     evidence_file_keys: list[str] | None = Field(default=None, max_length=20)
 
 
@@ -95,6 +105,16 @@ class CredentialResponse(BaseModel):
     issued_date: date
     expires_date: date | None
     evidence_file_keys: list[str]
+    credential_type: str | None
+    verification_url: str | None
+    reference_number: str | None
+    issuer_type: str | None
+    verification_status: str
+    submitted_at: datetime | None
+    verified_at: datetime | None
+    reviewed_by: UUID | None
+    rejection_reason: str | None
+    expired: bool
     created_at: datetime
     updated_at: datetime
 
@@ -292,3 +312,55 @@ class AttestationFundingResponse(BaseModel):
     transaction_id: UUID
     provider: Literal["stripe"]
     client_secret: str
+
+
+class AdminCredentialRejectRequest(BaseModel):
+    """Admin request body for rejecting a pending Credential."""
+
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class AdminCredentialResponse(BaseModel):
+    """Credential detail for the admin review queue (includes review evidence)."""
+
+    id: UUID
+    user_id: UUID
+    title: str
+    issuer: str
+    issued_date: date
+    expires_date: date | None
+    credential_type: str | None
+    verification_url: str | None
+    reference_number: str | None
+    issuer_type: str | None
+    evidence_file_keys: list[str]
+    verification_status: str
+    submitted_at: datetime | None
+    verified_at: datetime | None
+    reviewed_by: UUID | None
+    rejection_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminCredentialsResponse(BaseModel):
+    """Paginated admin credential review queue."""
+
+    credentials: list[AdminCredentialResponse]
+
+
+class PublicCredentialResponse(BaseModel):
+    """Verified Credential fields safe for public profile display.
+
+    Never exposes evidence keys, verification URL, reference number, or review
+    metadata — anti-gaming and PII protection.
+    """
+
+    title: str
+    issuer: str
+    credential_type: str | None
+    issued_date: date
+    expires_date: date | None
+    expired: bool
