@@ -306,3 +306,64 @@ async def test_submit_endpoint_owner_only(
     assert owner.status_code == 200
     assert owner.json()["verification_status"] == "pending"
     assert owner.json()["expired"] is False
+
+
+async def test_admin_queue_and_decisions(
+    client: AsyncClient, migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Admin lists pending queue and verifies; non-admin is forbidden."""
+    del migrated_database, credential_context
+    admin_id = await create_user("queue-admin@auracles.space", ["admin"])
+    owner_id = await create_user("queue-owner@auracles.space", ["contributor"])
+    credential_id = str(
+        await _seed_credential(
+            owner_id, reference_number="PMP-1", verification_status="pending"
+        )
+    )
+
+    forbidden = await client.get(
+        "/v1/admin/credentials",
+        headers=auth_headers(owner_id, ["contributor"]),
+    )
+    queue = await client.get(
+        "/v1/admin/credentials?status=pending",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    verified = await client.post(
+        f"/v1/admin/credentials/{credential_id}/verify",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert forbidden.status_code == 403
+    assert queue.status_code == 200
+    assert credential_id in [c["id"] for c in queue.json()["credentials"]]
+    assert verified.status_code == 200
+    assert verified.json()["verification_status"] == "verified"
+
+
+async def test_admin_reject_requires_reason(
+    client: AsyncClient, migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Admin reject with empty reason is a 422; with reason it succeeds."""
+    del migrated_database, credential_context
+    admin_id = await create_user("rej-admin@auracles.space", ["admin"])
+    owner_id = await create_user("rej-owner@auracles.space", ["contributor"])
+    credential_id = str(
+        await _seed_credential(
+            owner_id, reference_number="PMP-1", verification_status="pending"
+        )
+    )
+
+    empty = await client.post(
+        f"/v1/admin/credentials/{credential_id}/reject",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={"reason": ""},
+    )
+    ok = await client.post(
+        f"/v1/admin/credentials/{credential_id}/reject",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={"reason": "Issuer registry shows no match."},
+    )
+    assert empty.status_code == 422
+    assert ok.status_code == 200
+    assert ok.json()["verification_status"] == "rejected"

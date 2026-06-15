@@ -1,7 +1,7 @@
 """FastAPI router for admin endpoints."""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -37,6 +37,12 @@ from app.modules.admin.schemas import (
     AdminUserSuspendRequest,
     AdminUserSuspensionResponse,
     AdminUserUnsuspendRequest,
+)
+from app.modules.attestation import credential_service
+from app.modules.attestation.schemas import (
+    AdminCredentialRejectRequest,
+    AdminCredentialResponse,
+    AdminCredentialsResponse,
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
@@ -333,6 +339,64 @@ async def review_kyc(
         kyc_status=document.status,
         document_status=document.status,
     )
+
+
+@router.get("/credentials", response_model=AdminCredentialsResponse)
+async def list_credential_review_queue(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        Literal["unverified", "pending", "verified", "rejected"] | None,
+        Query(alias="status"),
+    ] = "pending",
+) -> AdminCredentialsResponse:
+    """List credentials awaiting (or filtered by) verification status."""
+    del admin
+    credentials = await credential_service.list_credentials_for_review(
+        db=db, verification_status=status_filter
+    )
+    return AdminCredentialsResponse(
+        credentials=[
+            AdminCredentialResponse.model_validate(credential)
+            for credential in credentials
+        ]
+    )
+
+
+@router.post(
+    "/credentials/{credential_id}/verify",
+    response_model=AdminCredentialResponse,
+)
+async def verify_credential(
+    credential_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminCredentialResponse:
+    """Mark a pending Credential verified."""
+    credential = await credential_service.verify_credential(
+        db=db, admin_id=admin.id, credential_id=credential_id
+    )
+    return AdminCredentialResponse.model_validate(credential)
+
+
+@router.post(
+    "/credentials/{credential_id}/reject",
+    response_model=AdminCredentialResponse,
+)
+async def reject_credential(
+    credential_id: UUID,
+    payload: AdminCredentialRejectRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminCredentialResponse:
+    """Reject a pending Credential with a reason."""
+    credential = await credential_service.reject_credential(
+        db=db,
+        admin_id=admin.id,
+        credential_id=credential_id,
+        reason=payload.reason,
+    )
+    return AdminCredentialResponse.model_validate(credential)
 
 
 @router.post(

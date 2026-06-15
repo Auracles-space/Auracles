@@ -421,6 +421,26 @@ def _notify_credential_decision(
         ).error("notification_dispatch_failed", error=str(exc))
 
 
+async def list_credentials_for_review(
+    db: AsyncSession, verification_status: str | None = "pending"
+) -> list[Credential]:
+    """Return credentials filtered by verification status for admin review.
+
+    Args:
+        db: Async database session.
+        verification_status: Status to filter by, or ``None`` for all
+            credentials regardless of status.
+
+    Returns:
+        Credentials matching the filter, most recently submitted first.
+    """
+    stmt = select(Credential).order_by(Credential.submitted_at.desc().nullslast())
+    if verification_status is not None:
+        stmt = stmt.where(Credential.verification_status == verification_status)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def _load_credential_for_review(
     db: AsyncSession, credential_id: UUID
 ) -> Credential:
