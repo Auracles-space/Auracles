@@ -178,3 +178,60 @@ async def test_submit_blocked_when_already_verified(
                 db=session, user=user, credential_id=credential_id
             )
     assert exc.value.status_code == 422
+
+
+async def test_verify_only_from_pending(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """verify_credential promotes pending -> verified and stamps reviewer."""
+    del migrated_database, credential_context
+    admin_id = await create_user("verify-admin@auracles.space", ["admin"])
+    owner_id = await create_user("verify-owner@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(
+        owner_id, reference_number="PMP-1", verification_status="pending"
+    )
+    async with async_session_factory() as session:
+        result = await credential_service.verify_credential(
+            db=session, admin_id=admin_id, credential_id=credential_id
+        )
+    assert result.verification_status == "verified"
+    assert result.verified_at is not None
+    assert result.reviewed_by == admin_id
+
+
+async def test_verify_rejects_non_pending(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Verifying a non-pending credential raises 422."""
+    del migrated_database, credential_context
+    admin_id = await create_user("verify-admin2@auracles.space", ["admin"])
+    owner_id = await create_user("verify-owner2@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(owner_id, reference_number="PMP-1")
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await credential_service.verify_credential(
+                db=session, admin_id=admin_id, credential_id=credential_id
+            )
+    assert exc.value.status_code == 422
+
+
+async def test_reject_requires_pending_and_sets_reason(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """reject_credential moves pending -> rejected and stores the reason."""
+    del migrated_database, credential_context
+    admin_id = await create_user("reject-admin@auracles.space", ["admin"])
+    owner_id = await create_user("reject-owner@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(
+        owner_id, reference_number="PMP-1", verification_status="pending"
+    )
+    async with async_session_factory() as session:
+        result = await credential_service.reject_credential(
+            db=session,
+            admin_id=admin_id,
+            credential_id=credential_id,
+            reason="Issuer could not confirm.",
+        )
+    assert result.verification_status == "rejected"
+    assert result.rejection_reason == "Issuer could not confirm."
+    assert result.reviewed_by == admin_id

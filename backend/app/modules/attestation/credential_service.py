@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from app.modules.attestation.schemas import (
 )
 from app.modules.auth.models import User
 from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS = 300
 CREDENTIAL_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
@@ -347,4 +349,142 @@ async def _load_owned_credential_for_update(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Credential not found.",
         )
+    return credential
+
+
+def _notify_credential_decision(
+    *, user_id: UUID, credential: Credential, verified: bool
+) -> None:
+    """Queue a durable notification telling the owner of a review decision."""
+    notification_type = "credential_verified" if verified else "credential_rejected"
+    title = "Credential verified" if verified else "Credential needs attention"
+    body = (
+        "Your credential has been verified."
+        if verified
+        else "Your credential was not verified. Review the feedback and resubmit."
+    )
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            payload={
+                "credential_id": str(credential.id),
+                "status": credential.verification_status,
+            },
+            link="/settings/credentials",
+            dedupe_key=f"{notification_type}:{credential.id}",
+        )
+    except Exception as exc:  # pragma: no cover - dispatch best-effort
+        logger.bind(
+            module="attestation",
+            action="notify_credential_decision",
+            user_id=user_id,
+            credential_id=credential.id,
+        ).error("notification_dispatch_failed", error=str(exc))
+
+
+async def _load_credential_for_review(
+    db: AsyncSession, credential_id: UUID
+) -> Credential:
+    """Load any credential by id with a row lock or raise 404 (admin scope)."""
+    credential = await db.scalar(
+        select(Credential).where(Credential.id == credential_id).with_for_update()
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found."
+        )
+    return credential
+
+
+async def verify_credential(
+    db: AsyncSession, admin_id: UUID, credential_id: UUID
+) -> Credential:
+    """Mark a pending Credential verified (Admin action).
+
+    Args:
+        db: Async database session.
+        admin_id: UUID of the acting admin.
+        credential_id: UUID of the credential under review.
+
+    Returns:
+        The verified Credential.
+
+    Raises:
+        HTTPException(404): Credential not found.
+        HTTPException(422): Credential is not pending.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        credential = await _load_credential_for_review(db, credential_id)
+        if credential.verification_status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only pending credentials can be verified.",
+            )
+        credential.verification_status = "verified"
+        credential.verified_at = datetime.now(UTC)
+        credential.reviewed_by = admin_id
+        credential.rejection_reason = None
+        owner_id = credential.user_id
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="credential_verified",
+            target_type="credential",
+            target_id=credential.id,
+            metadata={"owner_id": str(owner_id)},
+        )
+        await db.flush()
+        await db.refresh(credential)
+    _notify_credential_decision(user_id=owner_id, credential=credential, verified=True)
+    return credential
+
+
+async def reject_credential(
+    db: AsyncSession, admin_id: UUID, credential_id: UUID, reason: str
+) -> Credential:
+    """Reject a pending Credential with a reason (Admin action).
+
+    Args:
+        db: Async database session.
+        admin_id: UUID of the acting admin.
+        credential_id: UUID of the credential under review.
+        reason: Required non-empty rejection reason.
+
+    Returns:
+        The rejected Credential.
+
+    Raises:
+        HTTPException(404): Credential not found.
+        HTTPException(422): Credential is not pending.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        credential = await _load_credential_for_review(db, credential_id)
+        if credential.verification_status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only pending credentials can be rejected.",
+            )
+        credential.verification_status = "rejected"
+        credential.rejection_reason = reason
+        credential.reviewed_by = admin_id
+        credential.verified_at = None
+        owner_id = credential.user_id
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="credential_rejected",
+            target_type="credential",
+            target_id=credential.id,
+            metadata={"owner_id": str(owner_id), "reason": reason},
+        )
+        await db.flush()
+        await db.refresh(credential)
+    _notify_credential_decision(user_id=owner_id, credential=credential, verified=False)
     return credential
