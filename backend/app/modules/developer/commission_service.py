@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import TypedDict
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -57,7 +58,15 @@ class PartnerTier:
     rate: Decimal
 
 
-async def clear_partner_commissions(db: AsyncSession) -> dict[str, object]:
+class CommissionClearingResult(TypedDict):
+    """Outcome of a Partner commission clearing run."""
+
+    cleared_count: int
+    voided_count: int
+    webhook_delivery_ids: list[str]
+
+
+async def clear_partner_commissions(db: AsyncSession) -> CommissionClearingResult:
     """Clear mature Partner commissions and void refunded-sale commissions.
 
     Pending commissions become `cleared` only after the 48-hour refund window

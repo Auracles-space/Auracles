@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import SupportsFloat, cast
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,8 @@ def _average_response_ms(value: object) -> int:
     """Normalize a nullable database average into a rounded integer."""
     if value is None:
         return 0
-    return int(round(float(value)))
+    # The DB average arrives as a numeric (Decimal/float) typed as object.
+    return int(round(float(cast("SupportsFloat", value))))
 
 
 def _money(value: object) -> Decimal:

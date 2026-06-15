@@ -22,14 +22,11 @@ async def _clear_partner_commissions() -> dict[str, int]:
     async with async_session_factory() as db:
         async with db.begin():
             result = await commission_service.clear_partner_commissions(db)
-            webhook_delivery_ids = [
-                str(delivery_id)
-                for delivery_id in result.pop("webhook_delivery_ids", [])
-            ]
+            webhook_delivery_ids = list(result["webhook_delivery_ids"])
     webhooks_service.queue_partner_webhook_deliveries(webhook_delivery_ids)
     return {
-        "cleared_count": int(result["cleared_count"]),
-        "voided_count": int(result["voided_count"]),
+        "cleared_count": result["cleared_count"],
+        "voided_count": result["voided_count"],
     }
 
 

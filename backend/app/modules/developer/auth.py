@@ -14,7 +14,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request, Response, status
@@ -80,14 +80,20 @@ async def _rate_limit_count(
     """Apply the Redis sliding-window limiter and return state."""
     now_ms = int(time.time() * 1000)
     window_bucket = now_ms // RATE_LIMIT_WINDOW_MS
-    result = await redis.eval(
-        RATE_LIMIT_LUA,
-        1,
-        f"partner-api-rate:{api_key_id}",
-        now_ms,
-        RATE_LIMIT_WINDOW_MS,
-        limit,
-        secrets.token_hex(8),
+    # redis-py types eval() as returning Awaitable | Any; cast to a real
+    # Awaitable so it can be awaited. Integer ARGV are accepted by redis-py
+    # (and the Lua script tonumber()s them); the stub only permits str.
+    result = await cast(
+        "Awaitable[list[Any]]",
+        redis.eval(
+            RATE_LIMIT_LUA,
+            1,
+            f"partner-api-rate:{api_key_id}",
+            now_ms,  # type: ignore[arg-type]
+            RATE_LIMIT_WINDOW_MS,  # type: ignore[arg-type]
+            limit,  # type: ignore[arg-type]
+            secrets.token_hex(8),
+        ),
     )
     allowed = bool(int(result[0]))
     count = int(result[1])
@@ -233,7 +239,7 @@ PartnerApiAuth = Annotated[
 
 def require_api_key_scope(
     required_scope: str,
-) -> Callable[[PartnerApiContext], PartnerApiContext]:
+) -> Callable[..., Awaitable[PartnerApiContext]]:
     """Build a dependency that enforces one Partner API key scope."""
 
     async def checker(context: PartnerApiAuth) -> PartnerApiContext:

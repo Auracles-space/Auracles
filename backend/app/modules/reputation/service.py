@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -142,11 +142,14 @@ async def get_score(
     subject_id: UUID,
 ) -> ReputationScore | None:
     """Return the latest stored reputation score for one subject, if any."""
-    return await db.scalar(
-        select(ReputationScore).where(
-            ReputationScore.subject_type == subject_type,
-            ReputationScore.subject_id == subject_id,
-        )
+    return cast(
+        "ReputationScore | None",
+        await db.scalar(
+            select(ReputationScore).where(
+                ReputationScore.subject_type == subject_type,
+                ReputationScore.subject_id == subject_id,
+            )
+        ),
     )
 
 

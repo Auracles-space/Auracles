@@ -71,7 +71,8 @@ def _validate_webhook_url_for_delivery(url: str) -> None:
         type=socket.SOCK_STREAM,
     )
     for item in resolved:
-        address = item[4][0]
+        # sockaddr[0] is the address; getaddrinfo types it as str | int.
+        address = str(item[4][0])
         if _is_blocked_ip(address):
             raise ValueError("Partner webhook URL resolves to a blocked address.")
 

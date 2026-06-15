@@ -357,11 +357,12 @@ async def _create_partner_commission_if_attributed(
     )
     if not delivery_ids:
         return []
-    return [
-        lambda delivery_ids=delivery_ids: (
-            developer_webhooks_service.queue_partner_webhook_deliveries(delivery_ids)
-        )
-    ]
+
+    def _queue_deliveries() -> None:
+        """After-commit hook: enqueue the Partner webhook deliveries."""
+        developer_webhooks_service.queue_partner_webhook_deliveries(delivery_ids)
+
+    return [_queue_deliveries]
 
 
 def _queue_purchase_invoice_generation(transaction_id: UUID) -> None:

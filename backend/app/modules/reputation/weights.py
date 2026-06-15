@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,7 +80,8 @@ def expected_weight_keys(subject_type: str) -> tuple[str, ...]:
 async def _raw(db: AsyncSession, key: str) -> str | None:
     """Fetch one raw platform config value by key."""
     statement = select(PlatformConfig.value).where(PlatformConfig.key == key)
-    return await db.scalar(statement)
+    # PlatformConfig.value is an untyped JSON column, so scalar() yields Any.
+    return cast("str | None", await db.scalar(statement))
 
 
 async def load_config(

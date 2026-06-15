@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 from celery.schedules import schedule
 from loguru import logger
@@ -27,7 +27,7 @@ def _rebuild_platform_config_schedule(
     return cls.__new__(cls)
 
 
-class PlatformConfigHoursSchedule(schedule):
+class PlatformConfigHoursSchedule(schedule):  # type: ignore[misc]  # celery's `schedule` is untyped (Any)
     """Celery schedule backed by an integer `platform_config` hour value.
 
     The value is cached briefly because Celery Beat calls `is_due` frequently.
@@ -121,4 +121,6 @@ class PlatformConfigHoursSchedule(schedule):
     def is_due(self, last_run_at: Any) -> tuple[bool, float]:
         """Return whether the task is due using the latest cached cadence."""
         self._refresh_run_every()
-        return super().is_due(last_run_at)
+        # celery's untyped `schedule.is_due` returns a `schedstate(is_due, next)`
+        # namedtuple that unpacks as (bool, float); mypy only sees Any.
+        return cast("tuple[bool, float]", super().is_due(last_run_at))

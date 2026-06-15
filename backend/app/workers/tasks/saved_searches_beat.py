@@ -7,7 +7,7 @@ verified users, and advances each cursor only after delivery state is recorded.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from loguru import logger
@@ -100,7 +100,7 @@ async def _alert_enabled_searches(
         )
         .order_by(SavedSearch.created_at.asc(), SavedSearch.id.asc())
     )
-    return list(rows.all())
+    return cast("list[tuple[SavedSearch, User]]", list(rows.all()))
 
 
 async def _send_saved_search_alert(

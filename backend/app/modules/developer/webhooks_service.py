@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -101,7 +101,7 @@ async def enqueue_partner_webhook_deliveries(
         select(PartnerWebhook).where(
             PartnerWebhook.developer_account_id == developer_account_id,
             PartnerWebhook.active.is_(True),
-            PartnerWebhook.events.any(event_type),  # type: ignore[attr-defined]
+            PartnerWebhook.events.any(event_type),  # type: ignore[arg-type]  # ARRAY.any() value typing
         )
     )
     webhooks = list(result.scalars().all())
@@ -236,4 +236,5 @@ async def retry_partner_webhook_delivery(
         )
 
     deliver_partner_webhook.delay(str(delivery_id))
-    return delivery
+    # delivery is unpacked from a Row tuple, so mypy widens it to Any.
+    return cast("PartnerWebhookDelivery", delivery)

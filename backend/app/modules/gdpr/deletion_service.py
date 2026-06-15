@@ -95,14 +95,17 @@ async def _latest_request(
     user_id: UUID,
 ) -> AccountDeletionRequest | None:
     """Return the latest deletion request for one user, if any."""
-    return await db.scalar(
-        select(AccountDeletionRequest)
-        .where(AccountDeletionRequest.user_id == user_id)
-        .order_by(
-            AccountDeletionRequest.requested_at.desc(),
-            AccountDeletionRequest.id.desc(),
-        )
-        .limit(1)
+    return cast(
+        "AccountDeletionRequest | None",
+        await db.scalar(
+            select(AccountDeletionRequest)
+            .where(AccountDeletionRequest.user_id == user_id)
+            .order_by(
+                AccountDeletionRequest.requested_at.desc(),
+                AccountDeletionRequest.id.desc(),
+            )
+            .limit(1)
+        ),
     )
 
 

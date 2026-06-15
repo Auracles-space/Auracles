@@ -123,7 +123,7 @@ class AccountDeletionRequest(Base):
         nullable=False,
         server_default=text("'pending'"),
     )
-    blocked_reasons: Mapped[dict[str, Any] | None] = mapped_column(
+    blocked_reasons: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB,
         nullable=True,
     )

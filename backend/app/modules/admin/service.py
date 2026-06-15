@@ -11,13 +11,13 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, TypedDict, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import ColumnElement, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -312,11 +312,24 @@ async def _count_open_attestation_disputes(db: AsyncSession) -> int:
     return int(result or 0)
 
 
+class DailySnapshotPayload(TypedDict):
+    """Typed daily analytics snapshot, so consumers get real field types."""
+
+    snapshot_date: date
+    gmv_total: Decimal
+    gmv_by_source: dict[str, str]
+    active_users: int
+    new_registrations: int
+    frameworks_published: int
+    attestations_issued: int
+    disputes_open: int
+
+
 async def compute_daily_snapshot_payload(
     db: AsyncSession,
     *,
     snapshot_date: date,
-) -> dict[str, object]:
+) -> DailySnapshotPayload:
     """Compute one frozen UTC daily analytics snapshot payload."""
     day_start = datetime(
         snapshot_date.year,
@@ -598,12 +611,13 @@ def _serialize_window_csv_row(
     attestations_key: str,
 ) -> dict[str, str]:
     """Convert one live dashboard window into the flat CSV contract."""
-    gmv = dashboard["gmv"]
-    active_users = dashboard["active_users"]
-    registrations = dashboard["new_registrations"]
-    frameworks = dashboard["frameworks_published"]
-    attestations = dashboard["attestations_issued"]
-    by_source = gmv[gmv_sources_key]
+    # The live dashboard is a nested dynamic mapping; cast each window section.
+    gmv = cast("dict[str, Any]", dashboard["gmv"])
+    active_users = cast("dict[str, Any]", dashboard["active_users"])
+    registrations = cast("dict[str, Any]", dashboard["new_registrations"])
+    frameworks = cast("dict[str, Any]", dashboard["frameworks_published"])
+    attestations = cast("dict[str, Any]", dashboard["attestations_issued"])
+    by_source = cast("dict[str, Any]", gmv[gmv_sources_key])
     return _csv_row(
         row_type="current_window",
         window=window,
@@ -621,8 +635,8 @@ def _serialize_window_csv_row(
 
 def _serialize_current_state_csv_row(dashboard: dict[str, object]) -> dict[str, str]:
     """Convert non-windowed live dashboard counts into the flat CSV contract."""
-    disputes = dashboard["disputes_open"]
-    frameworks = dashboard["frameworks_published"]
+    disputes = cast("dict[str, Any]", dashboard["disputes_open"])
+    frameworks = cast("dict[str, Any]", dashboard["frameworks_published"])
     return _csv_row(
         row_type="current_state",
         frameworks_published_total=str(frameworks["total"]),
@@ -791,7 +805,12 @@ async def _list_rarity_review_rows(
             Artifact.processing_status == "flagged_rarity",
         )
     )
-    return list(result.all())
+    # The outer join makes the audit nullable, but the select() types it
+    # non-optional; the declared return type is the accurate one.
+    return cast(
+        "list[tuple[Artifact, Framework, User, ArtifactRarityAudit | None]]",
+        list(result.all()),
+    )
 
 
 async def _latest_pii_audits_by_artifact(
@@ -864,14 +883,17 @@ def _near_duplicate_block_item(
     rarity_audits: dict[UUID, ArtifactRarityAudit | None],
 ) -> dict[str, Any]:
     """Serialize one framework-level near-duplicate block row."""
+
+    def _internal_jaccard_key(artifact: Artifact) -> Decimal:
+        """Rank by internal Jaccard, treating missing audits as zero."""
+        audit = rarity_audits.get(artifact.id)
+        if audit is not None and audit.internal_jaccard is not None:
+            return audit.internal_jaccard
+        return Decimal("0.0000")
+
     ranked_artifacts = sorted(
         blocked_artifacts,
-        key=lambda artifact: (
-            rarity_audits.get(artifact.id).internal_jaccard
-            if rarity_audits.get(artifact.id) is not None
-            and rarity_audits[artifact.id].internal_jaccard is not None
-            else Decimal("0.0000")
-        ),
+        key=_internal_jaccard_key,
         reverse=True,
     )
     primary_artifact = ranked_artifacts[0]
@@ -1100,7 +1122,7 @@ async def list_admin_users(
             detail="Unsupported user directory filter.",
         )
 
-    filters = []
+    filters: list[ColumnElement[bool]] = []
     if status_filter == "active":
         filters.append(User.suspended_at.is_(None))
     elif status_filter == "suspended":
