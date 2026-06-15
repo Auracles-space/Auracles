@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 from httpx import AsyncClient  # noqa: F401
 from sqlalchemy import create_engine, delete, inspect, select  # noqa: F401
 
@@ -16,6 +17,7 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
+from app.modules.attestation import credential_service
 from app.modules.attestation.models import AttestationUploadSession, Credential
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
@@ -111,3 +113,68 @@ def test_credentials_table_has_verification_columns(migrated_database: None) -> 
         "reviewed_by",
         "rejection_reason",
     } <= columns
+
+
+async def _seed_credential(user_id: UUID, **kwargs) -> UUID:
+    async with async_session_factory() as session:
+        async with session.begin():
+            credential = Credential(
+                user_id=user_id,
+                title=kwargs.pop("title", "PMP"),
+                issuer=kwargs.pop("issuer", "PMI"),
+                issued_date=kwargs.pop("issued_date", date(2024, 1, 1)),
+                **kwargs,
+            )
+            session.add(credential)
+            await session.flush()
+            return credential.id
+
+
+async def test_submit_requires_evidence(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Submitting a credential with no evidence/url/reference is rejected 422."""
+    del migrated_database, credential_context
+    user_id = await create_user("submit-noev@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(user_id)
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        with pytest.raises(HTTPException) as exc:
+            await credential_service.submit_credential(
+                db=session, user=user, credential_id=credential_id
+            )
+    assert exc.value.status_code == 422
+
+
+async def test_submit_transitions_to_pending(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """A credential with a reference number can be submitted -> pending."""
+    del migrated_database, credential_context
+    user_id = await create_user("submit-ok@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(user_id, reference_number="PMP-1")
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        result = await credential_service.submit_credential(
+            db=session, user=user, credential_id=credential_id
+        )
+    assert result.verification_status == "pending"
+    assert result.submitted_at is not None
+
+
+async def test_submit_blocked_when_already_verified(
+    migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Submitting an already-verified credential raises 422."""
+    del migrated_database, credential_context
+    user_id = await create_user("submit-verified@auracles.space", ["contributor"])
+    credential_id = await _seed_credential(
+        user_id, reference_number="PMP-1", verification_status="verified"
+    )
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        with pytest.raises(HTTPException) as exc:
+            await credential_service.submit_credential(
+                db=session, user=user, credential_id=credential_id
+            )
+    assert exc.value.status_code == 422

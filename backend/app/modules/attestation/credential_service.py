@@ -31,6 +31,8 @@ from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS = 300
 CREDENTIAL_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
 
+_SUBMITTABLE_STATUSES = {"unverified", "rejected"}
+
 
 def _safe_file_name(file_name: str) -> str:
     """Return a path-safe file name segment for Credential evidence keys."""
@@ -65,6 +67,68 @@ async def create_credential(
             target_id=credential.id,
             metadata={"title": credential.title},
         )
+        await db.refresh(credential)
+    return credential
+
+
+async def submit_credential(
+    db: AsyncSession,
+    user: User,
+    credential_id: UUID,
+) -> Credential:
+    """Submit an owned Credential for manual Admin verification.
+
+    Transitions ``unverified``/``rejected`` to ``pending``. Requires at least
+    one piece of reviewable evidence (an uploaded file, a verification URL, or a
+    reference number) so an Admin has something to check.
+
+    Args:
+        db: Async database session.
+        user: Authenticated owner of the Credential.
+        credential_id: UUID of the Credential to submit.
+
+    Returns:
+        The updated Credential in ``pending`` state.
+
+    Raises:
+        HTTPException(404): Credential missing or not owned by the user.
+        HTTPException(422): Invalid state transition or no reviewable evidence.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        credential = await _load_owned_credential_for_update(
+            db=db, user_id=user_id, credential_id=credential_id
+        )
+        if credential.verification_status not in _SUBMITTABLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Credential cannot be submitted from its current state.",
+            )
+        has_evidence = bool(
+            credential.evidence_file_keys
+            or credential.verification_url
+            or credential.reference_number
+        )
+        if not has_evidence:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Attach evidence, a verification URL, or a reference number "
+                "before submitting.",
+            )
+        credential.verification_status = "pending"
+        credential.submitted_at = datetime.now(UTC)
+        credential.rejection_reason = None
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="credential_submitted",
+            target_type="credential",
+            target_id=credential.id,
+            metadata={"title": credential.title},
+        )
+        await db.flush()
         await db.refresh(credential)
     return credential
 
