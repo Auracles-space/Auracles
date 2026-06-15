@@ -655,18 +655,45 @@ async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> No
     )
 
 
+async def _payout_from_metadata(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> Payout | None:
+    """Return the Payout named by the transfer metadata ``payout_id``, if any."""
+    payout_id_raw = _event_metadata(event).get("payout_id")
+    if not payout_id_raw:
+        return None
+    try:
+        payout_id = UUID(payout_id_raw)
+    except ValueError:
+        return None
+    return await db.get(Payout, payout_id)
+
+
 async def _handle_transfer_event(
     db: AsyncSession,
     event: dict[str, Any],
     *,
     payout_status: str,
 ) -> None:
-    """Apply Stripe transfer status to an existing payout row when present."""
+    """Apply Stripe transfer status to an existing payout row when present.
+
+    Matches the payout first by stored ``provider_ref`` (the transfer id). When
+    that misses — a ``transfer.created`` event can arrive before the worker
+    commits ``provider_ref`` — falls back to the ``payout_id`` carried in the
+    transfer metadata and backfills the reference. Unknown transfers no-op.
+    """
     transfer_id = _event_object_id(event)
     if transfer_id is None:
         raise WebhookProcessingError("transfer event missing transfer id")
     payout = await db.scalar(select(Payout).where(Payout.provider_ref == transfer_id))
     if payout is None:
+        payout = await _payout_from_metadata(db, event)
+        if payout is None:
+            return
+        if payout.provider_ref is None:
+            payout.provider_ref = transfer_id
+    if payout.status == payout_status:
         return
     payout.status = payout_status
     if payout_status == "completed":
@@ -730,11 +757,11 @@ async def _dispatch_verified_event(
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
-    if event_type == "transfer.paid":
+    if event_type == "transfer.created":
         await _handle_transfer_event(db, event, payout_status="completed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
-    if event_type == "transfer.failed":
+    if event_type == "transfer.reversed":
         await _handle_transfer_event(db, event, payout_status="failed")
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
