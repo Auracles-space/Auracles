@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import cast
 from uuid import UUID
@@ -16,7 +16,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import get_settings
 from app.integrations import s3
-from app.modules.attestation.models import Attestation
+from app.modules.attestation.models import Attestation, Credential
+from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
 from app.modules.collections.models import CollectionFramework, FrameworkCollection
 from app.modules.explore.schemas import (
@@ -1173,6 +1174,29 @@ async def get_contributor_profile(
         target_ids=[contributor_id],
     )
 
+    credential_rows = await db.execute(
+        select(Credential)
+        .where(
+            Credential.user_id == contributor_id,
+            Credential.verification_status == "verified",
+        )
+        .order_by(Credential.issued_date.desc())
+    )
+    verified_credentials = [
+        PublicCredentialResponse(
+            title=credential.title,
+            issuer=credential.issuer,
+            credential_type=credential.credential_type,
+            issued_date=credential.issued_date,
+            expires_date=credential.expires_date,
+            expired=(
+                credential.expires_date is not None
+                and credential.expires_date < date.today()
+            ),
+        )
+        for credential in credential_rows.scalars().all()
+    ]
+
     return ExploreContributorProfile(
         id=contributor.id,
         display_name=contributor.display_name,
@@ -1196,4 +1220,5 @@ async def get_contributor_profile(
             )
             for framework in frameworks
         ],
+        verified_credentials=verified_credentials,
     )

@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.reputation.schemas import ReputationSummary
 
 ExploreSort = Literal[
@@ -184,6 +185,7 @@ class ExploreContributorProfile(BaseModel):
     is_deactivated: bool = False
     published_framework_count: int
     published_frameworks: list[ExploreFrameworkCard]
+    verified_credentials: list[PublicCredentialResponse] = []
 
 
 class ExploreSearchFilters(BaseModel):
