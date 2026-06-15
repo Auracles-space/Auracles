@@ -75,4 +75,9 @@ jobs:
       - run: corepack pnpm lint
       - run: corepack pnpm typecheck
       - run: corepack pnpm test:coverage
+      # NEXT_PUBLIC_* vars are inlined at build time. This CI build only verifies
+      # the app compiles and is never deployed, so a dummy publishable key is
+      # enough to satisfy the build-time key check. Vercel uses the real key.
       - run: corepack pnpm build
+        env:
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
