@@ -28,7 +28,6 @@ const publicAuthPaths = new Set([
 const protectedPathPrefixes: RoleProtectedPrefix[] = [
   { prefix: "/2fa-setup", requiredRoles: null },
   { prefix: "/admin", requiredRoles: ["admin"] },
-  { prefix: "/assignments", requiredRoles: ["attestor"] },
   { prefix: "/attestations", requiredRoles: ["attestor"] },
   { prefix: "/attestor", requiredRoles: ["attestor"] },
   { prefix: "/checkout", requiredRoles: ["operator"] },

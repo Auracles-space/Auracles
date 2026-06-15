@@ -55,8 +55,6 @@ export async function middleware(request: NextRequest) {
   }
 
   const redirectUrl = request.nextUrl.clone();
-  redirectUrl.pathname = decision.location;
-  redirectUrl.search = "";
   const parsedLocation = new URL(decision.location, request.url);
   redirectUrl.pathname = parsedLocation.pathname;
   redirectUrl.search = parsedLocation.search;

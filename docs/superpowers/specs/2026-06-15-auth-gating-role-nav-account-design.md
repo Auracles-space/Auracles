@@ -125,9 +125,11 @@ local `.env` for the frontend; middleware verification fails closed without it
 - **Sidebar account widget → dropdown** (client component using `token-store`
   roles + a server-provided display name/email): shows name, email, active
   roles, theme toggle, and **Sign out**.
-- **Sign out**: call the existing logout endpoint (revokes refresh token),
-  `clearAuthToken()`, clear `session_hint` (server action / route handler since
-  it is `HttpOnly`), redirect `/login`.
+- **Sign out**: call the existing logout endpoint (revokes refresh token and
+  clears `session_hint` server-side via `Set-Cookie`), `clearAuthToken()`, and
+  also clear `session_hint` client-side via `document.cookie` (it is
+  `httponly=False` — a signed non-secret hint the middleware/JS read), redirect
+  `/login`.
 - **`/settings/profile` page** under `(auth)/settings`:
   - Identity: name, email, avatar, active roles.
   - **Email verification**: show `email_verified`; if false, a "Resend
