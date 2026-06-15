@@ -283,3 +283,26 @@ async def test_editing_non_material_field_keeps_verification(
             payload=CredentialUpdateRequest(expires_date="2030-01-01"),
         )
     assert result.verification_status == "verified"
+
+
+async def test_submit_endpoint_owner_only(
+    client: AsyncClient, migrated_database: None, credential_context: FakeRedis
+) -> None:
+    """Owner can submit; a non-owner gets 404; response carries verification_status."""
+    del migrated_database, credential_context
+    owner_id = await create_user("ep-owner@auracles.space", ["contributor"])
+    outsider_id = await create_user("ep-outsider@auracles.space", ["contributor"])
+    credential_id = str(await _seed_credential(owner_id, reference_number="PMP-1"))
+
+    outsider = await client.post(
+        f"/v1/credentials/{credential_id}/submit",
+        headers=auth_headers(outsider_id, ["contributor"]),
+    )
+    owner = await client.post(
+        f"/v1/credentials/{credential_id}/submit",
+        headers=auth_headers(owner_id, ["contributor"]),
+    )
+    assert outsider.status_code == 404
+    assert owner.status_code == 200
+    assert owner.json()["verification_status"] == "pending"
+    assert owner.json()["expired"] is False

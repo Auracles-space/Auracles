@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date as _date
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from app.modules.attestation import (
 )
 from app.modules.attestation import service as attestation_service
 from app.modules.attestation.dependencies import require_approved_attestor
+from app.modules.attestation.models import Credential as _CredentialModel
 from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDisputeResolveRequest,
@@ -58,6 +60,42 @@ RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
 ApprovedAttestorUser = Annotated[User, Depends(require_approved_attestor)]
+
+
+def _credential_response(credential: _CredentialModel) -> CredentialResponse:
+    """Build a CredentialResponse with the derived ``expired`` flag."""
+    expired = (
+        credential.expires_date is not None
+        and credential.expires_date < _date.today()
+    )
+    return CredentialResponse.model_validate(
+        {
+            **{
+                column: getattr(credential, column)
+                for column in (
+                    "id",
+                    "user_id",
+                    "title",
+                    "issuer",
+                    "issued_date",
+                    "expires_date",
+                    "evidence_file_keys",
+                    "credential_type",
+                    "verification_url",
+                    "reference_number",
+                    "issuer_type",
+                    "verification_status",
+                    "submitted_at",
+                    "verified_at",
+                    "reviewed_by",
+                    "rejection_reason",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+            "expired": expired,
+        }
+    )
 RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
 
 
@@ -461,7 +499,7 @@ async def create_credential(
         user=user,
         payload=payload,
     )
-    return CredentialResponse.model_validate(credential)
+    return _credential_response(credential)
 
 
 @router.get("/credentials", response_model=CredentialsResponse)
@@ -473,8 +511,7 @@ async def list_credentials(
     credentials = await credential_service.list_credentials(db=db, user=user)
     return CredentialsResponse(
         credentials=[
-            CredentialResponse.model_validate(credential)
-            for credential in credentials
+            _credential_response(credential) for credential in credentials
         ]
     )
 
@@ -493,7 +530,23 @@ async def update_credential(
         credential_id=credential_id,
         payload=payload,
     )
-    return CredentialResponse.model_validate(credential)
+    return _credential_response(credential)
+
+
+@router.post(
+    "/credentials/{credential_id}/submit",
+    response_model=CredentialResponse,
+)
+async def submit_credential(
+    credential_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialResponse:
+    """Submit an owned Credential for manual Admin verification."""
+    credential = await credential_service.submit_credential(
+        db=db, user=user, credential_id=credential_id
+    )
+    return _credential_response(credential)
 
 
 @router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
