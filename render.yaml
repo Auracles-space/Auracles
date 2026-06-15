@@ -78,7 +78,7 @@ services:
     plan: starter
     autoDeploy: false
     healthCheckPath: /v1/health
-    startCommand: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    dockerCommand: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     envVars:
       - fromGroup: auracles-secrets
       - key: ENVIRONMENT
@@ -101,7 +101,7 @@ services:
     dockerContext: ./backend
     plan: starter
     autoDeploy: false
-    startCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    dockerCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     envVars:
       - fromGroup: auracles-secrets
       - key: ENVIRONMENT
@@ -119,7 +119,7 @@ services:
     dockerContext: ./backend
     plan: starter
     autoDeploy: false
-    startCommand: celery -A app.workers.celery_app beat --loglevel=info --scheduler=celery.beat.PersistentScheduler
+    dockerCommand: celery -A app.workers.celery_app beat --loglevel=info --scheduler=celery.beat.PersistentScheduler
     envVars:
       - fromGroup: auracles-secrets
       - key: ENVIRONMENT
