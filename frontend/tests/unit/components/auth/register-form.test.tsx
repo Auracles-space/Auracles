@@ -77,7 +77,7 @@ describe("RegisterForm", () => {
 
   it("submits valid registration details through the generated client", async () => {
     vi.mocked(registerUser).mockResolvedValue({
-      data: { message: "If that email needs verification, we've sent a verification link. Check your inbox." },
+      data: { message: "We've sent a verification link to your email. Please check your inbox to activate your account." },
       error: undefined,
       response: new Response(null, { status: 200 }),
     });

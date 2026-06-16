@@ -21,8 +21,15 @@ POST {{host}}/v1/auth/verify-email
 Content-Type: application/json
 
 {
-  "token": "705deac1-d92f-476b-8619-433b5fb29448"
+  "token": "ev_kT-EGFI047msBthDxqu2XjUE2Bn_XLOg85kZMTGdj5k"
 }
+
+HTTP/1.1 500  - Internal Server Error
+date: Tue, 16 Jun 2026 15:11:30 GMT
+server: uvicorn
+content-length: 21
+content-type: text/plain; charset=utf-8
+connection: close
 ###
 POST {{host}}/v1/auth/login
 Content-Type: application/json

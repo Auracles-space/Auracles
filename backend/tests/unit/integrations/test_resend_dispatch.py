@@ -117,6 +117,29 @@ def test_delivery_disabled_logs_and_skips_resend(
     resend_adapter.send_verification_email("user@auracles.space", "tok-xyz")
 
 
+def test_delivery_disabled_logs_token_in_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The disabled-mode log embeds the token in the message text.
+
+    The dev (text) log format renders only ``{message}`` and drops bound extras,
+    so the token must be in the message itself to be retrievable without JSON.
+    """
+    from loguru import logger as loguru_logger
+
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=False)
+    )
+    messages: list[str] = []
+    sink_id = loguru_logger.add(messages.append, format="{message}")
+    try:
+        resend_adapter.send_verification_email("user@auracles.space", "tok-XYZ")
+    finally:
+        loguru_logger.remove(sink_id)
+
+    assert any("tok-XYZ" in message for message in messages)
+
+
 def test_delivery_enabled_dispatches_to_resend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

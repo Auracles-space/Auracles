@@ -108,8 +108,12 @@ def _delivery_disabled(
     """
     if get_settings().email_send_enabled:
         return False
+    # Inline the fields into the message: the dev (text) log format renders only
+    # {message} and drops bound extras, so the token must live in the message to
+    # be retrievable without switching to JSON logs.
+    parts = [f"email={email}", *(f"{key}={value}" for key, value in fields.items())]
     logger.bind(module=module, action=action).info(
-        "email_delivery_disabled", email=email, **fields
+        "email_delivery_disabled " + " ".join(parts)
     )
     return True
 

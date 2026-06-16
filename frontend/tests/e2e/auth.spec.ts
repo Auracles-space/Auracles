@@ -140,7 +140,7 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
     }
 
     if (path === "/v1/auth/register") {
-      await fulfillJson(route, { message: "If that email needs verification, we've sent a verification link. Check your inbox." });
+      await fulfillJson(route, { message: "We've sent a verification link to your email. Please check your inbox to activate your account." });
       return;
     }
 
@@ -271,7 +271,8 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
   await page.goto("/register");
   await page.getByLabel("Display name").fill("Ada Markets");
   await page.getByLabel("Email").fill("ada@example.com");
-  await page.getByLabel("Password").fill("StrongerPass123!");
+  await page.locator("input#password").fill("StrongerPass123!");
+  await page.locator("input#confirm_password").fill("StrongerPass123!");
   await page.getByLabel("Operator").check();
   await page.getByLabel(/I agree to the Terms/).check();
   await page.getByRole("button", { name: "Create account" }).click();
@@ -283,7 +284,7 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
 
   await page.goto("/login");
   await page.getByLabel("Email").fill("ada@example.com");
-  await page.getByLabel("Password").fill("StrongerPass123!");
+  await page.locator("input#password").fill("StrongerPass123!");
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/settings\/onboarding$/);
   await expect(page.getByText(/browse and preview frameworks/i)).toBeVisible();
@@ -294,7 +295,7 @@ test("completes login through a 2FA challenge", async ({ page }) => {
 
   await page.goto("/login");
   await page.getByLabel("Email").fill("ada@example.com");
-  await page.getByLabel("Password").fill("StrongerPass123!");
+  await page.locator("input#password").fill("StrongerPass123!");
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/2fa-challenge\?challenge=challenge-token$/);
   await page.waitForLoadState("networkidle");
@@ -313,7 +314,8 @@ test("runs the password reset browser loop", async ({ page }) => {
   await expect(page.getByText(/reset link sent/i)).toBeVisible();
 
   await page.goto("/reset-password?token=reset-token");
-  await page.getByLabel("New password").fill("NewStrongPass123!");
+  await page.locator("input#new_password").fill("NewStrongPass123!");
+  await page.locator("input#confirm_password").fill("NewStrongPass123!");
   await page.getByRole("button", { name: "Save password" }).click();
   await expect(page.getByText("Password reset.")).toBeVisible();
 });
