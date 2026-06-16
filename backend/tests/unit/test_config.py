@@ -33,7 +33,7 @@ def test_settings_appends_ssl_cert_reqs_for_rediss_urls() -> None:
     """rediss:// (Upstash) must carry ssl_cert_reqs on every URL, cache included."""
     settings = Settings(REDIS_URL="rediss://default:pw@host.upstash.io:6379")
 
-    expected = "rediss://default:pw@host.upstash.io:6379/0?ssl_cert_reqs=CERT_REQUIRED"
+    expected = "rediss://default:pw@host.upstash.io:6379/0?ssl_cert_reqs=required"
     assert settings.celery_broker_url == expected
     assert settings.celery_result_backend == expected
     assert settings.cache_redis_url == expected

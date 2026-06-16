@@ -48,7 +48,7 @@ def _celery_redis_url(url: str, database: int) -> str:
     parsed = parsed._replace(path=f"/{database}")
     if parsed.scheme == "rediss":
         query = dict(parse_qsl(parsed.query))
-        query.setdefault("ssl_cert_reqs", "CERT_REQUIRED")
+        query.setdefault("ssl_cert_reqs", "required")
         parsed = parsed._replace(query=urlencode(query))
     return urlunsplit(parsed)
 
