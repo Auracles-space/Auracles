@@ -8,6 +8,10 @@ vi.mock("@/components/modules/layout/authenticated-account-menu", () => ({
   AuthenticatedAccountMenu: () => <div>Account menu</div>,
 }));
 
+vi.mock("@/components/modules/layout/notification-dropdown", () => ({
+  NotificationDropdown: () => <div>Notifications dropdown</div>,
+}));
+
 describe("AuthenticatedAppShell", () => {
   it("renders persistent product navigation around app pages", () => {
     render(
