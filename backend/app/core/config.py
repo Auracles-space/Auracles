@@ -37,11 +37,6 @@ def _resolve_env_file() -> str:
     return os.getenv("ENV_FILE", ".env")
 
 
-def _replace_database(url: str, database: int) -> str:
-    parsed = urlsplit(url)
-    return urlunsplit(parsed._replace(path=f"/{database}"))
-
-
 def _celery_redis_url(url: str, database: int) -> str:
     """Build a Celery broker/backend URL, adding TLS verification for ``rediss://``.
 
@@ -328,8 +323,15 @@ class Settings(BaseSettings):
 
     @property
     def cache_redis_url(self) -> str:
-        """Use Redis database 1 for application cache and rate limiting."""
-        return _replace_database(self.redis_url, 1)
+        """Use Redis database 0 for application cache, sessions, and rate limiting.
+
+        Upstash serverless Redis supports only DB 0, so app traffic shares the
+        Celery database. App keys are namespaced by domain prefixes (``refresh:``,
+        ``rate_limit:``, ``email_verify:`` ...) and never collide with Celery's
+        ``celery-task-meta-*``/``_kombu.*`` keyspace. Reuses the TLS-aware builder
+        so ``rediss://`` (Upstash) carries ``ssl_cert_reqs``.
+        """
+        return _celery_redis_url(self.redis_url, 0)
 
 
 @lru_cache

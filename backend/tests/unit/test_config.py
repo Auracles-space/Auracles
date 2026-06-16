@@ -16,22 +16,27 @@ def test_resolve_env_file_honors_override(monkeypatch) -> None:
     assert config._resolve_env_file() == ".env.prod"
 
 
-def test_settings_derives_celery_and_cache_redis_databases() -> None:
-    """Redis database 0 is reserved for Celery and database 1 for app cache."""
+def test_settings_pins_all_redis_traffic_to_database_zero() -> None:
+    """Upstash supports only DB 0, so Celery and app cache share database 0.
+
+    App keys are namespaced by domain prefixes (refresh:, rate_limit:, etc.)
+    and never collide with Celery's celery-task-meta-*/_kombu.* keyspace.
+    """
     settings = Settings(REDIS_URL="redis://localhost:6379/7")
 
     assert settings.celery_broker_url == "redis://localhost:6379/0"
     assert settings.celery_result_backend == "redis://localhost:6379/0"
-    assert settings.cache_redis_url == "redis://localhost:6379/1"
+    assert settings.cache_redis_url == "redis://localhost:6379/0"
 
 
-def test_settings_appends_ssl_cert_reqs_for_rediss_celery_urls() -> None:
-    """Celery rejects rediss:// without ssl_cert_reqs; broker+backend must carry it."""
+def test_settings_appends_ssl_cert_reqs_for_rediss_urls() -> None:
+    """rediss:// (Upstash) must carry ssl_cert_reqs on every URL, cache included."""
     settings = Settings(REDIS_URL="rediss://default:pw@host.upstash.io:6379")
 
     expected = "rediss://default:pw@host.upstash.io:6379/0?ssl_cert_reqs=CERT_REQUIRED"
     assert settings.celery_broker_url == expected
     assert settings.celery_result_backend == expected
+    assert settings.cache_redis_url == expected
 
 
 def test_settings_plain_redis_celery_urls_have_no_ssl_param() -> None:
@@ -39,6 +44,7 @@ def test_settings_plain_redis_celery_urls_have_no_ssl_param() -> None:
     settings = Settings(REDIS_URL="redis://localhost:6379/3")
 
     assert settings.celery_broker_url == "redis://localhost:6379/0"
+    assert settings.cache_redis_url == "redis://localhost:6379/0"
     assert "ssl_cert_reqs" not in settings.cache_redis_url
 
 
