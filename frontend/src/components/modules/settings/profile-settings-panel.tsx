@@ -60,6 +60,64 @@ function formatKycLabel(status: string): string {
   }
 }
 
+type UserRole = "admin" | "attestor" | "contributor" | "operator";
+
+/**
+ * Render a styled role badge with an inline SVG icon.
+ *
+ * @param props - Raw role identifier.
+ */
+function RoleBadge({ role }: { role: string }) {
+  const normalized = role.toLowerCase() as UserRole;
+  
+  let styles = "bg-foreground/5 border-border-default text-foreground-muted";
+  let icon = null;
+  let label = role;
+
+  if (normalized === "admin") {
+    styles = "bg-accent/10 border-accent/20 text-accent";
+    label = "Admin";
+    icon = (
+      <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    );
+  } else if (normalized === "attestor") {
+    styles = "bg-info/10 border-info/20 text-info";
+    label = "Attestor";
+    icon = (
+      <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+      </svg>
+    );
+  } else if (normalized === "contributor") {
+    styles = "bg-success/10 border-success/20 text-success";
+    label = "Contributor";
+    icon = (
+      <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      </svg>
+    );
+  } else if (normalized === "operator") {
+    styles = "bg-warning/10 border-warning/20 text-warning";
+    label = "Operator";
+    icon = (
+      <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    );
+  }
+
+  return (
+    <span
+      className={`inline-flex h-7 items-center gap-1.5 rounded-badge border px-2.5 text-xs font-medium uppercase tracking-[0.05em] ${styles}`}
+    >
+      {icon}
+      {label}
+    </span>
+  );
+}
+
 /**
  * Render the private identity, email-verification, and KYC summary page.
  */
@@ -94,10 +152,6 @@ export function ProfileSettingsPanel() {
     };
   }, []);
 
-  const roleLabels = useMemo(
-    () => currentUser?.roles.map((role) => formatRoleLabel(role)) ?? [],
-    [currentUser?.roles],
-  );
   const kycLabel = useMemo(
     () => formatKycLabel(currentUser?.kyc_status ?? "unverified"),
     [currentUser?.kyc_status],
@@ -161,14 +215,9 @@ export function ProfileSettingsPanel() {
                 </p>
                 <p className="text-sm text-foreground-muted">{currentUser.email}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {roleLabels.map((label) => (
-                  <span
-                    className="rounded-md border border-border-default bg-background px-2 py-1 text-xs font-medium text-foreground"
-                    key={label}
-                  >
-                    {label}
-                  </span>
+              <div className="flex flex-wrap gap-2 items-start md:justify-end">
+                {currentUser.roles.map((role) => (
+                  <RoleBadge key={role} role={role} />
                 ))}
               </div>
             </div>

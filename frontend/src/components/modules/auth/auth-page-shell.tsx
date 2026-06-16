@@ -36,26 +36,26 @@ export function AuthPageShell({
         <BrandLogo className="h-8 w-32" />
       </div>
 
-      <section className="mx-auto grid w-full max-w-[1180px] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)] md:items-stretch md:gap-8">
+      <section className="mx-auto grid w-full max-w-[1180px] gap-4 md:grid-cols-[minmax(0,1fr)_minmax(380px,0.85fr)] md:items-stretch md:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)] lg:gap-8">
         {/* Desktop-only branded sidebar panel */}
-        <aside className="brand-gradient-soft relative hidden flex-col justify-between overflow-hidden rounded-hero border border-border-default p-10 md:flex">
+        <aside className="brand-gradient-soft relative hidden flex-col justify-between overflow-hidden rounded-hero border border-border-default p-6 lg:p-8 xl:p-10 md:flex">
           <div className="flex items-center gap-2">
             <BrandLogo className="h-8 w-32" />
           </div>
 
-          <div className="mt-20">
+          <div className="mt-10 lg:mt-16 xl:mt-20">
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
               {eyebrow}
             </p>
-            <h1 className="mt-3 max-w-md font-heading text-5xl font-bold leading-tight tracking-tight text-foreground">
+            <h1 className="mt-3 max-w-md font-heading text-3xl lg:text-4xl xl:text-5xl font-bold leading-tight tracking-tight text-foreground">
               {title}
             </h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-foreground-muted">
+            <p className="mt-4 max-w-md text-sm lg:text-base leading-relaxed text-foreground-muted">
               {summary}
             </p>
           </div>
 
-          <div className="mt-10">
+          <div className="mt-8 lg:mt-10">
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
               Trust by design
             </p>
@@ -88,7 +88,7 @@ export function AuthPageShell({
           </div>
         </aside>
 
-        <div className="rounded-[32px] border border-border-default bg-surface-1 p-5 shadow-bento md:p-10">
+        <div className="rounded-[32px] border border-border-default bg-surface-1 p-5 shadow-bento md:p-8 lg:p-10">
           {children}
         </div>
       </section>
