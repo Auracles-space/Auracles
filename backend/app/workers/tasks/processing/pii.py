@@ -7,6 +7,7 @@ row, and pauses processing when any PII is found.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -32,11 +33,32 @@ class PiiFinding:
     end: int
 
 
-def detect_pii_from_text(text: str) -> list[PiiFinding]:
-    """Detect PII in extracted text with Presidio Analyzer."""
+def _build_analyzer() -> Any:
+    """Construct a Presidio AnalyzerEngine.
+
+    This loads the spaCy ``en_core_web_lg`` model (hundreds of MB of RAM) and is
+    therefore expensive — call it once per process via :func:`_get_analyzer`.
+    """
     from presidio_analyzer import AnalyzerEngine
 
-    analyzer = AnalyzerEngine()
+    return AnalyzerEngine()
+
+
+@lru_cache(maxsize=1)
+def _get_analyzer() -> Any:
+    """Return a process-cached Presidio analyzer.
+
+    Building the engine per task reloaded the spaCy model on every artifact and,
+    multiplied by Celery worker concurrency, exhausted worker memory (OOM
+    restarts on Render). Caching one instance per worker process keeps the model
+    resident and bounded.
+    """
+    return _build_analyzer()
+
+
+def detect_pii_from_text(text: str) -> list[PiiFinding]:
+    """Detect PII in extracted text with Presidio Analyzer."""
+    analyzer = _get_analyzer()
     results = analyzer.analyze(text=text, language="en")
     return [
         PiiFinding(

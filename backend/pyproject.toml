@@ -60,6 +60,11 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+# Inline HTML email templates have long style attributes that cannot be
+# wrapped without breaking the markup; line length is not meaningful here.
+"app/integrations/resend.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.13"
 plugins = ["pydantic.mypy"]

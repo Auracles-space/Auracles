@@ -8,10 +8,10 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
+# Virus scanning runs in a separate ClamAV service (see render.yaml / compose);
+# the worker streams files to it over TCP, so no clamd binary is needed here.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        clamav \
-        clamav-daemon \
         fonts-dejavu-core \
         libgdk-pixbuf-2.0-0 \
         libpango-1.0-0 \

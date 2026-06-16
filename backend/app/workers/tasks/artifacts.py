@@ -37,10 +37,26 @@ def process_artifact(self: Any, artifact_id: str) -> None:
 
 
 def scan_file_with_clamav(path: str) -> str:
-    """Return `clean` or `infected` after scanning a local file with ClamAV."""
+    """Return `clean` or `infected` after scanning a local file with ClamAV.
+
+    clamd runs as a separate service in production (its ~1GB+ signature database
+    must stay off this worker). A remote daemon cannot read the worker's
+    filesystem, so when ``CLAMAV_HOST`` is configured the file bytes are streamed
+    over TCP via INSTREAM. Without a host (single-host/local dev) the local
+    Unix-socket daemon scans the path directly.
+    """
     import clamd  # type: ignore[import-untyped]
 
-    result = clamd.ClamdUnixSocket().scan(path)
+    settings = get_settings()
+    if settings.clamav_host:
+        client = clamd.ClamdNetworkSocket(
+            host=settings.clamav_host, port=settings.clamav_port
+        )
+        with open(path, "rb") as file_obj:
+            result = client.instream(file_obj)
+    else:
+        result = clamd.ClamdUnixSocket().scan(path)
+
     if result is None:
         return "clean"
     status = next(iter(result.values()))[0]

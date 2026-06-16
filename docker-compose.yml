@@ -31,6 +31,20 @@ services:
     ports:
       - "4566:4566"
 
+  # ClamAV daemon — separate service so its ~1GB signature DB stays off the
+  # worker. The worker streams files over TCP (INSTREAM) via CLAMAV_HOST.
+  # First boot runs freshclam to fetch signatures (slow — hence start_period).
+  clamav:
+    image: clamav/clamav:stable
+    ports:
+      - "3310:3310"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
   api:
     build: ./backend
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -54,6 +68,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      clamav:
+        condition: service_healthy
+    environment:
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
     env_file:
       - ./backend/.env
 

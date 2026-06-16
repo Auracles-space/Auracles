@@ -176,6 +176,8 @@ class Settings(BaseSettings):
     platform_commission_rate: float = Field(
         default=0.15, alias="PLATFORM_COMMISSION_RATE"
     )
+    clamav_host: str | None = Field(default=None, alias="CLAMAV_HOST")
+    clamav_port: int = Field(default=3310, alias="CLAMAV_PORT")
 
     @field_validator("cors_allowed_origins")
     @classmethod
