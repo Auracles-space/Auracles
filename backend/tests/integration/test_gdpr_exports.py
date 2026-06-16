@@ -485,7 +485,8 @@ async def test_export_download_is_rate_limited_per_user(
     )
 
     assert limited.status_code == 429
-    assert limited.json()["detail"] == "Rate limit exceeded."
+    assert limited.json()["detail"].startswith("Too many attempts. Please try again in")
+    assert "Retry-After" in limited.headers
     assert (
         export_test_context["redis"].ttls[
             f"rate_limit:gdpr_export_download:{user_id}"

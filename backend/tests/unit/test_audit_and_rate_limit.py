@@ -93,6 +93,35 @@ async def test_rate_limiter_allows_until_limit_then_raises_429() -> None:
     assert redis.expirations["rate_limit:login_ip:127.0.0.1"] == 60
 
 
+async def test_rate_limiter_429_reports_retry_minutes_and_header() -> None:
+    """A minute-scale window surfaces a human wait time and a Retry-After header."""
+    redis = FakeRedis()
+    limiter = RateLimiter(namespace="login_ip", limit=1, window=60)
+
+    await limiter.check(redis, "1.1.1.1")
+    with pytest.raises(HTTPException) as exc_info:
+        await limiter.check(redis, "1.1.1.1")
+
+    error = exc_info.value
+    assert "1 minute" in error.detail
+    assert error.headers is not None
+    assert error.headers["Retry-After"] == "60"
+
+
+async def test_rate_limiter_429_reports_retry_seconds() -> None:
+    """A sub-minute window is phrased in seconds, not minutes."""
+    redis = FakeRedis()
+    limiter = RateLimiter(namespace="forgot_password", limit=1, window=30)
+
+    await limiter.check(redis, "user@example.com")
+    with pytest.raises(HTTPException) as exc_info:
+        await limiter.check(redis, "user@example.com")
+
+    error = exc_info.value
+    assert "30 seconds" in error.detail
+    assert error.headers["Retry-After"] == "30"
+
+
 async def test_rate_limiter_sets_expiry_when_counter_has_no_ttl() -> None:
     """Rate limiter repairs counters that somehow exist without expiration."""
     redis = FakeRedis()

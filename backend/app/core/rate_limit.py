@@ -4,9 +4,30 @@ Endpoints use this small helper to protect auth-sensitive paths without
 coupling router code to Redis command details.
 """
 
+import math
 from typing import Protocol
 
 from fastapi import HTTPException, status
+
+
+def _format_retry_phrase(seconds: int) -> str:
+    """Render a wait duration as a short, user-facing phrase.
+
+    Sub-minute waits are reported in seconds; longer waits are rounded up to
+    whole minutes so the message never tells a user to retry "in 0 minutes".
+
+    Args:
+        seconds: Remaining cooldown in seconds.
+
+    Returns:
+        A phrase like ``"30 seconds"`` or ``"2 minutes"``.
+    """
+    if seconds < 60:
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{seconds} {unit}"
+    minutes = math.ceil(seconds / 60)
+    unit = "minute" if minutes == 1 else "minutes"
+    return f"{minutes} {unit}"
 
 
 class RedisCounter(Protocol):
@@ -41,7 +62,15 @@ class RateLimiter:
             await redis.expire(redis_key, self.window)
 
         if count > self.limit:
+            # Tell the user exactly how long to wait. A negative TTL means the
+            # key has no expiry recorded yet, so fall back to the full window.
+            ttl = await redis.ttl(redis_key)
+            retry_after = ttl if ttl > 0 else self.window
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded.",
+                detail=(
+                    "Too many attempts. Please try again in "
+                    f"{_format_retry_phrase(retry_after)}."
+                ),
+                headers={"Retry-After": str(retry_after)},
             )

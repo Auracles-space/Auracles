@@ -124,7 +124,7 @@ async def get_data_export_status(
         },
         status.HTTP_410_GONE: {"description": "Data export has expired."},
         status.HTTP_429_TOO_MANY_REQUESTS: {
-            "description": "Rate limit exceeded."
+            "description": "Too many attempts; see the Retry-After header."
         },
     },
 )

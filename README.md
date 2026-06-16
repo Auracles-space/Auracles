@@ -35,8 +35,15 @@ This runs `scripts/dev-up.sh`, which:
 1. Seeds `backend/.env` and `frontend/.env.local` from the committed examples on
    first run (you must fill in the secrets — see below).
 2. Starts Postgres, Redis, LocalStack (S3 — dev buckets auto-created), and the
-   API / worker / beat containers.
+   API / worker / beat containers (detached — they run in the background).
 3. Runs database migrations (`alembic upgrade head`).
+
+All three backend processes are containers, so they keep running after the
+command returns — no per-service terminal needed. The API hot-reloads on code
+changes (uvicorn `--reload`); the worker and beat do too, via a dev-only
+`docker-compose.override.yml` that wraps them in `watchmedo` (autoreload is
+**not** used in production). To watch logs live as you work, use `make dev-logs`
+instead of `make dev`.
 
 Then start the frontend (it is **not** dockerised):
 
@@ -64,19 +71,24 @@ make frontend          # or: cd frontend && pnpm install && pnpm dev
 > Vercel `SESSION_HINT_SECRET`).
 
 For local email testing, set `EMAIL_SEND_ENABLED=false` (default in the example):
-verification/reset emails are logged (with a clickable link) instead of sent
-through Resend, so you never burn the Resend daily quota.
+verification **and** password-reset emails are logged (with a clickable link)
+instead of sent through Resend, so you never burn the Resend daily quota. These
+emails are sent from Celery tasks, so the link appears in the **worker** logs
+(`docker compose logs -f worker`, or `make dev-logs`), not the API logs.
 
 ### Common commands
 
 ```bash
-make dev        # bring up backend stack + migrate
-make frontend   # run the Next.js dev server
+make dev        # bring up backend stack + migrate (detached/quiet)
+make dev-logs   # same as `make dev`, then stream api/worker/beat logs here
+make frontend   # run the Next.js dev server (foreground)
 make worker     # run the Celery worker in the foreground (shows email links)
 make migrate    # apply migrations against the running stack
-make logs       # tail API + worker logs
+make logs       # tail API + worker + beat logs
 make down       # stop the stack
 ```
+
+Typical day-to-day: `make dev-logs` in one terminal, `make frontend` in another.
 
 ClamAV (virus scanning) is started on demand — `docker compose up -d clamav` —
 because its first-boot signature download takes several minutes.
