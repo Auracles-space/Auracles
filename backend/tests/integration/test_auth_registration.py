@@ -119,7 +119,7 @@ async def test_register_creates_user_roles_verification_token_and_audit(
             "email": "NewUser@Auracles.Space ",
             "password": "CorrectHorse9",
             "display_name": "New User",
-            "roles": ["contributor", "attestor"],
+            "roles": ["contributor", "operator"],
         },
     )
 
@@ -146,14 +146,70 @@ async def test_register_creates_user_roles_verification_token_and_audit(
 
     assert user is not None
     assert user.email_verified is False
-    assert {role for role, _approved_at in roles} == {"contributor", "attestor"}
-    assert any(approved_at is None for role, approved_at in roles if role == "attestor")
+    assert {role for role, _approved_at in roles} == {"contributor", "operator"}
     assert sent_emails.calls == [
         {"email": "newuser@auracles.space", "token": sent_emails.calls[0]["token"]}
     ]
     assert sent_emails.calls[0]["token"].startswith("ev_")
     assert set(fake_redis.ttls.values()) == {86_400}
     assert audit_log is not None
+
+
+async def test_register_attestor_alone_creates_unapproved_role(
+    client: AsyncClient,
+    migrated_database: None,
+    auth_test_context: dict[str, Any],
+) -> None:
+    """Attestor registers standalone and the role persists pending admin approval.
+
+    Attestor cannot be combined with other roles at registration, and the role
+    is created unapproved (approved_at is None) until an admin grants it.
+    """
+    response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "attestor@auracles.space",
+            "password": "CorrectHorse9",
+            "display_name": "Sole Attestor",
+            "roles": ["attestor"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    async with async_session_factory() as session:
+        user = await session.scalar(
+            select(User).where(User.email == "attestor@auracles.space")
+        )
+        roles = (
+            await session.execute(
+                select(UserRole.role, UserRole.approved_at).where(
+                    UserRole.user_id == user.id
+                )
+            )
+        ).all()
+
+    assert {role for role, _approved_at in roles} == {"attestor"}
+    assert all(approved_at is None for _role, approved_at in roles)
+
+
+async def test_register_rejects_attestor_combined_with_other_roles(
+    client: AsyncClient,
+    migrated_database: None,
+    auth_test_context: dict[str, Any],
+) -> None:
+    """Combining attestor with another role at registration is rejected (422)."""
+    response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "combo@auracles.space",
+            "password": "CorrectHorse9",
+            "display_name": "Combo User",
+            "roles": ["attestor", "operator"],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 async def test_duplicate_register_returns_generic_success_without_second_user(

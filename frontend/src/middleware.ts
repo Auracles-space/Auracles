@@ -11,21 +11,6 @@ import { NextResponse } from "next/server";
 import { resolveAuthRouteDecision } from "@/lib/auth/route-guards";
 import { verifySessionHintCookie } from "@/lib/auth/session-hint-cookie";
 
-const AUTH_MATCHER_PATHS = [
-  "/2fa-challenge",
-  "/2fa-setup/:path*",
-  "/admin/:path*",
-  "/attestations/:path*",
-  "/attestor/:path*",
-  "/checkout/:path*",
-  "/dashboard/:path*",
-  "/library/:path*",
-  "/login",
-  "/projects/:path*",
-  "/register",
-  "/settings/:path*",
-];
-
 /**
  * Apply route-lock decisions from the verified session-hint cookie.
  *
@@ -61,6 +46,22 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(redirectUrl);
 }
 
+// Next.js statically analyzes this export at build time: `matcher` must be an
+// inline string-array literal, not a referenced constant, or the build fails
+// with "Invalid segment configuration export".
 export const config = {
-  matcher: AUTH_MATCHER_PATHS,
+  matcher: [
+    "/2fa-challenge",
+    "/2fa-setup/:path*",
+    "/admin/:path*",
+    "/attestations/:path*",
+    "/attestor/:path*",
+    "/checkout/:path*",
+    "/dashboard/:path*",
+    "/library/:path*",
+    "/login",
+    "/projects/:path*",
+    "/register",
+    "/settings/:path*",
+  ],
 };
