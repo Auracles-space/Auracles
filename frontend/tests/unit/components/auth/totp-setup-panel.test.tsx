@@ -104,6 +104,41 @@ describe("TotpSetupPanel", () => {
     expect(
       await screen.findByText(/two-factor authentication is enabled/i),
     ).toBeInTheDocument();
+
+    // Form resets after success: QR/verify controls collapse.
+    expect(
+      screen.queryByRole("button", { name: /verify and enable/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /start 2fa setup/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/authenticator code/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("copies backup codes to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    vi.mocked(setupTotp).mockResolvedValue({
+      data: {
+        backup_codes: ["aaaa-1111", "bbbb-2222"],
+        provisioning_uri: "otpauth://totp/Auracles:ada",
+        qr_png_base64: "QRDATA",
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<TotpSetupPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /start 2fa setup/i }));
+
+    const copy = await screen.findByRole("button", { name: /copy codes/i });
+    fireEvent.click(copy);
+
+    expect(writeText).toHaveBeenCalledWith("aaaa-1111\nbbbb-2222");
+    expect(await screen.findByText(/copied/i)).toBeInTheDocument();
   });
 
   it("surfaces a setup error from the API", async () => {

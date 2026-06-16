@@ -37,7 +37,13 @@ export function TotpSetupPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [setup, setSetup] = useState<SetupState | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const canVerify = isLengthBetween(code, 6, 6);
+
+  async function copyBackupCodes(codes: string[]): Promise<void> {
+    await navigator.clipboard.writeText(codes.join("\n"));
+    setCopied(true);
+  }
 
   async function startSetup(): Promise<void> {
     setError(null);
@@ -84,6 +90,9 @@ export function TotpSetupPanel() {
     }
 
     setSuccess("Two-factor authentication is enabled.");
+    setCode("");
+    setSetup(null);
+    setCopied(false);
   }
 
   return (
@@ -116,9 +125,18 @@ export function TotpSetupPanel() {
           </div>
           <TotpInput onChange={setCode} value={code} />
           <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
-            <h3 className="font-heading text-sm font-semibold text-foreground">
-              Backup codes
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-heading text-sm font-semibold text-foreground">
+                Backup codes
+              </h3>
+              <button
+                className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-default bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-surface-1"
+                onClick={() => void copyBackupCodes(setup.backupCodes)}
+                type="button"
+              >
+                {copied ? "Copied" : "Copy codes"}
+              </button>
+            </div>
             <ul className="mt-3 grid gap-2 text-sm text-foreground-muted sm:grid-cols-2">
               {setup.backupCodes.map((backupCode) => (
                 <li className="font-mono" key={backupCode}>
@@ -131,7 +149,7 @@ export function TotpSetupPanel() {
             {isLoading ? "Verifying" : "Verify and enable"}
           </Button>
         </div>
-      ) : (
+      ) : success ? null : (
         <Button className="w-full" disabled={isLoading} onClick={startSetup}>
           {isLoading ? "Preparing setup" : "Start 2FA setup"}
         </Button>

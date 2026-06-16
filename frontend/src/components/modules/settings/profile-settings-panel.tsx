@@ -303,6 +303,12 @@ export function ProfileSettingsPanel() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Link
                 className="flex min-h-11 items-center justify-center rounded-lg border border-border-default bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-surface-1"
+                href="/2fa-setup"
+              >
+                Two-factor authentication
+              </Link>
+              <Link
+                className="flex min-h-11 items-center justify-center rounded-lg border border-border-default bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-surface-1"
                 href="/settings/account"
               >
                 Account and GDPR
