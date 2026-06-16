@@ -58,7 +58,12 @@ export function RegisterForm() {
       if (current.includes(role)) {
         return current.filter((value) => value !== role);
       }
-      return [...current, role];
+      // Attestor is standalone: selecting it clears other roles, and selecting
+      // Operator/Contributor clears a previously selected Attestor.
+      if (role === "attestor") {
+        return ["attestor"];
+      }
+      return [...current.filter((value) => value !== "attestor"), role];
     });
   }
 
@@ -145,6 +150,10 @@ export function RegisterForm() {
         <legend className="text-sm font-medium text-foreground">
           Account role
         </legend>
+        <p className="text-xs leading-5 text-foreground-muted">
+          Operator and Contributor can be combined. Attestor is a standalone
+          role and requires admin approval.
+        </p>
         {roleOptions.map((role) => (
           <label
             className="flex min-h-12 cursor-pointer gap-3 rounded-card border border-border-strong bg-surface-2 p-4 transition hover:border-accent/40 shadow-sm"

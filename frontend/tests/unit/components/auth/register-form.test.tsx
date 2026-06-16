@@ -77,4 +77,36 @@ describe("RegisterForm", () => {
     });
     expect(await screen.findByText(/verification sent/i)).toBeInTheDocument();
   });
+
+  it("clears other roles when Attestor is selected", () => {
+    render(<RegisterForm />);
+
+    fireEvent.click(screen.getByLabelText(/operator/i));
+    fireEvent.click(screen.getByLabelText(/contributor/i));
+    fireEvent.click(screen.getByLabelText(/attestor/i));
+
+    expect(
+      (screen.getByLabelText(/attestor/i) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByLabelText(/operator/i) as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (screen.getByLabelText(/contributor/i) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+
+  it("clears Attestor when Operator or Contributor is selected", () => {
+    render(<RegisterForm />);
+
+    fireEvent.click(screen.getByLabelText(/attestor/i));
+    fireEvent.click(screen.getByLabelText(/operator/i));
+
+    expect(
+      (screen.getByLabelText(/attestor/i) as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (screen.getByLabelText(/operator/i) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
 });
