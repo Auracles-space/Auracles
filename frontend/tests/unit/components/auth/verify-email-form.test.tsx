@@ -53,6 +53,24 @@ describe("VerifyEmailForm", () => {
     });
   });
 
+  it("redirects to the login page after a successful verification", async () => {
+    vi.mocked(verifyEmail).mockResolvedValue({
+      data: { message: "Email verified." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const onVerified = vi.fn();
+
+    render(
+      <VerifyEmailForm initialToken="verify-token-9" onVerified={onVerified} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /verify email/i }));
+
+    await waitFor(() => {
+      expect(onVerified).toHaveBeenCalledWith("/login");
+    });
+  });
+
   it("surfaces the error detail for an invalid token", async () => {
     vi.mocked(verifyEmail).mockResolvedValue({
       data: undefined,

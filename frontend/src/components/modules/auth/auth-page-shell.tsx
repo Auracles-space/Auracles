@@ -8,8 +8,8 @@
  * Uses the refreshed Auracles palette: warm cream surfaces, charcoal text,
  * signature peach-to-indigo soft gradient accent.
  */
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandLogo } from "@/components/ui/brand-logo";
 
 type AuthPageShellProps = {
   children: ReactNode;
@@ -31,23 +31,23 @@ export function AuthPageShell({
 }: AuthPageShellProps) {
   return (
     <main className="flex min-h-screen flex-col justify-center bg-background px-5 py-8 text-foreground md:px-10 md:py-14">
+      {/* Mobile-only brand logo above the card */}
+      <div className="mx-auto mb-6 flex w-full max-w-[1180px] justify-start md:hidden">
+        <BrandLogo className="h-8 w-32" />
+      </div>
+
       <section className="mx-auto grid w-full max-w-[1180px] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)] md:items-stretch md:gap-8">
-        <aside className="brand-gradient-soft relative flex flex-col justify-between overflow-hidden rounded-hero border border-border-default p-6 md:p-10">
+        {/* Desktop-only branded sidebar panel */}
+        <aside className="brand-gradient-soft relative hidden flex-col justify-between overflow-hidden rounded-hero border border-border-default p-10 md:flex">
           <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-md bg-accent"></div>
-            <Link
-              className="font-heading text-xl font-bold tracking-tight text-foreground"
-              href="/"
-            >
-              Auracles
-            </Link>
+            <BrandLogo className="h-8 w-32" />
           </div>
 
-          <div className="mt-10 md:mt-20">
+          <div className="mt-20">
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
               {eyebrow}
             </p>
-            <h1 className="mt-3 max-w-md font-heading text-3xl font-bold leading-tight tracking-tight text-foreground md:text-5xl">
+            <h1 className="mt-3 max-w-md font-heading text-5xl font-bold leading-tight tracking-tight text-foreground">
               {title}
             </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-foreground-muted">
@@ -55,7 +55,7 @@ export function AuthPageShell({
             </p>
           </div>
 
-          <div className="mt-10 hidden md:block">
+          <div className="mt-10">
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
               Trust by design
             </p>

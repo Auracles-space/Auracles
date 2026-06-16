@@ -23,6 +23,7 @@ import { ResendVerificationButton } from "./resend-verification-button";
 type VerifyEmailFormProps = {
   initialToken?: string;
   initialEmail?: string;
+  onVerified?: (location: string) => void;
 };
 
 /**
@@ -30,13 +31,16 @@ type VerifyEmailFormProps = {
  *
  * The primary path is the magic link in the verification email (which prefills
  * the token via search params). The manual token field and the resend control
- * are fallbacks for when the link is lost or expired.
+ * are fallbacks for when the link is lost or expired. On success the user is
+ * redirected to the login page.
  *
- * @param props - Optional token and email captured from search params.
+ * @param props - Optional token/email from search params, and an optional
+ *   navigation callback (injected in tests; defaults to a hard redirect).
  */
 export function VerifyEmailForm({
   initialToken = "",
   initialEmail = "",
+  onVerified,
 }: VerifyEmailFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,6 +67,12 @@ export function VerifyEmailForm({
     }
 
     setSuccess(result.data?.message ?? "Email verified.");
+    // Hard navigation re-runs auth middleware (matches login-form).
+    if (onVerified) {
+      onVerified("/login");
+      return;
+    }
+    window.location.assign("/login");
   }
 
   return (
