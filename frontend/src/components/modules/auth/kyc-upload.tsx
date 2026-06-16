@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -78,6 +79,14 @@ export function KycUpload() {
 
   async function fetchStatus() {
     configureBrowserClient();
+    // After a page reload the access token is gone (memory-only); rehydrate it
+    // from the refresh cookie before calling the API, or the status read 401s
+    // and the page wrongly falls back to showing the upload form.
+    const hasToken = await ensureBrowserAccessToken();
+    if (!hasToken) {
+      setIsLoading(false);
+      return;
+    }
     try {
       const response = await getKycStatus({ headers: getAccessTokenHeaders() });
       if (response.response.ok && response.data) {
@@ -109,6 +118,7 @@ export function KycUpload() {
 
     setIsSubmitting(true);
     configureBrowserClient();
+    await ensureBrowserAccessToken();
     const uploadTarget = await requestKycUploadUrl({
       body: {
         doc_type: docType,
@@ -169,7 +179,6 @@ export function KycUpload() {
     );
   }
 
-  const hasRejectedDoc = documents.some((doc) => doc.status === "rejected");
   const latestRejectedDoc = [...documents]
     .filter((doc) => doc.status === "rejected")
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
@@ -275,7 +284,7 @@ export function KycUpload() {
           <div className="space-y-2">
             {documents.map((doc) => {
               let statusBadge = "bg-foreground/10 text-foreground-muted";
-              if (doc.status === "approved") {
+              if (doc.status === "verified") {
                 statusBadge = "bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/20";
               } else if (doc.status === "pending") {
                 statusBadge = "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20";

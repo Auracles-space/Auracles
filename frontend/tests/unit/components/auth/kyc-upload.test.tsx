@@ -13,6 +13,10 @@ vi.mock("@/lib/auth/token-store", () => ({
   },
 }));
 
+vi.mock("@/lib/auth/current-user-session", () => ({
+  ensureBrowserAccessToken: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   client: {
     interceptors: { response: { use: vi.fn() } },
@@ -65,5 +69,24 @@ describe("KycUpload", () => {
     fireEvent.click(screen.getByRole("button", { name: /submit document/i }));
 
     expect(requestKycUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("shows the verified state and hides the form when KYC is verified", async () => {
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue({
+      data: { kyc_status: "verified", documents: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as any);
+
+    render(<KycUpload />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/identity verified/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /submit document/i }),
+    ).not.toBeInTheDocument();
   });
 });
