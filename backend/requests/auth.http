@@ -1,6 +1,5 @@
 @host = http://localhost:8000
-
-### Register (worker logs `email_delivery_disabled ... token=<tok>` when EMAIL_SEND_ENABLED=false)
+###
 POST {{host}}/v1/auth/register
 Content-Type: application/json
 
@@ -10,24 +9,21 @@ Content-Type: application/json
   "password": "StrongerPass123!",
   "roles": ["contributor"]
 }
-
-### Resend verification (use if you need a fresh token; same no-enumeration response)
+###
 POST {{host}}/v1/auth/resend-verification
 Content-Type: application/json
 
 {
   "email": "ada@example.com"
 }
-
-### Verify email — paste the token= value from the worker log
+###
 POST {{host}}/v1/auth/verify-email
 Content-Type: application/json
 
 {
-  "token": "PASTE_TOKEN_HERE"
+  "token": "705deac1-d92f-476b-8619-433b5fb29448"
 }
-
-### Login (after email is verified)
+###
 POST {{host}}/v1/auth/login
 Content-Type: application/json
 
@@ -35,16 +31,14 @@ Content-Type: application/json
   "email": "ada@example.com",
   "password": "StrongerPass123!"
 }
-
-### Forgot password — worker logs the reset token (EMAIL_SEND_ENABLED=false)
+###
 POST {{host}}/v1/auth/forgot-password
 Content-Type: application/json
 
 {
   "email": "ada@example.com"
 }
-
-### Reset password — paste the reset token= value from the worker log
+###
 POST {{host}}/v1/auth/reset-password
 Content-Type: application/json
 
