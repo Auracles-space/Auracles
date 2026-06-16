@@ -24,12 +24,17 @@ services:
       retries: 10
 
   localstack:
-    image: localstack/localstack:latest
+    # Pinned to a community release: `latest` now resolves to a Pro build that
+    # exits without LOCALSTACK_AUTH_TOKEN. 3.x community has free S3.
+    image: localstack/localstack:3.8.1
     environment:
       SERVICES: s3
       AWS_DEFAULT_REGION: us-east-1
     ports:
       - "4566:4566"
+    volumes:
+      # Ready-hook: auto-create dev buckets + CORS on every startup.
+      - ./scripts/localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
 
   # ClamAV daemon — separate service so its ~1GB signature DB stays off the
   # worker. The worker streams files over TCP (INSTREAM) via CLAMAV_HOST.

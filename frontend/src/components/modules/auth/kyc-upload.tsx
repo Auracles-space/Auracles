@@ -124,12 +124,15 @@ export function KycUpload() {
       return;
     }
 
+    const formData = new FormData();
+    for (const [key, value] of Object.entries(uploadTarget.data.fields)) {
+      formData.append(key, String(value));
+    }
+    formData.append("file", file);
+
     const uploadResponse = await fetch(uploadTarget.data.upload_url, {
-      body: file,
-      headers: {
-        "Content-Type": file.type || "application/octet-stream",
-      },
-      method: "PUT",
+      body: formData,
+      method: "POST",
     });
 
     if (!uploadResponse.ok) {
