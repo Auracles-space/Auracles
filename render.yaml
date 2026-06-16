@@ -18,7 +18,7 @@ envVarGroups:
       # --- Core ---
       - key: DATABASE_URL # Neon main branch, postgresql+asyncpg://...?sslmode=require
         sync: false
-      - key: REDIS_URL # Upstash rediss://... (app derives broker /0, cache /1)
+      - key: REDIS_URL # Upstash rediss://... (app derives broker and cache on DB 0)
         sync: false
       - key: SECRET_KEY # openssl rand -hex 32 — JWT signing
         sync: false
