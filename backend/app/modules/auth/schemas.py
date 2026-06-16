@@ -147,9 +147,21 @@ class TotpCodeRequest(BaseModel):
 
 
 class TotpStatusResponse(BaseModel):
-    """Response body describing TOTP account state."""
+    """Response body describing TOTP account state.
+
+    ``backup_codes_remaining`` is only meaningful on the status endpoint; the
+    enable/disable endpoints leave it at the default since the count is not
+    relevant to their result.
+    """
 
     totp_enabled: bool
+    backup_codes_remaining: int = 0
+
+
+class TotpBackupCodesResponse(BaseModel):
+    """One-time response carrying a freshly generated set of backup codes."""
+
+    backup_codes: list[str]
 
 
 class TotpLoginVerifyRequest(BaseModel):

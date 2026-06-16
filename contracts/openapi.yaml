@@ -1397,6 +1397,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/credentials/{credential_id}/submit:
+    post:
+      tags:
+      - Attestation
+      summary: Submit Credential
+      description: Submit an owned Credential for manual Admin verification.
+      operationId: submit_credential_v1_credentials__credential_id__submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/credentials/{credential_id}/evidence:
     get:
       tags:
@@ -1465,36 +1495,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/credentials/{credential_id}/submit:
-    post:
-      tags:
-      - Attestation
-      summary: Submit Credential
-      description: Submit an owned Credential for manual Admin verification.
-      operationId: submit_credential_v1_credentials__credential_id__submit_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: credential_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Credential Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialResponse'
         '422':
           description: Validation Error
           content:
@@ -1729,6 +1729,22 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/auth/2fa/status:
+    get:
+      tags:
+      - Auth
+      summary: Totp Status
+      description: Report 2FA enablement and remaining backup-code count.
+      operationId: totp_status_v1_auth_2fa_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpStatusResponse'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/setup:
     post:
       tags:
@@ -1743,6 +1759,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TotpSetupResponse'
+      security:
+      - HTTPBearer: []
+  /v1/auth/2fa/backup-codes/regenerate:
+    post:
+      tags:
+      - Auth
+      summary: Regenerate Backup Codes
+      description: Issue a fresh set of backup codes after verifying a current code.
+      operationId: regenerate_backup_codes_v1_auth_2fa_backup_codes_regenerate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpCodeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpBackupCodesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
   /v1/auth/2fa/verify:
@@ -13717,9 +13761,12 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: "Verified Credential fields safe for public profile display.\n\n\
-        Never exposes evidence keys, verification URL, reference number, or review\n\
-        metadata — anti-gaming and PII protection."
+      description: 'Verified Credential fields safe for public profile display.
+
+
+        Never exposes evidence keys, verification URL, reference number, or review
+
+        metadata — anti-gaming and PII protection.'
     PurchaseHistoryItem:
       properties:
         transaction_id:
@@ -13899,7 +13946,8 @@ components:
         message:
           type: string
           title: Message
-          default: If email is new, verification sent.
+          default: We've sent a verification link to your email. Please check your
+            inbox to activate your account.
       type: object
       title: RegisterResponse
       description: No-enumeration registration response.
@@ -14234,6 +14282,18 @@ components:
       - differentiation_note
       title: SimilarityNoticeAcknowledgementRequest
       description: Request body for acknowledging a non-blocking similarity notice.
+    TotpBackupCodesResponse:
+      properties:
+        backup_codes:
+          items:
+            type: string
+          type: array
+          title: Backup Codes
+      type: object
+      required:
+      - backup_codes
+      title: TotpBackupCodesResponse
+      description: One-time response carrying a freshly generated set of backup codes.
     TotpCodeRequest:
       properties:
         code:
@@ -14288,11 +14348,22 @@ components:
         totp_enabled:
           type: boolean
           title: Totp Enabled
+        backup_codes_remaining:
+          type: integer
+          title: Backup Codes Remaining
+          default: 0
       type: object
       required:
       - totp_enabled
       title: TotpStatusResponse
-      description: Response body describing TOTP account state.
+      description: 'Response body describing TOTP account state.
+
+
+        ``backup_codes_remaining`` is only meaningful on the status endpoint; the
+
+        enable/disable endpoints leave it at the default since the count is not
+
+        relevant to their result.'
     ValidationError:
       properties:
         loc:

@@ -2597,6 +2597,13 @@ export type SimilarityNoticeAcknowledgementRequest = {
 };
 
 /**
+ * One-time response carrying a freshly generated set of backup codes.
+ */
+export type TotpBackupCodesResponse = {
+    backup_codes: Array<(string)>;
+};
+
+/**
  * Request body containing a current TOTP code.
  */
 export type TotpCodeRequest = {
@@ -2622,9 +2629,14 @@ export type TotpSetupResponse = {
 
 /**
  * Response body describing TOTP account state.
+ *
+ * ``backup_codes_remaining`` is only meaningful on the status endpoint; the
+ * enable/disable endpoints leave it at the default since the count is not
+ * relevant to their result.
  */
 export type TotpStatusResponse = {
     totp_enabled: boolean;
+    backup_codes_remaining?: number;
 };
 
 export type ValidationError = {
@@ -3124,6 +3136,16 @@ export type DeleteCredentialV1CredentialsCredentialIdDeleteResponse = (void);
 
 export type DeleteCredentialV1CredentialsCredentialIdDeleteError = (HTTPValidationError);
 
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostResponse = (CredentialResponse);
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostError = (HTTPValidationError);
+
 export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData = {
     path: {
         credential_id: string;
@@ -3147,16 +3169,6 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
-
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
-    path: {
-        credential_id: string;
-    };
-};
-
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostResponse = (CredentialResponse);
-
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostError = (HTTPValidationError);
 
 export type RegisterV1AuthRegisterPostData = {
     body: RegisterRequest;
@@ -3226,9 +3238,21 @@ export type AddRoleV1AuthRolesPostResponse = (RoleAssignmentResponse);
 
 export type AddRoleV1AuthRolesPostError = (HTTPValidationError);
 
+export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
+
+export type TotpStatusV1Auth2FaStatusGetError = unknown;
+
 export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
 
 export type SetupTotpV1Auth2FaSetupPostError = unknown;
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostData = {
+    body: TotpCodeRequest;
+};
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostResponse = (TotpBackupCodesResponse);
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostError = (HTTPValidationError);
 
 export type VerifyTotpV1Auth2FaVerifyPostData = {
     body: TotpCodeRequest;

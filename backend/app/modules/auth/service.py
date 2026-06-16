@@ -21,7 +21,7 @@ import qrcode
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +38,12 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth.models import User, UserBackupCode, UserRole
-from app.modules.auth.schemas import LoginResponse, RegisterRequest, TotpSetupResponse
+from app.modules.auth.schemas import (
+    LoginResponse,
+    RegisterRequest,
+    TotpSetupResponse,
+    TotpStatusResponse,
+)
 from app.modules.gdpr import consent_service
 from app.shared.schemas.token import TokenPayload
 from app.workers.tasks.notifications import (
@@ -1061,6 +1066,87 @@ async def disable_totp(
     )
     await db.commit()
     return False
+
+
+async def _count_unused_backup_codes(db: AsyncSession, user: User) -> int:
+    """Return how many unused backup codes the user has remaining."""
+    return (
+        await db.scalar(
+            select(func.count())
+            .select_from(UserBackupCode)
+            .where(
+                UserBackupCode.user_id == user.id,
+                UserBackupCode.used_at.is_(None),
+            )
+        )
+    ) or 0
+
+
+async def get_totp_status(db: AsyncSession, user: User) -> TotpStatusResponse:
+    """Report TOTP enablement and the count of unused backup codes.
+
+    Used by the account UI to decide between first-time setup, re-enrollment on
+    a new device, and the backup-code recovery surface.
+    """
+    return TotpStatusResponse(
+        totp_enabled=user.totp_enabled,
+        backup_codes_remaining=await _count_unused_backup_codes(db, user),
+    )
+
+
+async def regenerate_backup_codes(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    code: str,
+) -> list[str]:
+    """Replace the user's backup codes after verifying a TOTP or backup code.
+
+    Lets a user restock recovery codes (e.g. after using several to recover a
+    lost device) without disabling 2FA. Requires proof of possession.
+
+    Args:
+        db: Async session for the regeneration transaction.
+        redis: Redis client for lockout accounting.
+        user: Authenticated account regenerating its codes.
+        code: Current TOTP code or an unused backup code.
+
+    Returns:
+        The freshly generated backup codes (shown once).
+
+    Raises:
+        HTTPException(409): If 2FA is not enabled.
+        HTTPException(422): If the supplied code is invalid.
+        HTTPException(429): If the account is temporarily locked out.
+    """
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="2FA is not enabled.",
+        )
+    await _ensure_totp_not_locked(redis, user.id)
+    if not await _verify_totp_or_backup_code(db, user, code):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+
+    backup_codes = generate_backup_codes()
+    await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user.id))
+    for new_code in backup_codes:
+        db.add(UserBackupCode(user_id=user.id, code_hash=_backup_code_hash(new_code)))
+
+    await _clear_totp_failures(redis, user.id)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="2fa_backup_codes_regenerated",
+        target_type="user",
+        target_id=user.id,
+    )
+    await db.commit()
+    return backup_codes
 
 
 async def verify_totp_login(

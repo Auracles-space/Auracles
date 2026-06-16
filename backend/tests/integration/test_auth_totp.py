@@ -19,7 +19,7 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, decode_access_token, hash_password
 from app.main import app
-from app.modules.auth.models import User, UserRole
+from app.modules.auth.models import User, UserBackupCode, UserRole
 from app.shared.models.audit_log import AuditLog
 
 
@@ -383,3 +383,100 @@ async def test_totp_login_challenge_is_single_use(
     assert verified.status_code == 200
     assert reused.status_code == 410
     assert missing.status_code == 410
+
+
+async def test_status_reports_enabled_and_backup_codes_remaining(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """Status reports enabled state plus the count of unused backup codes."""
+    user_id = await create_verified_user("status@auracles.space", "CorrectHorse9")
+
+    before = await client.get(
+        "/v1/auth/2fa/status",
+        headers=auth_headers(user_id),
+    )
+    await setup_and_enable_totp(client, user_id)
+    after = await client.get(
+        "/v1/auth/2fa/status",
+        headers=auth_headers(user_id),
+    )
+
+    assert before.status_code == 200
+    assert before.json() == {"totp_enabled": False, "backup_codes_remaining": 0}
+    assert after.status_code == 200
+    assert after.json() == {"totp_enabled": True, "backup_codes_remaining": 10}
+
+
+async def test_regenerate_backup_codes_replaces_old_set(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """Regenerate issues a fresh set and invalidates the previous codes."""
+    user_id = await create_verified_user("regen@auracles.space", "CorrectHorse9")
+    setup_body = await setup_and_enable_totp(client, user_id)
+    old_codes = set(setup_body["backup_codes"])
+    code = pyotp.TOTP(secret_from_uri(setup_body["provisioning_uri"])).now()
+
+    regen = await client.post(
+        "/v1/auth/2fa/backup-codes/regenerate",
+        json={"code": code},
+        headers=auth_headers(user_id),
+    )
+    new_codes = set(regen.json()["backup_codes"])
+
+    async with async_session_factory() as session:
+        remaining = await session.scalars(
+            select(UserBackupCode.code_hash).where(
+                UserBackupCode.user_id == user_id,
+                UserBackupCode.used_at.is_(None),
+            )
+        )
+        audit_log = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "2fa_backup_codes_regenerated"
+            )
+        )
+
+    assert regen.status_code == 200
+    assert len(new_codes) == 10
+    assert new_codes.isdisjoint(old_codes)
+    assert len(list(remaining)) == 10
+    assert audit_log is not None
+
+
+async def test_regenerate_backup_codes_rejects_invalid_code(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """Regenerate requires a valid TOTP or backup code."""
+    user_id = await create_verified_user("regenbad@auracles.space", "CorrectHorse9")
+    await setup_and_enable_totp(client, user_id)
+
+    regen = await client.post(
+        "/v1/auth/2fa/backup-codes/regenerate",
+        json={"code": "000000"},
+        headers=auth_headers(user_id),
+    )
+
+    assert regen.status_code == 422
+
+
+async def test_regenerate_backup_codes_requires_enabled_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """Regenerate is rejected when 2FA is not enabled."""
+    user_id = await create_verified_user("regenoff@auracles.space", "CorrectHorse9")
+
+    regen = await client.post(
+        "/v1/auth/2fa/backup-codes/regenerate",
+        json={"code": "123456"},
+        headers=auth_headers(user_id),
+    )
+
+    assert regen.status_code == 409

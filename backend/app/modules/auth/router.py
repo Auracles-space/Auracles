@@ -32,6 +32,7 @@ from app.modules.auth.schemas import (
     ResendVerificationRequest,
     ResetPasswordRequest,
     RoleAssignmentResponse,
+    TotpBackupCodesResponse,
     TotpCodeRequest,
     TotpLoginVerifyRequest,
     TotpSetupResponse,
@@ -256,6 +257,15 @@ async def add_role(
     )
 
 
+@router.get("/2fa/status", response_model=TotpStatusResponse)
+async def totp_status(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> TotpStatusResponse:
+    """Report 2FA enablement and remaining backup-code count."""
+    return await service.get_totp_status(db=db, user=current_user)
+
+
 @router.post("/2fa/setup", response_model=TotpSetupResponse)
 async def setup_totp(
     current_user: CurrentUser,
@@ -263,6 +273,26 @@ async def setup_totp(
 ) -> TotpSetupResponse:
     """Start TOTP setup for the authenticated user."""
     return await service.setup_totp(db=db, user=current_user)
+
+
+@router.post(
+    "/2fa/backup-codes/regenerate",
+    response_model=TotpBackupCodesResponse,
+)
+async def regenerate_backup_codes(
+    payload: TotpCodeRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> TotpBackupCodesResponse:
+    """Issue a fresh set of backup codes after verifying a current code."""
+    backup_codes = await service.regenerate_backup_codes(
+        db=db,
+        redis=redis,
+        user=current_user,
+        code=payload.code,
+    )
+    return TotpBackupCodesResponse(backup_codes=backup_codes)
 
 
 @router.post("/2fa/verify", response_model=TotpStatusResponse)
