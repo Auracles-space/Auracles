@@ -13,6 +13,7 @@ import {
   allValid,
   isNonEmpty,
   isPasswordLongEnough,
+  passwordsMatch,
 } from "@/lib/forms/validators";
 import {
   configureBrowserClient,
@@ -36,11 +37,13 @@ export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps)
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
   const [token, setToken] = useState(initialToken);
   const canSubmit = allValid(
     isNonEmpty(token),
     isPasswordLongEnough(newPassword),
+    passwordsMatch(newPassword, confirmPassword),
   );
 
   async function submitReset(
@@ -93,6 +96,21 @@ export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps)
         required
         type="password"
         value={newPassword}
+      />
+      <FormField
+        autoComplete="new-password"
+        error={
+          confirmPassword.length > 0 &&
+          !passwordsMatch(newPassword, confirmPassword)
+            ? "Passwords do not match."
+            : undefined
+        }
+        label="Confirm password"
+        name="confirm_password"
+        onChange={(event) => setConfirmPassword(event.target.value)}
+        required
+        type="password"
+        value={confirmPassword}
       />
       <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Saving password" : "Save password"}

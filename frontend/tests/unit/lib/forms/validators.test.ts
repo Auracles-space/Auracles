@@ -8,6 +8,7 @@ import {
   isNonEmpty,
   isPasswordLongEnough,
   isPositiveNumber,
+  passwordsMatch,
 } from "@/lib/forms/validators";
 
 describe("form validators", () => {
@@ -47,6 +48,12 @@ describe("form validators", () => {
     expect(isPositiveNumber("0")).toBe(false);
     expect(isPositiveNumber("-1")).toBe(false);
     expect(isPositiveNumber("abc")).toBe(false);
+  });
+
+  it("passwordsMatch requires non-empty identical passwords", () => {
+    expect(passwordsMatch("abc123abc123", "abc123abc123")).toBe(true);
+    expect(passwordsMatch("abc123abc123", "different")).toBe(false);
+    expect(passwordsMatch("", "")).toBe(false);
   });
 
   it("allValid is true only when every check passes", () => {

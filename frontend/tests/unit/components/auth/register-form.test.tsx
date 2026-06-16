@@ -32,14 +32,41 @@ describe("RegisterForm", () => {
     fireEvent.change(screen.getByLabelText(/^password/i), {
       target: { value: "StrongerPass123!" },
     });
-    // No role + no terms yet → still disabled.
+    // No confirm + no role + no terms yet → still disabled.
     expect(submit).toBeDisabled();
 
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: "StrongerPass123!" },
+    });
     fireEvent.click(screen.getByLabelText(/contributor/i));
     fireEvent.click(screen.getByLabelText(/terms of service/i));
     expect(submit).toBeEnabled();
 
     expect(registerUser).not.toHaveBeenCalled();
+  });
+
+  it("keeps submit disabled and warns when the confirm password mismatches", () => {
+    render(<RegisterForm />);
+
+    fireEvent.change(screen.getByLabelText(/display name/i), {
+      target: { value: "Ada Markets" },
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password/i), {
+      target: { value: "StrongerPass123!" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: "Mismatched123!" },
+    });
+    fireEvent.click(screen.getByLabelText(/contributor/i));
+    fireEvent.click(screen.getByLabelText(/terms of service/i));
+
+    expect(
+      screen.getByRole("button", { name: /create account/i }),
+    ).toBeDisabled();
+    expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
   });
 
   it("does not expose admin as a self-assignable registration role", () => {
@@ -64,6 +91,9 @@ describe("RegisterForm", () => {
       target: { value: "ada@example.com" },
     });
     fireEvent.change(screen.getByLabelText(/^password/i), {
+      target: { value: "StrongerPass123!" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
       target: { value: "StrongerPass123!" },
     });
     fireEvent.click(screen.getByLabelText(/contributor/i));

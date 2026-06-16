@@ -21,6 +21,7 @@ import {
   isEmail,
   isNonEmpty,
   isPasswordLongEnough,
+  passwordsMatch,
 } from "@/lib/forms/validators";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
@@ -56,6 +57,7 @@ export function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [roles, setRoles] = useState<AssignableRole[]>([]);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -77,6 +79,7 @@ export function RegisterForm() {
     isNonEmpty(displayName),
     isEmail(email),
     isPasswordLongEnough(password),
+    passwordsMatch(password, confirmPassword),
     roles.length > 0,
     agreedToTerms,
   );
@@ -139,6 +142,7 @@ export function RegisterForm() {
         onChange={(event) => setDisplayName(event.target.value)}
         required
         value={displayName}
+        isValid={isNonEmpty(displayName)}
       />
       <FormField
         autoComplete="email"
@@ -148,6 +152,7 @@ export function RegisterForm() {
         required
         type="email"
         value={email}
+        isValid={isEmail(email)}
       />
       <FormField
         autoComplete="new-password"
@@ -158,11 +163,33 @@ export function RegisterForm() {
         required
         type="password"
         value={password}
+        isValid={isPasswordLongEnough(password)}
+      />
+      <FormField
+        autoComplete="new-password"
+        error={
+          confirmPassword.length > 0 &&
+          !passwordsMatch(password, confirmPassword)
+            ? "Passwords do not match."
+            : undefined
+        }
+        label="Confirm password"
+        name="confirm_password"
+        onChange={(event) => setConfirmPassword(event.target.value)}
+        required
+        type="password"
+        value={confirmPassword}
+        isValid={passwordsMatch(password, confirmPassword)}
       />
 
       <fieldset className="space-y-3">
-        <legend className="text-sm font-medium text-foreground">
-          Account role
+        <legend className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <span>Account role</span>
+          {roles.length > 0 && (
+            <svg className="h-4 w-4 text-success shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" data-testid="role-checkmark">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
         </legend>
         <p className="text-xs leading-5 text-foreground-muted">
           Operator and Contributor can be combined. Attestor is a standalone
@@ -201,16 +228,23 @@ export function RegisterForm() {
           onChange={(e) => setAgreedToTerms(e.target.checked)}
           type="checkbox"
         />
-        <label className="text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
-          I agree to the{" "}
-          <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
-            Terms of Service
-          </a>{" "}
-          and{" "}
-          <a className="font-medium text-accent hover:underline" href="/privacy" target="_blank" rel="noreferrer">
-            Privacy Policy
-          </a>
-          .
+        <label className="flex items-center gap-1.5 text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
+          <span>
+            I agree to the{" "}
+            <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a className="font-medium text-accent hover:underline" href="/privacy" target="_blank" rel="noreferrer">
+              Privacy Policy
+            </a>
+            .
+          </span>
+          {agreedToTerms && (
+            <svg className="h-4 w-4 text-success shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" data-testid="terms-checkmark">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
         </label>
       </div>
 

@@ -34,7 +34,27 @@ describe("ResetPasswordForm", () => {
     fireEvent.change(screen.getByLabelText(/new password/i), {
       target: { value: "StrongerPass!234" },
     });
+    // Long password but confirm still empty → mismatch keeps it disabled.
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: "StrongerPass!234" },
+    });
     expect(submit).toBeEnabled();
+  });
+
+  it("keeps the submit disabled when the confirm password does not match", () => {
+    render(<ResetPasswordForm initialToken="reset-token-123" />);
+
+    fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: "StrongerPass!234" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: "DifferentPass!234" },
+    });
+
+    expect(screen.getByRole("button", { name: /save password/i })).toBeDisabled();
+    expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
   });
 
   it("prefills the token from search params and submits the new password", async () => {
@@ -46,6 +66,9 @@ describe("ResetPasswordForm", () => {
 
     render(<ResetPasswordForm initialToken="reset-token-123" />);
     fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: "StrongerPass!234" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
       target: { value: "StrongerPass!234" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save password/i }));
@@ -65,6 +88,9 @@ describe("ResetPasswordForm", () => {
 
     render(<ResetPasswordForm initialToken="expired" />);
     fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: "StrongerPass!234" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
       target: { value: "StrongerPass!234" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save password/i }));

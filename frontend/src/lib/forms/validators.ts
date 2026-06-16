@@ -43,6 +43,11 @@ export function isPositiveNumber(value: string | number): boolean {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
+/** True when both passwords are non-empty and identical. */
+export function passwordsMatch(password: string, confirm: string): boolean {
+  return password.length > 0 && password === confirm;
+}
+
 /** True when every provided field passes its own validity check. */
 export function allValid(...checks: boolean[]): boolean {
   return checks.every(Boolean);
