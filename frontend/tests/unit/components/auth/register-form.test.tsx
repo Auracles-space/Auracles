@@ -77,7 +77,7 @@ describe("RegisterForm", () => {
 
   it("submits valid registration details through the generated client", async () => {
     vi.mocked(registerUser).mockResolvedValue({
-      data: { message: "If email is new, verification sent." },
+      data: { message: "If that email needs verification, we've sent a verification link. Check your inbox." },
       error: undefined,
       response: new Response(null, { status: 200 }),
     });
@@ -110,7 +110,7 @@ describe("RegisterForm", () => {
         },
       });
     });
-    expect(await screen.findByText(/verification sent/i)).toBeInTheDocument();
+    expect(await screen.findByText(/verification link/i)).toBeInTheDocument();
   });
 
   it("clears other roles when Attestor is selected", () => {

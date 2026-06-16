@@ -118,7 +118,10 @@ export function RegisterForm() {
       return;
     }
 
-    setSuccess(result.data?.message ?? "Verification sent.");
+    setSuccess(
+      result.data?.message ??
+        "If that email needs verification, we've sent a verification link. Check your inbox.",
+    );
   }
 
   return (

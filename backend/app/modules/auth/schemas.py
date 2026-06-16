@@ -46,7 +46,10 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     """No-enumeration registration response."""
 
-    message: str = "If email is new, verification sent."
+    message: str = (
+        "If that email needs verification, we've sent a verification link. "
+        "Check your inbox."
+    )
 
 
 class VerifyEmailRequest(BaseModel):

@@ -140,7 +140,7 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
     }
 
     if (path === "/v1/auth/register") {
-      await fulfillJson(route, { message: "If email is new, verification sent." });
+      await fulfillJson(route, { message: "If that email needs verification, we've sent a verification link. Check your inbox." });
       return;
     }
 
@@ -275,7 +275,7 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
   await page.getByLabel("Operator").check();
   await page.getByLabel(/I agree to the Terms/).check();
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText(/verification sent/i)).toBeVisible();
+  await expect(page.getByText(/verification link/i)).toBeVisible();
 
   await page.goto("/verify-email?token=test-token");
   await page.getByRole("button", { name: "Verify email" }).click();
