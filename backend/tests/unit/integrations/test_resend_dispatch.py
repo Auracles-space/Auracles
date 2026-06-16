@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
 from app.integrations import resend as resend_adapter
 from app.integrations.resend import (
@@ -18,6 +19,16 @@ from app.integrations.resend import (
     TransientEmailError,
     classify_email_error,
 )
+
+
+class _FakeSettings:
+    """Minimal settings stand-in for exercising the EMAIL_SEND_ENABLED gate."""
+
+    def __init__(self, *, email_send_enabled: bool) -> None:
+        self.email_send_enabled = email_send_enabled
+        self.resend_api_key = SecretStr("re_test")
+        self.resend_from_address = "noreply@auracles.space"
+        self.cors_origin_list = ["http://localhost:3000"]
 
 
 def test_classify_daily_quota_is_permanent() -> None:
@@ -82,3 +93,42 @@ def test_dispatch_success_sends_payload(monkeypatch: pytest.MonkeyPatch) -> None
     resend_adapter._dispatch({"from": "a@b.test", "to": "c@d.test"})
 
     assert sent == [{"from": "a@b.test", "to": "c@d.test"}]
+
+
+def test_delivery_disabled_logs_and_skips_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EMAIL_SEND_ENABLED=false logs the email and never calls Resend.
+
+    Local/dev path: the verification token is logged so the flow can be
+    completed without hitting Resend (and burning the daily quota).
+    """
+    import resend
+
+    def _fail(_payload: Any) -> None:
+        raise AssertionError("Resend must not be called when delivery is disabled")
+
+    monkeypatch.setattr(resend.Emails, "send", staticmethod(_fail))
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=False)
+    )
+
+    # Must return without raising and without sending.
+    resend_adapter.send_verification_email("user@auracles.space", "tok-xyz")
+
+
+def test_delivery_enabled_dispatches_to_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EMAIL_SEND_ENABLED=true sends the email through Resend as normal."""
+    import resend
+
+    sent: list[Any] = []
+    monkeypatch.setattr(resend.Emails, "send", staticmethod(sent.append))
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=True)
+    )
+
+    resend_adapter.send_verification_email("user@auracles.space", "tok-xyz")
+
+    assert len(sent) == 1

@@ -83,6 +83,37 @@ def _dispatch(payload: "Emails.SendParams") -> None:
         raise classify_email_error(exc) from exc
 
 
+def _delivery_disabled(
+    module: str,
+    action: str,
+    email: str,
+    **fields: object,
+) -> bool:
+    """Log the lifecycle email and skip sending when delivery is disabled.
+
+    When ``EMAIL_SEND_ENABLED`` is false (local/dev), the email is logged with
+    its identifying fields (e.g. the verification token) instead of calling
+    Resend, so a flow can be completed without an inbox or burning the daily
+    quota. Production leaves the flag at its default ``True`` and always sends.
+
+    Args:
+        module: Logging module tag (e.g. ``"auth"``).
+        action: Logging action tag (e.g. ``"send_verification_email"``).
+        email: Recipient address (logged, not sent).
+        **fields: Extra dev-relevant fields to log (token, link, ip, ...).
+
+    Returns:
+        True when delivery is disabled (caller must return without sending),
+        False when the email should be delivered through Resend.
+    """
+    if get_settings().email_send_enabled:
+        return False
+    logger.bind(module=module, action=action).info(
+        "email_delivery_disabled", email=email, **fields
+    )
+    return True
+
+
 def _render_email_html(
     title: str,
     content_html: str,
@@ -171,6 +202,8 @@ def _render_email_html(
 def send_verification_email(email: str, token: str) -> None:
     """Send a verification email through Resend when configured."""
     settings = get_settings()
+    if _delivery_disabled("auth", "send_verification_email", email, token=token):
+        return
     if settings.resend_api_key is None:
         logger.bind(module="auth", action="send_verification_email").info(
             "resend_not_configured",
@@ -207,6 +240,8 @@ def send_verification_email(email: str, token: str) -> None:
 def send_password_reset_email(email: str, token: str) -> None:
     """Send a password reset email through Resend when configured."""
     settings = get_settings()
+    if _delivery_disabled("auth", "send_password_reset_email", email, token=token):
+        return
     if settings.resend_api_key is None:
         logger.bind(module="auth", action="send_password_reset_email").info(
             "resend_not_configured",
@@ -243,6 +278,10 @@ def send_password_reset_email(email: str, token: str) -> None:
 def send_email_change_verification(email: str, token: str) -> None:
     """Send a new-email verification message through Resend when configured."""
     settings = get_settings()
+    if _delivery_disabled(
+        "settings", "send_email_change_verification", email, token=token
+    ):
+        return
     if settings.resend_api_key is None:
         logger.bind(module="settings", action="send_email_change_verification").info(
             "resend_not_configured",
@@ -283,6 +322,10 @@ def send_new_device_email(
 ) -> None:
     """Send a new-device notification email through Resend when configured."""
     settings = get_settings()
+    if _delivery_disabled(
+        "auth", "send_new_device_email", email, ip=ip, user_agent=user_agent
+    ):
+        return
     if settings.resend_api_key is None:
         logger.bind(module="auth", action="send_new_device_email").info(
             "resend_not_configured",
@@ -326,6 +369,10 @@ def send_project_notification_email(
 ) -> None:
     """Send a project notification email through Resend when configured."""
     settings = get_settings()
+    if _delivery_disabled(
+        "notifications", "send_project_notification_email", email, link=link
+    ):
+        return
     if settings.resend_api_key is None:
         logger.bind(
             module="notifications",

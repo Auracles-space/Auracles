@@ -16,6 +16,18 @@ def test_resolve_env_file_honors_override(monkeypatch) -> None:
     assert config._resolve_env_file() == ".env.prod"
 
 
+def test_email_send_enabled_defaults_to_true() -> None:
+    """Delivery defaults on, so an unset EMAIL_SEND_ENABLED (e.g. on Render) sends."""
+    assert Settings.model_fields["email_send_enabled"].default is True
+
+
+def test_email_send_enabled_can_be_disabled() -> None:
+    """EMAIL_SEND_ENABLED=false routes lifecycle email to logging instead of Resend."""
+    settings = Settings(EMAIL_SEND_ENABLED=False)
+
+    assert settings.email_send_enabled is False
+
+
 def test_settings_pins_all_redis_traffic_to_database_zero() -> None:
     """Upstash supports only DB 0, so Celery and app cache share database 0.
 

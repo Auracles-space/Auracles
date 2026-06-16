@@ -144,6 +144,10 @@ class Settings(BaseSettings):
         default="noreply@auracles.space", alias="RESEND_FROM_ADDRESS"
     )
     resend_api_key: SecretStr | None = Field(default=None, alias="RESEND_API_KEY")
+    # Gate live email delivery. Default True so an unset value (e.g. on Render)
+    # still sends; set EMAIL_SEND_ENABLED=false locally to log emails instead of
+    # calling Resend (avoids burning the Resend daily quota during flow testing).
+    email_send_enabled: bool = Field(default=True, alias="EMAIL_SEND_ENABLED")
     stripe_secret_key: SecretStr | None = Field(
         default=None, alias="STRIPE_SECRET_KEY"
     )
