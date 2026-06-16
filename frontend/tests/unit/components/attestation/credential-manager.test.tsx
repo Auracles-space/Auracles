@@ -72,10 +72,14 @@ describe("CredentialManager", () => {
       expect(createCredential).toHaveBeenCalledWith(
         expect.objectContaining({
           body: {
+            credential_type: null,
             expires_date: null,
             issued_date: "2026-01-01",
             issuer: "Auracles Institute",
+            issuer_type: null,
+            reference_number: null,
             title: "Healthcare Compliance Lead",
+            verification_url: null,
           },
         }),
       );

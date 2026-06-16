@@ -46,6 +46,7 @@ from app.modules.attestation.schemas import (
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
     CredentialCreateRequest,
+    CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
     CredentialEvidenceUploadSessionResponse,
     CredentialResponse,
@@ -561,6 +562,27 @@ async def delete_credential(
         user=user,
         credential_id=credential_id,
     )
+
+
+@router.get(
+    "/credentials/{credential_id}/evidence",
+    response_model=CredentialEvidenceDownloadResponse,
+)
+async def download_credential_evidence(
+    credential_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+    key: Annotated[str, Query(min_length=1)],
+) -> CredentialEvidenceDownloadResponse:
+    """Return a presigned URL to download one of the owner's evidence files."""
+    url = await credential_service.generate_evidence_download_url(
+        db=db,
+        requester_id=user.id,
+        credential_id=credential_id,
+        key=key,
+        is_admin=False,
+    )
+    return CredentialEvidenceDownloadResponse(url=url)
 
 
 @router.post(

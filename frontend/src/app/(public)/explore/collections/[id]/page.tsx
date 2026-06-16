@@ -39,7 +39,7 @@ export default async function CollectionDetailPage({
   const alreadyOwnedCount = collection.already_owned_member_ids?.length ?? 0;
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <Link className="text-sm font-semibold text-accent" href="/explore">
           Back to Explore

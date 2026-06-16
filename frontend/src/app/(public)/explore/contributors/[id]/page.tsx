@@ -41,13 +41,14 @@ export default async function ContributorProfilePage({
   }
 
   const profile: ExploreContributorProfile = result.data;
+  const verifiedCredentials = profile.verified_credentials ?? [];
   const reportLabel =
     profile.attestation_count === 1
       ? "1 public report"
       : `${profile.attestation_count} public reports`;
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-foreground md:px-8">
+    <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
         <Link className="text-sm font-semibold text-accent" href="/explore">
           Back to Explore
@@ -148,6 +149,49 @@ export default async function ContributorProfilePage({
             ))}
           </div>
         </section>
+
+        {verifiedCredentials.length > 0 ? (
+          <section className="mt-10">
+            <div className="mb-4 border-b border-border-default pb-4">
+              <h2 className="font-heading text-xl font-bold text-foreground">
+                Verified credentials
+              </h2>
+              <p className="mt-1 text-sm text-foreground-muted">
+                Professional credentials independently verified by Auracles.
+              </p>
+            </div>
+
+            <ul className="grid gap-4 sm:grid-cols-2">
+              {verifiedCredentials.map((credential, index) => (
+                <li
+                  className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
+                  key={`${credential.title}-${credential.issuer}-${index}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h3 className="font-heading text-lg font-bold text-foreground">
+                      {credential.title}
+                    </h3>
+                    <span className="inline-flex h-7 items-center gap-1.5 rounded-badge border border-success/30 bg-success/10 px-2 text-xs font-medium uppercase tracking-[0.05em] text-success">
+                      Verified
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-foreground-muted">
+                    {credential.issuer}
+                    {credential.credential_type
+                      ? ` · ${credential.credential_type}`
+                      : ""}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+                    Issued {credential.issued_date}
+                    {credential.expires_date
+                      ? ` · ${credential.expired ? "expired" : "expires"} ${credential.expires_date}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </div>
     </main>
   );

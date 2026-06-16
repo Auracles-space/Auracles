@@ -35,6 +35,11 @@ const adminLinks = [
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",
   },
+  {
+    href: "/admin/credentials",
+    label: "Credentials",
+    summary: "Review evidence and verify or reject submitted credentials.",
+  },
 ];
 
 /**
@@ -46,7 +51,7 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
 
   return (
-    <section className="min-h-screen bg-background px-4 py-6 text-foreground md:px-8 md:py-8">
+    <section className="px-4 py-6 text-foreground md:px-8 md:py-8">
       <div className="mx-auto grid max-w-[1280px] gap-6 xl:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="grid content-start gap-4">
           <header className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">

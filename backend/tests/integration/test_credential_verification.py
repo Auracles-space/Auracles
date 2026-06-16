@@ -408,3 +408,139 @@ async def test_reject_blocks_admin_self_review(
                 reason="should not be allowed",
             )
     assert exc.value.status_code == 403
+
+
+def _fake_presigned_get(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub S3 presigned GET so no AWS call happens during download tests."""
+    from app.integrations import s3
+
+    def fake_presigned_get(
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
+        return "https://signed.example/evidence"
+
+    monkeypatch.setattr(s3.storage, "presigned_get", fake_presigned_get)
+
+
+async def test_owner_downloads_own_evidence_download(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Owner downloads own evidence -> 200 with a presigned url."""
+    del migrated_database, credential_context
+    _fake_presigned_get(monkeypatch)
+    owner_id = await create_user("ev-owner@auracles.space", ["contributor"])
+    key = "credentials/abc/def/file.pdf"
+    credential_id = str(await _seed_credential(owner_id, evidence_file_keys=[key]))
+    resp = await client.get(
+        f"/v1/credentials/{credential_id}/evidence",
+        params={"key": key},
+        headers=auth_headers(owner_id, ["contributor"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["url"].startswith("https://")
+
+
+async def test_admin_downloads_any_evidence_download(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin downloads any credential's evidence -> 200."""
+    del migrated_database, credential_context
+    _fake_presigned_get(monkeypatch)
+    owner_id = await create_user("ev-owner2@auracles.space", ["contributor"])
+    admin_id = await create_user("ev-admin@auracles.space", ["admin"])
+    key = "credentials/abc/def/file.pdf"
+    credential_id = str(await _seed_credential(owner_id, evidence_file_keys=[key]))
+    resp = await client.get(
+        f"/v1/admin/credentials/{credential_id}/evidence",
+        params={"key": key},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["url"].startswith("https://")
+
+
+async def test_stranger_cannot_download_evidence_download(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-owner, non-admin user is denied (403) on the owner route."""
+    del migrated_database, credential_context
+    _fake_presigned_get(monkeypatch)
+    owner_id = await create_user("ev-owner3@auracles.space", ["contributor"])
+    stranger_id = await create_user("ev-stranger@auracles.space", ["contributor"])
+    key = "credentials/abc/def/file.pdf"
+    credential_id = str(await _seed_credential(owner_id, evidence_file_keys=[key]))
+    resp = await client.get(
+        f"/v1/credentials/{credential_id}/evidence",
+        params={"key": key},
+        headers=auth_headers(stranger_id, ["contributor"]),
+    )
+    assert resp.status_code == 403
+
+
+async def test_unknown_key_not_found_evidence_download(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A key not present on the credential -> 404."""
+    del migrated_database, credential_context
+    _fake_presigned_get(monkeypatch)
+    owner_id = await create_user("ev-owner4@auracles.space", ["contributor"])
+    credential_id = str(
+        await _seed_credential(
+            owner_id, evidence_file_keys=["credentials/abc/def/real.pdf"]
+        )
+    )
+    resp = await client.get(
+        f"/v1/credentials/{credential_id}/evidence",
+        params={"key": "credentials/abc/def/missing.pdf"},
+        headers=auth_headers(owner_id, ["contributor"]),
+    )
+    assert resp.status_code == 404
+
+
+async def test_evidence_download_writes_audit(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful download writes a credential_evidence_download audit row."""
+    del migrated_database, credential_context
+    _fake_presigned_get(monkeypatch)
+    owner_id = await create_user("ev-owner5@auracles.space", ["contributor"])
+    key = "credentials/abc/def/file.pdf"
+    credential_id = str(await _seed_credential(owner_id, evidence_file_keys=[key]))
+    resp = await client.get(
+        f"/v1/credentials/{credential_id}/evidence",
+        params={"key": key},
+        headers=auth_headers(owner_id, ["contributor"]),
+    )
+    assert resp.status_code == 200
+    async with async_session_factory() as session:
+        actions = (
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.target_type == "credential"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert "credential_evidence_download" in actions

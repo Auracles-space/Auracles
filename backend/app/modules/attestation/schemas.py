@@ -147,6 +147,12 @@ class CredentialEvidenceUploadSessionResponse(BaseModel):
     scan_status: str
 
 
+class CredentialEvidenceDownloadResponse(BaseModel):
+    """Presigned GET URL for one Credential evidence file."""
+
+    url: str
+
+
 class AttestationEvidenceUploadCreateRequest(BaseModel):
     """Request body for creating an Attestation report evidence upload session."""
 

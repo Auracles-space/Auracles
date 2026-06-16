@@ -43,6 +43,7 @@ from app.modules.attestation.schemas import (
     AdminCredentialRejectRequest,
     AdminCredentialResponse,
     AdminCredentialsResponse,
+    CredentialEvidenceDownloadResponse,
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
@@ -397,6 +398,27 @@ async def reject_credential(
         reason=payload.reason,
     )
     return AdminCredentialResponse.model_validate(credential)
+
+
+@router.get(
+    "/credentials/{credential_id}/evidence",
+    response_model=CredentialEvidenceDownloadResponse,
+)
+async def download_credential_evidence(
+    credential_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+    key: Annotated[str, Query(min_length=1)],
+) -> CredentialEvidenceDownloadResponse:
+    """Return a presigned URL for an admin to download credential evidence."""
+    url = await credential_service.generate_evidence_download_url(
+        db=db,
+        requester_id=admin.id,
+        credential_id=credential_id,
+        key=key,
+        is_admin=True,
+    )
+    return CredentialEvidenceDownloadResponse(url=url)
 
 
 @router.post(

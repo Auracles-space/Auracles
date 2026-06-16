@@ -922,6 +922,13 @@ export type CredentialCreateRequest = {
 };
 
 /**
+ * Presigned GET URL for one Credential evidence file.
+ */
+export type CredentialEvidenceDownloadResponse = {
+    url: string;
+};
+
+/**
  * Request body for creating a Credential evidence upload session.
  */
 export type CredentialEvidenceUploadCreateRequest = {
@@ -2829,6 +2836,19 @@ export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse = (
 
 export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostError = (HTTPValidationError);
 
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetData = {
+    path: {
+        credential_id: string;
+    };
+    query: {
+        key: string;
+    };
+};
+
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
+
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
+
 export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
     body: AdminFrameworkSuspendRequest;
     path: {
@@ -3103,6 +3123,19 @@ export type DeleteCredentialV1CredentialsCredentialIdDeleteData = {
 export type DeleteCredentialV1CredentialsCredentialIdDeleteResponse = (void);
 
 export type DeleteCredentialV1CredentialsCredentialIdDeleteError = (HTTPValidationError);
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData = {
+    path: {
+        credential_id: string;
+    };
+    query: {
+        key: string;
+    };
+};
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostData = {
     body: CredentialEvidenceUploadCreateRequest;

@@ -369,6 +369,65 @@ async def _consume_credential_evidence_sessions(
         row.consumed_at = now
 
 
+CREDENTIAL_EVIDENCE_DOWNLOAD_TTL_SECONDS = 300
+
+
+async def generate_evidence_download_url(
+    db: AsyncSession,
+    requester_id: UUID,
+    credential_id: UUID,
+    key: str,
+    is_admin: bool,
+) -> str:
+    """Return a short-TTL presigned GET URL for one credential evidence file.
+
+    Owners may download their own credential's evidence in any state; admins may
+    download any credential's evidence. The key must belong to the credential.
+    Writes a ``credential_evidence_download`` audit row. The presigned URL is
+    never logged.
+
+    Raises:
+        HTTPException(404): Credential not found, or key not on the credential.
+        HTTPException(403): Requester is neither the owner nor an admin.
+    """
+    credential = await db.scalar(
+        select(Credential).where(Credential.id == credential_id)
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found."
+        )
+    if not is_admin and credential.user_id != requester_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not permitted to access this credential's evidence.",
+        )
+    if key not in credential.evidence_file_keys:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidence file not found for this credential.",
+        )
+    credential_pk = credential.id
+    settings = get_settings()
+    url = s3.storage.presigned_get(
+        settings.s3_artifacts_bucket,
+        key,
+        CREDENTIAL_EVIDENCE_DOWNLOAD_TTL_SECONDS,
+    )
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await write_audit(
+            db=db,
+            actor_id=requester_id,
+            action="credential_evidence_download",
+            target_type="credential",
+            target_id=credential_pk,
+            metadata={"key_suffix": key.rsplit("/", 1)[-1], "is_admin": is_admin},
+        )
+    return url
+
+
 async def _load_owned_credential_for_update(
     db: AsyncSession,
     user_id: UUID,

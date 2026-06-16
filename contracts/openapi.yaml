@@ -460,6 +460,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/credentials/{credential_id}/evidence:
+    get:
+      tags:
+      - Admin
+      summary: Download Credential Evidence
+      description: Return a presigned URL for an admin to download credential evidence.
+      operationId: download_credential_evidence_v1_admin_credentials__credential_id__evidence_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      - name: key
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceDownloadResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/frameworks/{framework_id}/suspend:
     post:
       tags:
@@ -1354,6 +1391,44 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/credentials/{credential_id}/evidence:
+    get:
+      tags:
+      - Attestation
+      summary: Download Credential Evidence
+      description: Return a presigned URL to download one of the owner's evidence
+        files.
+      operationId: download_credential_evidence_v1_credentials__credential_id__evidence_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Credential Id
+      - name: key
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceDownloadResponse'
         '422':
           description: Validation Error
           content:
@@ -8933,6 +9008,16 @@ components:
       - issued_date
       title: CredentialCreateRequest
       description: Request body for creating a user-owned Credential.
+    CredentialEvidenceDownloadResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - url
+      title: CredentialEvidenceDownloadResponse
+      description: Presigned GET URL for one Credential evidence file.
     CredentialEvidenceUploadCreateRequest:
       properties:
         file_name:

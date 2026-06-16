@@ -3,11 +3,19 @@
 /**
  * Credential management UI for Attestation targets.
  *
- * Credentials are user-owned records that can later be submitted for formal
- * Attestation. Evidence uploads are handled by the backend upload-session API;
- * this MVP panel manages the durable credential records first.
+ * Credentials are user-owned records that move through a verification lifecycle
+ * (unverified → pending → verified | rejected). This container loads the owner's
+ * credentials, hosts the create/edit form, and wires the lifecycle actions
+ * (edit, delete, submit-for-verification) to the generated SDK. Evidence files
+ * are uploaded from the edit form and persisted via evidence_file_keys on save;
+ * a 409 on update means the new evidence is still being scanned.
+ *
+ * Maps to: FR-ATT credential verification lifecycle.
  */
 import { useEffect, useState } from "react";
+
+import { CredentialCard } from "./credential-card";
+import { CredentialForm, type CredentialFormValues } from "./credential-form";
 
 import {
   configureBrowserClient,
@@ -19,21 +27,21 @@ import {
   createCredential,
   deleteCredential,
   listCredentials,
+  submitCredentialV1CredentialsCredentialIdSubmitPost,
+  updateCredentialV1CredentialsCredentialIdPatch,
 } from "@/lib/generated/sdk.gen";
 import type { CredentialResponse } from "@/lib/generated/types.gen";
 
 /**
- * Render user-owned Credentials and a create form.
+ * Render user-owned Credentials, the create/edit form, and lifecycle actions.
  */
 export function CredentialManager() {
   const [credentials, setCredentials] = useState<CredentialResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [expiresDate, setExpiresDate] = useState("");
-  const [issuedDate, setIssuedDate] = useState("");
-  const [issuer, setIssuer] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<CredentialResponse | null>(null);
 
   useEffect(() => {
     async function loadCredentials() {
@@ -53,18 +61,15 @@ export function CredentialManager() {
 
   /**
    * Persist a new user-owned Credential through the generated SDK.
+   *
+   * @param values - Normalised form values from the create form.
    */
-  async function handleCreateCredential() {
+  async function handleCreateCredential(values: CredentialFormValues) {
     setError(null);
     setSubmitting(true);
     configureBrowserClient();
     const result = await createCredential({
-      body: {
-        expires_date: expiresDate || null,
-        issued_date: issuedDate,
-        issuer,
-        title,
-      },
+      body: values,
       headers: getAccessTokenHeaders(),
     });
     setSubmitting(false);
@@ -75,10 +80,75 @@ export function CredentialManager() {
     }
 
     setCredentials((current) => [result.data, ...current]);
-    setExpiresDate("");
-    setIssuedDate("");
-    setIssuer("");
-    setTitle("");
+  }
+
+  /**
+   * Update the credential currently in edit mode through the generated SDK.
+   *
+   * @param values - Normalised form values from the edit form.
+   */
+  async function handleUpdateCredential(values: CredentialFormValues) {
+    if (!editing) {
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    configureBrowserClient();
+    const result = await updateCredentialV1CredentialsCredentialIdPatch({
+      body: values,
+      headers: getAccessTokenHeaders(),
+      path: { credential_id: editing.id },
+    });
+    setSubmitting(false);
+
+    if (!result.response.ok || !result.data) {
+      // A 409 means freshly uploaded evidence is still being virus-scanned;
+      // the save is safe to retry once scanning settles.
+      if (result.response.status === 409) {
+        setError(
+          "Evidence is still being scanned — try saving again in a moment.",
+        );
+        return;
+      }
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+
+    const updated = result.data;
+    setCredentials((current) =>
+      current.map((credential) =>
+        credential.id === updated.id ? updated : credential,
+      ),
+    );
+    setEditing(null);
+  }
+
+  /**
+   * Submit one Credential for verification review.
+   *
+   * @param credentialId - Credential UUID to submit.
+   */
+  async function handleSubmitForVerification(credentialId: string) {
+    setError(null);
+    setBusyId(credentialId);
+    configureBrowserClient();
+    const result = await submitCredentialV1CredentialsCredentialIdSubmitPost({
+      headers: getAccessTokenHeaders(),
+      path: { credential_id: credentialId },
+    });
+    setBusyId(null);
+
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+
+    const updated = result.data;
+    setCredentials((current) =>
+      current.map((credential) =>
+        credential.id === updated.id ? updated : credential,
+      ),
+    );
   }
 
   /**
@@ -88,14 +158,19 @@ export function CredentialManager() {
    */
   async function handleDeleteCredential(credentialId: string) {
     setError(null);
+    setBusyId(credentialId);
     configureBrowserClient();
     const result = await deleteCredential({
       headers: getAccessTokenHeaders(),
       path: { credential_id: credentialId },
     });
+    setBusyId(null);
     if (!result.response.ok) {
       setError(describeGeneratedError(result.error));
       return;
+    }
+    if (editing?.id === credentialId) {
+      setEditing(null);
     }
     setCredentials((current) =>
       current.filter((credential) => credential.id !== credentialId),
@@ -119,57 +194,52 @@ export function CredentialManager() {
           Add credentials that can be independently attested and displayed as
           public trust signals.
         </p>
-        {error ? <p className="mt-4 rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">{error}</p> : null}
+        {error ? (
+          <p className="mt-4 rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+            {error}
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <h2 className="font-heading text-xl font-bold text-foreground">
-          Add credential
-        </h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Credential title
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-              onChange={(event) => setTitle(event.target.value)}
-              value={title}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Issuer
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-              onChange={(event) => setIssuer(event.target.value)}
-              value={issuer}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Issued date
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-              onChange={(event) => setIssuedDate(event.target.value)}
-              type="date"
-              value={issuedDate}
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Expiry date
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-              onChange={(event) => setExpiresDate(event.target.value)}
-              type="date"
-              value={expiresDate}
-            />
-          </label>
-        </div>
-        <button
-          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!title || !issuer || !issuedDate || submitting}
-          onClick={handleCreateCredential}
-          type="button"
-        >
-          {submitting ? "Adding credential" : "Add credential"}
-        </button>
+        {editing ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-heading text-xl font-bold text-foreground">
+                Edit credential
+              </h2>
+              <button
+                className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                onClick={() => setEditing(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="mt-4">
+              <CredentialForm
+                initial={editing}
+                key={editing.id}
+                mode="edit"
+                onSubmit={handleUpdateCredential}
+                submitting={submitting}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="font-heading text-xl font-bold text-foreground">
+              Add credential
+            </h2>
+            <div className="mt-4">
+              <CredentialForm
+                mode="create"
+                onSubmit={handleCreateCredential}
+                submitting={submitting}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid gap-3">
@@ -179,32 +249,14 @@ export function CredentialManager() {
           </p>
         ) : (
           credentials.map((credential) => (
-            <article
-              className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+            <CredentialCard
+              busy={busyId === credential.id}
+              credential={credential}
               key={credential.id}
-            >
-              <div>
-                <h3 className="font-heading text-lg font-bold text-foreground">
-                  {credential.title}
-                </h3>
-                <p className="mt-1 text-sm text-foreground-muted">
-                  {credential.issuer} · issued {credential.issued_date}
-                  {credential.expires_date
-                    ? ` · expires ${credential.expires_date}`
-                    : ""}
-                </p>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-                  {credential.evidence_file_keys.length} evidence files
-                </p>
-              </div>
-              <button
-                className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
-                onClick={() => handleDeleteCredential(credential.id)}
-                type="button"
-              >
-                Delete
-              </button>
-            </article>
+              onDelete={handleDeleteCredential}
+              onEdit={setEditing}
+              onSubmitForVerification={handleSubmitForVerification}
+            />
           ))
         )}
       </div>
