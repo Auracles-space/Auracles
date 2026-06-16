@@ -5,10 +5,82 @@ via the Resend API with custom brand-aligned Bento Box layouts.
 """
 
 from html import escape
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from app.core.config import get_settings
+
+if TYPE_CHECKING:
+    from resend import Emails
+
+
+class EmailDeliveryError(Exception):
+    """Base class for classified Resend delivery failures."""
+
+
+class TransientEmailError(EmailDeliveryError):
+    """A retryable provider failure (per-second rate limit, 5xx, network)."""
+
+
+class PermanentEmailError(EmailDeliveryError):
+    """A non-retryable provider failure (daily-quota exhaustion, validation).
+
+    Retrying these wastes attempts and, for quota errors, re-burns the daily
+    allowance the moment it resets. The caller must log and stop, not retry.
+    """
+
+
+# Substrings (matched case-insensitively against the provider error message)
+# that mark a failure as permanent. Everything else is treated as transient so
+# genuine blips still retry. The per-second limit ("requests per second") is
+# deliberately absent here — it is transient and should retry with backoff.
+_PERMANENT_MARKERS = (
+    "daily email sending quota",
+    "exceeded your daily",
+    "validation_error",
+    "invalid `to`",
+    "invalid `from`",
+    "not a valid email",
+)
+
+
+def classify_email_error(exc: Exception) -> EmailDeliveryError:
+    """Classify a raw provider exception as transient or permanent.
+
+    Args:
+        exc: The exception raised by the Resend SDK (or a network error).
+
+    Returns:
+        A ``PermanentEmailError`` if the message matches a known non-retryable
+        marker, otherwise a ``TransientEmailError``.
+    """
+    message = str(exc)
+    lowered = message.lower()
+    if any(marker in lowered for marker in _PERMANENT_MARKERS):
+        return PermanentEmailError(message)
+    return TransientEmailError(message)
+
+
+def _dispatch(payload: "Emails.SendParams") -> None:
+    """Send a prepared payload through Resend, classifying any failure.
+
+    The caller is responsible for setting ``resend.api_key`` and skipping the
+    send entirely when Resend is not configured.
+
+    Args:
+        payload: The Resend ``Emails.send`` payload (from/to/subject/html).
+
+    Raises:
+        PermanentEmailError: Provider rejected the send non-retryably.
+        TransientEmailError: Provider/network failure worth retrying.
+    """
+    import resend
+
+    try:
+        resend.Emails.send(payload)
+    except Exception as exc:  # noqa: BLE001 - re-raised as a classified error
+        raise classify_email_error(exc) from exc
 
 
 def _render_email_html(
@@ -122,7 +194,7 @@ def send_verification_email(email: str, token: str) -> None:
         content_html=content_html,
     )
 
-    resend.Emails.send(
+    _dispatch(
         {
             "from": settings.resend_from_address,
             "to": email,
@@ -158,7 +230,7 @@ def send_password_reset_email(email: str, token: str) -> None:
         content_html=content_html,
     )
 
-    resend.Emails.send(
+    _dispatch(
         {
             "from": settings.resend_from_address,
             "to": email,
@@ -194,7 +266,7 @@ def send_email_change_verification(email: str, token: str) -> None:
         content_html=content_html,
     )
 
-    resend.Emails.send(
+    _dispatch(
         {
             "from": settings.resend_from_address,
             "to": email,
@@ -235,7 +307,7 @@ def send_new_device_email(
         content_html=content_html,
     )
 
-    resend.Emails.send(
+    _dispatch(
         {
             "from": settings.resend_from_address,
             "to": email,
@@ -276,7 +348,7 @@ def send_project_notification_email(
         action_text="Open in Auracles" if link else None,
     )
 
-    resend.Emails.send(
+    _dispatch(
         {
             "from": settings.resend_from_address,
             "to": email,

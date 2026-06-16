@@ -162,6 +162,30 @@ def test_send_verification_email_retries_when_resend_fails(
         )
 
 
+def test_send_verification_email_does_not_retry_on_permanent_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A permanent provider error (e.g. daily quota) must NOT retry.
+
+    Retrying a non-retryable failure every 60s is what burned the Resend daily
+    quota; permanent errors are logged and swallowed so the task succeeds once.
+    """
+    from app.integrations.resend import PermanentEmailError
+
+    def _permanent(**_kwargs: Any) -> None:
+        raise PermanentEmailError("You have reached your daily email sending quota.")
+
+    monkeypatch.setattr(notifications, "send_via_resend", _permanent)
+
+    # Must complete without raising Retry.
+    assert (
+        notifications.send_verification_email.apply(
+            args=["user@auracles.space", "tok-1"]
+        ).get()
+        is None
+    )
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure framework/license tables exist for the licensee-count task."""

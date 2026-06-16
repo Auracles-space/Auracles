@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy import func, select
 
 from app.core.database import async_session_factory
+from app.integrations.resend import PermanentEmailError
 from app.integrations.resend import (
     send_email_change_verification as send_email_change_via_resend,
 )
@@ -27,7 +28,7 @@ from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_verification_email(self: Any, email: str, token: str) -> None:
     """Send a registration verification email."""
     log = logger.bind(
@@ -38,13 +39,16 @@ def send_verification_email(self: Any, email: str, token: str) -> None:
     log.info("task_started")
     try:
         send_via_resend(email=email, token=token)
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_password_reset_email(self: Any, email: str, token: str) -> None:
     """Send a password reset email."""
     log = logger.bind(
@@ -55,13 +59,16 @@ def send_password_reset_email(self: Any, email: str, token: str) -> None:
     log.info("task_started")
     try:
         send_password_reset_via_resend(email=email, token=token)
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_email_change_verification(self: Any, email: str, token: str) -> None:
     """Send a new-account-email verification email."""
     log = logger.bind(
@@ -72,13 +79,16 @@ def send_email_change_verification(self: Any, email: str, token: str) -> None:
     log.info("task_started")
     try:
         send_email_change_via_resend(email=email, token=token)
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_new_device_email(
     self: Any,
     email: str,
@@ -94,13 +104,16 @@ def send_new_device_email(
     log.info("task_started")
     try:
         send_new_device_via_resend(email=email, ip=ip, user_agent=user_agent)
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_project_notification_email(
     self: Any,
     *,
@@ -123,13 +136,16 @@ def send_project_notification_email(
             body=body,
             link=link,
         )
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
     log.info("task_completed")
 
 
-@app.task(bind=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
 def send_saved_search_alert_email(
     self: Any,
     *,
@@ -158,6 +174,9 @@ def send_saved_search_alert_email(
             ),
             link=link,
         )
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
