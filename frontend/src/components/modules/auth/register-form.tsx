@@ -25,6 +25,7 @@ import {
 } from "@/lib/forms/validators";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
+import { ResendVerificationButton } from "./resend-verification-button";
 
 type AssignableRole = "attestor" | "contributor" | "operator";
 
@@ -121,6 +122,34 @@ export function RegisterForm() {
     setSuccess(
       result.data?.message ??
         "We've sent a verification link to your email. Please check your inbox to activate your account.",
+    );
+  }
+
+  if (success) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="font-heading text-xl font-semibold text-foreground">
+            Check your inbox
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-foreground-muted">
+            We&apos;ve sent a verification link to{" "}
+            <span className="font-medium text-foreground">{email}</span>. Click
+            the link in that email to activate your account.
+          </p>
+        </div>
+        <ResendVerificationButton email={email} />
+        <p className="text-sm leading-6 text-foreground-muted">
+          Prefer to enter the token manually?{" "}
+          <a
+            className="font-medium text-accent hover:underline"
+            href="/verify-email"
+          >
+            Go to verification
+          </a>
+          .
+        </p>
+      </div>
     );
   }
 

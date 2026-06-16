@@ -18,21 +18,31 @@ import { verifyEmail } from "@/lib/generated/sdk.gen";
 
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
+import { ResendVerificationButton } from "./resend-verification-button";
 
 type VerifyEmailFormProps = {
   initialToken?: string;
+  initialEmail?: string;
 };
 
 /**
  * Render the email verification token submission form.
  *
- * @param props - Optional token captured from search params.
+ * The primary path is the magic link in the verification email (which prefills
+ * the token via search params). The manual token field and the resend control
+ * are fallbacks for when the link is lost or expired.
+ *
+ * @param props - Optional token and email captured from search params.
  */
-export function VerifyEmailForm({ initialToken = "" }: VerifyEmailFormProps) {
+export function VerifyEmailForm({
+  initialToken = "",
+  initialEmail = "",
+}: VerifyEmailFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [token, setToken] = useState(initialToken);
+  const [email, setEmail] = useState(initialEmail);
   const canSubmit = isNonEmpty(token);
 
   async function submitVerification(
@@ -77,6 +87,22 @@ export function VerifyEmailForm({ initialToken = "" }: VerifyEmailFormProps) {
       <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Verifying" : "Verify email"}
       </Button>
+
+      <div className="space-y-3 border-t border-border-default pt-5">
+        <p className="text-sm leading-6 text-foreground-muted">
+          Didn&apos;t get the email? Enter your address and we&apos;ll send a new
+          verification link.
+        </p>
+        <FormField
+          autoComplete="email"
+          label="Email"
+          name="email"
+          onChange={(event) => setEmail(event.target.value)}
+          type="email"
+          value={email}
+        />
+        <ResendVerificationButton email={email} />
+      </div>
     </form>
   );
 }

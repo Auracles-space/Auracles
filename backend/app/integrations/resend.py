@@ -6,6 +6,7 @@ via the Resend API with custom brand-aligned Bento Box layouts.
 
 from html import escape
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from loguru import logger
 
@@ -118,6 +119,16 @@ def _delivery_disabled(
     return True
 
 
+def _frontend_base_url() -> str:
+    """Return the app's public base URL for building email links.
+
+    Uses the first configured CORS origin (the frontend origin), falling back
+    to the local dev URL when none is set.
+    """
+    origins = get_settings().cors_origin_list
+    return origins[0] if origins else "http://localhost:3000"
+
+
 def _render_email_html(
     title: str,
     content_html: str,
@@ -125,9 +136,7 @@ def _render_email_html(
     action_text: str | None = None,
 ) -> str:
     """Wrap email content in a responsive, brand-aligned Bento HTML layout."""
-    settings = get_settings()
-    origins = settings.cors_origin_list
-    frontend_url = origins[0] if origins else "http://localhost:3000"
+    frontend_url = _frontend_base_url()
     logo_url = f"{frontend_url}/images/logo-text-black.png"
 
     action_btn_html = ""
@@ -206,7 +215,10 @@ def _render_email_html(
 def send_verification_email(email: str, token: str) -> None:
     """Send a verification email through Resend when configured."""
     settings = get_settings()
-    if _delivery_disabled("auth", "send_verification_email", email, token=token):
+    verify_url = f"{_frontend_base_url()}/verify-email?token={quote(token, safe='')}"
+    if _delivery_disabled(
+        "auth", "send_verification_email", email, token=token, link=verify_url
+    ):
         return
     if settings.resend_api_key is None:
         logger.bind(module="auth", action="send_verification_email").info(
@@ -220,15 +232,17 @@ def send_verification_email(email: str, token: str) -> None:
     resend.api_key = settings.resend_api_key.get_secret_value()
 
     content_html = f"""
-    <p style="margin: 0 0 20px 0;">Welcome to Auracles! Please verify your account to unlock full access to the knowledge marketplace.</p>
-    <p style="margin: 0 0 8px 0; font-weight: 600;">Your verification token:</p>
-    <div style="background-color: #F1EDE6; border: 1px solid #EAE5DC; border-radius: 12px; padding: 16px; font-family: monospace; font-size: 24px; font-weight: bold; color: #C74634; text-align: center; letter-spacing: 4px;">
+    <p style="margin: 0 0 20px 0;">Welcome to Auracles! Click the button below to verify your account and unlock full access to the knowledge marketplace.</p>
+    <p style="margin: 0 0 8px 0; font-size: 13px; color: #6B7280;">If the button does not work, paste this token on the verification page:</p>
+    <div style="background-color: #F1EDE6; border: 1px solid #EAE5DC; border-radius: 12px; padding: 16px; font-family: monospace; font-size: 13px; font-weight: bold; color: #C74634; text-align: center; word-break: break-all;">
         {escape(token)}
     </div>
     """
     html = _render_email_html(
         title="Verify your Auracles account",
         content_html=content_html,
+        action_url=verify_url,
+        action_text="Verify email",
     )
 
     _dispatch(

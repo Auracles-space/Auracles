@@ -10,6 +10,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
     setConfig: vi.fn(),
   },
   registerUser: vi.fn(),
+  resendVerificationV1AuthResendVerificationPost: vi.fn(),
 }));
 
 describe("RegisterForm", () => {
@@ -111,6 +112,42 @@ describe("RegisterForm", () => {
       });
     });
     expect(await screen.findByText(/verification link/i)).toBeInTheDocument();
+  });
+
+  it("shows a check-your-inbox panel with a resend option after registering", async () => {
+    vi.mocked(registerUser).mockResolvedValue({
+      data: { message: "We've sent a verification link to your email." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<RegisterForm />);
+
+    fireEvent.change(screen.getByLabelText(/display name/i), {
+      target: { value: "Ada Markets" },
+    });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password/i), {
+      target: { value: "StrongerPass123!" },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: "StrongerPass123!" },
+    });
+    fireEvent.click(screen.getByLabelText(/contributor/i));
+    fireEvent.click(screen.getByLabelText(/terms of service/i));
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: /check your inbox/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /resend verification email/i }),
+    ).toBeInTheDocument();
+    // The form is replaced by the panel.
+    expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
   });
 
   it("clears other roles when Attestor is selected", () => {

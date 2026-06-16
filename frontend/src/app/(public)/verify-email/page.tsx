@@ -26,7 +26,10 @@ export default async function VerifyEmailPage({
       summary="Email confirmation protects marketplace provenance and keeps account recovery tied to a verified address."
       title="Confirm ownership of your email address."
     >
-      <VerifyEmailForm initialToken={firstParam(params.token)} />
+      <VerifyEmailForm
+        initialToken={firstParam(params.token)}
+        initialEmail={firstParam(params.email)}
+      />
     </AuthPageShell>
   );
 }

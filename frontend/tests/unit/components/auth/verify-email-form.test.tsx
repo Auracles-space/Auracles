@@ -1,8 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VerifyEmailForm } from "@/components/modules/auth/verify-email-form";
-import { verifyEmail } from "@/lib/generated/sdk.gen";
+import {
+  resendVerificationV1AuthResendVerificationPost,
+  verifyEmail,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -12,12 +15,14 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   client: { setConfig: vi.fn() },
+  resendVerificationV1AuthResendVerificationPost: vi.fn(),
   verifyEmail: vi.fn(),
 }));
 
 describe("VerifyEmailForm", () => {
   beforeEach(() => {
     vi.mocked(verifyEmail).mockReset();
+    vi.mocked(resendVerificationV1AuthResendVerificationPost).mockReset();
   });
 
   it("keeps the submit button disabled until a token is present", () => {
@@ -61,5 +66,24 @@ describe("VerifyEmailForm", () => {
     expect(
       await screen.findByText(/verification token is invalid/i),
     ).toBeInTheDocument();
+  });
+
+  it("resends the verification email from the prefilled address", async () => {
+    vi.mocked(resendVerificationV1AuthResendVerificationPost).mockResolvedValue({
+      data: { message: "If email is new, verification sent." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<VerifyEmailForm initialEmail="ada@example.com" />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /resend verification email/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(resendVerificationV1AuthResendVerificationPost),
+      ).toHaveBeenCalledWith({ body: { email: "ada@example.com" } });
+    });
   });
 });

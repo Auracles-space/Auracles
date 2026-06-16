@@ -155,3 +155,37 @@ def test_delivery_enabled_dispatches_to_resend(
     resend_adapter.send_verification_email("user@auracles.space", "tok-xyz")
 
     assert len(sent) == 1
+
+
+def test_verification_email_renders_magic_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sent email links to /verify-email?token=<token> so users click, not type."""
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(resend_adapter, "_dispatch", captured.update)
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=True)
+    )
+
+    resend_adapter.send_verification_email("user@auracles.space", "ev_TOKEN123")
+
+    assert "/verify-email?token=ev_TOKEN123" in str(captured.get("html", ""))
+
+
+def test_verification_email_logs_magic_link_when_delivery_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disabled-mode logs the full verify URL so local dev can click/paste it."""
+    from loguru import logger as loguru_logger
+
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=False)
+    )
+    messages: list[str] = []
+    sink_id = loguru_logger.add(messages.append, format="{message}")
+    try:
+        resend_adapter.send_verification_email("user@auracles.space", "ev_TOKEN123")
+    finally:
+        loguru_logger.remove(sink_id)
+
+    assert any("/verify-email?token=ev_TOKEN123" in message for message in messages)

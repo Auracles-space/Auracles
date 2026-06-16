@@ -19,7 +19,14 @@ def get_redis() -> redis.Redis:
     settings = get_settings()
     return cast(
         redis.Redis,
-        redis.from_url(settings.cache_redis_url, encoding="utf-8"),  # type: ignore[no-untyped-call]
+        # decode_responses=True so reads return str, not bytes. Services cast
+        # stored values directly (e.g. UUID(str(user_id)) in verify_email); bytes
+        # would yield "b'...'" and raise ValueError on parse.
+        redis.from_url(
+            settings.cache_redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        ),  # type: ignore[no-untyped-call]
     )
 
 

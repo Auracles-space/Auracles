@@ -14,8 +14,16 @@ POST {{host}}/v1/auth/resend-verification
 Content-Type: application/json
 
 {
-  "email": "ada@example.com"
+  "email": "williamikeji@gmail.com"
 }
+
+HTTP/1.1 200  - OK
+date: Tue, 16 Jun 2026 15:22:02 GMT
+server: uvicorn
+content-length: 109
+content-type: application/json
+x-request-id: e2b1d2f2-58d0-4efc-b1fc-7d03cf5450aa
+connection: close
 ###
 POST {{host}}/v1/auth/verify-email
 Content-Type: application/json
@@ -24,11 +32,12 @@ Content-Type: application/json
   "token": "ev_kT-EGFI047msBthDxqu2XjUE2Bn_XLOg85kZMTGdj5k"
 }
 
-HTTP/1.1 500  - Internal Server Error
-date: Tue, 16 Jun 2026 15:11:30 GMT
+HTTP/1.1 400  - Bad Request
+date: Tue, 16 Jun 2026 15:17:30 GMT
 server: uvicorn
-content-length: 21
-content-type: text/plain; charset=utf-8
+content-length: 40
+content-type: application/json
+x-request-id: 46839ad6-547e-463c-bf4b-d22edb25b9c8
 connection: close
 ###
 POST {{host}}/v1/auth/login
