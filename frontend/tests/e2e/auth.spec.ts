@@ -164,7 +164,7 @@ async function mockAuthApi(page: Page, mode: MockAuthMode): Promise<void> {
     }
 
     if (path === "/v1/auth/forgot-password") {
-      await fulfillJson(route, { message: "If email is valid, reset link sent." });
+      await fulfillJson(route, { message: "We've sent a password reset link to your email. Please check your inbox to reset your password." });
       return;
     }
 
@@ -311,7 +311,7 @@ test("runs the password reset browser loop", async ({ page }) => {
   await page.goto("/forgot-password");
   await page.getByLabel("Email").fill("ada@example.com");
   await page.getByRole("button", { name: "Send reset link" }).click();
-  await expect(page.getByText(/reset link sent/i)).toBeVisible();
+  await expect(page.getByText(/password reset link/i)).toBeVisible();
 
   await page.goto("/reset-password?token=reset-token");
   await page.locator("input#new_password").fill("NewStrongPass123!");

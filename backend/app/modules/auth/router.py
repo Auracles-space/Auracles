@@ -126,7 +126,7 @@ async def forgot_password(
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
     )
-    return RegisterResponse(message="If email is valid, reset link sent.")
+    return RegisterResponse(message="We've sent a password reset link to your email. Please check your inbox to reset your password.")
 
 
 @router.post("/reset-password", response_model=RegisterResponse)

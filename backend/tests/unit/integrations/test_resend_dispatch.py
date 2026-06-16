@@ -189,3 +189,37 @@ def test_verification_email_logs_magic_link_when_delivery_disabled(
         loguru_logger.remove(sink_id)
 
     assert any("/verify-email?token=ev_TOKEN123" in message for message in messages)
+
+
+def test_password_reset_email_renders_magic_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sent email links to /reset-password?token=<token> so users click, not type."""
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(resend_adapter, "_dispatch", captured.update)
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=True)
+    )
+
+    resend_adapter.send_password_reset_email("user@auracles.space", "rp_TOKEN123")
+
+    assert "/reset-password?token=rp_TOKEN123" in str(captured.get("html", ""))
+
+
+def test_password_reset_email_logs_magic_link_when_delivery_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disabled-mode logs the full reset URL so local dev can click/paste it."""
+    from loguru import logger as loguru_logger
+
+    monkeypatch.setattr(
+        resend_adapter, "get_settings", lambda: _FakeSettings(email_send_enabled=False)
+    )
+    messages: list[str] = []
+    sink_id = loguru_logger.add(messages.append, format="{message}")
+    try:
+        resend_adapter.send_password_reset_email("user@auracles.space", "rp_TOKEN123")
+    finally:
+        loguru_logger.remove(sink_id)
+
+    assert any("/reset-password?token=rp_TOKEN123" in message for message in messages)

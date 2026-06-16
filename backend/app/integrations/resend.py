@@ -258,7 +258,10 @@ def send_verification_email(email: str, token: str) -> None:
 def send_password_reset_email(email: str, token: str) -> None:
     """Send a password reset email through Resend when configured."""
     settings = get_settings()
-    if _delivery_disabled("auth", "send_password_reset_email", email, token=token):
+    reset_url = f"{_frontend_base_url()}/reset-password?token={quote(token, safe='')}"
+    if _delivery_disabled(
+        "auth", "send_password_reset_email", email, token=token, link=reset_url
+    ):
         return
     if settings.resend_api_key is None:
         logger.bind(module="auth", action="send_password_reset_email").info(
@@ -281,6 +284,8 @@ def send_password_reset_email(email: str, token: str) -> None:
     html = _render_email_html(
         title="Reset your Auracles password",
         content_html=content_html,
+        action_url=reset_url,
+        action_text="Reset password",
     )
 
     _dispatch(

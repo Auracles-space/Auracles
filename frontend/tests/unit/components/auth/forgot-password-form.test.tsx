@@ -39,7 +39,7 @@ describe("ForgotPasswordForm", () => {
 
   it("shows the no-enumeration success copy on a successful request", async () => {
     vi.mocked(forgotPassword).mockResolvedValue({
-      data: { message: "If email is valid, reset link sent." },
+      data: { message: "We've sent a password reset link to your email. Please check your inbox to reset your password." },
       error: undefined,
       response: new Response(null, { status: 202 }),
     });
@@ -51,7 +51,7 @@ describe("ForgotPasswordForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /send reset link/i }));
 
     expect(
-      await screen.findByText(/if email is valid, reset link sent/i),
+      await screen.findByText(/we've sent a password reset link to your email/i),
     ).toBeInTheDocument();
     expect(vi.mocked(forgotPassword)).toHaveBeenCalledWith({
       body: { email: "ada@example.com" },

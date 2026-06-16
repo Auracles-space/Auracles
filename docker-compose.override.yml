@@ -1,0 +1,23 @@
+# Dev-only overrides — auto-loaded by `docker compose` (and `make dev`).
+# NOT used in production: render.yaml and the base image run Celery without
+# autoreload. This file gives the worker and beat the same restart-on-change
+# behaviour the API already has via `uvicorn --reload`, so code edits (e.g. a
+# new email link in app/integrations/resend.py) take effect without a manual
+# `docker compose restart worker`.
+#
+# watchdog is a dev-only tool, so it is pip-installed at container start rather
+# than baked into the `uv sync --no-dev` production image. The code is already
+# bind-mounted (./backend:/app) in the base compose file, so watchmedo sees
+# edits immediately.
+services:
+  worker:
+    command: >
+      sh -c "uv pip install --quiet 'watchdog[watchmedo]' &&
+      watchmedo auto-restart --directory=/app/app --pattern='*.py' --recursive --signal SIGTERM --
+      celery -A app.workers.celery_app worker --loglevel=info"
+
+  beat:
+    command: >
+      sh -c "uv pip install --quiet 'watchdog[watchmedo]' &&
+      watchmedo auto-restart --directory=/app/app --pattern='*.py' --recursive --signal SIGTERM --
+      celery -A app.workers.celery_app beat --loglevel=info"

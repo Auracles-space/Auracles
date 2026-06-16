@@ -46,7 +46,7 @@ export function ForgotPasswordForm() {
       return;
     }
 
-    setSuccess(result.data?.message ?? "If email is valid, reset link sent.");
+    setSuccess(result.data?.message ?? "We've sent a password reset link to your email. Please check your inbox to reset your password.");
   }
 
   return (
