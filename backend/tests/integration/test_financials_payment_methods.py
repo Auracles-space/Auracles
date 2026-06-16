@@ -198,8 +198,9 @@ async def create_user_with_roles(
     roles: list[str],
     *,
     enable_totp: bool = True,
+    kyc_status: str = "verified",
 ) -> tuple[UUID, str | None]:
-    """Create a verified user with approved roles and optional TOTP."""
+    """Create a verified user with approved roles, optional TOTP, and KYC status."""
     secret = pyotp.random_base32() if enable_totp else None
     async with async_session_factory() as session:
         async with session.begin():
@@ -208,6 +209,7 @@ async def create_user_with_roles(
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=email.split("@")[0],
                 email_verified=True,
+                kyc_status=kyc_status,
                 totp_enabled=enable_totp,
                 totp_secret=encrypt_totp_secret(secret) if secret else None,
             )
@@ -274,6 +276,29 @@ async def test_operator_can_start_stripe_payment_method_setup(
     assert audit is not None
     assert audit.actor_id == user_id
     assert audit.metadata_["provider"] == "stripe"
+
+
+async def test_unverified_operator_cannot_set_up_payment_method(
+    client: AsyncClient,
+    migrated_database: None,
+    payment_method_context: dict[str, Any],
+) -> None:
+    """Adding a payment method requires verified KYC; unverified is blocked (403)."""
+    user_id, totp_secret = await create_user_with_roles(
+        "kyc-gate-payment@auracles.space",
+        ["operator"],
+        kyc_status="unverified",
+    )
+    code = pyotp.TOTP(totp_secret).now()
+
+    response = await client.post(
+        "/v1/financials/payment-methods",
+        headers=auth_headers(user_id, ["operator"]),
+        json={"totp_code": code},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "kyc_required"
 
 
 async def test_operator_lists_and_removes_provider_held_payment_methods(

@@ -1,8 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { KycUpload } from "@/components/modules/auth/kyc-upload";
-import { requestKycUploadUrl } from "@/lib/generated/sdk.gen";
+import {
+  getKycStatusV1SettingsKycGet,
+  requestKycUploadUrl,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/token-store", () => ({
   authTokenStore: {
@@ -17,15 +20,27 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   },
   requestKycUploadUrl: vi.fn(),
   submitKycUpload: vi.fn(),
+  getKycStatusV1SettingsKycGet: vi.fn(),
 }));
 
 describe("KycUpload", () => {
   beforeEach(() => {
     vi.mocked(requestKycUploadUrl).mockReset();
+    vi.mocked(getKycStatusV1SettingsKycGet).mockReset();
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue({
+      data: { kyc_status: "unverified", documents: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as any);
   });
 
-  it("keeps the submit disabled until a document file is selected", () => {
+  it("keeps the submit disabled until a document file is selected", async () => {
     const { container } = render(<KycUpload />);
+
+    // Wait for initial load to finish
+    await waitFor(() => {
+      expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+    });
 
     const submit = screen.getByRole("button", { name: /submit document/i });
     expect(submit).toBeDisabled();
@@ -39,8 +54,13 @@ describe("KycUpload", () => {
     expect(submit).toBeEnabled();
   });
 
-  it("does not request an upload URL while no file is selected", () => {
+  it("does not request an upload URL while no file is selected", async () => {
     render(<KycUpload />);
+
+    // Wait for initial load to finish
+    await waitFor(() => {
+      expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /submit document/i }));
 

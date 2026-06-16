@@ -116,6 +116,7 @@ async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=email.split("@")[0],
                 email_verified=True,
+                kyc_status="verified",
             )
             session.add(user)
             await session.flush()

@@ -46,8 +46,10 @@ export function FormField({
       </span>
       <div className="relative mt-2">
         <input
-          className={`min-h-12 w-full rounded-xl border bg-surface-2 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent ${
-            error ? "border-error focus-visible:border-error focus-visible:ring-error" : "border-border-default"
+          className={`min-h-12 w-full rounded-xl border bg-surface-2 py-2 text-sm text-foreground outline-none focus:outline-none focus-visible:outline-none transition-colors placeholder:text-foreground-subtle focus:border-accent focus:ring-1 focus:ring-accent focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent ${
+            error
+              ? "border-error focus:border-error focus:ring-1 focus:ring-error focus-visible:border-error focus-visible:ring-1 focus-visible:ring-error"
+              : "border-border-default"
           } ${type === "password" ? "pl-4 pr-12" : "px-4"}`}
           aria-invalid={error ? true : undefined}
           id={inputId}

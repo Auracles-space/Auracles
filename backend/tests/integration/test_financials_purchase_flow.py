@@ -142,8 +142,13 @@ async def purchase_context(
         await engine.dispose()
 
 
-async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
-    """Create a verified user with approved roles."""
+async def create_user_with_roles(
+    email: str,
+    roles: list[str],
+    *,
+    kyc_status: str = "verified",
+) -> UUID:
+    """Create a verified user with approved roles and the given KYC status."""
     async with async_session_factory() as session:
         async with session.begin():
             user = User(
@@ -151,6 +156,7 @@ async def create_user_with_roles(email: str, roles: list[str]) -> UUID:
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=email.split("@")[0],
                 email_verified=True,
+                kyc_status=kyc_status,
             )
             session.add(user)
             await session.flush()
@@ -315,6 +321,36 @@ async def test_operator_can_start_stripe_purchase_without_license_grant(
             "idempotency_key": f"purchase:{transaction.id}",
         }
     ]
+
+
+async def test_unverified_operator_cannot_start_purchase(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Purchasing requires verified KYC; an unverified Operator is blocked (403)."""
+    contributor_id = await create_user_with_roles(
+        "kyc-gate-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "kyc-gate-operator@auracles.space",
+        ["operator"],
+        kyc_status="unverified",
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team", "organizational"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "kyc_required"
 
 
 async def test_operator_cannot_purchase_framework_from_suspended_contributor(

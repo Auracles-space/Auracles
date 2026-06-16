@@ -46,6 +46,7 @@ KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 async def create_payment_method_setup(
     payload: PaymentMethodSetupRequest,
     operator: OperatorUser,
+    _: KycVerifiedUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> PaymentMethodSetupResponse:
@@ -109,6 +110,7 @@ async def create_framework_purchase(
     framework_id: UUID,
     payload: PurchaseRequest,
     operator: OperatorUser,
+    _: KycVerifiedUser,
     db: DatabaseSession,
 ) -> PurchaseResponse:
     """Start Stripe checkout for a published self-serve Framework license."""
@@ -125,6 +127,7 @@ async def create_collection_purchase(
     collection_id: UUID,
     payload: PurchaseRequest,
     operator: OperatorUser,
+    _: KycVerifiedUser,
     db: DatabaseSession,
 ) -> PurchaseResponse:
     """Start Stripe checkout for a published Collection bundle."""
