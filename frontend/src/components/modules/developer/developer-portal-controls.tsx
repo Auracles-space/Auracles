@@ -13,6 +13,7 @@ import type {
   ApiKeyResponse,
   PartnerWebhookResponse,
 } from "@/lib/generated/types.gen";
+import { allValid, isHttpUrl, isNonEmpty } from "@/lib/forms/validators";
 import { formatLabel } from "@/lib/marketplace/format";
 
 const webhookEvents = [
@@ -35,6 +36,7 @@ type ApiKeysPanelProps = {
 export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps) {
   const nameId = useId();
   const [name, setName] = useState("");
+  const canSubmit = isNonEmpty(name);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,7 +70,8 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
           />
         </label>
         <button
-          className="min-h-12 self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+          className="min-h-12 self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!canSubmit}
           type="submit"
         >
           Create key
@@ -111,6 +114,7 @@ export function WebhooksPanel({
   const urlId = useId();
   const [selectedEvents, setSelectedEvents] = useState(["purchase.confirmed"]);
   const [url, setUrl] = useState("");
+  const canSubmit = allValid(isHttpUrl(url), selectedEvents.length > 0);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,7 +167,8 @@ export function WebhooksPanel({
           ))}
         </div>
         <button
-          className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+          className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!canSubmit}
           type="submit"
         >
           Register webhook

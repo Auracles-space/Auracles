@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { isNonEmpty } from "@/lib/forms/validators";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -32,6 +33,7 @@ export function VerifyEmailForm({ initialToken = "" }: VerifyEmailFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [token, setToken] = useState(initialToken);
+  const canSubmit = isNonEmpty(token);
 
   async function submitVerification(
     event: React.FormEvent<HTMLFormElement>,
@@ -72,7 +74,7 @@ export function VerifyEmailForm({ initialToken = "" }: VerifyEmailFormProps) {
         required
         value={token}
       />
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Verifying" : "Verify email"}
       </Button>
     </form>

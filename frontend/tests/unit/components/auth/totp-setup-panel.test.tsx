@@ -48,6 +48,36 @@ describe("TotpSetupPanel", () => {
     expect(screen.getByText("bbbb-2222")).toBeInTheDocument();
   });
 
+  it("keeps verify-and-enable disabled until a 6-digit code is entered", async () => {
+    vi.mocked(setupTotp).mockResolvedValue({
+      data: {
+        backup_codes: ["aaaa-1111"],
+        provisioning_uri: "otpauth://totp/Auracles:ada",
+        qr_png_base64: "QRDATA",
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<TotpSetupPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /start 2fa setup/i }));
+
+    const verify = await screen.findByRole("button", {
+      name: /verify and enable/i,
+    });
+    expect(verify).toBeDisabled();
+
+    fireEvent.change(await screen.findByLabelText(/authenticator code/i), {
+      target: { value: "123" },
+    });
+    expect(verify).toBeDisabled();
+
+    fireEvent.change(await screen.findByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    expect(verify).toBeEnabled();
+  });
+
   it("enables 2FA after verifying the first code", async () => {
     vi.mocked(setupTotp).mockResolvedValue({
       data: {

@@ -36,6 +36,24 @@ describe("FrameworkForm", () => {
     ]);
   });
 
+  it("disables submit until required fields are valid", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    const submit = screen.getByRole("button", { name: /save framework/i });
+    // Title and description start empty, so the button is gated off.
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+
+    // Price defaults to a positive number; required fields are now valid.
+    expect(submit).toBeEnabled();
+  });
+
   it("submits sector, industry, function, organization, and framework type", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);

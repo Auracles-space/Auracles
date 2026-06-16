@@ -110,4 +110,31 @@ describe("PayoutHistoryTable", () => {
     });
     expect(await screen.findByText("$170")).toBeInTheDocument();
   });
+
+  it("disables the payout submit until amount and a 6-digit code are valid", async () => {
+    render(<PayoutHistoryTable />);
+
+    expect(await screen.findByText("****tr_1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Request payout" }));
+    const submit = screen.getByRole("button", {
+      name: "Submit payout request",
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Amount"), {
+      target: { value: "200.00" },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Authenticator code"), {
+      target: { value: "123" },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Authenticator code"), {
+      target: { value: "123456" },
+    });
+    expect(submit).toBeEnabled();
+  });
 });

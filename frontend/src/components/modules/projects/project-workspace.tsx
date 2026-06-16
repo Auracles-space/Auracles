@@ -38,6 +38,7 @@ import type {
   ProposalResponse,
   WorkspaceMessageResponse,
 } from "@/lib/generated/types.gen";
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { useProjectRealtime } from "@/lib/projects/realtime";
 
 type ProjectWorkspaceProps = {
@@ -314,6 +315,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     .map((message) => ({ ...payloadIds(message), messageId: message.id }))
     .filter((ids) => ids.deliverableId && ids.milestoneId);
 
+  const canSubmitProposal = allValid(
+    isNonEmpty(proposalScope),
+    isPositiveNumber(proposalBudget),
+  );
+  const canAddMilestone = allValid(
+    isNonEmpty(milestoneForm.name),
+    isPositiveNumber(milestoneForm.budget),
+    isPositiveNumber(milestoneForm.sequence),
+  );
+  const canPostMessage = isNonEmpty(messageBody);
+
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 md:px-8">
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm sm:p-8">
@@ -391,7 +403,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
               />
             </label>
             <button
-              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canSubmitProposal}
               type="submit"
             >
               Submit proposal
@@ -478,7 +491,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             />
             <div className="flex flex-wrap gap-3">
               <button
-                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canAddMilestone}
                 type="submit"
               >
                 Add milestone
@@ -554,7 +568,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             value={messageBody}
           />
           <button
-            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canPostMessage}
             type="submit"
           >
             Post message

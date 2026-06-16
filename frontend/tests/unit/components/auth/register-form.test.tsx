@@ -17,8 +17,11 @@ describe("RegisterForm", () => {
     vi.mocked(registerUser).mockReset();
   });
 
-  it("requires at least one role before submitting registration", async () => {
+  it("keeps the submit button disabled until all fields are valid", () => {
     render(<RegisterForm />);
+
+    const submit = screen.getByRole("button", { name: /create account/i });
+    expect(submit).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/display name/i), {
       target: { value: "Ada Markets" },
@@ -29,11 +32,13 @@ describe("RegisterForm", () => {
     fireEvent.change(screen.getByLabelText(/^password/i), {
       target: { value: "StrongerPass123!" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+    // No role + no terms yet → still disabled.
+    expect(submit).toBeDisabled();
 
-    expect(
-      await screen.findByText(/select at least one role/i),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/contributor/i));
+    fireEvent.click(screen.getByLabelText(/terms of service/i));
+    expect(submit).toBeEnabled();
+
     expect(registerUser).not.toHaveBeenCalled();
   });
 

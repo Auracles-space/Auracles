@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { isEmail } from "@/lib/forms/validators";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -26,6 +27,7 @@ export function ForgotPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const canSubmit = isEmail(email);
 
   async function submitResetRequest(
     event: React.FormEvent<HTMLFormElement>,
@@ -68,7 +70,7 @@ export function ForgotPasswordForm() {
         type="email"
         value={email}
       />
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Sending link" : "Send reset link"}
       </Button>
     </form>

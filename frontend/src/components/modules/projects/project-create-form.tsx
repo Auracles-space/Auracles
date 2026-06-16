@@ -14,6 +14,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { createProject } from "@/lib/generated/sdk.gen";
 import type { ProjectCreateRequest } from "@/lib/generated/types.gen";
 
@@ -79,6 +80,16 @@ export function ProjectCreateForm() {
   const [form, setForm] = useState<ProjectFormState>(initialState);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const canSubmit = allValid(
+    isNonEmpty(form.title),
+    isNonEmpty(form.description),
+    isNonEmpty(form.category),
+    isPositiveNumber(form.budgetMin),
+    isPositiveNumber(form.budgetMax),
+    isNonEmpty(form.deliverableName),
+    isNonEmpty(form.deliverableDescription),
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -202,7 +213,7 @@ export function ProjectCreateForm() {
       <div className="flex justify-end">
         <button
           className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled={saving}
+          disabled={saving || !canSubmit}
           type="submit"
         >
           {saving ? "Posting Project" : "Post project"}

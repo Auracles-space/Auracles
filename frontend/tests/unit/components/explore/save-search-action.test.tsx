@@ -39,6 +39,28 @@ describe("ExploreSaveSearchAction", () => {
     });
   });
 
+  it("disables save until a non-empty name is entered", () => {
+    render(
+      <ExploreSaveSearchAction
+        filters={{ category: "playbook", q: "risk", sort: "newest" }}
+      />,
+    );
+
+    const save = screen.getByRole("button", { name: /save search/i });
+    // The default name is prefilled, so the button starts enabled.
+    expect(save).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText(/saved search name/i), {
+      target: { value: "   " },
+    });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/saved search name/i), {
+      target: { value: "Risk watch" },
+    });
+    expect(save).toBeEnabled();
+  });
+
   it("saves the current filters through the generated client", async () => {
     vi.mocked(createSavedSearch).mockResolvedValue({
       data: {

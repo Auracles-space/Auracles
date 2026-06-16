@@ -38,6 +38,7 @@ import type {
   AttestorApplicationResponse,
   AttestorAssignmentResponse,
 } from "@/lib/generated/types.gen";
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
@@ -88,6 +89,12 @@ export function AttestationRequestorPanel() {
   const [targetId, setTargetId] = useState("");
   const [targetType, setTargetType] =
     useState<"framework" | "contributor" | "operator" | "credential">("framework");
+  const canRequest = allValid(
+    isNonEmpty(targetId),
+    isNonEmpty(specializations),
+    isNonEmpty(jurisdictions),
+  );
+  const canDispute = isNonEmpty(disputeReason);
 
   useEffect(() => {
     void loadRequestorAttestations();
@@ -243,7 +250,8 @@ export function AttestationRequestorPanel() {
           </label>
         </div>
         <button
-          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!canRequest}
           onClick={handleRequestAttestation}
           type="button"
         >
@@ -272,7 +280,8 @@ export function AttestationRequestorPanel() {
                   />
                 </label>
                 <button
-                  className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                  className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canDispute}
                   onClick={() => handleDispute(attestation.id)}
                   type="button"
                 >
@@ -298,6 +307,12 @@ export function AttestorApplicationPanel() {
   const [loading, setLoading] = useState(true);
   const [professionalReferences, setProfessionalReferences] = useState("");
   const [specializations, setSpecializations] = useState("");
+  const canSubmit = allValid(
+    isNonEmpty(specializations),
+    isNonEmpty(jurisdictions),
+    isNonEmpty(credentialsSummary),
+    isNonEmpty(professionalReferences),
+  );
 
   useEffect(() => {
     void loadApplications();
@@ -395,7 +410,7 @@ export function AttestorApplicationPanel() {
             <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setProfessionalReferences(event.target.value)} value={professionalReferences} />
           </label>
         </div>
-        <button className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleSubmitApplication} type="button">
+        <button className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmit} onClick={handleSubmitApplication} type="button">
           Submit application
         </button>
       </div>
@@ -414,6 +429,7 @@ export function AttestorAssignmentsPanel() {
     useState<"approved" | "conditional" | "rejected">("approved");
   const [scope, setScope] = useState("");
   const [summary, setSummary] = useState("");
+  const canSubmitReport = allValid(isNonEmpty(summary), isNonEmpty(scope));
 
   useEffect(() => {
     void loadAssignments();
@@ -525,7 +541,7 @@ export function AttestorAssignmentsPanel() {
                 </select>
                 <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSummary(event.target.value)} placeholder="Report summary" value={summary} />
                 <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setScope(event.target.value)} placeholder="Scope reviewed" value={scope} />
-                <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => handleSubmitReport(assignment)} type="button">
+                <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmitReport} onClick={() => handleSubmitReport(assignment)} type="button">
                   Submit report
                 </button>
               </div>
@@ -552,6 +568,25 @@ export function AdminAttestationPanel() {
     useState<"release" | "refund" | "split">("release");
   const [manualReason, setManualReason] = useState("");
   const [totpCode, setTotpCode] = useState("");
+  const hasTotp = totpCode.trim().length >= 6;
+  const canAssign = allValid(
+    isNonEmpty(assignAttestationId),
+    isNonEmpty(assignAttestorId),
+    isNonEmpty(manualReason),
+    hasTotp,
+  );
+  const canRefund = allValid(
+    isNonEmpty(assignAttestationId),
+    isNonEmpty(manualReason),
+    hasTotp,
+  );
+  const canResolveDispute = allValid(
+    isNonEmpty(disputeId),
+    isNonEmpty(manualReason),
+    hasTotp,
+    resolutionType !== "split" ||
+      allValid(isPositiveNumber(releaseAmount), isPositiveNumber(refundAmount)),
+  );
 
   useEffect(() => {
     void loadApplications();
@@ -695,13 +730,13 @@ export function AdminAttestationPanel() {
           <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setRefundAmount(event.target.value)} placeholder="Refund amount for split" value={refundAmount} />
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleManualAssign} type="button">
+          <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canAssign} onClick={handleManualAssign} type="button">
             Manual assign
           </button>
-          <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={handleAdminRefund} type="button">
+          <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60" disabled={!canRefund} onClick={handleAdminRefund} type="button">
             Refund request
           </button>
-          <button className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent" onClick={handleResolveDispute} type="button">
+          <button className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canResolveDispute} onClick={handleResolveDispute} type="button">
             Resolve dispute
           </button>
         </div>

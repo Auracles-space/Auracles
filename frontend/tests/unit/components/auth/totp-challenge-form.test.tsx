@@ -76,14 +76,28 @@ describe("TotpChallengeForm", () => {
     });
   });
 
-  it("rejects a too-short code before calling the API", async () => {
+  it("disables the submit button until a long-enough code is entered", () => {
     render(<TotpChallengeForm challengeToken="ch-1" onAuthenticated={vi.fn()} />);
+
+    const submit = screen.getByRole("button", { name: /verify login/i });
+    expect(submit).toBeDisabled();
+
     fireEvent.change(screen.getByLabelText(/authenticator code/i), {
       target: { value: "12" },
     });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    expect(submit).toBeEnabled();
+  });
+
+  it("keeps the submit gated when no code is entered, so the API is not called", () => {
+    render(<TotpChallengeForm challengeToken="ch-1" onAuthenticated={vi.fn()} />);
+
     fireEvent.click(screen.getByRole("button", { name: /verify login/i }));
 
-    expect(await screen.findByText(/enter a valid 2fa code/i)).toBeInTheDocument();
     expect(vi.mocked(verifyTotpLogin)).not.toHaveBeenCalled();
   });
 

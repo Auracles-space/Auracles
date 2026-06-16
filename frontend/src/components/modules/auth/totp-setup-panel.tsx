@@ -11,6 +11,7 @@ import { useState } from "react";
 import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
+import { isLengthBetween } from "@/lib/forms/validators";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -36,6 +37,7 @@ export function TotpSetupPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [setup, setSetup] = useState<SetupState | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const canVerify = isLengthBetween(code, 6, 6);
 
   async function startSetup(): Promise<void> {
     setError(null);
@@ -125,7 +127,7 @@ export function TotpSetupPanel() {
               ))}
             </ul>
           </div>
-          <Button className="w-full" disabled={isLoading} type="submit">
+          <Button className="w-full" disabled={isLoading || !canVerify} type="submit">
             {isLoading ? "Verifying" : "Verify and enable"}
           </Button>
         </div>

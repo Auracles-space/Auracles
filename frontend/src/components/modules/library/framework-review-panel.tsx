@@ -9,6 +9,7 @@
  */
 import { FormEvent, useEffect, useState } from "react";
 
+import { isPositiveNumber } from "@/lib/forms/validators";
 import {
   createFrameworkReview,
   getCurrentUser,
@@ -156,6 +157,8 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
     return <TableSkeleton />;
   }
 
+  const canSubmit = isPositiveNumber(score);
+
   const aggregate = state.reviews?.average_score
     ? `${state.reviews.average_score} average from ${state.reviews.review_count} review${
         state.reviews.review_count === 1 ? "" : "s"
@@ -204,7 +207,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
         ) : null}
         <button
           className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={saving}
+          disabled={saving || !canSubmit}
           type="submit"
         >
           {saving

@@ -13,6 +13,12 @@ import type {
   PartnerPayoutResponse,
   PayoutAccountResponse,
 } from "@/lib/generated/types.gen";
+import {
+  allValid,
+  isLengthBetween,
+  isNonEmpty,
+  isPositiveNumber,
+} from "@/lib/forms/validators";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type PayoutPanelProps = {
@@ -43,6 +49,11 @@ export function PayoutPanel({
     verifiedAccounts[0]?.id ?? "",
   );
   const [totpCode, setTotpCode] = useState("");
+  const canSubmit = allValid(
+    isPositiveNumber(amount),
+    isNonEmpty(payoutAccountId),
+    isLengthBetween(totpCode, 6, 6),
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,7 +110,8 @@ export function PayoutPanel({
             />
           </label>
           <button
-            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSubmit}
             type="submit"
           >
             Request payout

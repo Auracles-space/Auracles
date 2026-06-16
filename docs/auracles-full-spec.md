@@ -3418,59 +3418,21 @@ Suggested Frameworks
 
 ## **Theme**
 
-Dark Grayscale
+Dual-Mode (Light & Dark) with Warm Orange Accent, configured as a Bento Box UI.
 
-### **Colors**
+### **Colors & Surface Elevations**
 
-Primary Background
+- **Page Background (`bg-background`)**: `#FFFFFB` (Light Mode) / `#000000` (Dark Mode).
+- **Outer Shell / Main Bento Box Container (`bg-surface-1`)**: `#F8F6F2` (Light Mode) / `#0A0A0A` (Dark Mode).
+- **Cards, Inner Panels, and Modals (`bg-surface-2`)**: `#F1EDE6` (Light Mode) / `#111111` (Dark Mode).
+- **Nested Lists, Details, and Inputs (`bg-surface-3` / `bg-background` depending on context)**: `#EAE5DC` (Light Mode) / `#1A1A1A` (Dark Mode).
+- **Primary Text (`text-foreground`)**: Dark / Light contrast colors.
+- **Secondary Text (`text-foreground-muted`)**: Muted gray/brown.
+- **Borders (`border-border-default`)**: Standard layout borders separating bento sections.
 
-\#0A0A0A
+No arbitrary gradients.
 
-Secondary Background
-
-\#111111
-
-Surface Background
-
-\#161616
-
-Card Background
-
-\#1A1A1A
-
-Primary Text
-
-\#F5F5F5
-
-Secondary Text
-
-\#A3A3A3
-
-Muted Text
-
-\#737373
-
-Borders
-
-\#2A2A2A
-
-Hover
-
-\#262626
-
-Active State
-
-\#303030
-
-Success State
-
-\#D4D4D4
-
-No bright colors.
-
-No gradients.
-
-No glassmorphism.
+No heavy 3D glassmorphism.
 
 No visual clutter.
 
@@ -4799,31 +4761,22 @@ System Sans Serif
 
 ---
 
-## **Card Radius**
+## **Card Radius & Bento Box Layout**
 
-8px
+- **Main Cards/Containers**: `20px` (or `rounded-2xl` / `16px`). This matches the Bento Box structure, creating a clean container feel.
+- **Nested Inner items, Lists, & Controls**: `12px` (`rounded-xl`).
+- **Status Badges**: `rounded-badge` (`999px` pill-badge style).
 
-Cards should feel architectural and structured rather than playful.
+Cards should feel architectural, structured, and modern.
 
 ---
 
 ## **Borders & Elevation**
 
-Use borders instead of shadows wherever possible.
-
-Default Border
-
-\#2A2A2A
-
-Hover Border
-
-\#3A3A3A
-
-Selected Border
-
-\#525252
-
-Elevation should be subtle and achieved through layered grayscale surfaces.
+- **Main content areas/cards** use `bg-surface-1` with `rounded-2xl` and a subtle shadow (`shadow-sm` or `shadow-bento`) alongside the default border (`border-border-default`) for depth.
+- **Nested items & controls** use `bg-surface-2` with `rounded-xl`.
+- **Bento Surface & Shell Inheritance**: Inside the `AuthenticatedAppShell`, child pages inherit layout backgrounds instead of hardcoding `bg-background` or `min-h-screen`, avoiding breaking the Bento container elevation layout.
+- Elevation is achieved cleanly via layered surfaces and subtle shadow offsets.
 
 ---
 

@@ -20,6 +20,18 @@ describe("VerifyEmailForm", () => {
     vi.mocked(verifyEmail).mockReset();
   });
 
+  it("keeps the submit button disabled until a token is present", () => {
+    render(<VerifyEmailForm />);
+
+    const submit = screen.getByRole("button", { name: /verify email/i });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/verification token/i), {
+      target: { value: "verify-token-9" },
+    });
+    expect(submit).toBeEnabled();
+  });
+
   it("verifies the email with the prefilled token", async () => {
     vi.mocked(verifyEmail).mockResolvedValue({
       data: { message: "Email verified." },

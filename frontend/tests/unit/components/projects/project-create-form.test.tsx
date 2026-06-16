@@ -28,6 +28,24 @@ describe("ProjectCreateForm", () => {
     push.mockReset();
   });
 
+  it("disables submit until title and description are filled", () => {
+    render(<ProjectCreateForm />);
+
+    const submit = screen.getByRole("button", { name: /post project/i });
+    // Title and description start empty, so the button is gated off.
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/^title$/i), {
+      target: { value: "Procurement Playbook" },
+    });
+    fireEvent.change(screen.getByLabelText(/^description$/i), {
+      target: { value: "Build a procurement operating model." },
+    });
+
+    // Remaining required fields default to valid values.
+    expect(submit).toBeEnabled();
+  });
+
   it("creates a project and routes to its workspace", async () => {
     vi.mocked(createProject).mockResolvedValue({
       data: { id: "proj-1" },

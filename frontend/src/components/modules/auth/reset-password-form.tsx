@@ -10,6 +10,11 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  allValid,
+  isNonEmpty,
+  isPasswordLongEnough,
+} from "@/lib/forms/validators";
+import {
   configureBrowserClient,
   describeGeneratedError,
 } from "@/lib/auth/form-client";
@@ -33,6 +38,10 @@ export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps)
   const [newPassword, setNewPassword] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
   const [token, setToken] = useState(initialToken);
+  const canSubmit = allValid(
+    isNonEmpty(token),
+    isPasswordLongEnough(newPassword),
+  );
 
   async function submitReset(
     event: React.FormEvent<HTMLFormElement>,
@@ -85,7 +94,7 @@ export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps)
         type="password"
         value={newPassword}
       />
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Saving password" : "Save password"}
       </Button>
     </form>

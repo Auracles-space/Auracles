@@ -14,6 +14,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { isNonEmpty } from "@/lib/forms/validators";
 import { createSavedSearch } from "@/lib/generated/sdk.gen";
 import type { ExploreSearchFilters } from "@/lib/generated/types.gen";
 import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
@@ -51,6 +52,7 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState<"error" | "success" | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const canSubmit = isNonEmpty(name);
 
   async function submitSavedSearch(
     event: React.FormEvent<HTMLFormElement>,
@@ -107,7 +109,7 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
         </label>
         <button 
           className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-foreground px-6 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 sm:shrink-0" 
-          disabled={submitting} 
+          disabled={submitting || !canSubmit}
           type="submit"
         >
           <BookmarkIcon className="h-4 w-4" aria-hidden="true" />

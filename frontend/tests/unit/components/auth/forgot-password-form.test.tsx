@@ -20,6 +20,23 @@ describe("ForgotPasswordForm", () => {
     vi.mocked(forgotPassword).mockReset();
   });
 
+  it("keeps the submit button disabled until a valid email is entered", () => {
+    render(<ForgotPasswordForm />);
+
+    const submit = screen.getByRole("button", { name: /send reset link/i });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "not-an-email" },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "ada@example.com" },
+    });
+    expect(submit).toBeEnabled();
+  });
+
   it("shows the no-enumeration success copy on a successful request", async () => {
     vi.mocked(forgotPassword).mockResolvedValue({
       data: { message: "If email is valid, reset link sent." },

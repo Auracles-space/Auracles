@@ -10,6 +10,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { allValid, isEmail, isNonEmpty } from "@/lib/forms/validators";
 import {
   authTokenStore,
   setAccessTokenFromJwt,
@@ -44,6 +45,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState("");
+  const canSubmit = allValid(isEmail(email), isNonEmpty(password));
 
   function navigateTo(location: string): void {
     if (onAuthenticated) {
@@ -161,7 +163,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
             Sign up
           </a>
         </div>
-        <Button disabled={isSubmitting} type="submit">
+        <Button disabled={isSubmitting || !canSubmit} type="submit">
           {isSubmitting ? "Logging in" : "Log in"}
         </Button>
       </div>

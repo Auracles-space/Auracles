@@ -10,6 +10,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { allValid, isNonEmpty } from "@/lib/forms/validators";
 import {
   authTokenStore,
   setAccessTokenFromJwt,
@@ -48,6 +49,11 @@ export function TotpChallengeForm({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [useBackup, setUseBackup] = useState(false);
+  const activeCredential = useBackup ? backupCode : code;
+  const canSubmit = allValid(
+    isNonEmpty(challengeToken),
+    activeCredential.trim().length >= 6,
+  );
 
   function navigateTo(location: string): void {
     if (onAuthenticated) {
@@ -114,7 +120,7 @@ export function TotpChallengeForm({
         />
         Use a backup code
       </label>
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Verifying" : "Verify login"}
       </Button>
     </form>

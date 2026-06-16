@@ -20,6 +20,23 @@ describe("ResetPasswordForm", () => {
     vi.mocked(resetPassword).mockReset();
   });
 
+  it("keeps the submit button disabled until token and a long password are set", () => {
+    render(<ResetPasswordForm initialToken="reset-token-123" />);
+
+    const submit = screen.getByRole("button", { name: /save password/i });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: "short" },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: "StrongerPass!234" },
+    });
+    expect(submit).toBeEnabled();
+  });
+
   it("prefills the token from search params and submits the new password", async () => {
     vi.mocked(resetPassword).mockResolvedValue({
       data: { message: "Password reset." },

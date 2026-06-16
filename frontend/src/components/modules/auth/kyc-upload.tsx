@@ -41,6 +41,7 @@ export function KycUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const canSubmit = file !== null;
 
   async function submitKyc(
     event: React.FormEvent<HTMLFormElement>,
@@ -143,7 +144,7 @@ export function KycUpload() {
         />
       </label>
 
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
         {isSubmitting ? "Submitting document" : "Submit document"}
       </Button>
     </form>

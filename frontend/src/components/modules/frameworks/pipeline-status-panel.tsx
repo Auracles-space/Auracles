@@ -8,6 +8,7 @@
  */
 import { FormEvent, useState } from "react";
 
+import { isLengthBetween } from "@/lib/forms/validators";
 import { acknowledgeSimilarityNotice } from "@/lib/generated/sdk.gen";
 import type { ArtifactResponse, FrameworkResponse } from "@/lib/generated/types.gen";
 import {
@@ -114,6 +115,7 @@ export function PipelineStatusPanel({
   const [noticeError, setNoticeError] = useState<string | null>(null);
   const [noticeSaved, setNoticeSaved] = useState(false);
   const [savingNotice, setSavingNotice] = useState(false);
+  const canAcknowledge = isLengthBetween(differentiationNote, 5, 1000);
 
   async function handleNoticeAcknowledgement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -213,7 +215,7 @@ export function PipelineStatusPanel({
             ) : null}
             <button
               className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={savingNotice}
+              disabled={savingNotice || !canAcknowledge}
               type="submit"
             >
               {savingNotice ? "Saving" : "Acknowledge notice"}

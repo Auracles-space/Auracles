@@ -26,6 +26,26 @@ describe("LoginForm", () => {
     vi.mocked(login).mockReset();
   });
 
+  it("keeps the submit button disabled until email and password are valid", () => {
+    render(<LoginForm />);
+
+    const submit = screen.getByRole("button", { name: /^log in$/i });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password/i), {
+      target: { value: "secret-pass" },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "ada@example.com" },
+    });
+    expect(submit).toBeEnabled();
+  });
+
   it("surfaces generated-client login errors without exposing internals", async () => {
     vi.mocked(login).mockResolvedValue({
       data: undefined,

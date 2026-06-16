@@ -67,15 +67,22 @@ describe("AccountSettingsPanel", () => {
     });
   });
 
-  it("requires a 2FA code before requesting an email change", async () => {
+  it("keeps email change disabled until a 2FA code is entered", async () => {
     render(<AccountSettingsPanel />);
+
+    const submit = screen.getByRole("button", {
+      name: /request email change/i,
+    });
 
     fireEvent.change(screen.getByLabelText(/new email/i), {
       target: { value: "next@auracles.space" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /request email change/i }));
+    expect(submit).toBeDisabled();
 
-    expect(await screen.findByText(/enter a 2fa code/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^2fa code$/i), {
+      target: { value: "123456" },
+    });
+    expect(submit).toBeEnabled();
     expect(requestEmailChange).not.toHaveBeenCalled();
   });
 

@@ -15,6 +15,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { allValid, isEmail, isNonEmpty } from "@/lib/forms/validators";
 import {
   cancelAccountDeletion,
   downloadDataExportV1GdprExportsExportRequestIdDownloadGet,
@@ -205,6 +206,11 @@ export function AccountSettingsPanel() {
   const hasScheduledDeletion = deletionStatus?.status === "scheduled";
   const isExportActive =
     exportStatus?.status === "pending" || exportStatus?.status === "processing";
+  const canSubmitEmailChange = allValid(
+    isEmail(newEmail),
+    totpCode.trim().length >= 6,
+  );
+  const canSubmitDeletion = isNonEmpty(deletionPassword);
 
   async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -367,7 +373,9 @@ export function AccountSettingsPanel() {
           onChange={(event) => setTotpCode(event.target.value)}
           value={totpCode}
         />
-        <Button type="submit">Request email change</Button>
+        <Button disabled={!canSubmitEmailChange} type="submit">
+          Request email change
+        </Button>
       </form>
 
       <section
@@ -554,7 +562,11 @@ export function AccountSettingsPanel() {
               value={deletionTotp}
             />
             <Button
-              disabled={deletionPending === "request" || hasScheduledDeletion}
+              disabled={
+                deletionPending === "request" ||
+                hasScheduledDeletion ||
+                !canSubmitDeletion
+              }
               type="submit"
               variant="destructive"
             >

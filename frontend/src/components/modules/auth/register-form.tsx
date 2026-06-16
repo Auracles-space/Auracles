@@ -16,6 +16,12 @@ import {
   configureBrowserClient,
   describeGeneratedError,
 } from "@/lib/auth/form-client";
+import {
+  allValid,
+  isEmail,
+  isNonEmpty,
+  isPasswordLongEnough,
+} from "@/lib/forms/validators";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
 
@@ -66,6 +72,14 @@ export function RegisterForm() {
       return [...current.filter((value) => value !== "attestor"), role];
     });
   }
+
+  const canSubmit = allValid(
+    isNonEmpty(displayName),
+    isEmail(email),
+    isPasswordLongEnough(password),
+    roles.length > 0,
+    agreedToTerms,
+  );
 
   async function submitRegistration(
     event: React.FormEvent<HTMLFormElement>,
@@ -204,7 +218,7 @@ export function RegisterForm() {
         <a className="text-sm font-medium text-accent hover:underline" href="/login">
           Already have an account? Log in
         </a>
-        <Button className="w-full sm:w-auto" disabled={isSubmitting} type="submit">
+        <Button className="w-full sm:w-auto" disabled={isSubmitting || !canSubmit} type="submit">
           {isSubmitting ? "Creating account" : "Create account"}
         </Button>
       </div>

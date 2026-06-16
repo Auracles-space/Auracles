@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import type {
   FrameworkCreate,
   FrameworkResponse,
@@ -86,6 +87,12 @@ export function FrameworkForm({
     tags: framework?.tags.join(", ") ?? prefill?.tags?.join(", ") ?? "",
     title: framework?.title ?? prefill?.title ?? "",
   });
+
+  const canSubmit = allValid(
+    isNonEmpty(form.title),
+    isNonEmpty(form.description),
+    isPositiveNumber(form.price),
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,7 +259,7 @@ export function FrameworkForm({
       <div className="mt-4 pt-6 border-t border-border-default flex items-center justify-end">
         <button
           className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled={saving}
+          disabled={saving || !canSubmit}
           type="submit"
         >
           {saving ? (

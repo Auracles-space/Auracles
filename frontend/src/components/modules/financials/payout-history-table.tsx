@@ -17,6 +17,12 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import {
+  allValid,
+  isLengthBetween,
+  isNonEmpty,
+  isPositiveNumber,
+} from "@/lib/forms/validators";
+import {
   listPayoutAccounts,
   listPayouts,
   requestPayout,
@@ -205,6 +211,11 @@ export function PayoutRequestModal({
   );
   const [submitting, setSubmitting] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+  const canSubmit = allValid(
+    isPositiveNumber(amount),
+    isNonEmpty(payoutAccountId),
+    isLengthBetween(totpCode, 6, 6),
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -324,7 +335,7 @@ export function PayoutRequestModal({
           </button>
           <button
             className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={submitting || !payoutAccountId}
+            disabled={submitting || !canSubmit}
             type="submit"
           >
             {submitting ? "Submitting" : "Submit payout request"}

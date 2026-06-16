@@ -24,12 +24,26 @@ describe("KycUpload", () => {
     vi.mocked(requestKycUploadUrl).mockReset();
   });
 
-  it("requires a document file before requesting an upload URL", async () => {
+  it("keeps the submit disabled until a document file is selected", () => {
+    const { container } = render(<KycUpload />);
+
+    const submit = screen.getByRole("button", { name: /submit document/i });
+    expect(submit).toBeDisabled();
+
+    const fileInput = container.querySelector(
+      "#doc-upload",
+    ) as HTMLInputElement;
+    const file = new File(["id-bytes"], "passport.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(submit).toBeEnabled();
+  });
+
+  it("does not request an upload URL while no file is selected", () => {
     render(<KycUpload />);
 
     fireEvent.click(screen.getByRole("button", { name: /submit document/i }));
 
-    expect(await screen.findByText(/choose a document/i)).toBeInTheDocument();
     expect(requestKycUploadUrl).not.toHaveBeenCalled();
   });
 });

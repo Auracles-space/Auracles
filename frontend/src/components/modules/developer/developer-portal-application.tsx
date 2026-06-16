@@ -10,6 +10,7 @@ import type { FormEvent } from "react";
 import { useId, useState } from "react";
 
 import type { DeveloperApplicationResponse } from "@/lib/generated/types.gen";
+import { allValid, isHttpUrl, isNonEmpty } from "@/lib/forms/validators";
 import { formatLabel } from "@/lib/marketplace/format";
 
 export type ApplicationPayload = Pick<
@@ -40,6 +41,11 @@ export function ApplicationPanel({
   const [website, setWebsite] = useState("");
   const [useCase, setUseCase] = useState("");
   const approved = latestApplication?.status === "approved";
+  const canSubmit = allValid(
+    isNonEmpty(companyName),
+    isNonEmpty(useCase),
+    website.trim() === "" || isHttpUrl(website),
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -107,7 +113,8 @@ export function ApplicationPanel({
             />
           </label>
           <button
-            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background"
+            className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSubmit}
             type="submit"
           >
             Submit application
