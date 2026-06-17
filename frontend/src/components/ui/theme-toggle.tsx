@@ -24,9 +24,9 @@ export function ThemeToggle() {
       {!mounted ? (
         <span className="h-5 w-5" />
       ) : resolvedTheme === "dark" ? (
-        <MoonIcon className="h-5 w-5" />
-      ) : (
         <SunIcon className="h-5 w-5" />
+      ) : (
+        <MoonIcon className="h-5 w-5" />
       )}
     </button>
   );

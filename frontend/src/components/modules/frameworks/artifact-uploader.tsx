@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/form-client";
 
 type ArtifactUploaderProps = {
+  artifactCount: number;
   frameworkId: string;
   onUploaded: (artifact: ArtifactResponse) => void;
 };
@@ -27,9 +28,10 @@ type ArtifactUploaderProps = {
 /**
  * Render drag/drop-style artifact upload control.
  *
- * @param props - Framework id and success callback.
+ * @param props - Framework id, current artifact count, and success callback.
  */
 export function ArtifactUploader({
+  artifactCount,
   frameworkId,
   onUploaded,
 }: ArtifactUploaderProps) {
@@ -100,13 +102,22 @@ export function ArtifactUploader({
         Artifacts
       </h2>
       <p className="mt-1 text-sm text-foreground-muted">
-        Upload PDF, Office, or ZIP framework packages for private processing.
+        Upload PDF, Word, Excel, PowerPoint, ZIP, or image packages for private
+        processing. Up to 500 MB total across all artifacts.
       </p>
       <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-background px-4 text-center text-sm text-foreground-muted">
         <span className="font-semibold text-foreground">
-          {uploading ? "Uploading" : "Choose artifact"}
+          {uploading
+            ? "Uploading"
+            : artifactCount > 0
+              ? "Add another artifact"
+              : "Choose artifact"}
         </span>
-        <span>Pipeline starts after the upload is confirmed.</span>
+        <span>
+          {artifactCount > 0
+            ? "Adds a new artifact — does not replace existing files. Pipeline starts after the upload is confirmed."
+            : "Pipeline starts after the upload is confirmed."}
+        </span>
         <input
           className="sr-only"
           disabled={uploading}

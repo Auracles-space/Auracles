@@ -2234,6 +2234,7 @@ export const createPaymentMethodSetup = createPaymentMethodSetupV1FinancialsPaym
 export const createProject = createProjectV1ProjectsPost;
 export const createWorkspaceMessage = createWorkspaceMessageV1ProjectsProjectIdMessagesPost;
 export const declineAttestationOffer = declineAttestationOfferV1AttestationsAttestationIdDeclinePost;
+export const deleteArtifact = deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete;
 export const deleteCredential = deleteCredentialV1CredentialsCredentialIdDelete;
 export const disableTotp = disableTotpV1Auth2FaDisablePost;
 export const deletePaymentMethod = deletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDelete;

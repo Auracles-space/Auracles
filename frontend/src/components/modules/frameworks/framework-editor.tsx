@@ -19,6 +19,7 @@ import { SoftFailAcknowledgement } from "@/components/modules/frameworks/soft-fa
 import { VersionRadios } from "@/components/modules/frameworks/version-radios";
 import {
   createFrameworkVersion,
+  deleteArtifact,
   getContributorFramework,
   listFrameworkArtifacts,
   submitFramework,
@@ -50,6 +51,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const [changeType, setChangeType] = useState<"fix" | "improvement" | "major">(
     "improvement",
   );
+  const [changeLog, setChangeLog] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [framework, setFramework] = useState<FrameworkResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,7 +117,9 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         artifact_inheritance: Object.fromEntries(
           artifacts.map((artifact) => [artifact.id, true]),
         ),
-        change_log: "Contributor draft version created from dashboard.",
+        change_log:
+          changeLog.trim() ||
+          "Contributor draft version created from dashboard.",
         change_type: changeType,
       },
       headers: getAccessTokenHeaders(),
@@ -126,6 +130,21 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       return;
     }
     setFramework(result.data);
+  }
+
+  async function handleRemoveArtifact(artifactId: string) {
+    configureBrowserClient();
+    const result = await deleteArtifact({
+      headers: getAccessTokenHeaders(),
+      path: { artifact_id: artifactId, framework_id: frameworkId },
+    });
+    if (!result.response.ok) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setArtifacts((current) =>
+      current.filter((artifact) => artifact.id !== artifactId),
+    );
   }
 
   if (loading) {
@@ -163,10 +182,16 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       </section>
       <aside className="grid gap-4">
         <ArtifactUploader
+          artifactCount={artifacts.length}
           frameworkId={framework.id}
           onUploaded={(artifact) =>
             setArtifacts((current) => [artifact, ...current])
           }
+        />
+        <ArtifactManifest
+          artifacts={artifacts}
+          canRemove={framework.status === "draft"}
+          onRemove={handleRemoveArtifact}
         />
         <PipelineStatusPanel
           artifacts={artifacts}
@@ -197,22 +222,40 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
             </div>
           ) : null}
         </section>
-        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
-          <h2 className="font-heading text-lg font-bold text-foreground">
-            New version
-          </h2>
-          <div className="mt-4">
-            <VersionRadios onChange={setChangeType} value={changeType} />
-          </div>
-          <button
-            className="mt-4 min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
-            onClick={handleCreateVersion}
-            type="button"
-          >
-            Start draft version
-          </button>
-        </section>
-        <ArtifactManifest artifacts={artifacts} />
+        {/* Versioning only applies once a Framework is live; a never-published
+            draft is edited in place, so the new-version action stays hidden. */}
+        {framework.status === "published" ? (
+          <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+            <h2 className="font-heading text-lg font-bold text-foreground">
+              New version
+            </h2>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Start a draft revision. The current version stays published until
+              the new one passes the pipeline.
+            </p>
+            <div className="mt-4">
+              <VersionRadios onChange={setChangeType} value={changeType} />
+            </div>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                Change log
+              </span>
+              <textarea
+                className="min-h-20 w-full rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                onChange={(event) => setChangeLog(event.target.value)}
+                placeholder="Summarize what changed in this version."
+                value={changeLog}
+              />
+            </label>
+            <button
+              className="mt-4 min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
+              onClick={handleCreateVersion}
+              type="button"
+            >
+              Start draft version
+            </button>
+          </section>
+        ) : null}
       </aside>
     </div>
   );
@@ -220,30 +263,64 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
 
 type ArtifactManifestProps = {
   artifacts: ArtifactResponse[];
+  canRemove: boolean;
+  onRemove: (artifactId: string) => void;
 };
 
 /**
  * Render attached artifact status rows.
  *
- * @param props - Artifact list.
+ * @param props - Artifact list plus draft-only removal controls.
  */
-function ArtifactManifest({ artifacts }: ArtifactManifestProps) {
+function ArtifactManifest({
+  artifacts,
+  canRemove,
+  onRemove,
+}: ArtifactManifestProps) {
   return (
     <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
-      <h2 className="font-heading text-lg font-bold text-foreground">
-        Artifact manifest
-      </h2>
-      <div className="mt-3 divide-y divide-border-default">
-        {artifacts.map((artifact) => (
-          <div className="py-3 text-sm" key={artifact.id}>
-            <p className="font-semibold text-foreground">{artifact.name}</p>
-            <p className="text-foreground-muted">
-              {formatFileSize(artifact.file_size)} · {artifact.scan_status} ·{" "}
-              {artifact.processing_status}
-            </p>
-          </div>
-        ))}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-lg font-bold text-foreground">
+          Artifact manifest
+        </h2>
+        <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+          {artifacts.length} file{artifacts.length === 1 ? "" : "s"}
+        </span>
       </div>
+      {artifacts.length === 0 ? (
+        <p className="mt-3 text-sm text-foreground-muted">
+          No artifacts yet. Upload at least one file above.
+        </p>
+      ) : (
+        <div className="mt-3 divide-y divide-border-default">
+          {artifacts.map((artifact) => (
+            <div
+              className="flex items-start justify-between gap-3 py-3 text-sm"
+              key={artifact.id}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-foreground">
+                  {artifact.name}
+                </p>
+                <p className="text-foreground-muted">
+                  {formatFileSize(artifact.file_size)} · {artifact.scan_status} ·{" "}
+                  {artifact.processing_status}
+                </p>
+              </div>
+              {canRemove ? (
+                <button
+                  aria-label={`Remove ${artifact.name}`}
+                  className="shrink-0 rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold text-foreground-muted transition-colors hover:border-error/40 hover:bg-error/10 hover:text-error"
+                  onClick={() => onRemove(artifact.id)}
+                  type="button"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

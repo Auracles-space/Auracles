@@ -279,6 +279,9 @@ export function FrameworkForm({
         <label className="block">
           <span className="mb-1.5 block text-sm font-semibold text-foreground">
             Base Price
+            <span aria-hidden="true" className="ml-1 text-accent">
+              *
+            </span>
           </span>
           <div className="relative">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
