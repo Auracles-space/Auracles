@@ -198,12 +198,14 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const hasRaritySoftFail = artifacts.some(
     (artifact) => artifact.processing_status === "flagged_rarity",
   );
-  // Metadata is only editable in place while the Framework is a draft; every
-  // other status (mid-pipeline, published, unpublished) is locked, and content
-  // changes go through a new version. Mirrors the backend draft-only guard.
-  const isDraftEditable = framework.status === "draft";
   const isLive = framework.status === "published";
   const isDelisted = framework.status === "unpublished";
+  // Listing metadata (title, price, description, tags, taxonomy) is editable in
+  // place while the Framework is a draft, live, or delisted; it stays locked
+  // while moving through the pipeline or when suspended. Artifact changes still
+  // require a new version. Mirrors the backend metadata-editable guard.
+  const isMetadataEditable =
+    framework.status === "draft" || isLive || isDelisted;
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
@@ -219,20 +221,23 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           </div>
           <p className="text-sm text-foreground-muted">Version {framework.version}</p>
         </div>
-        {!isDraftEditable ? (
+        {isLive || isDelisted ? (
           <p className="mb-4 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm text-foreground-muted">
             {isLive
-              ? "This framework is live. Its details are locked — start a new version to make changes, or delist it to pull it from the catalog."
-              : isDelisted
-                ? "This framework is delisted. Relist it to restore the current version, or start a new version to edit its content."
-                : "Details are locked while the framework moves through the publishing pipeline."}
+              ? "This framework is live. Edits to title, price, and details save instantly without a new version. To change the files, start a new version."
+              : "This framework is delisted. Edit its details below, relist it to restore the current version, or start a new version to change the files."}
+          </p>
+        ) : !isMetadataEditable ? (
+          <p className="mb-4 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm text-foreground-muted">
+            Details are locked while the framework moves through the publishing
+            pipeline.
           </p>
         ) : null}
         <FrameworkForm
           framework={framework}
           onSubmit={handleUpdate}
           submitLabel="Save changes"
-          readOnly={!isDraftEditable}
+          readOnly={!isMetadataEditable}
           leftActions={
             isLive ? (
               <DelistButton frameworkId={framework.id} />

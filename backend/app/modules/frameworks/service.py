@@ -270,11 +270,30 @@ async def _load_owned_framework_by_user_id(
 
 
 def _require_draft(framework: Framework) -> None:
-    """Reject metadata mutations unless the Framework is still a draft."""
+    """Reject mutations unless the Framework is still a draft."""
     if framework.status != "draft":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft Frameworks can be modified.",
+        )
+
+
+# Statuses whose listing metadata (title, price, description, tags, taxonomy)
+# may be edited in place. These fields live on the Framework row, not the
+# immutable published-version snapshot, so a live edit never rewrites version
+# history. Artifact changes stay version-gated via `_require_editable_artifacts`.
+_METADATA_EDITABLE_STATUSES = {"draft", "published", "unpublished"}
+
+
+def _require_metadata_editable(framework: Framework) -> None:
+    """Reject metadata edits while a Framework is mid-pipeline or suspended."""
+    if framework.status not in _METADATA_EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Framework metadata can only be edited while it is a draft, "
+                "published, or delisted."
+            ),
         )
 
 
@@ -595,9 +614,15 @@ async def update_framework(
     framework_id: UUID,
     payload: FrameworkUpdate,
 ) -> FrameworkResponse:
-    """Update metadata and pricing for an owned draft Framework."""
+    """Update listing metadata and pricing for an owned Framework.
+
+    Editable in place while the Framework is a draft, published, or delisted
+    (unpublished); locked while it moves through the publishing pipeline or is
+    suspended. Editing a live Framework does not bump the version — these fields
+    are not part of the immutable published-version snapshot.
+    """
     framework = await _load_owned_framework(db, contributor, framework_id)
-    _require_draft(framework)
+    _require_metadata_editable(framework)
 
     fields = payload.model_fields_set
     if "title" in fields and payload.title is not None:

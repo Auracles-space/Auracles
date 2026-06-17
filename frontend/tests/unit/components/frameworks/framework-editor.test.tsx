@@ -131,22 +131,39 @@ describe("FrameworkEditor", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers relist plus a new version for a delisted framework, with metadata locked", async () => {
+  it("lets a delisted framework edit metadata, relist, or start a new version", async () => {
     mockLoad(makeFramework({ status: "unpublished" }));
 
     render(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Test Framework");
-    // The dead-end in-place save is gone; relist + new version are the exits.
+    // Metadata edits save in place; relist and new version are also offered.
     expect(
-      screen.queryByRole("button", { name: /save changes/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /save changes/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /relist on marketplace/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /start draft version/i }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps metadata editable on a live framework but locks it mid-pipeline", async () => {
+    mockLoad(makeFramework({ status: "published" }));
+    const { unmount } = render(<FrameworkEditor frameworkId="fw_1" />);
+    await screen.findByText("Test Framework");
+    expect(
+      screen.getByRole("button", { name: /save changes/i }),
+    ).toBeInTheDocument();
+    unmount();
+
+    mockLoad(makeFramework({ status: "submitted" }));
+    render(<FrameworkEditor frameworkId="fw_1" />);
+    await screen.findByText("Test Framework");
+    expect(
+      screen.queryByRole("button", { name: /save changes/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("removes a draft artifact and drops it from the manifest", async () => {

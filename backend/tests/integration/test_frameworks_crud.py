@@ -1318,6 +1318,99 @@ async def test_relist_denied_for_non_owner(
     assert response.status_code == 404
 
 
+async def test_contributor_can_edit_metadata_on_published_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Title/price/tags edit in place on a live Framework without a version bump."""
+    contributor_id = await create_user_with_roles(
+        "framework-live-edit@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+        original_version = framework.version
+
+    response = await client.patch(
+        f"/v1/frameworks/{framework_id}",
+        json={
+            "title": "Live Edited Title",
+            "tags": ["updated"],
+            "pricing": {
+                "price": "880.00",
+                "currency": "usd",
+                "license_types": ["team"],
+            },
+        },
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "Live Edited Title"
+    assert body["pricing"]["price"] == "880.00"
+    assert body["status"] == "published"
+    assert body["version"] == original_version
+
+
+async def test_contributor_can_edit_metadata_on_unpublished_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A delisted Framework's metadata is editable in place too."""
+    contributor_id = await create_user_with_roles(
+        "framework-delisted-edit@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "unpublished"
+        await session.commit()
+
+    response = await client.patch(
+        f"/v1/frameworks/{framework_id}",
+        json={"title": "Delisted Edited Title"},
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Delisted Edited Title"
+
+
+async def test_metadata_edit_blocked_while_framework_in_pipeline(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Metadata is locked while a Framework moves through the publishing pipeline."""
+    contributor_id = await create_user_with_roles(
+        "framework-pipeline-edit@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "submitted"
+        await session.commit()
+
+    response = await client.patch(
+        f"/v1/frameworks/{framework_id}",
+        json={"title": "Should Not Save"},
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409
+
+
 async def test_new_version_without_inherited_artifact_clones_current_artifact(
     client: AsyncClient,
     migrated_database: None,
@@ -2343,14 +2436,20 @@ async def test_contributor_cannot_read_or_mutate_another_contributors_framework(
     assert deleted.status_code == 404
 
 
-@pytest.mark.parametrize("framework_status", ["submitted", "published"])
-async def test_non_draft_framework_cannot_be_updated_or_deleted(
+# Metadata edits are allowed on published/unpublished (see the live-edit tests)
+# but blocked mid-pipeline; deletion stays draft-only for every non-draft status.
+@pytest.mark.parametrize(
+    ("framework_status", "update_status"),
+    [("submitted", 409), ("published", 200)],
+)
+async def test_non_draft_framework_update_policy_and_delete_lock(
     framework_status: str,
+    update_status: int,
     client: AsyncClient,
     migrated_database: None,
     framework_test_context: dict[str, Any],
 ) -> None:
-    """Submitted and published Frameworks are locked from draft mutations."""
+    """Mid-pipeline edits are blocked; deletion is always draft-only."""
     contributor_id = await create_user_with_roles(
         f"{framework_status}-owner@auracles.space",
         ["contributor"],
@@ -2370,10 +2469,10 @@ async def test_non_draft_framework_cannot_be_updated_or_deleted(
 
     updated = await client.patch(
         f"/v1/frameworks/{framework_id}",
-        json={"title": "Locked"},
+        json={"title": "Edited"},
         headers=headers,
     )
     deleted = await client.delete(f"/v1/frameworks/{framework_id}", headers=headers)
 
-    assert updated.status_code == 409
+    assert updated.status_code == update_status
     assert deleted.status_code == 409
