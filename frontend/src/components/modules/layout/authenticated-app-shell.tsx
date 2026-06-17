@@ -15,6 +15,7 @@ import { BrandLogo } from "@/components/ui/brand-logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { NotificationDropdown } from "@/components/modules/layout/notification-dropdown";
 import { appLinks, visibleNavLinks } from "@/components/modules/layout/app-navigation";
+import { BrowserSessionGate } from "@/components/modules/layout/browser-session-gate";
 
 type AuthenticatedAppShellProps = {
   children: ReactNode;
@@ -129,7 +130,7 @@ export function AuthenticatedAppShell({
 
         {/* Page Content Container - The Bento Box */}
         <main className="flex-1 bg-surface-1 md:rounded-tl-[32px] md:border-l md:border-t md:border-border-default md:shadow-[-4px_-4px_24px_rgba(0,0,0,0.02)] dark:md:shadow-none overflow-y-auto relative z-20">
-          {children}
+          <BrowserSessionGate>{children}</BrowserSessionGate>
         </main>
       </div>
     </div>

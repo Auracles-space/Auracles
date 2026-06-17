@@ -18,6 +18,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
@@ -32,6 +33,15 @@ export function FrameworkList() {
     async function loadFrameworks() {
       try {
         configureBrowserClient();
+        // Access tokens are memory-only, so a hard reload (e.g. straight after
+        // login) leaves a valid refresh session with no bearer token. Rehydrate
+        // before the call or the backend rejects it with "Missing access token".
+        const hasToken = await ensureBrowserAccessToken();
+        if (!hasToken) {
+          setError("Your session has expired. Please log in again.");
+          setLoading(false);
+          return;
+        }
         const result = await listContributorFrameworks({
           headers: getAccessTokenHeaders(),
         });
