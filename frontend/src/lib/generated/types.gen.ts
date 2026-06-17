@@ -575,6 +575,7 @@ export type ArtifactResponse = {
     processing_status: string;
     pii_detected: boolean;
     pii_review_needed: boolean;
+    pii_types_found?: Array<(string)>;
     redaction_available: boolean;
     redaction_status: (string | null);
     redaction_accepted: boolean;

@@ -240,6 +240,7 @@ class ArtifactResponse(BaseModel):
     processing_status: str
     pii_detected: bool
     pii_review_needed: bool
+    pii_types_found: list[str] = []
     redaction_available: bool
     redaction_status: str | None
     redaction_accepted: bool

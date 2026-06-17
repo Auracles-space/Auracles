@@ -534,6 +534,11 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     assert pii_audit.auto_redacted is False
     assert pii_audit.flagged_for_review is True
     assert audit_log is not None
+    # The detected types are persisted on the artifact and surfaced in the
+    # contributor-facing response so the UI can name what to remove.
+    from app.modules.frameworks.service import _artifact_to_response
+
+    assert _artifact_to_response(artifact).pii_types_found == ["EMAIL_ADDRESS"]
 
 
 def test_redact_artifact_creates_office_clean_copy_for_review(

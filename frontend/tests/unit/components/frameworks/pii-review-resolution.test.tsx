@@ -83,6 +83,46 @@ describe("PiiReviewResolution", () => {
     expect(screen.queryByText(/redacted\/a\.pdf/i)).not.toBeInTheDocument();
   });
 
+  it("names the detected PII categories so the contributor knows what to remove", () => {
+    render(
+      <PiiReviewResolution
+        artifacts={[
+          {
+            ...baseArtifact,
+            redaction_available: false,
+            redaction_status: null,
+            pii_types_found: ["EMAIL_ADDRESS", "PERSON", "PHONE_NUMBER"],
+          },
+        ]}
+        frameworkId="fw_123"
+      />,
+    );
+
+    expect(
+      screen.getByText(/email addresses, names, and phone numbers/i),
+    ).toBeInTheDocument();
+  });
+
+  it("explains when automatic redaction could not be generated", () => {
+    render(
+      <PiiReviewResolution
+        artifacts={[
+          {
+            ...baseArtifact,
+            redaction_available: false,
+            redaction_status: "failed",
+            pii_types_found: ["PERSON"],
+          },
+        ]}
+        frameworkId="fw_123"
+      />,
+    );
+
+    expect(
+      screen.getByText(/couldn.t automatically redact/i),
+    ).toBeInTheDocument();
+  });
+
   it("keeps replacement rerun available when no redacted copy exists", () => {
     render(
       <PiiReviewResolution

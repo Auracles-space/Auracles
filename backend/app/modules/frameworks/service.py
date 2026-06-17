@@ -97,6 +97,7 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
         processing_status=artifact.processing_status,
         pii_detected=artifact.pii_detected,
         pii_review_needed=artifact.pii_review_needed,
+        pii_types_found=[str(t) for t in (metadata.get("pii_review_types") or [])],
         redaction_available=artifact.clean_file_key is not None,
         redaction_status=(
             str(redaction.get("status")) if redaction.get("status") else None

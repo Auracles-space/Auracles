@@ -145,6 +145,13 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
         if review_needed:
             artifact.processing_status = "flagged_pii"
 
+        # Persist the blocking types on the artifact so the contributor-facing
+        # response can name exactly what to remove (audit row is not joined in
+        # the read path).
+        updated_metadata = dict(artifact.metadata_vector or {})
+        updated_metadata["pii_review_types"] = entity_types
+        artifact.metadata_vector = updated_metadata
+
         await db.execute(
             delete(ArtifactPiiAudit).where(
                 ArtifactPiiAudit.artifact_id == parsed_artifact_id

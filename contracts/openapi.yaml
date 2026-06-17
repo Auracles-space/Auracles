@@ -8026,6 +8026,12 @@ components:
         pii_review_needed:
           type: boolean
           title: Pii Review Needed
+        pii_types_found:
+          type: array
+          items:
+            type: string
+          title: Pii Types Found
+          default: []
         redaction_available:
           type: boolean
           title: Redaction Available

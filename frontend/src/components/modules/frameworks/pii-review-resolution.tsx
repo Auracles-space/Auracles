@@ -25,6 +25,42 @@ type PiiReviewResolutionProps = {
   frameworkId: string;
 };
 
+/** Plain-language plural labels for Presidio PII entity types. */
+const PII_TYPE_LABELS: Record<string, string> = {
+  EMAIL_ADDRESS: "email addresses",
+  PHONE_NUMBER: "phone numbers",
+  PERSON: "names",
+  LOCATION: "addresses or locations",
+  CREDIT_CARD: "credit card numbers",
+  CRYPTO: "crypto wallet addresses",
+  IBAN_CODE: "bank account numbers (IBAN)",
+  US_SSN: "government ID numbers",
+  US_ITIN: "government ID numbers",
+  US_BANK_NUMBER: "bank account numbers",
+  US_PASSPORT: "passport numbers",
+  US_DRIVER_LICENSE: "driver's licence numbers",
+  MEDICAL_LICENSE: "medical licence numbers",
+};
+
+/**
+ * Render detected PII entity types as a readable, de-duplicated phrase.
+ *
+ * @param types - Raw Presidio entity types from the artifact response.
+ * @returns A comma list with an Oxford "and", or empty string when none.
+ */
+function describePiiTypes(types: string[]): string {
+  const labels = Array.from(
+    new Set(types.map((type) => PII_TYPE_LABELS[type] ?? type.toLowerCase())),
+  );
+  if (labels.length === 0) {
+    return "";
+  }
+  if (labels.length === 1) {
+    return labels[0];
+  }
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
 /**
  * Render PII review actions for flagged artifacts.
  *
@@ -94,8 +130,17 @@ export function PiiReviewResolution({
                 <p className="mt-1.5 text-sm leading-relaxed text-foreground-muted">
                   {artifact.redaction_available
                     ? "A redacted copy is ready for review."
-                    : "Replace the artifact, then re-run PII review."}
+                    : artifact.redaction_status === "failed"
+                      ? "We couldn't automatically redact this file (common with scanned or image-based files). Remove the personal data and upload a clean version, then re-run review."
+                      : "Remove the personal data and upload a clean version, then re-run review."}
                 </p>
+                {artifact.pii_types_found &&
+                artifact.pii_types_found.length > 0 ? (
+                  <p className="mt-2 text-sm leading-relaxed text-foreground">
+                    <span className="font-semibold">We found:</span>{" "}
+                    {describePiiTypes(artifact.pii_types_found)}.
+                  </p>
+                ) : null}
               </div>
               {artifact.redaction_available ? (
                 <span className="w-fit shrink-0 rounded-xl border border-info/20 bg-info/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-info">
