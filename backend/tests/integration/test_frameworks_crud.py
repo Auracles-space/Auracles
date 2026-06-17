@@ -997,6 +997,86 @@ async def test_artifact_delete_allowed_on_pipeline_failed_framework(
     assert response.status_code == 204
 
 
+async def test_artifact_delete_and_upload_allowed_on_pipeline_passed_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A pipeline_passed Framework accepts artifact changes and resets to draft.
+
+    Allowing artifact deletion and uploading on pipeline_passed frameworks enables
+    contributors to make last-minute updates, and reverts the status to draft to
+    ensure the updated deliverables pass the pipeline checks before publishing.
+    """
+    contributor_id = await create_user_with_roles(
+        "artifact-passed-delete@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload_1 = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "first.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    # Uploading a second one so we don't hit the "last artifact deleted" special case
+    await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "second.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 1024,
+        },
+        headers=headers,
+    )
+
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_passed"
+        await session.commit()
+
+    # Deleting an artifact should succeed and revert status to draft
+    response_delete = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{upload_1.json()['artifact_id']}",
+        headers=headers,
+    )
+    assert response_delete.status_code == 204
+
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status == "draft"
+        # Reset to pipeline_passed to test upload URL logic
+        framework.status = "pipeline_passed"
+        await session.commit()
+
+    # Uploading an artifact should succeed and revert status to draft
+    response_upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "third.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 512,
+        },
+        headers=headers,
+    )
+    assert response_upload.status_code == 200
+
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status == "draft"
+
+
+
+
+
+
 async def test_deleting_last_artifact_resets_failed_framework_to_draft(
     client: AsyncClient,
     migrated_database: None,

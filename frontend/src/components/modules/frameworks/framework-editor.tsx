@@ -256,7 +256,8 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           artifacts={artifacts}
           canRemove={
             framework.status === "draft" ||
-            framework.status === "pipeline_failed"
+            framework.status === "pipeline_failed" ||
+            framework.status === "pipeline_passed"
           }
           onRemove={handleRemoveArtifact}
         />
