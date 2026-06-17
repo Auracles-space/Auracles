@@ -141,7 +141,7 @@ export function ArtifactUploader({
   }
 
   return (
-    <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
       <h2 className="font-heading text-lg font-bold text-foreground">
         Artifacts
       </h2>

@@ -42,9 +42,9 @@ export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
       )}
       <div className="mt-5 divide-y divide-border-default">
         {framework.artifacts.map((artifact) => (
-          <div className="py-3 text-sm" key={artifact.id}>
-            <p className="font-semibold text-foreground">{artifact.name}</p>
-            <p className="text-foreground-muted">
+          <div className="py-3 text-sm min-w-0" key={artifact.id}>
+            <p className="font-semibold text-foreground break-all">{artifact.name}</p>
+            <p className="text-foreground-muted break-all">
               {artifact.mime_type} · {formatFileSize(artifact.file_size)}
             </p>
           </div>

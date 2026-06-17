@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -48,11 +49,21 @@ class FakePipelineStorage:
         self.uploads: dict[str, bytes] = {}
 
     def download_file(self, bucket: str, key: str, destination: str) -> None:
-        """Write deterministic local input for extraction."""
-        if self.download_body is not None:
-            Path(destination).write_bytes(self.download_body)
-            return
-        Path(destination).write_text("local artifact placeholder", encoding="utf-8")
+        """Write deterministic local input for extraction.
+
+        Mirrors boto3's ``download_file``, which writes to a temporary file and
+        atomically replaces ``destination`` — so the destination inode differs
+        from any handle a caller opened beforehand. Readers must therefore open
+        the path fresh, not read a pre-opened temp-file handle.
+        """
+        body = (
+            self.download_body
+            if self.download_body is not None
+            else b"local artifact placeholder"
+        )
+        staging = f"{destination}.download"
+        Path(staging).write_bytes(body)
+        os.replace(staging, destination)
 
     def upload_bytes(
         self,

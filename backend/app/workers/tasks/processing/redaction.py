@@ -227,7 +227,11 @@ async def _redact_artifact_impl(artifact_id: str) -> dict[str, Any]:
                 file_key,
                 source_file.name,
             )
-            source_bytes = source_file.read()
+            # Read the path fresh rather than the pre-opened handle: boto3's
+            # download_file atomically replaces the destination inode, so the
+            # original NamedTemporaryFile handle would read an empty file.
+            with open(source_file.name, "rb") as downloaded:
+                source_bytes = downloaded.read()
         redacted_bytes = redact_file_bytes(source_bytes, mime_type, values)
         with tempfile.NamedTemporaryFile() as redacted_file:
             redacted_file.write(redacted_bytes)

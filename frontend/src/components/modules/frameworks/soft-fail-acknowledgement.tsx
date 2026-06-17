@@ -45,7 +45,7 @@ export function SoftFailAcknowledgement({
   }
 
   return (
-    <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4 shadow-sm">
+    <div className="min-w-0 rounded-2xl border border-warning/30 bg-warning/10 p-4 shadow-sm">
       <p className="text-sm text-warning">
         External rarity needs Contributor acknowledgement before retrying
         publish.

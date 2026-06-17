@@ -167,7 +167,7 @@ export function PipelineStatusPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-lg font-bold text-foreground">

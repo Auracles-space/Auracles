@@ -71,7 +71,7 @@ export function PiiReviewResolution({
   }
 
   return (
-    <section className="rounded-2xl border border-error/20 bg-error/5 p-5 sm:p-6 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-error/20 bg-error/5 p-5 sm:p-6 shadow-sm">
       <div className="mb-5 flex items-center gap-2">
         <svg className="h-5 w-5 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -87,8 +87,8 @@ export function PiiReviewResolution({
             key={artifact.id}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-base font-semibold text-foreground">
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold text-foreground break-all">
                   {artifact.name}
                 </p>
                 <p className="mt-1.5 text-sm leading-relaxed text-foreground-muted">
@@ -103,7 +103,7 @@ export function PiiReviewResolution({
                 </span>
               ) : null}
             </div>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row xl:flex-col">
               {artifact.redaction_available ? (
                 <button
                   className="inline-flex h-10 items-center justify-center rounded-xl bg-accent px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent/90"

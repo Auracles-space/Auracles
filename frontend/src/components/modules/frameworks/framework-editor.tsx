@@ -200,8 +200,8 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const canPublish = framework.status === "pipeline_passed";
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-      <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
+    <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
+      <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
@@ -240,7 +240,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           )}
         </FrameworkForm>
       </section>
-      <aside className="grid gap-4">
+      <aside className="grid gap-4 min-w-0">
         <ArtifactUploader
           artifactCount={artifacts.length}
           existingBytes={artifacts.reduce(
@@ -272,7 +272,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         {/* Versioning only applies once a Framework is live; a never-published
             draft is edited in place, so the new-version action stays hidden. */}
         {framework.status === "published" ? (
-          <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+          <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <h2 className="font-heading text-lg font-bold text-foreground">
               New version
             </h2>
@@ -328,7 +328,7 @@ function ArtifactManifest({
   onRemove,
 }: ArtifactManifestProps) {
   return (
-    <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-heading text-lg font-bold text-foreground">
           Artifact manifest

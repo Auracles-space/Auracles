@@ -55,8 +55,8 @@ export default async function ExploreDetailPage({
         <Link className="text-sm font-semibold text-accent" href="/explore">
           Back to Explore
         </Link>
-        <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start">
-          <section className="rounded-2xl border border-border-default bg-surface-1 p-6 md:p-10 shadow-sm">
+        <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start min-w-0">
+          <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-6 md:p-10 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
               {formatLabel(framework.category)}
             </p>
@@ -93,7 +93,7 @@ export default async function ExploreDetailPage({
               ))}
             </div>
           </section>
-          <aside className="sticky top-8 rounded-2xl border border-border-default bg-surface-2 p-6 shadow-sm">
+          <aside className="min-w-0 sticky top-8 rounded-2xl border border-border-default bg-surface-2 p-6 shadow-sm">
             <p className="text-sm text-foreground-muted">Starting price</p>
             <p className="mt-1 font-heading text-4xl font-bold text-foreground">
               {formatMoney(framework.price, framework.currency)}
@@ -135,13 +135,15 @@ export default async function ExploreDetailPage({
             </Link>
           </aside>
         </div>
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">
-          <PreviewArtifactBlock framework={framework} />
-          <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start min-w-0">
+          <div className="min-w-0">
+            <PreviewArtifactBlock framework={framework} />
+          </div>
+          <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <h2 className="font-heading text-lg font-bold text-foreground">
               Trust signals
             </h2>
-            <ul className="mt-4 grid gap-3 text-sm text-foreground-muted">
+            <ul className="mt-4 grid gap-3 text-sm text-foreground-muted break-words">
               {framework.attestation_badge ? (
                 <li>
                   Attestation outcome:{" "}
