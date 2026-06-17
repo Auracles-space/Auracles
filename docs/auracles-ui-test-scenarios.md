@@ -207,6 +207,41 @@ What to test, what to enter, what to expect. Tester drives the UI; this doc supp
 | GD-2 | Delete | request deletion | Data removed/anonymized. |
 | GD-3 | Consent | view consent records | Retrievable. |
 
+## 15. Scheduled / Automatic tasks (Celery Beat)
+
+These fire on a timer, not on a click. Some are covered by feature rows above
+(PR-7 deliverable auto-release, RE-2/RE-6 reputation recompute, CS-3 saved-search
+alert) — the rows below cover the rest.
+
+**How to trigger without waiting:**
+- Start the scheduler: `make beat` **plus** `make worker` (beat enqueues, the worker runs).
+- Or force-run a single task now (worker not required):
+  `cd backend && uv run python -c "from app.workers.tasks.<module> import <task>; <task>()"`
+  (e.g. `from app.workers.tasks.projects_beat import auto_approve_deliverables; auto_approve_deliverables()`).
+- For "expiry"/"overdue" cases, set the relevant timestamp into the past in the DB
+  (e.g. `created_at`, `expires_at`, `deadline_at`) — or lower the window in
+  `platform_config` — then run the task. Re-run once more to confirm **idempotency**
+  (no double effect).
+
+| # | Flow | Inputs | Expect |
+|---|------|--------|--------|
+| SC-1 | Attestation auto-release | assignment past its release window, no dispute (`attestation_beat.auto_release_attestations`) | Attestation fee escrow releases to attestor; audited. |
+| SC-2 | Attestation offer expiry | unaccepted offer past expiry (`attestation_beat.expire_attestation_offers`) | Offer expired; no longer assignable. |
+| SC-3 | Overdue attestation revoke | assigned attestor misses deadline (`attestation_beat.revoke_overdue_attestations`) | Assignment revoked/reassignable; attestor notified. |
+| SC-4 | Attestation dispute escalation | attestation dispute past SLA (`attestation_beat.escalate_attestation_disputes`) | Escalated to admin queue. |
+| SC-5 | Open proposal expiry | proposal open past window (`projects_beat.expire_open_proposals`) | Proposal expired; can't be accepted. |
+| SC-6 | Pending amendment expiry | milestone/contract amendment unactioned past window (`projects_beat.expire_pending_amendments`) | Amendment expired; state reverts. |
+| SC-7 | Project dispute escalation | project dispute past SLA (`projects_beat.escalate_disputes`) | Escalated to admin; escrow stays held. |
+| SC-8 | Close expired project | posted project past deadline, no acceptance (`projects_beat.close_expired_projects`) | Project closed; no longer biddable. |
+| SC-9 | Auto-close delivered project | all milestones delivered/approved (`projects_beat.auto_close_delivered_projects`) | Project auto-closes; final state set. |
+| SC-10 | License expiry | license past `expires_at` (`scheduled.clear_expired_licenses`) | Access revoked; download blocked. |
+| SC-11 | GDPR export expiry | export past TTL (`gdpr_beat.expire_data_exports`) | File purged; download link dead (410). |
+| SC-12 | Account deletion processing | deletion request past grace period (`gdpr_beat.process_account_deletions`) | Account anonymized/removed; audited. |
+| SC-13 | Partner webhook retry | a delivery left failed (`partner_webhooks.retry_due_partner_webhooks`) | Re-attempted on schedule; succeeds or marks exhausted. |
+| SC-14 | Partner commission clear | commission window elapses (`developer_beat.clear_partner_commissions`) | Commissions settled/cleared for the period. |
+| SC-15 | Partner tier recompute | partner usage changes (`developer_beat.recompute_partner_tiers`) | Tier recomputed from usage; reflected in dashboard. |
+| SC-16 | Daily analytics snapshot | run daily job (`admin_beat.snapshot_daily_analytics`) | Snapshot row written; admin analytics reflect it. |
+
 ---
 
 ## Cross-cutting checks (apply while testing above)
@@ -236,7 +271,7 @@ Live testing is authorized **only** when every row is green.
 
 | Area | Description | Status | Signed | Date |
 |------|-------------|--------|--------|------|
-| Sections 1–14 | All feature scenarios pass (desktop + 375px) | ☐ | | |
+| Sections 1–15 | All feature scenarios pass (desktop + 375px) | ☐ | | |
 | Cross-cutting | RBAC, mobile, errors, security eyeballs, empty/loading | ☐ | | |
 | Critical flows | All 6 release-blocking flows pass | ☐ | | |
 | Defects | No open Critical/High defects | ☐ | | |
