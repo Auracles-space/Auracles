@@ -61,6 +61,7 @@ export function ArtifactUploader({
 }: ArtifactUploaderProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   async function handleFile(file: File | null) {
     if (!file) {
@@ -148,19 +149,58 @@ export function ArtifactUploader({
         Upload PDF, Word, Excel, PowerPoint, ZIP, or image packages for private
         processing. Up to 500 MB total across all artifacts.
       </p>
-      <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-background px-4 text-center text-sm text-foreground-muted">
-        <span className="font-semibold text-foreground">
-          {uploading
-            ? "Uploading"
-            : artifactCount > 0
-              ? "Add another artifact"
-              : "Choose artifact"}
-        </span>
-        <span>
-          {artifactCount > 0
-            ? "Adds a new artifact — does not replace existing files. Pipeline starts after the upload is confirmed."
-            : "Pipeline starts after the upload is confirmed."}
-        </span>
+      <label
+        className={[
+          "mt-4 flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center text-sm transition-all duration-200 outline-none",
+          isDragging
+            ? "border-accent bg-accent/5 scale-[1.01]"
+            : "border-border-strong bg-background hover:border-accent hover:bg-surface-3",
+          uploading ? "opacity-60 cursor-not-allowed" : ""
+        ].join(" ")}
+        onDragOver={(e) => {
+          if (!uploading) {
+            e.preventDefault();
+            setIsDragging(true);
+          }
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={(e) => {
+          if (!uploading) {
+            e.preventDefault();
+            setIsDragging(false);
+            handleFile(e.dataTransfer.files?.[0] ?? null);
+          }
+        }}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className={[
+            "flex h-12 w-12 items-center justify-center rounded-xl bg-surface-2 text-foreground-muted border border-border-default transition-colors",
+            isDragging ? "text-accent bg-accent/10 border-accent/20" : "group-hover:text-foreground"
+          ].join(" ")}>
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+
+          <div className="space-y-1">
+            <span className="font-semibold text-foreground block">
+              {uploading
+                ? "Uploading..."
+                : isDragging
+                  ? "Drop files here"
+                  : artifactCount > 0
+                    ? "Add another artifact"
+                    : "Upload files"}
+            </span>
+            <span className="text-xs text-foreground-muted block max-w-md">
+              {isDragging
+                ? "Release to drop the file"
+                : artifactCount > 0
+                  ? "Adds a new artifact — does not replace existing files. Pipeline starts after confirmation."
+                  : "Drag and drop your file here, or click to browse."}
+            </span>
+          </div>
+        </div>
         <input
           accept={ARTIFACT_ACCEPT_ATTRIBUTE}
           className="sr-only"
