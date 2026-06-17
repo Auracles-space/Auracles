@@ -977,6 +977,14 @@ async def delete_artifact(
     framework = await _load_owned_framework(db, contributor, framework_id)
     _require_draft(framework)
     artifact = await _load_owned_artifact(db, framework, artifact_id)
+    # Block deletion while the processing pipeline is actively running on this
+    # artifact: a concurrent worker write would otherwise race a removed row and
+    # could orphan the S3 object. "pending" (not yet dispatched) stays deletable.
+    if artifact.processing_status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete an artifact while it is processing.",
+        )
     if framework.preview_artifact_id == artifact.id:
         framework.preview_artifact_id = None
         await db.flush()

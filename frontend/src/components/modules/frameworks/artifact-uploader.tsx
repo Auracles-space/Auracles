@@ -19,8 +19,12 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 
+/** Total artifact byte cap per Framework, mirroring the backend limit. */
+const ARTIFACT_MAX_TOTAL_BYTES = 500 * 1024 * 1024;
+
 type ArtifactUploaderProps = {
   artifactCount: number;
+  existingBytes: number;
   frameworkId: string;
   onUploaded: (artifact: ArtifactResponse) => void;
 };
@@ -32,6 +36,7 @@ type ArtifactUploaderProps = {
  */
 export function ArtifactUploader({
   artifactCount,
+  existingBytes,
   frameworkId,
   onUploaded,
 }: ArtifactUploaderProps) {
@@ -40,6 +45,13 @@ export function ArtifactUploader({
 
   async function handleFile(file: File | null) {
     if (!file) {
+      return;
+    }
+
+    // Mirror the backend 413 gate client-side so an over-limit file never makes
+    // the round-trip or starts an S3 upload. Backend stays authoritative.
+    if (existingBytes + file.size > ARTIFACT_MAX_TOTAL_BYTES) {
+      setMessage("Framework artifacts exceed the 500MB limit.");
       return;
     }
 

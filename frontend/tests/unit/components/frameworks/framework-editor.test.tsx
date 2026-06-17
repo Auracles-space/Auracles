@@ -157,6 +157,24 @@ describe("FrameworkEditor", () => {
     );
   });
 
+  it("hides the artifact remove control while the artifact is still processing", async () => {
+    mockLoad(makeFramework({ status: "draft" }), [
+      makeArtifact({
+        id: "art_1",
+        name: "Operating Model.pdf",
+        processing_status: "processing",
+        scan_status: "pending",
+      }),
+    ]);
+
+    render(<FrameworkEditor frameworkId="fw_1" />);
+
+    await screen.findByText("Operating Model.pdf");
+    expect(
+      screen.queryByRole("button", { name: /remove operating model\.pdf/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the artifact remove control once published", async () => {
     mockLoad(makeFramework({ status: "published" }), [
       makeArtifact({ id: "art_1", name: "Operating Model.pdf" }),

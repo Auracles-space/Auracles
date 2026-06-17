@@ -862,6 +862,43 @@ async def test_published_framework_artifact_delete_is_rejected(
     assert response.status_code == 409
 
 
+async def test_artifact_delete_is_rejected_while_processing(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Deleting an Artifact mid-pipeline is rejected to avoid a worker race."""
+    contributor_id = await create_user_with_roles(
+        "artifact-processing@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "scanning.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        scan_status="pending",
+        processing_status="processing",
+    )
+
+    response = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+
 async def test_contributor_can_unpublish_owned_published_framework(
     client: AsyncClient,
     migrated_database: None,

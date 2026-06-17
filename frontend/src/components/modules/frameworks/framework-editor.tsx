@@ -183,6 +183,10 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       <aside className="grid gap-4">
         <ArtifactUploader
           artifactCount={artifacts.length}
+          existingBytes={artifacts.reduce(
+            (total, artifact) => total + artifact.file_size,
+            0,
+          )}
           frameworkId={framework.id}
           onUploaded={(artifact) =>
             setArtifacts((current) => [artifact, ...current])
@@ -267,6 +271,9 @@ type ArtifactManifestProps = {
   onRemove: (artifactId: string) => void;
 };
 
+/** Processing state where the pipeline is actively running on the artifact. */
+const IN_FLIGHT_PROCESSING = new Set(["processing"]);
+
 /**
  * Render attached artifact status rows.
  *
@@ -307,7 +314,8 @@ function ArtifactManifest({
                   {artifact.processing_status}
                 </p>
               </div>
-              {canRemove ? (
+              {canRemove &&
+              !IN_FLIGHT_PROCESSING.has(artifact.processing_status) ? (
                 <button
                   aria-label={`Remove ${artifact.name}`}
                   className="shrink-0 rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold text-foreground-muted transition-colors hover:border-error/40 hover:bg-error/10 hover:text-error"
@@ -316,6 +324,10 @@ function ArtifactManifest({
                 >
                   Remove
                 </button>
+              ) : canRemove ? (
+                <span className="shrink-0 text-xs font-medium text-foreground-muted">
+                  Processing…
+                </span>
               ) : null}
             </div>
           ))}
