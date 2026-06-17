@@ -1,30 +1,40 @@
-.PHONY: dev dev-logs down logs migrate worker frontend
+.PHONY: dev datastores api worker beat migrate down logs frontend
 
-# One-command local backend bootstrap: containers up (detached) + migrations.
+# One-command local bootstrap: datastores in Docker + migrations on the host.
+# After this, run the backend processes locally: `make api`, `make worker`,
+# `make beat` (each in its own terminal). They run on the host via uv, not in
+# Docker — the macOS .venv shadows the image's Linux venv inside the container.
 dev:
 	./scripts/dev-up.sh
 
-# Same as `dev`, then stream api/worker/beat logs in this terminal.
-# Ctrl+C stops watching; containers keep running (use `make down` to stop them).
-dev-logs:
-	./scripts/dev-up.sh
-	docker compose logs -f api worker beat
+# Start only the datastores (Postgres, Redis, LocalStack) in Docker.
+datastores:
+	docker compose up -d postgres redis localstack
 
-# Stop and remove the local stack (keeps named volumes).
+# Run the FastAPI app on the host with autoreload.
+api:
+	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Run the Celery worker on the host with autoreload (restarts on app/**.py
+# changes). Local email links (verification, password reset) are logged here.
+worker:
+	cd backend && uv run watchmedo auto-restart --directory=app --pattern='*.py' --recursive --signal SIGTERM -- celery -A app.workers.celery_app worker --loglevel=info
+
+# Run the Celery beat scheduler on the host with autoreload.
+beat:
+	cd backend && uv run watchmedo auto-restart --directory=app --pattern='*.py' --recursive --signal SIGTERM -- celery -A app.workers.celery_app beat --loglevel=info
+
+# Apply database migrations on the host.
+migrate:
+	cd backend && uv run alembic upgrade head
+
+# Stop and remove the datastores (keeps named volumes).
 down:
 	docker compose down
 
-# Tail the API + worker + beat logs.
+# Tail the datastore logs (api/worker/beat run locally in their own terminals).
 logs:
-	docker compose logs -f api worker beat
-
-# Apply database migrations against the running stack.
-migrate:
-	docker compose exec -T api alembic upgrade head
-
-# Run the Celery worker in the foreground (logs verification links, etc.).
-worker:
-	docker compose up worker
+	docker compose logs -f postgres redis localstack
 
 # Start the Next.js dev server (frontend is not dockerised).
 frontend:

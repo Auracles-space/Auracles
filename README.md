@@ -24,7 +24,7 @@ engineering conventions.
 **Prerequisites:** Docker + Docker Compose, Node 20+ with `pnpm`,
 [`uv`](https://docs.astral.sh/uv/) (only for running backend tooling outside Docker).
 
-### One command (backend stack)
+### Bootstrap (datastores + migrations)
 
 ```bash
 make dev
@@ -34,18 +34,22 @@ This runs `scripts/dev-up.sh`, which:
 
 1. Seeds `backend/.env` and `frontend/.env.local` from the committed examples on
    first run (you must fill in the secrets — see below).
-2. Starts Postgres, Redis, LocalStack (S3 — dev buckets auto-created), and the
-   API / worker / beat containers (detached — they run in the background).
-3. Runs database migrations (`alembic upgrade head`).
+2. Starts **only the datastores** in Docker: Postgres, Redis, LocalStack (S3 —
+   dev buckets auto-created).
+3. Runs database migrations on the host (`uv run alembic upgrade head`).
 
-All three backend processes are containers, so they keep running after the
-command returns — no per-service terminal needed. The API hot-reloads on code
-changes (uvicorn `--reload`); the worker and beat do too, via a dev-only
-`docker-compose.override.yml` that wraps them in `watchmedo` (autoreload is
-**not** used in production). To watch logs live as you work, use `make dev-logs`
-instead of `make dev`.
+The API, Celery worker, and beat run **on the host via uv**, each in its own
+terminal — they are not run in Docker locally because the repo's macOS `.venv`
+is bind-mounted over the image's Linux venv inside the container. All three
+hot-reload on code changes (uvicorn `--reload`; worker/beat via `watchmedo`):
 
-Then start the frontend (it is **not** dockerised):
+```bash
+make api        # FastAPI on http://localhost:8000 (autoreload)
+make worker     # Celery worker (autoreload; logs dev email/reset links)
+make beat       # Celery beat scheduler (autoreload)
+```
+
+Then start the frontend (also **not** dockerised):
 
 ```bash
 make frontend          # or: cd frontend && pnpm install && pnpm dev
@@ -73,22 +77,28 @@ make frontend          # or: cd frontend && pnpm install && pnpm dev
 For local email testing, set `EMAIL_SEND_ENABLED=false` (default in the example):
 verification **and** password-reset emails are logged (with a clickable link)
 instead of sent through Resend, so you never burn the Resend daily quota. These
-emails are sent from Celery tasks, so the link appears in the **worker** logs
-(`docker compose logs -f worker`, or `make dev-logs`), not the API logs.
+emails are sent from Celery tasks, so the link appears in the **worker**
+terminal (`make worker`), not the API logs.
 
 ### Common commands
 
 ```bash
-make dev        # bring up backend stack + migrate (detached/quiet)
-make dev-logs   # same as `make dev`, then stream api/worker/beat logs here
-make frontend   # run the Next.js dev server (foreground)
-make worker     # run the Celery worker in the foreground (shows email links)
-make migrate    # apply migrations against the running stack
-make logs       # tail API + worker + beat logs
-make down       # stop the stack
+make dev        # bootstrap: datastores in Docker + run migrations
+make datastores # start only Postgres/Redis/LocalStack
+make api        # run FastAPI on the host (autoreload)
+make worker     # run the Celery worker on the host (autoreload; shows email links)
+make beat       # run Celery beat on the host (autoreload)
+make migrate    # apply migrations on the host
+make frontend   # run the Next.js dev server
+make logs       # tail datastore logs (Postgres/Redis/LocalStack)
+make down       # stop the datastores
 ```
 
-Typical day-to-day: `make dev-logs` in one terminal, `make frontend` in another.
+Typical day-to-day: `make dev` once, then `make api`, `make worker`, and
+`make frontend` in separate terminals. The datastores have no restart policy,
+so run `make dev` again after a reboot, after `make down`, or after quitting
+Docker Desktop (check with `docker compose ps`). If they're already `Up`, skip
+straight to `make api` / `make worker` / `make frontend`.
 
 ClamAV (virus scanning) is started on demand — `docker compose up -d clamav` —
 because its first-boot signature download takes several minutes.
