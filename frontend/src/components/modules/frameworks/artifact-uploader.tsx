@@ -22,6 +22,25 @@ import {
 /** Total artifact byte cap per Framework, mirroring the backend limit. */
 const ARTIFACT_MAX_TOTAL_BYTES = 500 * 1024 * 1024;
 
+/**
+ * Accepted artifact MIME types, mirroring the backend allowlist
+ * (`ALLOWED_ARTIFACT_MIME_TYPES`). The backend 415 check stays authoritative;
+ * this drives the picker filter and a client pre-check for fast feedback.
+ */
+const ARTIFACT_ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/zip",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+
+/** Comma-joined `accept` attribute value for the file picker. */
+const ARTIFACT_ACCEPT_ATTRIBUTE = ARTIFACT_ALLOWED_MIME_TYPES.join(",");
+
 type ArtifactUploaderProps = {
   artifactCount: number;
   existingBytes: number;
@@ -45,6 +64,18 @@ export function ArtifactUploader({
 
   async function handleFile(file: File | null) {
     if (!file) {
+      return;
+    }
+
+    // Mirror the backend 415 gate client-side so an unsupported file never makes
+    // the round-trip. The picker `accept` filter is advisory only (drag-drop and
+    // "all files" bypass it), so re-check here. Backend stays authoritative.
+    if (
+      !(ARTIFACT_ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)
+    ) {
+      setMessage(
+        "That file type is not supported. Upload PDF, Word, Excel, PowerPoint, ZIP, or an image (JPEG, PNG, WebP).",
+      );
       return;
     }
 
@@ -131,6 +162,7 @@ export function ArtifactUploader({
             : "Pipeline starts after the upload is confirmed."}
         </span>
         <input
+          accept={ARTIFACT_ACCEPT_ATTRIBUTE}
           className="sr-only"
           disabled={uploading}
           onChange={(event) => handleFile(event.target.files?.[0] ?? null)}

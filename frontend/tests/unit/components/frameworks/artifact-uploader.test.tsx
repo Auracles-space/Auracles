@@ -42,6 +42,46 @@ describe("ArtifactUploader", () => {
     expect(requestArtifactUploadUrl).not.toHaveBeenCalled();
   });
 
+  it("blocks an unsupported file type before calling the API", async () => {
+    vi.mocked(requestArtifactUploadUrl).mockReset();
+    const { container } = render(
+      <ArtifactUploader
+        artifactCount={0}
+        existingBytes={0}
+        frameworkId="fw_1"
+        onUploaded={() => undefined}
+      />,
+    );
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["x"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(
+      await screen.findByText(/file type is not supported/i),
+    ).toBeInTheDocument();
+    expect(requestArtifactUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("constrains the file picker to accepted types", () => {
+    const { container } = render(
+      <ArtifactUploader
+        artifactCount={0}
+        existingBytes={0}
+        frameworkId="fw_1"
+        onUploaded={() => undefined}
+      />,
+    );
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    expect(input.accept).toContain("application/pdf");
+    expect(input.accept).toContain("image/png");
+  });
+
   it("shows the total size limit and accepted file types", () => {
     render(
       <ArtifactUploader
