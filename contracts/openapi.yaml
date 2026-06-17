@@ -3687,6 +3687,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/relist:
+    post:
+      tags:
+      - Frameworks
+      summary: Relist Framework
+      description: Relist an owned, delisted Framework back into the public catalog.
+      operationId: relist_framework_v1_frameworks__framework_id__relist_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/versions:
     post:
       tags:

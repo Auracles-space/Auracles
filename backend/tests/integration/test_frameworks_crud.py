@@ -1213,6 +1213,111 @@ async def test_kyc_pending_contributor_can_unpublish_owned_published_framework(
     assert response.json()["status"] == "unpublished"
 
 
+async def test_contributor_can_relist_unpublished_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Relisting returns a delisted Framework to the catalog at the same version."""
+    contributor_id = await create_user_with_roles(
+        "framework-relist@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "unpublished"
+        await session.commit()
+        original_version = framework.version
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/relist",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "published"
+    assert body["version"] == original_version
+
+
+async def test_relist_rejects_non_unpublished_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Only unpublished Frameworks can be relisted; a draft returns 409."""
+    contributor_id = await create_user_with_roles(
+        "framework-relist-conflict@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+
+    # A never-published draft has no catalog listing to restore.
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/relist",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409
+
+
+async def test_relist_is_idempotent_on_published_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Relisting an already-live Framework is a no-op 200, mirroring unpublish."""
+    contributor_id = await create_user_with_roles(
+        "framework-relist-idempotent@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/relist",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+
+
+async def test_relist_denied_for_non_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A stranger cannot relist another contributor's delisted Framework (404)."""
+    owner_id = await create_user_with_roles(
+        "framework-relist-owner@auracles.space",
+        ["contributor"],
+    )
+    stranger_id = await create_user_with_roles(
+        "framework-relist-stranger@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, owner_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "unpublished"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/relist",
+        headers=auth_headers(stranger_id, ["contributor"]),
+    )
+
+    assert response.status_code == 404
+
+
 async def test_new_version_without_inherited_artifact_clones_current_artifact(
     client: AsyncClient,
     migrated_database: None,

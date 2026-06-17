@@ -208,6 +208,22 @@ async def unpublish_framework(
     )
 
 
+@router.post("/{framework_id}/relist", response_model=FrameworkResponse)
+async def relist_framework(
+    framework_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Relist an owned, delisted Framework back into the public catalog."""
+    return await service.relist_framework(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
 @router.post("/{framework_id}/versions", response_model=FrameworkResponse)
 async def create_new_version(
     framework_id: UUID,

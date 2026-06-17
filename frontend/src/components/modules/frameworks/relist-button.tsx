@@ -1,44 +1,44 @@
 "use client";
 
 /**
- * Contributor delist button.
+ * Contributor relist button.
  *
- * UI says "Delist from marketplace" even though the backend endpoint is named
- * `unpublish`; existing licensees keep access to purchased versions. The
- * confirm step runs in a modal dialog so the consequence is read before the
- * action commits.
+ * Returns a delisted Framework to the catalog at its current version without
+ * re-running the pipeline (it already passed before it was published). For
+ * content changes the contributor starts a new version instead. Calls the
+ * backend `relist` endpoint behind a modal confirm.
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { unpublishFramework } from "@/lib/generated/sdk.gen";
+import { relistFramework } from "@/lib/generated/sdk.gen";
 import {
   configureBrowserClient,
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 
-type DelistButtonProps = {
+type RelistButtonProps = {
   frameworkId: string;
 };
 
 /**
- * Render a confirmation-backed delist action.
+ * Render a confirmation-backed relist action.
  *
  * @param props - Framework id.
  */
-export function DelistButton({ frameworkId }: DelistButtonProps) {
+export function RelistButton({ frameworkId }: RelistButtonProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleDelist() {
+  async function handleRelist() {
     setBusy(true);
     setError(null);
     configureBrowserClient();
-    const result = await unpublishFramework({
+    const result = await relistFramework({
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -55,22 +55,21 @@ export function DelistButton({ frameworkId }: DelistButtonProps) {
   return (
     <>
       <button
-        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-error px-4 py-2 text-sm font-semibold text-error transition hover:bg-error/10"
+        className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90"
         onClick={() => setConfirming(true)}
         type="button"
       >
-        Delist from marketplace
+        Relist on marketplace
       </button>
       <ConfirmDialog
         open={confirming}
         eyebrow="Marketplace listing"
-        title="Delist this framework?"
-        description="Delisting hides this Framework from the catalog so no new operators can purchase it. Existing licensees keep access to the version they paid for. You can relist it anytime."
-        confirmLabel={busy ? "Delisting…" : "Delist framework"}
-        tone="danger"
+        title="Relist this framework?"
+        description="Relisting returns this Framework to the catalog at its current version so operators can purchase it again. No pipeline re-check is needed. To change the content, start a new version instead."
+        confirmLabel={busy ? "Relisting…" : "Relist framework"}
         busy={busy}
         error={error}
-        onConfirm={handleDelist}
+        onConfirm={handleRelist}
         onClose={() => setConfirming(false)}
       />
     </>

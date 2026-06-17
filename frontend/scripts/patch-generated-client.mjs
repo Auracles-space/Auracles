@@ -89,6 +89,7 @@ const compatibilityAliases = {
   requestAccountDeletion: "requestAccountDeletionV1GdprAccountDeletionPost",
   requestEmailChange: "requestEmailChangeV1SettingsAccountEmailChangePost",
   requestKycUploadUrl: "requestKycUploadUrlV1SettingsKycUploadUrlPost",
+  relistFramework: "relistFrameworkV1FrameworksFrameworkIdRelistPost",
   requestPayout: "requestPayoutV1FinancialsPayoutsPost",
   resetPassword: "resetPasswordV1AuthResetPasswordPost",
   resolveArtifactPiiReview: "resolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost",

@@ -65,6 +65,12 @@ type FrameworkFormProps = {
   submitLabel?: string;
   leftActions?: ReactNode;
   children?: ReactNode;
+  /**
+   * Locks every metadata field and hides the save button. Used for statuses
+   * the backend won't let a contributor edit in place (published, unpublished,
+   * mid-pipeline); editing those requires starting a new version.
+   */
+  readOnly?: boolean;
 };
 
 export type FrameworkDraftPrefill = {
@@ -133,6 +139,7 @@ export function FrameworkForm({
   submitLabel = "Save framework",
   leftActions,
   children,
+  readOnly = false,
 }: FrameworkFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -210,6 +217,9 @@ export function FrameworkForm({
 
   return (
     <form className="grid gap-6" onSubmit={handleSubmit}>
+      {/* `display: contents` keeps the grid gap intact while the disabled
+          fieldset cascades the locked state to every inner control. */}
+      <fieldset className="contents" disabled={readOnly}>
       <FormTextInput
         label="Framework Title"
         placeholder="e.g. Enterprise React Architecture Template"
@@ -377,24 +387,27 @@ export function FrameworkForm({
           {error}
         </div>
       ) : null}
-      
+      </fieldset>
+
       <div className="mt-4 pt-6 border-t border-border-default flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {leftActions}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            className={[
-              "inline-flex min-h-12 items-center justify-center rounded-xl px-8 text-sm font-semibold shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed",
-              framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
-                ? "border border-border-default bg-surface-1 text-foreground hover:bg-surface-2"
-                : "bg-foreground text-background hover:bg-foreground/90"
-            ].join(" ")}
-            disabled={saving || !canSubmit}
-            type="submit"
-          >
-            {saving ? "Saving changes..." : submitLabel}
-          </button>
+          {readOnly ? null : (
+            <button
+              className={[
+                "inline-flex min-h-12 items-center justify-center rounded-xl px-8 text-sm font-semibold shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed",
+                framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
+                  ? "border border-border-default bg-surface-1 text-foreground hover:bg-surface-2"
+                  : "bg-foreground text-background hover:bg-foreground/90"
+              ].join(" ")}
+              disabled={saving || !canSubmit}
+              type="submit"
+            >
+              {saving ? "Saving changes..." : submitLabel}
+            </button>
+          )}
           {children}
         </div>
       </div>

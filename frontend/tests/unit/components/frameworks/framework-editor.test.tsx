@@ -35,7 +35,8 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   requestArtifactUploadUrl: vi.fn(),
   acknowledgeSimilarityNotice: vi.fn(),
   publishFramework: vi.fn(),
-  delistFramework: vi.fn(),
+  unpublishFramework: vi.fn(),
+  relistFramework: vi.fn(),
 }));
 
 function makeFramework(
@@ -125,6 +126,24 @@ describe("FrameworkEditor", () => {
     render(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Test Framework");
+    expect(
+      screen.getByRole("button", { name: /start draft version/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers relist plus a new version for a delisted framework, with metadata locked", async () => {
+    mockLoad(makeFramework({ status: "unpublished" }));
+
+    render(<FrameworkEditor frameworkId="fw_1" />);
+
+    await screen.findByText("Test Framework");
+    // The dead-end in-place save is gone; relist + new version are the exits.
+    expect(
+      screen.queryByRole("button", { name: /save changes/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /relist on marketplace/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /start draft version/i }),
     ).toBeInTheDocument();

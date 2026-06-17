@@ -3791,6 +3791,16 @@ export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostResponse = (Fr
 
 export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
 
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
+
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostError = (HTTPValidationError);
+
 export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostData = {
     body: FrameworkVersionCreate;
     path: {

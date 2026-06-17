@@ -725,6 +725,70 @@ async def unpublish_framework(
     return framework_to_response(framework)
 
 
+async def relist_framework(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Return an owned, delisted Framework to the public catalog.
+
+    Relist is the inverse of unpublish: the Framework already passed the
+    pipeline before it was published, so a same-version relist skips
+    re-processing and flips ``unpublished`` straight back to ``published``.
+    Content edits still require a new version (which reverts to draft and
+    re-runs the pipeline) — relist never changes the artifacts or version.
+
+    Args:
+        db: Async SQLAlchemy session.
+        contributor: Authenticated owning Contributor.
+        framework_id: UUID of the Framework to relist.
+
+    Returns:
+        The relisted Framework as a contributor-facing response.
+
+    Raises:
+        HTTPException(404): If the Framework does not exist or is not owned.
+        HTTPException(409): If the Framework is not currently unpublished.
+    """
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    if framework.status == "published":
+        return framework_to_response(framework)
+    if framework.status != "unpublished":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only unpublished Frameworks can be relisted.",
+        )
+
+    framework.status = "published"
+    framework.published_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="framework_relisted",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"version": framework.version},
+    )
+    await db.commit()
+    try:
+        await index_framework_artifacts(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="frameworks",
+            action="index_framework_artifacts",
+            user_id=contributor.id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_index_failed", error=str(exc))
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="relist_framework",
+        user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_relisted")
+    return framework_to_response(framework)
+
+
 async def submit_framework(
     db: AsyncSession,
     contributor: User,

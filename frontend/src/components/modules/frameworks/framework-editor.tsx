@@ -11,6 +11,7 @@ import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploader";
 import { DelistButton } from "@/components/modules/frameworks/delist-button";
+import { RelistButton } from "@/components/modules/frameworks/relist-button";
 import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
 import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-resolution";
 import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-status-panel";
@@ -197,7 +198,12 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const hasRaritySoftFail = artifacts.some(
     (artifact) => artifact.processing_status === "flagged_rarity",
   );
-  const canPublish = framework.status === "pipeline_passed";
+  // Metadata is only editable in place while the Framework is a draft; every
+  // other status (mid-pipeline, published, unpublished) is locked, and content
+  // changes go through a new version. Mirrors the backend draft-only guard.
+  const isDraftEditable = framework.status === "draft";
+  const isLive = framework.status === "published";
+  const isDelisted = framework.status === "unpublished";
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
@@ -213,13 +219,25 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           </div>
           <p className="text-sm text-foreground-muted">Version {framework.version}</p>
         </div>
+        {!isDraftEditable ? (
+          <p className="mb-4 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm text-foreground-muted">
+            {isLive
+              ? "This framework is live. Its details are locked — start a new version to make changes, or delist it to pull it from the catalog."
+              : isDelisted
+                ? "This framework is delisted. Relist it to restore the current version, or start a new version to edit its content."
+                : "Details are locked while the framework moves through the publishing pipeline."}
+          </p>
+        ) : null}
         <FrameworkForm
           framework={framework}
           onSubmit={handleUpdate}
           submitLabel="Save changes"
+          readOnly={!isDraftEditable}
           leftActions={
-            framework.status === "published" ? (
+            isLive ? (
               <DelistButton frameworkId={framework.id} />
+            ) : isDelisted ? (
+              <RelistButton frameworkId={framework.id} />
             ) : null
           }
         >
@@ -270,16 +288,18 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         {hasRaritySoftFail ? (
           <SoftFailAcknowledgement frameworkId={framework.id} />
         ) : null}
-        {/* Versioning only applies once a Framework is live; a never-published
-            draft is edited in place, so the new-version action stays hidden. */}
-        {framework.status === "published" ? (
+        {/* Versioning applies once a Framework has been published at least once
+            (live or delisted); a never-published draft is edited in place, so
+            the new-version action stays hidden. */}
+        {isLive || isDelisted ? (
           <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <h2 className="font-heading text-lg font-bold text-foreground">
               New version
             </h2>
             <p className="mt-1 text-sm text-foreground-muted">
-              Start a draft revision. The current version stays published until
-              the new one passes the pipeline.
+              {isLive
+                ? "Start a draft revision. The current version stays published until the new one passes the pipeline."
+                : "Start a draft revision to edit this delisted framework. It re-runs the pipeline before it can be published again."}
             </p>
             <div className="mt-4">
               <VersionRadios onChange={setChangeType} value={changeType} />
