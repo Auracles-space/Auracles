@@ -105,6 +105,11 @@ because its first-boot signature download takes several minutes.
 
 ## Tests
 
+The backend suite runs against an **isolated** `auracles_test` database and Redis
+db 1 — never the dev datastores — because integration fixtures delete Users and
+other rows. `make dev` creates and migrates `auracles_test` automatically; run
+`make test-db` to repair it if it's missing.
+
 ```bash
 # Backend
 cd backend && uv run pytest

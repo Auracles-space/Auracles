@@ -37,6 +37,16 @@ done
 echo "Running database migrations (host, via uv)..."
 (cd backend && uv run alembic upgrade head)
 
+# Dedicated test database — isolated from the dev DB so the suite's destructive
+# fixtures (delete Users/audit/etc.) never wipe seeded dev data. Created if
+# missing, then migrated. The suite points at it via tests/conftest.py.
+echo "Ensuring test database (auracles_test)..."
+docker compose exec -T postgres psql -U auracles -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname='auracles_test'" | grep -q 1 \
+  || docker compose exec -T postgres psql -U auracles -d postgres \
+       -c "CREATE DATABASE auracles_test OWNER auracles;"
+(cd backend && DATABASE_URL='postgresql+asyncpg://auracles:secret@localhost:5432/auracles_test' uv run alembic upgrade head)
+
 cat <<'EOF'
 
 Datastores ready:

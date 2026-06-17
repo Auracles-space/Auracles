@@ -1,4 +1,4 @@
-.PHONY: dev datastores api worker beat migrate down logs frontend
+.PHONY: dev datastores api worker beat migrate test-db down logs frontend
 
 # One-command local bootstrap: datastores in Docker + migrations on the host.
 # After this, run the backend processes locally: `make api`, `make worker`,
@@ -27,6 +27,16 @@ beat:
 # Apply database migrations on the host.
 migrate:
 	cd backend && uv run alembic upgrade head
+
+# Create (if missing) and migrate the isolated test database. The suite points
+# at auracles_test via tests/conftest.py so its destructive fixtures never touch
+# the dev DB. `make dev` runs this automatically; use this to repair it.
+test-db:
+	docker compose exec -T postgres psql -U auracles -d postgres -tAc \
+	  "SELECT 1 FROM pg_database WHERE datname='auracles_test'" | grep -q 1 \
+	  || docker compose exec -T postgres psql -U auracles -d postgres \
+	       -c "CREATE DATABASE auracles_test OWNER auracles;"
+	cd backend && DATABASE_URL='postgresql+asyncpg://auracles:secret@localhost:5432/auracles_test' uv run alembic upgrade head
 
 # Stop and remove the datastores (keeps named volumes).
 down:

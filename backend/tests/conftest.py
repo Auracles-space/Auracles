@@ -5,10 +5,14 @@ import os
 # developer may have parked in `.env` (or selected via `ENV_FILE=.env.prod`).
 # These mirror CI's service-container env so local and CI runs are identical.
 os.environ.setdefault("ENVIRONMENT", "local")
+# Dedicated test DB/Redis namespace, NEVER the dev datastores. Integration
+# fixtures delete Users/audit/etc., so pointing at the `auracles` dev DB (or
+# Redis db 0) would wipe the seeded dev account on every run. `auracles_test`
+# and Redis db 1 are created/migrated by `make test-db` (see scripts/dev-up.sh).
 os.environ["DATABASE_URL"] = (
-    "postgresql+asyncpg://auracles:secret@localhost:5432/auracles"
+    "postgresql+asyncpg://auracles:secret@localhost:5432/auracles_test"
 )
-os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+os.environ["REDIS_URL"] = "redis://localhost:6379/1"
 os.environ["SECRET_KEY"] = "dev-only-change-me"
 os.environ["TOTP_ENCRYPTION_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 os.environ["PAYOUT_ACCOUNT_ENCRYPTION_KEY"] = (
