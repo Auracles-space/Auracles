@@ -6,7 +6,7 @@
  * Used for both draft creation and draft updates; service calls stay in parent
  * components so this form remains a reusable UI unit.
  */
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import type {
@@ -63,6 +63,8 @@ type FrameworkFormProps = {
   prefill?: FrameworkDraftPrefill;
   onSubmit: (payload: FrameworkCreate) => Promise<void>;
   submitLabel?: string;
+  leftActions?: ReactNode;
+  children?: ReactNode;
 };
 
 export type FrameworkDraftPrefill = {
@@ -129,6 +131,8 @@ export function FrameworkForm({
   prefill,
   onSubmit,
   submitLabel = "Save framework",
+  leftActions,
+  children,
 }: FrameworkFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -374,24 +378,25 @@ export function FrameworkForm({
         </div>
       ) : null}
       
-      <div className="mt-4 pt-6 border-t border-border-default flex items-center justify-end">
-        <button
-          className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-8 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled={saving || !canSubmit}
-          type="submit"
-        >
-          {saving ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-background" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Creating draft...
-            </>
-          ) : (
-            submitLabel
-          )}
-        </button>
+      <div className="mt-4 pt-6 border-t border-border-default flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {leftActions}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            className={[
+              "inline-flex min-h-12 items-center justify-center rounded-xl px-8 text-sm font-semibold shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed",
+              framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
+                ? "border border-border-default bg-surface-1 text-foreground hover:bg-surface-2"
+                : "bg-foreground text-background hover:bg-foreground/90"
+            ].join(" ")}
+            disabled={saving || !canSubmit}
+            type="submit"
+          >
+            {saving ? "Saving changes..." : submitLabel}
+          </button>
+          {children}
+        </div>
       </div>
     </form>
   );

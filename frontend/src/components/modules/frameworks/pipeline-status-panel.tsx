@@ -9,6 +9,7 @@
 import { FormEvent, useState } from "react";
 
 import { isLengthBetween } from "@/lib/forms/validators";
+import { formatFrameworkStatus } from "@/lib/marketplace/format";
 import { acknowledgeSimilarityNotice } from "@/lib/generated/sdk.gen";
 import type { ArtifactResponse, FrameworkResponse } from "@/lib/generated/types.gen";
 import {
@@ -173,11 +174,11 @@ export function PipelineStatusPanel({
             Pipeline status
           </h2>
           <p className="text-sm text-foreground-muted">
-            Publish is available only after the backend gate passes.
+            Publishing unlocks once every check below passes.
           </p>
         </div>
         <span className="w-fit rounded-xl border border-border-default px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-          {frameworkStatus.replaceAll("_", " ")}
+          {formatFrameworkStatus(frameworkStatus)}
         </span>
       </div>
       <div className="grid gap-4">

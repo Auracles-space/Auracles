@@ -923,7 +923,7 @@ async def confirm_artifact_upload(
 ) -> ArtifactResponse:
     """Confirm an Artifact object exists in S3 and dispatch virus scanning."""
     framework = await _load_owned_framework(db, contributor, framework_id)
-    _require_draft(framework)
+    _require_editable_artifacts(framework)
     artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
 
     settings = get_settings()

@@ -40,6 +40,35 @@ export function formatLabel(value: string | null | undefined): string {
 }
 
 /**
+ * Plain-language labels for the Framework workflow status enum.
+ *
+ * Keeps internal pipeline jargon (pipeline_passed, pipeline_failed) out of the
+ * contributor UI. Unknown values fall back to {@link formatLabel} title-casing.
+ */
+const FRAMEWORK_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  processing: "Checking…",
+  submitted: "Submitted",
+  pipeline_passed: "Ready to publish",
+  pipeline_failed: "Checks failed",
+  published: "Published",
+  unpublished: "Unpublished",
+};
+
+/**
+ * Format a Framework workflow status for display to contributors.
+ *
+ * @param value - Raw status enum from the backend.
+ * @returns Plain-language status label.
+ */
+export function formatFrameworkStatus(value: string | null | undefined): string {
+  if (value && value in FRAMEWORK_STATUS_LABELS) {
+    return FRAMEWORK_STATUS_LABELS[value];
+  }
+  return formatLabel(value);
+}
+
+/**
  * Format a file size in bytes.
  *
  * @param bytes - File size in bytes.

@@ -22,6 +22,30 @@ from app.workers.celery_app import app
 
 PII_CONFIDENCE_THRESHOLD = 0.6
 
+# Only genuinely sensitive entity types block publishing. Presidio also emits
+# entities that routinely appear in legitimate framework prose — most notably
+# DATE_TIME ("30 days", "Day 30"), plus URL and NRP — which must never fail the
+# gate or no knowledge artifact could ever pass. Contact details, financial and
+# government identifiers, names, and locations are the publishable-data risks we
+# actually guard against.
+BLOCKING_PII_ENTITY_TYPES = frozenset(
+    {
+        "EMAIL_ADDRESS",
+        "PHONE_NUMBER",
+        "CREDIT_CARD",
+        "CRYPTO",
+        "IBAN_CODE",
+        "US_SSN",
+        "US_ITIN",
+        "US_BANK_NUMBER",
+        "US_PASSPORT",
+        "US_DRIVER_LICENSE",
+        "MEDICAL_LICENSE",
+        "PERSON",
+        "LOCATION",
+    }
+)
+
 
 @dataclass(frozen=True)
 class PiiFinding:
@@ -71,6 +95,22 @@ def detect_pii_from_text(text: str) -> list[PiiFinding]:
     ]
 
 
+def select_blocking_findings(findings: list[PiiFinding]) -> list[PiiFinding]:
+    """Return findings that should block publishing.
+
+    A finding blocks only when it is a sensitive entity type
+    (:data:`BLOCKING_PII_ENTITY_TYPES`) and meets
+    :data:`PII_CONFIDENCE_THRESHOLD`. Benign entities (DATE_TIME, URL, ...) and
+    low-confidence guesses are ignored so ordinary framework content can pass.
+    """
+    return [
+        finding
+        for finding in findings
+        if finding.score >= PII_CONFIDENCE_THRESHOLD
+        and finding.entity_type in BLOCKING_PII_ENTITY_TYPES
+    ]
+
+
 def _unique_entity_types(findings: list[PiiFinding]) -> list[str]:
     """Return sorted unique PII entity types for audit storage."""
     return sorted({finding.entity_type for finding in findings})
@@ -88,18 +128,18 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
         text = str(extraction.get("text", ""))
 
     findings = detect_pii_from_text(text) if text else []
-    high_confidence = [
-        finding for finding in findings if finding.score >= PII_CONFIDENCE_THRESHOLD
-    ]
-    review_needed = bool(findings)
+    blocking = select_blocking_findings(findings)
+    review_needed = bool(blocking)
 
-    entity_types = _unique_entity_types(findings)
+    # Audit records the sensitive types that triggered review, not every benign
+    # entity Presidio emitted, so the contributor-facing reason is meaningful.
+    entity_types = _unique_entity_types(blocking)
     async with async_session_factory() as db:
         artifact = await db.get(Artifact, parsed_artifact_id)
         if artifact is None:
             return {"artifact_id": artifact_id, "status": "missing"}
 
-        artifact.pii_detected = bool(high_confidence)
+        artifact.pii_detected = review_needed
         artifact.pii_review_needed = review_needed
         artifact.clean_file_key = None
         if review_needed:
@@ -118,7 +158,7 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
                 flagged_for_review=review_needed,
             )
         )
-        if findings:
+        if blocking:
             await write_audit(
                 db=db,
                 actor_id=None,
@@ -128,7 +168,6 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
                 metadata={
                     "framework_id": str(artifact.framework_id),
                     "pii_types_found": entity_types,
-                    "high_confidence": bool(high_confidence),
                     "auto_redacted": False,
                     "flagged_for_review": review_needed,
                 },

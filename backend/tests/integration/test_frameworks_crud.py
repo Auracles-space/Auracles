@@ -751,6 +751,64 @@ async def test_artifact_response_exposes_safe_redaction_status(
     assert "clean_file_key" not in body
 
 
+async def test_confirm_artifact_upload_allowed_on_pipeline_failed_framework(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A replacement artifact on a pipeline_failed Framework can be confirmed.
+
+    Pairs with the loosened upload-url gate: after uploading a replacement file
+    to a failed Framework, confirm must dispatch the scan rather than 409.
+    """
+    dispatched: list[str] = []
+
+    class FakeScanTask:
+        """Celery task double that records dispatched Artifact ids."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a scan dispatch instead of touching Redis/Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        FakeScanTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "artifact-confirm-failed@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "replacement.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    framework_test_context["storage"].existing_keys.add(upload.json()["file_key"])
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/confirm",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert dispatched == [artifact_id]
+
+
 async def test_confirm_artifact_upload_requires_uploaded_s3_object(
     client: AsyncClient,
     migrated_database: None,

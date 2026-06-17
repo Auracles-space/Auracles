@@ -35,7 +35,10 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { formatFileSize, formatLabel } from "@/lib/marketplace/format";
+import {
+  formatFileSize,
+  formatFrameworkStatus,
+} from "@/lib/marketplace/format";
 
 type FrameworkEditorProps = {
   frameworkId: string;
@@ -202,7 +205,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-              {formatLabel(framework.status)}
+              {formatFrameworkStatus(framework.status)}
             </p>
             <h1 className="font-heading text-2xl font-bold text-foreground">
               {framework.title}
@@ -214,7 +217,25 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           framework={framework}
           onSubmit={handleUpdate}
           submitLabel="Save changes"
-        />
+          leftActions={
+            framework.status === "published" ? (
+              <DelistButton frameworkId={framework.id} />
+            ) : null
+          }
+        >
+          {(framework.status === "draft" || framework.status === "pipeline_failed") && (
+            <button
+              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={handleSubmitGate}
+              type="button"
+            >
+              Submit for publishing
+            </button>
+          )}
+          {framework.status === "pipeline_passed" && (
+            <PublishButton frameworkId={framework.id} />
+          )}
+        </FrameworkForm>
       </section>
       <aside className="grid gap-4">
         <ArtifactUploader
@@ -245,26 +266,6 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         {hasRaritySoftFail ? (
           <SoftFailAcknowledgement frameworkId={framework.id} />
         ) : null}
-        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
-          <h2 className="font-heading text-lg font-bold text-foreground">
-            Publish workflow
-          </h2>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              className="min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
-              onClick={handleSubmitGate}
-              type="button"
-            >
-              Submit to pipeline
-            </button>
-            <PublishButton disabled={!canPublish} frameworkId={framework.id} />
-          </div>
-          {framework.status === "published" ? (
-            <div className="mt-4">
-              <DelistButton frameworkId={framework.id} />
-            </div>
-          ) : null}
-        </section>
         {/* Versioning only applies once a Framework is live; a never-published
             draft is edited in place, so the new-version action stays hidden. */}
         {framework.status === "published" ? (

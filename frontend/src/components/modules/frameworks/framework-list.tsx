@@ -19,7 +19,11 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
-import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import {
+  formatFrameworkStatus,
+  formatLabel,
+  formatMoney,
+} from "@/lib/marketplace/format";
 
 /**
  * Render Contributor-owned Framework summaries.
@@ -92,7 +96,7 @@ export function FrameworkList() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-                {formatLabel(framework.status)}
+                {formatFrameworkStatus(framework.status)}
               </p>
               <h2 className="mt-1 font-heading text-xl font-bold text-foreground">
                 {framework.title}

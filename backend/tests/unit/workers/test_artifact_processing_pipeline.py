@@ -1732,12 +1732,16 @@ def test_process_artifact_rerun_keeps_processing_audits_idempotent(
     assert rarity_count == 1
 
 
-def test_process_artifact_flags_low_confidence_pii_for_review(
+def test_process_artifact_does_not_flag_low_confidence_pii(
     monkeypatch: pytest.MonkeyPatch,
     migrated_database: None,
     processing_context: dict[str, Any],
 ) -> None:
-    """Low-confidence PII pauses the pipeline for Contributor review."""
+    """A sensitive entity below the confidence threshold does not pause the pipeline.
+
+    Only findings at or above PII_CONFIDENCE_THRESHOLD block publishing; a
+    low-confidence guess flows through to a normal processed result.
+    """
     from app.workers.tasks.processing import extract, pii, redaction
 
     artifact_id = create_processing_artifact()
@@ -1772,14 +1776,55 @@ def test_process_artifact_flags_low_confidence_pii_for_review(
 
     assert artifact is not None
     assert artifact.pii_detected is False
-    assert artifact.pii_review_needed is True
-    assert artifact.clean_file_key is None
-    assert artifact.processing_status == "flagged_pii"
+    assert artifact.pii_review_needed is False
+    assert artifact.processing_status == "processed"
     assert pii_audit is not None
-    assert pii_audit.pii_types_found == ["PHONE_NUMBER"]
-    assert pii_audit.auto_redacted is False
-    assert pii_audit.flagged_for_review is True
-    assert audit_log is not None
+    assert pii_audit.pii_types_found == []
+    assert pii_audit.flagged_for_review is False
+    assert audit_log is None
+
+
+def test_process_artifact_does_not_flag_benign_date_entities(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    processing_context: dict[str, Any],
+) -> None:
+    """DATE_TIME entities (e.g. "30 days") never block, even at high score.
+
+    Regression for framework prose full of durations being permanently stuck in
+    PII review.
+    """
+    from app.workers.tasks.processing import extract, pii
+
+    artifact_id = create_processing_artifact()
+    findings = [
+        pii.PiiFinding(entity_type="DATE_TIME", score=0.85, start=0, end=7)
+        for _ in range(5)
+    ]
+    monkeypatch.setattr(
+        extract,
+        "extract_text_from_file",
+        lambda *_: extract.ExtractionResult(
+            text="Activate the account within 30 days across a 45-minute kickoff.",
+            headings=[],
+            table_count=0,
+            word_count=10,
+            image_count=0,
+        ),
+    )
+    monkeypatch.setattr(pii, "detect_pii_from_text", lambda _: findings)
+
+    artifact_tasks.process_artifact.apply(args=[str(artifact_id)]).get()
+    asyncio.run(engine.dispose())
+
+    artifact, pii_audit, _, audit_log = read_artifact_state(artifact_id)
+
+    assert artifact is not None
+    assert artifact.pii_review_needed is False
+    assert artifact.processing_status == "processed"
+    assert pii_audit is not None
+    assert pii_audit.pii_types_found == []
+    assert audit_log is None
 
 
 def test_process_artifact_marks_failed_when_extraction_fails(
