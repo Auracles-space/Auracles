@@ -116,6 +116,10 @@ class Settings(BaseSettings):
         default="strict",
         alias="COOKIE_SAMESITE",
     )
+    cookie_secure_override: bool | None = Field(
+        default=None,
+        alias="COOKIE_SECURE",
+    )
     trust_proxy_headers: bool = Field(
         default=False,
         alias="TRUST_PROXY_HEADERS",
@@ -297,6 +301,20 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Payment provider secrets must be set outside local.")
         return self
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Whether auth cookies set the Secure flag.
+
+        Browsers (notably Safari) drop Secure cookies over plain
+        http://localhost, which leaves the refresh session unreadable and forces
+        an immediate logout after login in local dev. Default: off in local,
+        on everywhere else. SameSite=None always forces Secure because browsers
+        reject SameSite=None cookies without it. `COOKIE_SECURE` overrides.
+        """
+        if self.cookie_secure_override is not None:
+            return self.cookie_secure_override
+        return self.environment != "local" or self.cookie_samesite == "none"
 
     @property
     def cors_origin_list(self) -> list[str]:

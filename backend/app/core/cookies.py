@@ -32,7 +32,7 @@ def set_refresh_cookie(
         value=token,
         max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
         path=REFRESH_COOKIE_PATH,
-        secure=True,
+        secure=resolved_settings.cookie_secure,
         httponly=True,
         samesite=resolved_settings.cookie_samesite,
     )
@@ -94,7 +94,7 @@ def set_session_hint_cookie(
         ),
         max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
         path=SESSION_HINT_COOKIE_PATH,
-        secure=True,
+        secure=resolved_settings.cookie_secure,
         httponly=False,
         samesite=resolved_settings.cookie_samesite,
     )
@@ -111,7 +111,7 @@ def clear_refresh_cookie(response: Response, settings: Settings | None = None) -
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
         path=REFRESH_COOKIE_PATH,
-        secure=True,
+        secure=resolved_settings.cookie_secure,
         httponly=True,
         samesite=resolved_settings.cookie_samesite,
     )
@@ -130,7 +130,7 @@ def clear_session_hint_cookie(
     response.delete_cookie(
         key=SESSION_HINT_COOKIE_NAME,
         path=SESSION_HINT_COOKIE_PATH,
-        secure=True,
+        secure=resolved_settings.cookie_secure,
         httponly=False,
         samesite=resolved_settings.cookie_samesite,
     )
