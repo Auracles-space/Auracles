@@ -49,6 +49,12 @@ export function getRoleLandingPath(roles: string[]): string {
   if (roles.includes("attestor")) {
     return "/attestor/assignments";
   }
+  // Contributor takes precedence over operator: a dual-role user lands on their
+  // creator dashboard, while Explore stays reachable from the authed nav. A
+  // pure operator still lands on Explore.
+  if (roles.includes("contributor")) {
+    return "/dashboard";
+  }
   if (roles.includes("operator")) {
     return "/explore";
   }
