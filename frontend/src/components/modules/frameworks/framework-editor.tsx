@@ -226,6 +226,9 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           {(framework.status === "draft" || framework.status === "pipeline_failed") && (
             <button
               className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              // Nothing to submit without an artifact, and submitting mid-scan
+              // would just re-pick the in-flight job — gate on both.
+              disabled={artifacts.length === 0 || isPipelineActive}
               onClick={handleSubmitGate}
               type="button"
             >

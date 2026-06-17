@@ -52,9 +52,9 @@ describe("PipelineStatusPanel", () => {
     expect(screen.getByText("Virus scan")).toBeInTheDocument();
     expect(screen.getByText("Clean")).toBeInTheDocument();
     expect(screen.getByText("PII review")).toBeInTheDocument();
-    expect(screen.getByText("No review needed")).toBeInTheDocument();
     expect(screen.getByText("Similarity")).toBeInTheDocument();
-    expect(screen.getByText("Passed")).toBeInTheDocument();
+    // PII review and Similarity both read "Passed" once everything is clear.
+    expect(screen.getAllByText("Passed")).toHaveLength(2);
   });
 
   it("surfaces PII review as an action-blocking issue", () => {

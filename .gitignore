@@ -25,3 +25,4 @@ frontend/tsconfig.tsbuildinfo
 
 # Local tooling
 .env
+.env.prod

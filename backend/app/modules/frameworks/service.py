@@ -1021,6 +1021,27 @@ async def delete_artifact(
         artifact.current_for_framework = False
     else:
         await db.delete(artifact)
+    await db.flush()
+
+    # Removing the last artifact returns the Framework to a clean draft. With no
+    # files there is nothing to gate, so a stale pipeline_failed/processing
+    # status (and its failure reasons) would otherwise leave the contributor
+    # stuck on a "Checks failed" badge for checks that can no longer run.
+    remaining = await db.scalar(
+        select(func.count(Artifact.id)).where(
+            Artifact.framework_id == framework.id,
+            Artifact.current_for_framework.is_(True),
+        )
+    )
+    if int(remaining or 0) == 0 and framework.status in {
+        "submitted",
+        "processing",
+        "pipeline_failed",
+        "pipeline_passed",
+    }:
+        framework.status = "draft"
+        framework.pipeline_failure_reasons = {}
+
     await db.commit()
     logger.bind(
         module="frameworks",

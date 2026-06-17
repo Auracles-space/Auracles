@@ -94,7 +94,7 @@ export function buildPipelineChecks(
       value: anyPiiReview
         ? "Review required"
         : allProcessed || allGreen
-          ? "No review needed"
+          ? "Passed"
           : hasArtifacts
             ? "Pending"
             : "Not started",

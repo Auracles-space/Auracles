@@ -997,6 +997,52 @@ async def test_artifact_delete_allowed_on_pipeline_failed_framework(
     assert response.status_code == 204
 
 
+async def test_deleting_last_artifact_resets_failed_framework_to_draft(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Removing the final artifact returns a failed Framework to draft.
+
+    With no artifacts there is nothing to gate, so a stale pipeline_failed
+    status and its failure reasons must clear rather than stranding the
+    Contributor on a "Checks failed" badge for checks that cannot run.
+    """
+    contributor_id = await create_user_with_roles(
+        "artifact-last-delete@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "only.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        framework.pipeline_failure_reasons = {"external_check": "unavailable"}
+        await session.commit()
+
+    deleted = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{upload.json()['artifact_id']}",
+        headers=headers,
+    )
+
+    assert deleted.status_code == 204
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status == "draft"
+        assert framework.pipeline_failure_reasons == {}
+
+
 async def test_artifact_upload_url_allowed_on_pipeline_failed_framework(
     client: AsyncClient,
     migrated_database: None,

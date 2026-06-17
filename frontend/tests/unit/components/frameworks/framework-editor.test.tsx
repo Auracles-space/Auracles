@@ -175,6 +175,30 @@ describe("FrameworkEditor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("disables Submit for publishing when no artifact is attached", async () => {
+    mockLoad(makeFramework({ status: "draft" }), []);
+
+    render(<FrameworkEditor frameworkId="fw_1" />);
+
+    const button = await screen.findByRole("button", {
+      name: /submit for publishing/i,
+    });
+    expect(button).toBeDisabled();
+  });
+
+  it("enables Submit for publishing once an artifact is attached", async () => {
+    mockLoad(makeFramework({ status: "draft" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+
+    render(<FrameworkEditor frameworkId="fw_1" />);
+
+    const button = await screen.findByRole("button", {
+      name: /submit for publishing/i,
+    });
+    expect(button).toBeEnabled();
+  });
+
   it("shows the artifact remove control on a pipeline_failed framework", async () => {
     mockLoad(makeFramework({ status: "pipeline_failed" }), [
       makeArtifact({
