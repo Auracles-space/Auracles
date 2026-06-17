@@ -50,6 +50,24 @@ export async function retryWithRefreshOn401(
     return response;
   }
 
+  const authHeader = request.headers.get("Authorization");
+  const requestToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.substring(7)
+    : null;
+  const currentToken = deps.getToken();
+
+  // Skip the refresh call if the token in memory has already changed from the one that
+  // just failed, preventing concurrent 401s from triggering redundant refreshes.
+  if (currentToken !== null && currentToken !== requestToken) {
+    try {
+      const retried = request.clone();
+      retried.headers.set("Authorization", `Bearer ${currentToken}`);
+      return await deps.fetchImpl(retried);
+    } catch {
+      return response;
+    }
+  }
+
   const refreshed = await deps.refresh();
   if (!refreshed) {
     return response;
