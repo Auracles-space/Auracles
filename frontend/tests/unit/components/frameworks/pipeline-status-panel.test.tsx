@@ -25,6 +25,21 @@ const baseArtifact: ArtifactResponse = {
 };
 
 describe("PipelineStatusPanel", () => {
+  it("shows a neutral not-started state before any artifact is uploaded", () => {
+    render(
+      <PipelineStatusPanel
+        artifacts={[]}
+        frameworkId="fw_123"
+        frameworkStatus="draft"
+      />,
+    );
+
+    expect(screen.getByText("Virus scan")).toBeInTheDocument();
+    // Nothing is queued yet, so no gate reads as the in-progress "Pending".
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Not started")).toHaveLength(3);
+  });
+
   it("renders all-green checks when an artifact is clean, processed, and rare enough", () => {
     render(
       <PipelineStatusPanel

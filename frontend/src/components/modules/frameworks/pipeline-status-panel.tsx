@@ -26,7 +26,7 @@ type PipelineStatusPanelProps = {
 type PipelineCheck = {
   description: string;
   label: string;
-  state: "pass" | "pending" | "fail" | "notice";
+  state: "pass" | "pending" | "fail" | "notice" | "idle";
   value: string;
 };
 
@@ -63,16 +63,40 @@ export function buildPipelineChecks(
         ? "Every artifact must scan clean before publish."
         : "Upload at least one artifact to start scanning.",
       label: "Virus scan",
-      state: allClean ? "pass" : hasInfected || hasScanError ? "fail" : "pending",
-      value: allClean ? "Clean" : hasInfected ? "Infected" : "Pending",
+      state: allClean
+        ? "pass"
+        : hasInfected || hasScanError
+          ? "fail"
+          : hasArtifacts
+            ? "pending"
+            : "idle",
+      value: allClean
+        ? "Clean"
+        : hasInfected
+          ? "Infected"
+          : hasArtifacts
+            ? "Pending"
+            : "Not started",
     },
     {
       description: anyPiiReview
         ? "Replace or resolve the flagged artifact before publishing."
         : "PII checks protect users from publishing sensitive data.",
       label: "PII review",
-      state: anyPiiReview ? "fail" : allProcessed || allGreen ? "pass" : "pending",
-      value: anyPiiReview ? "Review required" : allProcessed || allGreen ? "No review needed" : "Pending",
+      state: anyPiiReview
+        ? "fail"
+        : allProcessed || allGreen
+          ? "pass"
+          : hasArtifacts
+            ? "pending"
+            : "idle",
+      value: anyPiiReview
+        ? "Review required"
+        : allProcessed || allGreen
+          ? "No review needed"
+          : hasArtifacts
+            ? "Pending"
+            : "Not started",
     },
     {
       description: anyNearDuplicate
@@ -87,14 +111,18 @@ export function buildPipelineChecks(
           ? "notice"
           : allProcessed || allGreen
             ? "pass"
-            : "pending",
+            : hasArtifacts
+              ? "pending"
+              : "idle",
       value: anyNearDuplicate
         ? "Near duplicate"
         : hasSimilarityNotice
           ? "Notice"
           : allProcessed || allGreen
             ? "Passed"
-            : "Pending",
+            : hasArtifacts
+              ? "Pending"
+              : "Not started",
     },
   ];
 }
@@ -241,6 +269,9 @@ function badgeClass(state: PipelineCheck["state"]): string {
   }
   if (state === "notice") {
     return "rounded-[4px] border border-info/20 bg-info/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-info";
+  }
+  if (state === "idle") {
+    return "rounded-[4px] border border-border-default bg-surface-2 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted";
   }
   return "rounded-[4px] border border-warning/20 bg-warning/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-warning";
 }

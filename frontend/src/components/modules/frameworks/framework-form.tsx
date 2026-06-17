@@ -23,6 +23,41 @@ import {
   type MarketplaceOption,
 } from "@/lib/marketplace/taxonomy";
 
+type LicenseTypeValue = "single_user" | "team" | "organizational" | "enterprise";
+
+/** Selectable license tiers, in canonical display + serialization order. */
+const LICENSE_TYPE_OPTIONS: readonly { value: LicenseTypeValue; label: string }[] =
+  [
+    { value: "single_user", label: "Single user" },
+    { value: "team", label: "Team" },
+    { value: "organizational", label: "Organizational" },
+    { value: "enterprise", label: "Enterprise" },
+  ];
+
+/**
+ * Constrain free text to a positive currency amount with at most two decimals.
+ *
+ * Strips any non-numeric characters, keeps a single decimal point, and caps the
+ * fractional part at two digits so the value always matches the backend's
+ * `decimal_places=2` pricing contract.
+ *
+ * @param raw - Raw input value from the price field.
+ * @returns The sanitized amount string.
+ */
+function sanitizePriceInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) {
+    return cleaned;
+  }
+  const intPart = cleaned.slice(0, firstDot);
+  const decPart = cleaned
+    .slice(firstDot + 1)
+    .replace(/\./g, "")
+    .slice(0, 2);
+  return `${intPart}.${decPart}`;
+}
+
 type FrameworkFormProps = {
   framework?: FrameworkResponse;
   prefill?: FrameworkDraftPrefill;
@@ -42,12 +77,16 @@ type FrameworkFormState = {
   description: string;
   function: NonNullable<FrameworkCreate["function"]>;
   industry: NonNullable<FrameworkCreate["industry"]>;
+  licenseTypes: LicenseTypeValue[];
   orgSize: NonNullable<FrameworkCreate["org_size"]>;
   price: string;
   sector: NonNullable<FrameworkCreate["sector"]>;
-  tags: string;
+  tags: string[];
   title: string;
 };
+
+/** Maximum number of marketplace tags allowed on a Framework. */
+const MAX_TAGS = 5;
 
 /**
  * Return a known taxonomy value, falling back for legacy records.
@@ -61,6 +100,23 @@ function coerceTaxonomyValue<TValue extends string>(
 ): TValue {
   const match = options.find((option) => option.value === value);
   return match?.value ?? options[0].value;
+}
+
+/**
+ * Normalize persisted license types into known tiers in canonical order.
+ *
+ * Falls back to the default single-user + team selection for new drafts so the
+ * pricing contract always has at least one tier.
+ *
+ * @param values - Persisted license types from an existing Framework.
+ */
+function coerceLicenseTypes(
+  values: string[] | null | undefined,
+): LicenseTypeValue[] {
+  const selected = new Set(values ?? ["single_user", "team"]);
+  return LICENSE_TYPE_OPTIONS.map((option) => option.value).filter((value) =>
+    selected.has(value),
+  );
 }
 
 /**
@@ -81,10 +137,11 @@ export function FrameworkForm({
     description: framework?.description ?? prefill?.description ?? "",
     function: coerceTaxonomyValue(framework?.function, FUNCTION_OPTIONS),
     industry: coerceTaxonomyValue(framework?.industry, INDUSTRY_OPTIONS),
+    licenseTypes: coerceLicenseTypes(framework?.pricing.license_types),
     orgSize: coerceTaxonomyValue(framework?.org_size, ORG_SIZE_OPTIONS),
     price: framework?.pricing.price ?? "250",
     sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
-    tags: framework?.tags.join(", ") ?? prefill?.tags?.join(", ") ?? "",
+    tags: (framework?.tags ?? prefill?.tags ?? []).slice(0, MAX_TAGS),
     title: framework?.title ?? prefill?.title ?? "",
   });
 
@@ -92,7 +149,26 @@ export function FrameworkForm({
     isNonEmpty(form.title),
     isNonEmpty(form.description),
     isPositiveNumber(form.price),
+    form.licenseTypes.length > 0,
   );
+
+  /** Toggle one license tier in the selection. */
+  function toggleLicenseType(value: LicenseTypeValue): void {
+    setForm((current) => {
+      const selected = new Set(current.licenseTypes);
+      if (selected.has(value)) {
+        selected.delete(value);
+      } else {
+        selected.add(value);
+      }
+      return {
+        ...current,
+        licenseTypes: LICENSE_TYPE_OPTIONS.map((option) => option.value).filter(
+          (option) => selected.has(option),
+        ),
+      };
+    });
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,7 +177,7 @@ export function FrameworkForm({
 
     const pricing: PricingConfig = {
       currency: framework?.pricing.currency ?? "USD",
-      license_types: framework?.pricing.license_types ?? ["single_user", "team"],
+      license_types: form.licenseTypes,
       price: form.price,
     };
 
@@ -114,10 +190,7 @@ export function FrameworkForm({
         org_size: form.orgSize,
         pricing,
         sector: form.sector,
-        tags: form.tags
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean),
+        tags: form.tags.map((tag) => tag.trim()).filter(Boolean),
         title: form.title,
       });
     } catch (submitError) {
@@ -213,9 +286,16 @@ export function FrameworkForm({
             </div>
             <input
               type="text"
-              placeholder="250"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="250.00"
               className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-              onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  price: sanitizePriceInput(event.target.value),
+                }))
+              }
               required
               value={form.price}
             />
@@ -226,12 +306,47 @@ export function FrameworkForm({
         </label>
       </div>
 
-      <FormTextInput
+      <fieldset className="block">
+        <legend className="mb-1.5 block text-sm font-semibold text-foreground">
+          License types
+          <span aria-hidden="true" className="ml-1 text-accent">
+            *
+          </span>
+        </legend>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {LICENSE_TYPE_OPTIONS.map((option) => {
+            const checked = form.licenseTypes.includes(option.value);
+            return (
+              <label
+                key={option.value}
+                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
+                  checked
+                    ? "border-accent bg-accent/10 text-foreground"
+                    : "border-border-default bg-background text-foreground-muted hover:border-accent/50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0 accent-accent"
+                  checked={checked}
+                  onChange={() => toggleLicenseType(option.value)}
+                />
+                {option.label}
+              </label>
+            );
+          })}
+        </div>
+        <span className="mt-1.5 block text-xs text-foreground-muted">
+          Choose at least one tier operators can license. Pricing scales per tier
+          at checkout.
+        </span>
+      </fieldset>
+
+      <TagChipInput
         label="Tags"
-        placeholder="e.g. python, standard-operating-procedure, aws (comma separated)"
+        max={MAX_TAGS}
         onChange={(value) => setForm((current) => ({ ...current, tags: value }))}
         value={form.tags}
-        helperText="Add up to 5 tags to help index your framework in the marketplace."
       />
 
       {prefill?.fileKeys?.length ? (
@@ -383,5 +498,119 @@ function FormTextInput({
         </span>
       )}
     </label>
+  );
+}
+
+type TagChipInputProps = {
+  label: string;
+  max: number;
+  onChange: (value: string[]) => void;
+  value: string[];
+};
+
+/**
+ * Render a chip-based tag editor.
+ *
+ * Tags commit on Enter or comma, deduplicate, trim, and cap at `max`. Backspace
+ * on an empty field removes the last chip. Keeps the parent value as a clean
+ * string array so submission matches the backend tag contract directly.
+ *
+ * @param props - Label, max count, current tags, and change handler.
+ */
+function TagChipInput({ label, max, onChange, value }: TagChipInputProps) {
+  const [draft, setDraft] = useState("");
+  const atLimit = value.length >= max;
+
+  /** Commit the trimmed draft as a new tag when there is room and no dupe. */
+  function commitDraft(): void {
+    const tag = draft.trim();
+    setDraft("");
+    if (!tag || atLimit || value.includes(tag)) {
+      return;
+    }
+    onChange([...value, tag]);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commitDraft();
+      return;
+    }
+    if (event.key === "Backspace" && draft === "" && value.length > 0) {
+      onChange(value.slice(0, -1));
+    }
+  }
+
+  function handleChange(event: React.ChangeEvent<HTMLInputElement>): void {
+    // Typing a comma is treated as a commit separator rather than literal text.
+    if (event.target.value.includes(",")) {
+      const tag = event.target.value.replace(/,/g, "").trim();
+      setDraft("");
+      if (tag && !atLimit && !value.includes(tag)) {
+        onChange([...value, tag]);
+      }
+      return;
+    }
+    setDraft(event.target.value);
+  }
+
+  const inputId = "framework-tags";
+
+  return (
+    <div className="block">
+      <label
+        className="mb-1.5 block text-sm font-semibold text-foreground"
+        htmlFor={inputId}
+      >
+        {label}
+      </label>
+      <div className="flex min-h-12 flex-wrap items-center gap-2 rounded-xl border border-border-default bg-background px-3 py-2 transition-all focus-within:border-accent">
+        {value.map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1 rounded-lg bg-accent/10 py-1 pl-3 pr-1 text-xs font-medium text-foreground"
+          >
+            {tag}
+            <button
+              type="button"
+              aria-label={`Remove ${tag}`}
+              className="flex h-5 w-5 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-accent/20 hover:text-foreground"
+              onClick={() => onChange(value.filter((current) => current !== tag))}
+            >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </span>
+        ))}
+        <input
+          id={inputId}
+          className="min-w-[8rem] flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-foreground-muted/50 disabled:cursor-not-allowed"
+          disabled={atLimit}
+          onBlur={commitDraft}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            atLimit ? "Tag limit reached" : "Add a tag, press Enter"
+          }
+          value={draft}
+        />
+      </div>
+      <span className="mt-1.5 block text-xs text-foreground-muted">
+        Up to {max} tags help operators discover your framework. {value.length}/
+        {max} used.
+      </span>
+    </div>
   );
 }

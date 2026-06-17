@@ -95,4 +95,141 @@ describe("FrameworkForm", () => {
       );
     });
   });
+
+  it("submits the default license types when none are toggled", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pricing: expect.objectContaining({
+            license_types: ["single_user", "team"],
+          }),
+        }),
+      );
+    });
+  });
+
+  it("submits the contributor's selected license types", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+    // Drop the default Team tier, add Enterprise.
+    fireEvent.click(screen.getByRole("checkbox", { name: /team/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /enterprise/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pricing: expect.objectContaining({
+            license_types: ["single_user", "enterprise"],
+          }),
+        }),
+      );
+    });
+  });
+
+  it("disables submit when every license type is deselected", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+    const submit = screen.getByRole("button", { name: /save framework/i });
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /single user/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /team/i }));
+
+    expect(submit).toBeDisabled();
+  });
+
+  it("constrains the price input to a two-decimal currency amount", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    const price = screen.getByLabelText(/base price/i);
+    expect(price).toHaveAttribute("inputmode", "decimal");
+
+    fireEvent.change(price, { target: { value: "12a.9999" } });
+    expect(price).toHaveValue("12.99");
+  });
+
+  it("commits tags as chips and submits the deduplicated list", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+
+    const tags = screen.getByLabelText(/tags/i);
+    fireEvent.change(tags, { target: { value: "python" } });
+    fireEvent.keyDown(tags, { key: "Enter" });
+    fireEvent.change(tags, { target: { value: "aws" } });
+    fireEvent.keyDown(tags, { key: "Enter" });
+    // Duplicate is ignored.
+    fireEvent.change(tags, { target: { value: "python" } });
+    fireEvent.keyDown(tags, { key: "Enter" });
+
+    expect(screen.getByText("python")).toBeInTheDocument();
+    expect(screen.getByText("aws")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ["python", "aws"] }),
+      );
+    });
+  });
+
+  it("removes a tag chip", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    const tags = screen.getByLabelText(/tags/i);
+    fireEvent.change(tags, { target: { value: "python" } });
+    fireEvent.keyDown(tags, { key: "Enter" });
+
+    expect(screen.getByText("python")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /remove python/i }));
+    expect(screen.queryByText("python")).not.toBeInTheDocument();
+  });
+
+  it("caps the tag list at five tags", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    const tags = screen.getByLabelText(/tags/i);
+    for (const tag of ["a", "b", "c", "d", "e"]) {
+      fireEvent.change(tags, { target: { value: tag } });
+      fireEvent.keyDown(tags, { key: "Enter" });
+    }
+    // Sixth tag is rejected.
+    fireEvent.change(tags, { target: { value: "f" } });
+    fireEvent.keyDown(tags, { key: "Enter" });
+
+    expect(screen.queryByText("f")).not.toBeInTheDocument();
+    expect(tags).toBeDisabled();
+  });
 });
