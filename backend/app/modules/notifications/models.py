@@ -72,6 +72,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "attestation_refunded",
     "api_rate_limit_threshold",
     "saved_search_alert",
+    "kyc_verified",
+    "kyc_rejected",
     name="notification_type_enum",
     create_type=False,
 )

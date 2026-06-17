@@ -71,6 +71,34 @@ describe("KycUpload", () => {
     expect(requestKycUploadUrl).not.toHaveBeenCalled();
   });
 
+  it("refetches the KYC status when the window regains focus", async () => {
+    // Pending on mount, verified by the time the user tabs back — the admin
+    // approved in the meantime. Focus must re-read without a manual refresh.
+    vi.mocked(getKycStatusV1SettingsKycGet)
+      .mockResolvedValueOnce({
+        data: { kyc_status: "pending", documents: [] },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as any)
+      .mockResolvedValue({
+        data: { kyc_status: "verified", documents: [] },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as any);
+
+    render(<KycUpload />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/verification pending/i)).toBeInTheDocument();
+    });
+
+    fireEvent.focus(window);
+
+    await waitFor(() => {
+      expect(screen.getByText(/identity verified/i)).toBeInTheDocument();
+    });
+  });
+
   it("shows the verified state and hides the form when KYC is verified", async () => {
     vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue({
       data: { kyc_status: "verified", documents: [] },

@@ -12,11 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.notifications.models import (
+    Notification,
+    NotificationDeliveryMarker,
+)
 from app.shared.models.audit_log import AuditLog
 
 
 async def clear_identity_state_async(session: AsyncSession) -> None:
-    """Delete audit, KYC, role, and user rows in FK-safe order."""
+    """Delete notification, audit, KYC, role, and user rows in FK-safe order."""
+    await session.execute(delete(NotificationDeliveryMarker))
+    await session.execute(delete(Notification))
     await session.execute(delete(AuditLog))
     await session.execute(delete(KycDocument))
     await session.execute(delete(UserRole))
@@ -24,7 +30,9 @@ async def clear_identity_state_async(session: AsyncSession) -> None:
 
 
 def clear_identity_state_sync(session: Session) -> None:
-    """Delete audit, KYC, role, and user rows in FK-safe order."""
+    """Delete notification, audit, KYC, role, and user rows in FK-safe order."""
+    session.execute(delete(NotificationDeliveryMarker))
+    session.execute(delete(Notification))
     session.execute(delete(AuditLog))
     session.execute(delete(KycDocument))
     session.execute(delete(UserRole))

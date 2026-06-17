@@ -7,7 +7,7 @@
  * that URL, then submits the resulting S3 key for review. The backend enforces
  * MIME, size, ownership, and status transitions.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
@@ -77,7 +77,7 @@ export function KycUpload() {
   const [isLoading, setIsLoading] = useState(true);
   const canSubmit = file !== null;
 
-  async function fetchStatus() {
+  const fetchStatus = useCallback(async () => {
     configureBrowserClient();
     // After a page reload the access token is gone (memory-only); rehydrate it
     // from the refresh cookie before calling the API, or the status read 401s
@@ -98,11 +98,29 @@ export function KycUpload() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     fetchStatus();
-  }, []);
+  }, [fetchStatus]);
+
+  // KYC approval is asynchronous and admin-driven: the user is notified, then
+  // tabs back to this page. Re-read on focus / tab visibility so the verdict
+  // shows without a manual refresh (no WebSocket needed for a once-changing
+  // value).
+  useEffect(() => {
+    function refetchOnReturn() {
+      if (document.visibilityState === "visible") {
+        fetchStatus();
+      }
+    }
+    window.addEventListener("focus", refetchOnReturn);
+    document.addEventListener("visibilitychange", refetchOnReturn);
+    return () => {
+      window.removeEventListener("focus", refetchOnReturn);
+      document.removeEventListener("visibilitychange", refetchOnReturn);
+    };
+  }, [fetchStatus]);
 
   async function submitKyc(
     event: React.FormEvent<HTMLFormElement>,

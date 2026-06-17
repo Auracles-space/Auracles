@@ -280,9 +280,9 @@ test("registers, verifies email, logs in, and lands by role", async ({ page }) =
 
   await page.goto("/verify-email?token=test-token");
   await page.getByRole("button", { name: "Verify email" }).click();
-  await expect(page.getByText("Email verified.")).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.waitForLoadState("networkidle");
 
-  await page.goto("/login");
   await page.getByLabel("Email").fill("ada@example.com");
   await page.locator("input#password").fill("StrongerPass123!");
   await page.getByRole("button", { name: "Log in" }).click();
@@ -317,7 +317,7 @@ test("runs the password reset browser loop", async ({ page }) => {
   await page.locator("input#new_password").fill("NewStrongPass123!");
   await page.locator("input#confirm_password").fill("NewStrongPass123!");
   await page.getByRole("button", { name: "Save password" }).click();
-  await expect(page.getByText("Password reset.")).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
 });
 
 test("redirects logged-out visitors from protected routes to login", async ({ page }) => {
@@ -388,3 +388,32 @@ test("signs out and forces protected routes back through login", async ({
   await page.goto("/library");
   await expect(page).toHaveURL(/\/login\?next=%2Flibrary$/);
 });
+
+test("onboarding page navigation to KYC settings renders the dashboard shell", async ({
+  context,
+  page,
+}) => {
+  await mockAuthenticatedShellApi(page, {
+    display_name: "Ada Markets",
+    email: "ada@example.com",
+    email_verified: true,
+    kyc_status: "unverified",
+    roles: ["contributor"],
+  });
+  await seedSessionHint(context, ["contributor"]);
+
+  await page.goto("/settings/onboarding");
+
+  // Verify the layout shell is NOT visible on onboarding
+  await expect(page.locator("aside")).toHaveCount(0);
+
+  // Click the Start KYC button
+  await page.getByRole("link", { name: /start kyc/i }).click();
+
+  // Verify we are on /settings/kyc
+  await expect(page).toHaveURL(/\/settings\/kyc$/);
+
+  // Verify the layout shell is now visible
+  await expect(page.locator("aside")).toBeVisible();
+});
+

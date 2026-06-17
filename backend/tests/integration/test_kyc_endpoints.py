@@ -19,6 +19,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.notifications.models import Notification
 from app.modules.settings import service as settings_service
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
@@ -263,6 +264,50 @@ async def test_admin_can_verify_kyc_and_dependency_allows_verified_user(
     assert document.reviewed_by == admin_id
     assert audit_log is not None
     assert allowed_user.id == user_id
+
+
+@pytest.mark.asyncio
+async def test_admin_kyc_review_notifies_reviewed_user(
+    client: AsyncClient,
+    migrated_database: None,
+    kyc_test_context: dict[str, Any],
+) -> None:
+    """A KYC review creates a durable in-app notification for the user.
+
+    The verdict (verified/rejected) drives the notification type so the user
+    learns the outcome without polling. Covers the async admin-approval UX.
+    """
+    user_id = await create_user_with_roles("notify-kyc@auracles.space", ["operator"])
+    admin_id = await create_user_with_roles("kyc-admin2@auracles.space", ["admin"])
+    user_headers = auth_headers(user_id, ["operator"])
+    upload = await client.post(
+        "/v1/settings/kyc/upload-url",
+        json={"doc_type": "passport", "mime_type": "image/jpeg", "file_size": 4096},
+        headers=user_headers,
+    )
+    s3_key = upload.json()["s3_key"]
+    kyc_test_context["storage"].existing_keys.add(s3_key)
+    await client.post(
+        "/v1/settings/kyc/submit",
+        json={"s3_key": s3_key},
+        headers=user_headers,
+    )
+
+    response = await client.patch(
+        f"/v1/admin/users/{user_id}/kyc",
+        json={"status": "verified", "notes": "Reviewed."},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    async with async_session_factory() as session:
+        notification = await session.scalar(
+            select(Notification).where(Notification.user_id == user_id)
+        )
+
+    assert response.status_code == 200
+    assert notification is not None
+    assert notification.notification_type == "kyc_verified"
+    assert notification.link == "/settings/kyc"
 
 
 async def test_kyc_upload_rejects_bad_mime_and_large_file(

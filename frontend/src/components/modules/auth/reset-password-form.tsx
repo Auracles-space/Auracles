@@ -26,14 +26,19 @@ import { FormMessage } from "./form-message";
 
 type ResetPasswordFormProps = {
   initialToken?: string;
+  onReset?: (location: string) => void;
 };
 
 /**
  * Render the password reset completion form.
  *
- * @param props - Optional token captured from search params.
+ * @param props - Optional token captured from search params, and an optional
+ *   navigation callback (injected in tests; defaults to a hard redirect).
  */
-export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps) {
+export function ResetPasswordForm({
+  initialToken = "",
+  onReset,
+}: ResetPasswordFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -66,6 +71,12 @@ export function ResetPasswordForm({ initialToken = "" }: ResetPasswordFormProps)
     }
 
     setSuccess(result.data?.message ?? "Password reset.");
+    // Hard navigation re-runs auth middleware (matches verify-email-form).
+    if (onReset) {
+      onReset("/login");
+      return;
+    }
+    window.location.assign("/login");
   }
 
   return (

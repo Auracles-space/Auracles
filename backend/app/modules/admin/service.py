@@ -41,6 +41,7 @@ from app.modules.frameworks.pipeline_gate import (
     NEAR_DUPLICATE_JACCARD_THRESHOLD,
     evaluate_framework_pipeline,
 )
+from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
 from app.shared.models.audit_log import AuditLog
@@ -1246,6 +1247,34 @@ async def review_user_kyc(
         target_id=target_user_id,
         metadata={"status": review_status, "document_id": str(document.id)},
     )
+    # Notify the user of the review outcome so they learn the verdict of the
+    # asynchronous review without polling. Only the terminal verdicts produce a
+    # notification; "pending" is a no-op. Dedupe on the document + verdict so a
+    # repeated review of the same outcome collapses to one notification.
+    if review_status in ("verified", "rejected"):
+        verified = review_status == "verified"
+        await create_notification(
+            db=db,
+            user_id=target_user_id,
+            notification_type=(
+                "kyc_verified" if verified else "kyc_rejected"
+            ),
+            title=(
+                "Identity verified"
+                if verified
+                else "Identity verification needs attention"
+            ),
+            body=(
+                "Your identity verification is complete. You can now request "
+                "payouts."
+                if verified
+                else "Your identity document was not approved. Review the "
+                "feedback and submit an updated document."
+            ),
+            link="/settings/kyc",
+            payload={"document_id": str(document.id), "status": review_status},
+            dedupe_key=f"kyc-review:{document.id}:{review_status}",
+        )
     await db.commit()
     return document
 

@@ -57,14 +57,15 @@ describe("ResetPasswordForm", () => {
     expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
   });
 
-  it("prefills the token from search params and submits the new password", async () => {
+  it("submits the new password and routes to login on success", async () => {
     vi.mocked(resetPassword).mockResolvedValue({
       data: { message: "Password reset." },
       error: undefined,
       response: new Response(null, { status: 200 }),
     });
 
-    render(<ResetPasswordForm initialToken="reset-token-123" />);
+    const onReset = vi.fn();
+    render(<ResetPasswordForm initialToken="reset-token-123" onReset={onReset} />);
     fireEvent.change(screen.getByLabelText(/new password/i), {
       target: { value: "StrongerPass!234" },
     });
@@ -77,6 +78,7 @@ describe("ResetPasswordForm", () => {
     expect(vi.mocked(resetPassword)).toHaveBeenCalledWith({
       body: { new_password: "StrongerPass!234", token: "reset-token-123" },
     });
+    expect(onReset).toHaveBeenCalledWith("/login");
   });
 
   it("shows the error detail when the token is rejected", async () => {
