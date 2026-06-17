@@ -899,6 +899,81 @@ async def test_artifact_delete_is_rejected_while_processing(
     assert response.status_code == 409
 
 
+async def test_artifact_delete_allowed_on_pipeline_failed_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A pipeline_failed Framework can have artifacts removed so it can recover.
+
+    A PII/rarity soft-fail moves the Framework to pipeline_failed; the
+    Contributor must be able to remove the offending artifact to fix and
+    re-run the pipeline, not just while still in draft.
+    """
+    contributor_id = await create_user_with_roles(
+        "artifact-failed-delete@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "flagged.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        await session.commit()
+
+    response = await client.delete(
+        f"/v1/frameworks/{framework_id}/artifacts/{upload.json()['artifact_id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+
+
+async def test_artifact_upload_url_allowed_on_pipeline_failed_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A pipeline_failed Framework accepts a replacement artifact upload.
+
+    Pairs with resolve_pii_review (which already allows pipeline_failed): the
+    Contributor replaces the flagged file, then re-runs the pipeline.
+    """
+    contributor_id = await create_user_with_roles(
+        "artifact-failed-upload@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "replacement.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+
 async def test_contributor_can_unpublish_owned_published_framework(
     client: AsyncClient,
     migrated_database: None,

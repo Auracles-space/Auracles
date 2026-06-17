@@ -106,7 +106,7 @@ describe("ArtifactUploader", () => {
       />,
     );
 
-    expect(screen.getByText(/choose artifact/i)).toBeInTheDocument();
+    expect(screen.getByText(/upload files/i)).toBeInTheDocument();
   });
 
   it("invites adding another artifact and clarifies it does not replace", () => {

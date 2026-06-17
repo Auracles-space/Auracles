@@ -277,6 +277,22 @@ def _require_draft(framework: Framework) -> None:
         )
 
 
+def _require_editable_artifacts(framework: Framework) -> None:
+    """Allow artifact add/remove while a Framework is pre-publish.
+
+    A draft is obviously editable; a pipeline_failed Framework must also accept
+    artifact changes so a Contributor can replace or remove the offending file
+    and re-run the pipeline (pairs with resolve_pii_review / acknowledge_soft_fail,
+    which already operate on pipeline_failed). Published, submitted, processing,
+    and unpublished Frameworks stay locked.
+    """
+    if framework.status not in {"draft", "pipeline_failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or failed Frameworks can change artifacts.",
+        )
+
+
 async def _ensure_source_project_can_seed_framework(
     *,
     db: AsyncSession,
@@ -781,7 +797,7 @@ async def request_artifact_upload_url(
 ) -> ArtifactUploadUrlResponse:
     """Create a pending Artifact row and return a private S3 POST upload target."""
     framework = await _load_owned_framework(db, contributor, framework_id)
-    _require_draft(framework)
+    _require_editable_artifacts(framework)
     if payload.mime_type not in ALLOWED_ARTIFACT_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -973,9 +989,9 @@ async def delete_artifact(
     framework_id: UUID,
     artifact_id: UUID,
 ) -> None:
-    """Delete an Artifact from an owned draft Framework."""
+    """Delete an Artifact from an owned draft or pipeline_failed Framework."""
     framework = await _load_owned_framework(db, contributor, framework_id)
-    _require_draft(framework)
+    _require_editable_artifacts(framework)
     artifact = await _load_owned_artifact(db, framework, artifact_id)
     # Block deletion while the processing pipeline is actively running on this
     # artifact: a concurrent worker write would otherwise race a removed row and

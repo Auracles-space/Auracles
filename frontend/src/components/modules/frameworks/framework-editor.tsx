@@ -6,7 +6,7 @@
  * Loads Framework metadata and artifacts, then composes the smaller action
  * components that call generated backend endpoints.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploader";
@@ -56,9 +56,14 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const [framework, setFramework] = useState<FrameworkResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadWorkspace() {
+  // Reload framework + artifacts. `quiet` skips the loading skeleton so the
+  // background poll never flashes the spinner over a populated workspace.
+  const loadWorkspace = useCallback(
+    async (quiet = false) => {
       configureBrowserClient();
+      if (!quiet) {
+        setLoading(true);
+      }
       const [frameworkResult, artifactsResult] = await Promise.all([
         getContributorFramework({
           headers: getAccessTokenHeaders(),
@@ -71,18 +76,49 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       ]);
 
       if (!frameworkResult.response.ok || !frameworkResult.data) {
-        setError(describeGeneratedError(frameworkResult.error));
-        setLoading(false);
+        if (!quiet) {
+          setError(describeGeneratedError(frameworkResult.error));
+          setLoading(false);
+        }
         return;
       }
 
       setFramework(frameworkResult.data);
       setArtifacts(artifactsResult.data ?? []);
-      setLoading(false);
-    }
+      if (!quiet) {
+        setLoading(false);
+      }
+    },
+    [frameworkId],
+  );
 
+  useEffect(() => {
     void loadWorkspace();
-  }, [frameworkId]);
+  }, [loadWorkspace]);
+
+  // The processing pipeline runs in a Celery worker; the artifact/framework
+  // status flips server-side seconds after upload. Poll while anything is
+  // in flight so the UI reflects flagged_pii / pipeline_failed / processed
+  // without forcing the Contributor to hard-reload.
+  const isPipelineActive =
+    framework !== null &&
+    (framework.status === "processing" ||
+      framework.status === "submitted" ||
+      artifacts.some(
+        (artifact) =>
+          artifact.processing_status === "pending" ||
+          artifact.processing_status === "processing",
+      ));
+
+  useEffect(() => {
+    if (!isPipelineActive) {
+      return;
+    }
+    const intervalId = setInterval(() => {
+      void loadWorkspace(true);
+    }, 3000);
+    return () => clearInterval(intervalId);
+  }, [isPipelineActive, loadWorkspace]);
 
   async function handleUpdate(payload: FrameworkCreate) {
     configureBrowserClient();
@@ -194,7 +230,10 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         />
         <ArtifactManifest
           artifacts={artifacts}
-          canRemove={framework.status === "draft"}
+          canRemove={
+            framework.status === "draft" ||
+            framework.status === "pipeline_failed"
+          }
           onRemove={handleRemoveArtifact}
         />
         <PipelineStatusPanel

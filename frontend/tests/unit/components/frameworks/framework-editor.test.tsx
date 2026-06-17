@@ -175,6 +175,59 @@ describe("FrameworkEditor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the artifact remove control on a pipeline_failed framework", async () => {
+    mockLoad(makeFramework({ status: "pipeline_failed" }), [
+      makeArtifact({
+        id: "art_1",
+        name: "Operating Model.pdf",
+        processing_status: "flagged_pii",
+        pii_review_needed: true,
+      }),
+    ]);
+
+    render(<FrameworkEditor frameworkId="fw_1" />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: /remove operating model\.pdf/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("polls and reflects pipeline completion without a manual reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockLoad(makeFramework({ status: "draft" }), [
+        makeArtifact({
+          id: "art_1",
+          processing_status: "processing",
+          scan_status: "pending",
+        }),
+      ]);
+
+      render(<FrameworkEditor frameworkId="fw_1" />);
+      await screen.findByText("Test Framework");
+
+      // Worker finishes: artifact gets PII-flagged, framework fails the gate.
+      mockLoad(makeFramework({ status: "pipeline_failed" }), [
+        makeArtifact({
+          id: "art_1",
+          processing_status: "flagged_pii",
+          scan_status: "clean",
+          pii_review_needed: true,
+        }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(
+        await screen.findByText("PII review required"),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("hides the artifact remove control once published", async () => {
     mockLoad(makeFramework({ status: "published" }), [
       makeArtifact({ id: "art_1", name: "Operating Model.pdf" }),
