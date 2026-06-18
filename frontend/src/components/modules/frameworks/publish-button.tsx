@@ -19,14 +19,25 @@ import {
 type PublishButtonProps = {
   disabled?: boolean;
   frameworkId: string;
+  /**
+   * Called after a successful publish. The editor uses this to re-fetch its
+   * client-held framework state — `router.refresh()` alone does not re-run a
+   * client component's mount fetch, so the post-publish status would otherwise
+   * stay stale and the Publish button would linger.
+   */
+  onCompleted?: () => void;
 };
 
 /**
  * Render a publish action for a pipeline-passed Framework.
  *
- * @param props - Framework id and advisory disabled state.
+ * @param props - Framework id, advisory disabled state, and completion hook.
  */
-export function PublishButton({ disabled = false, frameworkId }: PublishButtonProps) {
+export function PublishButton({
+  disabled = false,
+  frameworkId,
+  onCompleted,
+}: PublishButtonProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -45,6 +56,7 @@ export function PublishButton({ disabled = false, frameworkId }: PublishButtonPr
       setError(describeGeneratedError(result.error));
       return;
     }
+    onCompleted?.();
     router.refresh();
   }
 

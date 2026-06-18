@@ -750,6 +750,35 @@ async def unpublish_framework(
     return framework_to_response(framework)
 
 
+async def _current_artifacts_block_publish(
+    db: AsyncSession,
+    framework_id: UUID,
+) -> bool:
+    """Return whether any current Artifact fails a safety-critical trust gate.
+
+    A read-only re-check of the hard publish blockers (virus, scan error,
+    unfinished or failed processing, PII flag) used to guard a same-version
+    relist. Does not mutate Framework status. Similarity/rarity bands are not
+    re-evaluated here — they already cleared at the original publish and only
+    soften over time; the virus and PII gates are the ones that must never be
+    bypassed on republish.
+    """
+    blocked = await db.scalar(
+        select(func.count(Artifact.id)).where(
+            Artifact.framework_id == framework_id,
+            Artifact.current_for_framework.is_(True),
+            or_(
+                Artifact.scan_status.in_(("infected", "error")),
+                Artifact.processing_status.in_(
+                    ("pending", "processing", "failed", "flagged_pii")
+                ),
+                Artifact.pii_review_needed.is_(True),
+            ),
+        )
+    )
+    return bool(blocked)
+
+
 async def relist_framework(
     db: AsyncSession,
     contributor: User,
@@ -782,6 +811,20 @@ async def relist_framework(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only unpublished Frameworks can be relisted.",
+        )
+
+    # A delisted Framework may have drifted since it was last live (an accepted
+    # redaction that re-flagged, a re-processed artifact). Re-verify the safety-
+    # critical trust gates before flipping it back to public so relist can never
+    # leak a flagged artifact into the catalog. The status stays unpublished on
+    # refusal; the Contributor resolves the artifact via a new version.
+    if await _current_artifacts_block_publish(db, framework.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This framework can't be relisted because an artifact failed a "
+                "trust check (virus or PII). Start a new version to resolve it."
+            ),
         )
 
     framework.status = "published"

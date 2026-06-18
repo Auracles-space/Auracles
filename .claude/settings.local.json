@@ -5,7 +5,8 @@
       "Bash(node scripts/patch-generated-client.mjs)",
       "Bash(export TMPDIR=/Users/a0000/projects/auracles/.tmp_patch)",
       "Bash(grep -n \"export const relistFramework =\" src/lib/generated/sdk.gen.ts)",
-      "Bash(pnpm vitest *)"
+      "Bash(pnpm vitest *)",
+      "Bash(pnpm exec *)"
     ]
   }
 }

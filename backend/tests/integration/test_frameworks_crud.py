@@ -1242,6 +1242,51 @@ async def test_contributor_can_relist_unpublished_framework(
     assert body["version"] == original_version
 
 
+async def test_relist_refuses_when_current_artifact_flagged_pii(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Relist re-checks trust gates: a flagged-PII artifact blocks republish.
+
+    A delisted Framework may have drifted (re-processing, an accepted redaction
+    that re-flagged) since it was last live. Relist must never flip it back to
+    published while a current Artifact carries a PII flag.
+    """
+    contributor_id = await create_user_with_roles(
+        "framework-relist-pii@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        processing_status="flagged_pii",
+        pii_review_needed=True,
+    )
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "unpublished"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/relist",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status != "published"
+
+
 async def test_relist_rejects_non_unpublished_framework(
     client: AsyncClient,
     migrated_database: None,

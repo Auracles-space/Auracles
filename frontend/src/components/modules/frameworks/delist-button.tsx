@@ -21,14 +21,16 @@ import {
 
 type DelistButtonProps = {
   frameworkId: string;
+  /** Called after a successful delist so the editor re-fetches its state. */
+  onCompleted?: () => void;
 };
 
 /**
  * Render a confirmation-backed delist action.
  *
- * @param props - Framework id.
+ * @param props - Framework id and completion hook.
  */
-export function DelistButton({ frameworkId }: DelistButtonProps) {
+export function DelistButton({ frameworkId, onCompleted }: DelistButtonProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -49,6 +51,7 @@ export function DelistButton({ frameworkId }: DelistButtonProps) {
     }
     setBusy(false);
     setConfirming(false);
+    onCompleted?.();
     router.refresh();
   }
 

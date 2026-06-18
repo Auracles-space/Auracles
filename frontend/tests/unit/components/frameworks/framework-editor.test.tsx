@@ -211,18 +211,18 @@ describe("FrameworkEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("disables Submit for publishing when no artifact is attached", async () => {
+  it("disables Run publishing checks when no artifact is attached", async () => {
     mockLoad(makeFramework({ status: "draft" }), []);
 
     render(<FrameworkEditor frameworkId="fw_1" />);
 
     const button = await screen.findByRole("button", {
-      name: /submit for publishing/i,
+      name: /run publishing checks/i,
     });
     expect(button).toBeDisabled();
   });
 
-  it("enables Submit for publishing once an artifact is attached", async () => {
+  it("enables Run publishing checks once an artifact is attached", async () => {
     mockLoad(makeFramework({ status: "draft" }), [
       makeArtifact({ id: "art_1", processing_status: "processed" }),
     ]);
@@ -230,7 +230,7 @@ describe("FrameworkEditor", () => {
     render(<FrameworkEditor frameworkId="fw_1" />);
 
     const button = await screen.findByRole("button", {
-      name: /submit for publishing/i,
+      name: /run publishing checks/i,
     });
     expect(button).toBeEnabled();
   });

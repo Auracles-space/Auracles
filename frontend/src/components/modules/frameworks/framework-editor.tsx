@@ -240,9 +240,15 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           readOnly={!isMetadataEditable}
           leftActions={
             isLive ? (
-              <DelistButton frameworkId={framework.id} />
+              <DelistButton
+                frameworkId={framework.id}
+                onCompleted={() => void loadWorkspace(true)}
+              />
             ) : isDelisted ? (
-              <RelistButton frameworkId={framework.id} />
+              <RelistButton
+                frameworkId={framework.id}
+                onCompleted={() => void loadWorkspace(true)}
+              />
             ) : null
           }
         >
@@ -255,11 +261,14 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
               onClick={handleSubmitGate}
               type="button"
             >
-              Submit for publishing
+              Run publishing checks
             </button>
           )}
           {framework.status === "pipeline_passed" && (
-            <PublishButton frameworkId={framework.id} />
+            <PublishButton
+              frameworkId={framework.id}
+              onCompleted={() => void loadWorkspace(true)}
+            />
           )}
         </FrameworkForm>
       </section>

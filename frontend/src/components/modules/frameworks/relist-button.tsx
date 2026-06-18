@@ -21,14 +21,16 @@ import {
 
 type RelistButtonProps = {
   frameworkId: string;
+  /** Called after a successful relist so the editor re-fetches its state. */
+  onCompleted?: () => void;
 };
 
 /**
  * Render a confirmation-backed relist action.
  *
- * @param props - Framework id.
+ * @param props - Framework id and completion hook.
  */
-export function RelistButton({ frameworkId }: RelistButtonProps) {
+export function RelistButton({ frameworkId, onCompleted }: RelistButtonProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -49,6 +51,7 @@ export function RelistButton({ frameworkId }: RelistButtonProps) {
     }
     setBusy(false);
     setConfirming(false);
+    onCompleted?.();
     router.refresh();
   }
 
