@@ -47,8 +47,8 @@ describe("ExploreSaveSearchAction", () => {
     );
 
     const save = screen.getByRole("button", { name: /save search/i });
-    // The default name is prefilled, so the button starts enabled.
-    expect(save).toBeEnabled();
+    // The name starts empty (placeholder only), so the button starts disabled.
+    expect(save).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/name this search/i), {
       target: { value: "   " },

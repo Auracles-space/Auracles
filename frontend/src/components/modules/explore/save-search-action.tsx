@@ -7,7 +7,7 @@
  * turning the catalog itself into a client-rendered page.
  */
 import { BookmarkIcon } from "@radix-ui/react-icons";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   configureBrowserClient,
@@ -26,29 +26,14 @@ type ExploreSaveSearchActionProps = {
 };
 
 /**
- * Build a concise default saved-search name from the active filter state.
- *
- * @param filters - Current Explore filters.
- * @returns Operator-editable saved-search name.
- */
-function defaultSavedSearchName(filters: ExploreSearchFilters): string {
-  if (filters.q) {
-    return String(filters.q).slice(0, 80);
-  }
-  if (filters.category) {
-    return `${String(filters.category).replaceAll("_", " ")} search`;
-  }
-  return "Marketplace search";
-}
-
-/**
  * Render a compact form that saves current Explore filters.
  *
  * @param props - Current Explore filters captured from the URL.
  */
 export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProps) {
-  const defaultName = useMemo(() => defaultSavedSearchName(filters), [filters]);
-  const [name, setName] = useState(defaultName);
+  // The name starts empty so the Operator types their own label; the input
+  // placeholder is the only prompt, no auto-generated default.
+  const [name, setName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState<"error" | "success" | null>(null);
   const [submitting, setSubmitting] = useState(false);
