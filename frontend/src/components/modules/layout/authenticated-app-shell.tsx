@@ -41,7 +41,7 @@ export function AuthenticatedAppShell({
         <div className="flex h-[72px] items-center px-6">
           <BrandLogo href="/explore" className="h-7 w-[120px]" />
         </div>
-        <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6">
+        <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6 overflow-y-auto">
           {links.map((link) => {
             const isActive = pathname.startsWith(link.href);
             return (
@@ -103,7 +103,7 @@ export function AuthenticatedAppShell({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" className="hidden group-open:block" />
                   </svg>
                 </summary>
-                <div className="absolute right-0 top-12 w-[calc(100vw-2rem)] sm:w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50">
+                <div className="absolute right-0 top-12 w-[calc(100vw-2rem)] sm:w-64 rounded-xl border border-border-default bg-surface-1 p-4 shadow-lg z-50 max-h-[calc(100vh-5rem)] overflow-y-auto">
                   <nav className="flex flex-col space-y-2">
                     {links.map((link) => (
                       <Link
