@@ -988,6 +988,7 @@ export const listFrameworksV1ExploreFrameworksGet = <ThrowOnError extends boolea
 /**
  * List Mixed Catalog
  * Return paginated public Framework and Collection catalog results.
+ * Framework taxonomy filters narrow Framework cards and exclude Collections (bundles carry no taxonomy); q and price filters apply to both.
  */
 export const listMixedCatalogV1ExploreCatalogGet = <ThrowOnError extends boolean = false>(options?: OptionsLegacyParser<ListMixedCatalogV1ExploreCatalogGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<ListMixedCatalogV1ExploreCatalogGetResponse, ListMixedCatalogV1ExploreCatalogGetError, ThrowOnError>({

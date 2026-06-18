@@ -50,12 +50,12 @@ describe("ExploreSaveSearchAction", () => {
     // The default name is prefilled, so the button starts enabled.
     expect(save).toBeEnabled();
 
-    fireEvent.change(screen.getByLabelText(/saved search name/i), {
+    fireEvent.change(screen.getByLabelText(/name this search/i), {
       target: { value: "   " },
     });
     expect(save).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(/saved search name/i), {
+    fireEvent.change(screen.getByLabelText(/name this search/i), {
       target: { value: "Risk watch" },
     });
     expect(save).toBeEnabled();
@@ -85,7 +85,7 @@ describe("ExploreSaveSearchAction", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/saved search name/i), {
+    fireEvent.change(screen.getByLabelText(/name this search/i), {
       target: { value: "Risk watch" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));

@@ -4,6 +4,8 @@
  * Server-rendered for SEO and fast public browsing. Authenticated action gates
  * are handled only when users attempt write/download actions.
  */
+import { cookies } from "next/headers";
+
 import { FilterSidebar } from "@/components/modules/explore/filter-sidebar";
 import {
   CollectionCard,
@@ -32,6 +34,7 @@ import {
   type MarketplaceOption,
 } from "@/lib/marketplace/taxonomy";
 import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
+import { verifySessionHintCookie } from "@/lib/auth/session-hint-cookie";
 
 type ExplorePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -125,36 +128,67 @@ function attestationStatusParam(
  */
 export default async function ExplorePage({ searchParams }: ExplorePageProps) {
   const params = (await searchParams) ?? {};
+  // Validated taxonomy filters drive both the API query and the sidebar's active
+  // state, so a filter link narrows the catalog instead of only restyling the UI.
+  const category =
+    taxonomyParam<FrameworkCategory>(
+      params.category,
+      FRAMEWORK_CATEGORY_OPTIONS,
+    ) ?? undefined;
+  const attestation_status =
+    attestationStatusParam(params.attestation_status) ?? undefined;
+  const frameworkFunction =
+    taxonomyParam<FrameworkFunction>(params.function, FUNCTION_OPTIONS) ??
+    undefined;
+  const industry =
+    taxonomyParam<FrameworkIndustry>(params.industry, INDUSTRY_OPTIONS) ??
+    undefined;
+  const license_type = firstParam(params.license_type) ?? undefined;
+  const org_size =
+    taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS) ?? undefined;
+  const sector =
+    taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS) ?? undefined;
+
   const query: NonNullable<ListMixedCatalogV1ExploreCatalogGetData["query"]> = {
     page: numberParam(params.page, 1),
     page_size: 12,
     q: firstParam(params.q) ?? null,
     sort: sortParam(params.sort),
+    category: category ?? null,
+    attestation_status: attestation_status ?? null,
+    function: frameworkFunction ?? null,
+    industry: industry ?? null,
+    license_type: license_type ?? null,
+    org_size: org_size ?? null,
+    sector: sector ?? null,
   };
   const filterActive = {
-    category:
-      taxonomyParam<FrameworkCategory>(
-        params.category,
-        FRAMEWORK_CATEGORY_OPTIONS,
-      ) ?? undefined,
-    attestation_status:
-      attestationStatusParam(params.attestation_status) ?? undefined,
-    function:
-      taxonomyParam<FrameworkFunction>(params.function, FUNCTION_OPTIONS) ??
-      undefined,
-    industry:
-      taxonomyParam<FrameworkIndustry>(params.industry, INDUSTRY_OPTIONS) ??
-      undefined,
-    license_type: firstParam(params.license_type) ?? undefined,
-    org_size: taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS) ?? undefined,
+    category,
+    attestation_status,
+    function: frameworkFunction,
+    industry,
+    license_type,
+    org_size,
     q: query.q ?? undefined,
-    sector: taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS) ?? undefined,
+    sector,
     sort: query.sort,
   };
   const savedSearchFilters: ExploreSearchFilters = {
     sort: query.sort,
     ...filtersFromExploreSearchParams(params),
   };
+
+  // Saving a search persists per-user state, so only offer it to authenticated
+  // viewers. The signed session-hint cookie is the same UX signal the auth
+  // middleware uses; backend RBAC stays authoritative on the write itself.
+  const sessionSecret = process.env.SESSION_HINT_SECRET;
+  const sessionHint = sessionSecret
+    ? await verifySessionHintCookie(
+        (await cookies()).get("session_hint")?.value,
+        sessionSecret,
+      ).catch(() => null)
+    : null;
+  const isAuthenticated = sessionHint !== null;
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
 
@@ -208,10 +242,12 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                 </button>
               </div>
             </div>
-            <div className="mb-6">
-              <ExploreSaveSearchAction filters={savedSearchFilters} />
-            </div>
-            
+            {isAuthenticated ? (
+              <div className="mb-6">
+                <ExploreSaveSearchAction filters={savedSearchFilters} />
+              </div>
+            ) : null}
+
             {unavailable ? (
               <div className="rounded-xl border border-warning/30 bg-warning/10 p-8 text-center">
                 <h2 className="font-heading text-xl font-bold text-foreground">

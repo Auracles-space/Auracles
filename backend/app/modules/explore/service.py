@@ -834,23 +834,57 @@ async def list_mixed_catalog(
     page: int,
     page_size: int,
     sort: ExploreSort,
+    sector: str | None = None,
+    industry: str | None = None,
+    function: str | None = None,
+    category: str | None = None,
+    license_type: str | None = None,
+    complexity: int | None = None,
+    org_size: str | None = None,
+    lifecycle_stage: str | None = None,
+    jurisdiction: str | None = None,
+    price_min: Decimal | None = None,
+    price_max: Decimal | None = None,
+    attestation_status: ExploreAttestationStatus | None = None,
 ) -> ExploreCatalogResponse:
-    """Return Framework and Collection cards in one typed public catalog."""
+    """Return Framework and Collection cards in one typed public catalog.
+
+    Framework taxonomy filters (sector, industry, function, category, license,
+    complexity, org size, lifecycle stage, jurisdiction, attestation) narrow the
+    Framework cards. Collections carry no taxonomy, so when any such filter is
+    active the mixed feed drops bundles entirely; only the shared ``q`` and price
+    filters apply to both item types.
+    """
     framework_query = _apply_filters(
         _base_catalog_query(current_user_id),
         q=q,
-        sector=None,
-        industry=None,
-        function=None,
-        category=None,
-        license_type=None,
-        complexity=None,
-        org_size=None,
-        lifecycle_stage=None,
-        jurisdiction=None,
-        price_min=None,
-        price_max=None,
-        attestation_status=None,
+        sector=sector,
+        industry=industry,
+        function=function,
+        category=category,
+        license_type=license_type,
+        complexity=complexity,
+        org_size=org_size,
+        lifecycle_stage=lifecycle_stage,
+        jurisdiction=jurisdiction,
+        price_min=price_min,
+        price_max=price_max,
+        attestation_status=attestation_status,
+    )
+    taxonomy_filter_active = any(
+        value is not None
+        for value in (
+            sector,
+            industry,
+            function,
+            category,
+            license_type,
+            complexity,
+            org_size,
+            lifecycle_stage,
+            jurisdiction,
+            attestation_status,
+        )
     )
     framework_rows = await db.execute(framework_query)
     frameworks = list(framework_rows.scalars().all())
@@ -892,27 +926,31 @@ async def list_mixed_catalog(
         for framework in frameworks
     ]
 
-    collection_query = _apply_collection_filters(
-        _base_collection_query(current_user_id),
-        q=q,
-    )
-    collection_rows = await db.execute(collection_query)
-    collections = list(collection_rows.scalars().all())
-    collection_contributor_names = await _user_display_names(
-        db,
-        [collection.contributor_id for collection in collections],
-    )
-    collection_items: list[ExploreCatalogItem] = [
-        await _card_from_collection(
-            db,
-            collection,
-            collection_contributor_names.get(
-                collection.contributor_id,
-                "Contributor",
-            ),
+    collection_items: list[ExploreCatalogItem] = []
+    if not taxonomy_filter_active:
+        collection_query = _apply_collection_filters(
+            _base_collection_query(current_user_id),
+            q=q,
+            price_min=price_min,
+            price_max=price_max,
         )
-        for collection in collections
-    ]
+        collection_rows = await db.execute(collection_query)
+        collections = list(collection_rows.scalars().all())
+        collection_contributor_names = await _user_display_names(
+            db,
+            [collection.contributor_id for collection in collections],
+        )
+        collection_items = [
+            await _card_from_collection(
+                db,
+                collection,
+                collection_contributor_names.get(
+                    collection.contributor_id,
+                    "Contributor",
+                ),
+            )
+            for collection in collections
+        ]
     items = framework_items + collection_items
     reverse = sort not in {"price_asc"}
     items = sorted(

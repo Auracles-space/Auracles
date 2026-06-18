@@ -95,15 +95,31 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
       className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
       onSubmit={submitSavedSearch}
     >
+      <div className="mb-4 flex items-start gap-3">
+        <BookmarkIcon
+          className="mt-0.5 h-5 w-5 shrink-0 text-accent"
+          aria-hidden="true"
+        />
+        <div>
+          <h2 className="font-heading text-sm font-bold text-foreground">
+            Save this search
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-foreground-muted">
+            Bookmark these filters so you can run them again, and get notified
+            when new frameworks match.
+          </p>
+        </div>
+      </div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <label className="min-w-0 flex-1" htmlFor="explore-saved-search-name">
           <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-            Saved search name
+            Name this search
           </span>
           <input
             className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
             id="explore-saved-search-name"
             onChange={(event) => setName(event.target.value)}
+            placeholder="e.g. Healthcare risk playbooks"
             value={name}
           />
         </label>

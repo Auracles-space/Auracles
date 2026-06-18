@@ -518,6 +518,94 @@ async def test_mixed_catalog_returns_framework_and_collection_items(
     assert str(collection_id) in item_ids
 
 
+async def test_mixed_catalog_taxonomy_filter_narrows_frameworks_and_hides_collections(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """A Framework taxonomy filter narrows frameworks and drops collections.
+
+    Collections carry no taxonomy, so any sector/industry/category/etc. filter
+    on the mixed feed excludes bundles entirely (product decision) while still
+    filtering the Framework cards.
+    """
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "mixed-filter-seller@auracles.space",
+        ["contributor"],
+    )
+    healthcare_id, _ = await create_framework(
+        contributor_id,
+        title="Healthcare Risk System",
+        sector="healthcare",
+    )
+    finance_id, _ = await create_framework(
+        contributor_id,
+        title="Finance Risk System",
+        sector="financial_services",
+    )
+    await create_collection(
+        contributor_id,
+        title="Risk Bundle",
+        framework_ids=[healthcare_id, finance_id],
+        bundle_price=Decimal("800.00"),
+    )
+
+    response = await client.get(
+        "/v1/explore/catalog",
+        params={"sector": "healthcare"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    item_types = {item["item_type"] for item in body["items"]}
+    item_ids = {item["id"] for item in body["items"]}
+    assert item_types == {"framework"}
+    assert str(healthcare_id) in item_ids
+    assert str(finance_id) not in item_ids
+    assert body["total"] == 1
+
+
+async def test_mixed_catalog_price_filter_applies_to_both_item_types(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Price filters narrow both Frameworks and Collections, keeping bundles."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "mixed-price-seller@auracles.space",
+        ["contributor"],
+    )
+    cheap_id, _ = await create_framework(
+        contributor_id,
+        title="Cheap Framework",
+        price=Decimal("100.00"),
+    )
+    expensive_id, _ = await create_framework(
+        contributor_id,
+        title="Expensive Framework",
+        price=Decimal("900.00"),
+    )
+    collection_id = await create_collection(
+        contributor_id,
+        title="Affordable Bundle",
+        framework_ids=[cheap_id, expensive_id],
+        bundle_price=Decimal("150.00"),
+    )
+
+    response = await client.get(
+        "/v1/explore/catalog",
+        params={"price_max": "200"},
+    )
+
+    assert response.status_code == 200
+    item_ids = {item["id"] for item in response.json()["items"]}
+    assert str(cheap_id) in item_ids
+    assert str(collection_id) in item_ids
+    assert str(expensive_id) not in item_ids
+
+
 async def test_public_catalog_returns_and_filters_framework_attestation_badges(
     client: AsyncClient,
     migrated_database: None,

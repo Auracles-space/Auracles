@@ -105,8 +105,24 @@ async def list_mixed_catalog(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     sort: ExploreSort = "newest",
+    sector: str | None = None,
+    industry: str | None = None,
+    function: str | None = None,
+    category: str | None = None,
+    license_type: str | None = None,
+    complexity: int | None = Query(default=None, ge=1, le=5),
+    org_size: str | None = None,
+    lifecycle_stage: str | None = None,
+    jurisdiction: str | None = None,
+    price_min: Annotated[Decimal | None, Query(ge=0)] = None,
+    price_max: Annotated[Decimal | None, Query(ge=0)] = None,
+    attestation_status: ExploreAttestationStatus | None = None,
 ) -> ExploreCatalogResponse:
-    """Return paginated public Framework and Collection catalog results."""
+    """Return paginated public Framework and Collection catalog results.
+
+    Framework taxonomy filters narrow Framework cards and exclude Collections
+    (bundles carry no taxonomy); ``q`` and price filters apply to both.
+    """
     return await service.list_mixed_catalog(
         db,
         current_user_id=current_user_id,
@@ -114,6 +130,18 @@ async def list_mixed_catalog(
         page=page,
         page_size=page_size,
         sort=sort,
+        sector=sector,
+        industry=industry,
+        function=function,
+        category=category,
+        license_type=license_type,
+        complexity=complexity,
+        org_size=org_size,
+        lifecycle_stage=lifecycle_stage,
+        jurisdiction=jurisdiction,
+        price_min=price_min,
+        price_max=price_max,
+        attestation_status=attestation_status,
     )
 
 

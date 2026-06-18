@@ -3525,9 +3525,21 @@ export type ListFrameworksV1ExploreFrameworksGetError = (HTTPValidationError);
 
 export type ListMixedCatalogV1ExploreCatalogGetData = {
     query?: {
+        attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
+        category?: (string | null);
+        complexity?: (number | null);
+        function?: (string | null);
+        industry?: (string | null);
+        jurisdiction?: (string | null);
+        license_type?: (string | null);
+        lifecycle_stage?: (string | null);
+        org_size?: (string | null);
         page?: number;
         page_size?: number;
+        price_max?: (number | string | null);
+        price_min?: (number | string | null);
         q?: (string | null);
+        sector?: (string | null);
         sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
     };
 };

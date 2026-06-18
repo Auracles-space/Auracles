@@ -83,6 +83,14 @@ describe("FrameworkCard", () => {
       "/explore/contributors/00000000-0000-4000-8000-000000000014",
     );
   });
+
+  it("links the Preview action to the Framework detail page", () => {
+    render(<FrameworkCard framework={framework} />);
+
+    expect(
+      screen.getByRole("link", { name: /preview diligence control playbook/i }),
+    ).toHaveAttribute("href", "/explore/00000000-0000-4000-8000-000000000013");
+  });
 });
 
 describe("CollectionCard", () => {

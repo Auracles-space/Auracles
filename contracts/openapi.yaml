@@ -2769,7 +2769,10 @@ paths:
       tags:
       - Explore
       summary: List Mixed Catalog
-      description: Return paginated public Framework and Collection catalog results.
+      description: 'Return paginated public Framework and Collection catalog results.
+
+        Framework taxonomy filters narrow Framework cards and exclude Collections
+        (bundles carry no taxonomy); q and price filters apply to both.'
       operationId: list_mixed_catalog_v1_explore_catalog_get
       security:
       - HTTPBearer: []
@@ -2813,6 +2816,115 @@ paths:
           type: string
           default: newest
           title: Sort
+      - name: sector
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sector
+      - name: industry
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Industry
+      - name: function
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Function
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      - name: license_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: License Type
+      - name: complexity
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 5
+            minimum: 1
+          - type: 'null'
+          title: Complexity
+      - name: org_size
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Size
+      - name: lifecycle_stage
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lifecycle Stage
+      - name: jurisdiction
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jurisdiction
+      - name: price_min
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Min
+      - name: price_max
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Price Max
+      - name: attestation_status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - pending_acceptance
+            - attested
+            - conditionally_attested
+            - none
+            type: string
+          - type: 'null'
+          title: Attestation Status
       responses:
         '200':
           description: Successful Response
