@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
+import { ArtifactManifest } from "@/components/modules/frameworks/artifact-manifest";
 import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploader";
 import { DelistButton } from "@/components/modules/frameworks/delist-button";
 import { RelistButton } from "@/components/modules/frameworks/relist-button";
@@ -36,10 +37,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import {
-  formatFileSize,
-  formatFrameworkStatus,
-} from "@/lib/marketplace/format";
+import { formatFrameworkStatus } from "@/lib/marketplace/format";
 
 type FrameworkEditorProps = {
   frameworkId: string;
@@ -291,7 +289,11 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
             framework.status === "pipeline_failed" ||
             framework.status === "pipeline_passed"
           }
+          frameworkId={framework.id}
+          frameworkStatus={framework.status}
+          onPreviewSet={setFramework}
           onRemove={handleRemoveArtifact}
+          previewArtifactId={framework.preview_artifact_id}
         />
         <PipelineStatusPanel
           artifacts={artifacts}
@@ -340,77 +342,5 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         ) : null}
       </aside>
     </div>
-  );
-}
-
-type ArtifactManifestProps = {
-  artifacts: ArtifactResponse[];
-  canRemove: boolean;
-  onRemove: (artifactId: string) => void;
-};
-
-/** Processing state where the pipeline is actively running on the artifact. */
-const IN_FLIGHT_PROCESSING = new Set(["processing"]);
-
-/**
- * Render attached artifact status rows.
- *
- * @param props - Artifact list plus draft-only removal controls.
- */
-function ArtifactManifest({
-  artifacts,
-  canRemove,
-  onRemove,
-}: ArtifactManifestProps) {
-  return (
-    <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-lg font-bold text-foreground">
-          Artifact manifest
-        </h2>
-        <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-          {artifacts.length} file{artifacts.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      {artifacts.length === 0 ? (
-        <p className="mt-3 text-sm text-foreground-muted">
-          No artifacts yet. Upload at least one file above.
-        </p>
-      ) : (
-        <div className="mt-3 divide-y divide-border-default">
-          {artifacts.map((artifact) => (
-            <div
-              className="flex items-start justify-between gap-3 py-3 text-sm"
-              key={artifact.id}
-            >
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-foreground">
-                  {artifact.name}
-                </p>
-                <p className="text-foreground-muted">
-                  {formatFileSize(artifact.file_size)} · {artifact.scan_status} ·{" "}
-                  {artifact.processing_status}
-                </p>
-              </div>
-              {canRemove &&
-              !IN_FLIGHT_PROCESSING.has(artifact.processing_status) ? (
-                <button
-                  aria-label={`Remove ${artifact.name}`}
-                  className="shrink-0 rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold text-foreground-muted transition-colors hover:border-error/40 hover:bg-error/10 hover:text-error"
-                  onClick={() => onRemove(artifact.id)}
-                  type="button"
-                >
-                  Remove
-                </button>
-              ) : canRemove ? (
-                <span className="shrink-0 text-xs font-medium text-foreground-muted">
-                  Processing…
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
