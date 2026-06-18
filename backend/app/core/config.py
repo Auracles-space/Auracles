@@ -145,7 +145,7 @@ class Settings(BaseSettings):
         default="auracles-thumbnails-dev", alias="S3_THUMBNAILS_BUCKET"
     )
     resend_from_address: str = Field(
-        default="noreply@auracles.space", alias="RESEND_FROM_ADDRESS"
+        default="no-reply@auracles.space", alias="RESEND_FROM_ADDRESS"
     )
     resend_api_key: SecretStr | None = Field(default=None, alias="RESEND_API_KEY")
     # Gate live email delivery. Default True so an unset value (e.g. on Render)

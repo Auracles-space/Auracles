@@ -88,6 +88,8 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "attestation_refunded": "attestation",
     "api_rate_limit_threshold": "account",
     "saved_search_alert": "discovery",
+    "kyc_verified": "account",
+    "kyc_rejected": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()

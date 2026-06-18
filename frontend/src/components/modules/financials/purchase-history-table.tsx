@@ -30,6 +30,7 @@ export function PurchaseHistoryTable() {
   const [invoiceMessage, setInvoiceMessage] = useState<string | null>(null);
   const [items, setItems] = useState<PurchaseHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadPurchases() {
@@ -61,40 +62,63 @@ export function PurchaseHistoryTable() {
   }
 
   async function handleInvoice(transactionId: string) {
+    setGeneratingInvoiceId(transactionId);
     setInvoiceMessage(null);
     setError(null);
     configureBrowserClient();
     try {
-      const result = await getFrameworkPurchaseInvoice({
-        headers: getAccessTokenHeaders(),
-        path: { transaction_id: transactionId },
-        redirect: "manual",
-      });
+      let isDone = false;
+      let attempts = 0;
+      const maxAttempts = 15; // 30 seconds max (15 * 2 seconds)
 
-      if (result.response.status === 202 || result.data?.status === "generating") {
-        setInvoiceMessage("Invoice is being prepared.");
-        return;
+      while (!isDone && attempts < maxAttempts) {
+        const result = await getFrameworkPurchaseInvoice({
+          headers: getAccessTokenHeaders(),
+          path: { transaction_id: transactionId },
+          redirect: "manual",
+        });
+
+        if (
+          result.response.status === 0 ||
+          result.response.status === 302 ||
+          result.response.type === "opaqueredirect" ||
+          result.response.redirected
+        ) {
+          const token = getAccessToken();
+          const invoiceUrl = `${
+            process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+          }/v1/financials/purchases/${transactionId}/invoice?token=${encodeURIComponent(token ?? "")}`;
+          window.location.assign(invoiceUrl);
+          isDone = true;
+          setInvoiceMessage(null);
+          setGeneratingInvoiceId(null);
+          return;
+        }
+
+        if (result.response.status === 202 || result.data?.status === "generating") {
+          setInvoiceMessage("Invoice is being prepared.");
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          attempts += 1;
+        } else {
+          if (!result.response.ok) {
+            setError(describeGeneratedError(result.error));
+          }
+          isDone = true;
+          setGeneratingInvoiceId(null);
+          setInvoiceMessage(null);
+          return;
+        }
       }
 
-      if (
-        result.response.status === 0 ||
-        result.response.status === 302 ||
-        result.response.type === "opaqueredirect" ||
-        result.response.redirected
-      ) {
-        const token = getAccessToken();
-        const invoiceUrl = `${
-          process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-        }/v1/financials/purchases/${transactionId}/invoice?token=${encodeURIComponent(token ?? "")}`;
-        window.location.assign(invoiceUrl);
-        return;
-      }
-
-      if (!result.response.ok) {
-        setError(describeGeneratedError(result.error));
+      if (attempts >= maxAttempts) {
+        setError("Invoice generation timed out. Please try again.");
+        setGeneratingInvoiceId(null);
+        setInvoiceMessage(null);
       }
     } catch (err) {
       setError("An unexpected error occurred while fetching the invoice.");
+      setGeneratingInvoiceId(null);
+      setInvoiceMessage(null);
     }
   }
 
@@ -130,9 +154,18 @@ export function PurchaseHistoryTable() {
         </p>
       </div>
       {invoiceMessage ? (
-        <p className="mx-4 mt-4 rounded-xl border border-[#2563EB]/30 bg-[#2563EB]/10 p-3 text-sm text-[#2563EB] md:mx-5">
-          {invoiceMessage}
-        </p>
+        <div className="mx-4 mt-4 flex items-center gap-3.5 rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground md:mx-5 transition-all animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold font-heading text-foreground">{invoiceMessage}</p>
+            <p className="text-xs text-foreground-muted mt-0.5">We are generating your secure PDF invoice. It will download automatically once ready.</p>
+          </div>
+        </div>
       ) : null}
       <div className="grid divide-y divide-border-default">
         {items.map((item) => (
@@ -160,11 +193,22 @@ export function PurchaseHistoryTable() {
             <div className="grid grid-cols-2 gap-2 md:w-[180px]">
               <RefundButton item={item} onRefunded={handleRefunded} />
               <button
-                className="min-h-12 rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={generatingInvoiceId !== null}
                 onClick={() => handleInvoice(item.transaction_id)}
                 type="button"
               >
-                Invoice
+                {generatingInvoiceId === item.transaction_id ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-foreground" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  "Invoice"
+                )}
               </button>
             </div>
           </article>

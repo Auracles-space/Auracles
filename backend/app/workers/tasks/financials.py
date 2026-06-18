@@ -62,16 +62,10 @@ INVOICE_TEMPLATE = Template(
         align-items: center;
       }
       
-      .logo-icon {
-        margin-right: 12px;
-      }
-      
-      .brand-name {
-        font-family: 'Inter', sans-serif;
-        font-size: 24px;
-        font-weight: 800;
-        color: #111827;
-        letter-spacing: -0.02em;
+      .logo-img {
+        height: 28px;
+        width: auto;
+        display: block;
       }
       
       .invoice-title-wrapper h1 {
@@ -195,8 +189,7 @@ INVOICE_TEMPLATE = Template(
       }
       
       .td-license {
-        text-transform: uppercase;
-        font-size: 12px;
+        font-size: 14px;
         color: #4B5563;
         font-weight: 500;
       }
@@ -205,37 +198,37 @@ INVOICE_TEMPLATE = Template(
         text-align: right;
       }
       
-      .summary-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
+      .summary-table {
+        float: right;
+        width: 280px;
         margin-top: 20px;
+        margin-bottom: 30px;
+        border-collapse: collapse;
       }
       
-      .summary-row {
-        display: flex;
-        width: 280px;
-        justify-content: space-between;
+      .summary-table td {
+        border: none;
         padding: 8px 16px;
         font-size: 14px;
         color: #4B5563;
       }
       
-      .total-row {
+      .summary-table tr td:last-child {
+        text-align: right;
+      }
+      
+      .summary-table .total-row td {
         border-top: 2px solid #111827;
         font-family: 'Inter', sans-serif;
         font-size: 18px;
         font-weight: 800;
         color: #111827;
         padding-top: 12px;
-        margin-top: 4px;
       }
       
       footer {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
+        clear: both;
+        margin-top: 80px;
         text-align: center;
         border-top: 1px solid #E5E7EB;
         padding-top: 24px;
@@ -266,13 +259,7 @@ INVOICE_TEMPLATE = Template(
       
       <header>
         <div class="logo-container">
-          <svg class="logo-icon" width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="24" cy="24" r="20" stroke="#C74634" stroke-width="4" />
-            <path d="M12 24C12 17.37 17.37 12 24 12" stroke="#C74634" stroke-width="3.5" stroke-linecap="round" />
-            <circle cx="24" cy="24" r="6" fill="#111827" />
-            <circle cx="24" cy="24" r="2" fill="#FFFFFF" />
-          </svg>
-          <span class="brand-name">AURACLES</span>
+          <img class="logo-img" src="{{ logo_url }}" alt="Auracles Logo">
         </div>
         <div class="invoice-title-wrapper">
           <h1>INVOICE</h1>
@@ -288,7 +275,7 @@ INVOICE_TEMPLATE = Template(
         <div class="meta-column">
           <h3>ISSUED BY</h3>
           <p class="highlight">Auracles Space</p>
-          <p>noreply@auracles.space</p>
+          <p>no-reply@auracles.space</p>
         </div>
         <div class="meta-column">
           <h3>DETAILS</h3>
@@ -314,16 +301,16 @@ INVOICE_TEMPLATE = Template(
         </tbody>
       </table>
       
-      <div class="summary-wrapper">
-        <div class="summary-row">
-          <span>Subtotal</span>
-          <span>{{ amount_display }}</span>
-        </div>
-        <div class="summary-row total-row">
-          <span>Total Paid</span>
-          <span class="highlight">{{ amount_display }}</span>
-        </div>
-      </div>
+      <table class="summary-table">
+        <tr>
+          <td>Subtotal</td>
+          <td>{{ amount_display }}</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total Paid</td>
+          <td class="highlight">{{ amount_display }}</td>
+        </tr>
+      </table>
       
       <footer>
         <p>This is a computer-generated document. No manual signature is required.</p>
@@ -339,6 +326,20 @@ INVOICE_TEMPLATE = Template(
 def _money_display(amount: Decimal, currency: str) -> str:
     """Return a stable invoice money string."""
     return f"{amount.quantize(Decimal('0.01'))} {currency.upper()}"
+
+
+def _format_license_type(license_type: str | None) -> str:
+    """Format an internal license type string into a readable label."""
+    if not license_type:
+        return "n/a"
+    return license_type.replace("_", " ").title()
+
+
+def _frontend_url() -> str:
+    """Return the frontend base URL."""
+    settings = get_settings()
+    origins = settings.cors_origin_list
+    return origins[0] if origins else "http://localhost:3000"
 
 
 async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]:
@@ -365,9 +366,10 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
         operator_name=operator.display_name,
         operator_email=operator.email,
         framework_title=framework.title,
-        license_type=license_row.license_type if license_row else "n/a",
+        license_type=_format_license_type(license_row.license_type if license_row else ""),
         amount_display=_money_display(transaction.amount, transaction.currency),
         status=transaction.status,
+        logo_url=f"{_frontend_url()}/images/logo-text-black.png",
     )
     pdf_bytes = HTML(string=html).write_pdf()
     return purchase_invoice_key(transaction.id), pdf_bytes

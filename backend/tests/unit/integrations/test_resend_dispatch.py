@@ -27,7 +27,7 @@ class _FakeSettings:
     def __init__(self, *, email_send_enabled: bool) -> None:
         self.email_send_enabled = email_send_enabled
         self.resend_api_key = SecretStr("re_test")
-        self.resend_from_address = "noreply@auracles.space"
+        self.resend_from_address = "no-reply@auracles.space"
         self.cors_origin_list = ["http://localhost:3000"]
 
 
