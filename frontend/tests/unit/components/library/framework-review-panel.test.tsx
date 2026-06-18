@@ -48,7 +48,7 @@ describe("FrameworkReviewPanel", () => {
     render(<FrameworkReviewPanel frameworkId="fw-1" />);
 
     const submit = await screen.findByRole("button", { name: /submit review/i });
-    fireEvent.click(screen.getByRole("radio", { name: "4" }));
+    fireEvent.click(screen.getByRole("radio", { name: "4 Stars" }));
     fireEvent.change(screen.getByPlaceholderText(/what changed/i), {
       target: { value: "Helped a lot." },
     });

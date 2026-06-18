@@ -26,6 +26,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { StarFilledIcon, StarIcon } from "@radix-ui/react-icons";
 
 type FrameworkReviewPanelProps = {
   frameworkId: string;
@@ -49,6 +50,8 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
   const [score, setScore] = useState(5);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  // Track hovered star index for dynamic preview highlight
+  const [hoveredScore, setHoveredScore] = useState<number | null>(null);
   const [state, setState] = useState<ReviewPanelState>({
     error: null,
     loading: true,
@@ -172,24 +175,35 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
         <p className="text-sm text-foreground-muted">{aggregate}</p>
       </div>
       <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
-        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Review score">
-          {[1, 2, 3, 4, 5].map((value) => (
-            <button
-              aria-checked={score === value}
-              className={[
-                "min-h-12 rounded-xl border px-3 text-sm font-semibold",
-                score === value
-                  ? "border-accent bg-accent text-background"
-                  : "border-border-default bg-background text-foreground hover:bg-surface-3",
-              ].join(" ")}
-              key={value}
-              onClick={() => setScore(value)}
-              role="radio"
-              type="button"
-            >
-              {value}
-            </button>
-          ))}
+        <div
+          className="flex items-center gap-1"
+          onMouseLeave={() => setHoveredScore(null)}
+          role="radiogroup"
+          aria-label="Review score"
+        >
+          {[1, 2, 3, 4, 5].map((value) => {
+            // Fill star if current index is below or equal to current hover/selected score
+            const isFilled =
+              hoveredScore !== null ? value <= hoveredScore : value <= score;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={score === value}
+                aria-label={`${value} Star${value === 1 ? "" : "s"}`}
+                className="flex h-12 w-12 items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent text-foreground-muted hover:text-accent"
+                onClick={() => setScore(value)}
+                onMouseEnter={() => setHoveredScore(value)}
+              >
+                {isFilled ? (
+                  <StarFilledIcon className="h-7 w-7 text-accent transition-transform duration-150 active:scale-95" />
+                ) : (
+                  <StarIcon className="h-7 w-7 transition-transform duration-150 active:scale-95" />
+                )}
+              </button>
+            );
+          })}
         </div>
         <label className="grid gap-2 text-sm font-medium text-foreground">
           Review body
