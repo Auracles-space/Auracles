@@ -1473,6 +1473,7 @@ async def publish_framework(
     contributor_id = contributor.id
     if db.in_transaction():
         await db.rollback()
+    gate_failed = False
     async with db.begin():
         framework = await _load_owned_framework_by_user_id(
             db,
@@ -1484,37 +1485,65 @@ async def publish_framework(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Framework must pass pipeline checks before publish.",
             )
-        current_artifacts = (
-            (
-                await db.execute(
-                    select(Artifact)
-                    .where(
-                        Artifact.framework_id == framework.id,
-                        Artifact.current_for_framework.is_(True),
+        # Never trust a possibly-stale pipeline_passed: re-run the gate against
+        # the live Artifact state at publish time so a current Artifact that
+        # drifted back to flagged_pii / infected (re-processing, an added file)
+        # can never leak into the public catalog. force=True because the status
+        # is pipeline_passed, which is outside the normally-gated set. A failed
+        # re-check persists the corrected status, then publish is refused.
+        await evaluate_framework_pipeline(db, framework, force=True)
+        if framework.status != "pipeline_passed":
+            gate_failed = True
+        else:
+            current_artifacts = (
+                (
+                    await db.execute(
+                        select(Artifact)
+                        .where(
+                            Artifact.framework_id == framework.id,
+                            Artifact.current_for_framework.is_(True),
+                        )
+                        .order_by(Artifact.created_at)
                     )
-                    .order_by(Artifact.created_at)
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
-        if not current_artifacts:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="At least one Artifact is required.",
-            )
+            if not current_artifacts:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="At least one Artifact is required.",
+                )
 
-        await _ensure_published_version_snapshot(db, framework, list(current_artifacts))
-        framework.status = "published"
-        framework.published_at = datetime.now(UTC)
-        framework.tags_text = tags_to_search_text(framework.tags)
-        await write_audit(
-            db=db,
-            actor_id=contributor_id,
-            action="framework_published",
-            target_type="framework",
-            target_id=framework.id,
-            metadata={"version": framework.version},
+            await _ensure_published_version_snapshot(
+                db, framework, list(current_artifacts)
+            )
+            framework.status = "published"
+            framework.published_at = datetime.now(UTC)
+            framework.tags_text = tags_to_search_text(framework.tags)
+            await write_audit(
+                db=db,
+                actor_id=contributor_id,
+                action="framework_published",
+                target_type="framework",
+                target_id=framework.id,
+                metadata={"version": framework.version},
+            )
+    # The re-check failed: the corrected (non-passing) status is now committed.
+    # Refuse the publish outside the transaction so the correction persists.
+    if gate_failed:
+        logger.bind(
+            module="frameworks",
+            action="publish_framework",
+            user_id=contributor_id,
+            framework_id=framework_id,
+        ).warning("publish_blocked_pipeline_recheck_failed")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Framework no longer passes pipeline checks and cannot be "
+                "published. Resolve the flagged artifacts and resubmit."
+            ),
         )
     try:
         await index_framework_artifacts(framework.id)

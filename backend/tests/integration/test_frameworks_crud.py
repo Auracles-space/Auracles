@@ -1658,6 +1658,56 @@ async def test_submit_framework_with_processed_artifacts_passes_pipeline_gate(
     assert response.json()["status"] == "pipeline_passed"
 
 
+async def test_publish_refuses_when_current_artifact_drifted_to_flagged_pii(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Publish re-runs the gate and refuses a framework whose artifact regained PII.
+
+    Guards against a stale ``pipeline_passed`` status: if a current Artifact
+    drifts back to ``flagged_pii`` after the gate passed (re-processing, an
+    added file), publish must re-verify and block, never leak PII into the
+    public catalog.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-pii-drift@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    # Drift: the current Artifact regains a PII flag while the framework status
+    # is still the now-stale pipeline_passed.
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        artifact.processing_status = "flagged_pii"
+        artifact.pii_review_needed = True
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status != "published"
+
+
 async def test_submit_framework_without_artifacts_is_rejected(
     client: AsyncClient,
     migrated_database: None,
