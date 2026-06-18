@@ -11,6 +11,8 @@ import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/ui/brand-logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
+import { HeaderSearch } from "./header-search";
+
 type PublicMarketplaceShellProps = {
   children: ReactNode;
 };
@@ -47,16 +49,7 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
             </nav>
             
             <div className="hidden flex-1 max-w-md ml-auto mr-4 md:block min-w-0">
-              <div className="relative w-full">
-                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  placeholder="Search frameworks, projects..." 
-                  className="h-9 w-full rounded-xl border border-border-default bg-surface-2 pl-9 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
-                />
-              </div>
+              <HeaderSearch variant="public" />
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -128,6 +121,10 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
               </details>
             </div>
           </div>
+        </div>
+        {/* Mobile search row — header field is desktop-only above. */}
+        <div className="px-4 pb-3 md:hidden">
+          <HeaderSearch variant="public" />
         </div>
       </header>
       <div className="flex-1">

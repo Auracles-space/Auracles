@@ -4,6 +4,12 @@
  * Server-rendered Explore page showing safe public identity fields, public
  * Attestation context, and the Contributor's newest published Frameworks.
  */
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  CheckCircledIcon,
+  GlobeIcon,
+} from "@radix-ui/react-icons";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -50,80 +56,110 @@ export default async function ContributorProfilePage({
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
-        <Link className="text-sm font-semibold text-accent" href="/explore">
+        <Link
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent transition-colors hover:text-accent/80"
+          href="/explore"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
           Back to Explore
         </Link>
 
-        <section className="mt-6 rounded-2xl border border-border-default bg-surface-1 p-5 md:p-8 shadow-sm">
-          <div className="grid gap-6 md:grid-cols-[96px_1fr]">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-border-default bg-surface-2 shadow-sm">
+        <section className="mt-6 rounded-2xl border border-border-default bg-surface-1 p-6 md:p-8 shadow-bento transition-all duration-300 hover:border-accent/20">
+          <div className="flex flex-col md:flex-row gap-6 items-start w-full">
+            {/* Avatar block with premium borders */}
+            <div className="relative flex h-24 w-24 md:h-28 md:w-28 items-center justify-center overflow-hidden rounded-2xl border border-border-default bg-surface-2 shadow-sm transition-all duration-300 group hover:border-accent/40 hover:shadow-bento shrink-0">
               {profile.avatar_url ? (
                 <div
                   aria-hidden="true"
-                  className="h-full w-full bg-cover bg-center"
+                  className="h-full w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
                   style={{ backgroundImage: `url(${profile.avatar_url})` }}
                 />
               ) : (
-                <span className="font-heading text-3xl font-bold text-foreground">
+                <span className="font-heading text-4xl font-extrabold text-accent">
                   {profile.display_name.slice(0, 1).toUpperCase()}
                 </span>
               )}
             </div>
 
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                {profile.reputation ? (
-                  <ReputationBadge
-                    score={profile.reputation.score ?? null}
-                    isProvisional={profile.reputation.is_provisional ?? true}
-                    factors={profile.reputation.factors ?? []}
-                  />
-                ) : null}
-                {profile.attestation_badge ? (
-                  <AttestationBadge badge={profile.attestation_badge} />
-                ) : null}
-                {profile.is_deactivated ? (
-                  <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-                    Read-only profile
-                  </span>
+            <div className="min-w-0 flex-1 w-full">
+              {/* Header and website button row */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-border-default/50 pb-5">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    {profile.reputation ? (
+                      <ReputationBadge
+                        score={profile.reputation.score ?? null}
+                        isProvisional={profile.reputation.is_provisional ?? true}
+                        factors={profile.reputation.factors ?? []}
+                      />
+                    ) : null}
+                    {profile.attestation_badge ? (
+                      <AttestationBadge badge={profile.attestation_badge} />
+                    ) : null}
+                    {profile.is_deactivated ? (
+                      <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+                        Read-only profile
+                      </span>
+                    ) : null}
+                  </div>
+                  <h1 className="font-heading text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
+                    {profile.display_name}
+                  </h1>
+                </div>
+
+                {safeHref(profile.website) ? (
+                  <a
+                    className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background transition-all hover:bg-foreground/90 active:scale-[0.98] shrink-0 text-center"
+                    href={safeHref(profile.website)}
+                    rel="noreferrer noopener"
+                    target="_blank"
+                  >
+                    Visit website
+                  </a>
                 ) : null}
               </div>
 
-              <h1 className="mt-3 font-heading text-3xl font-bold text-foreground md:text-5xl">
-                {profile.display_name}
-              </h1>
-
               {profile.bio ? (
-                <p className="mt-4 max-w-3xl text-base leading-7 text-foreground-muted">
+                <p className="mt-4 max-w-4xl text-base leading-relaxed text-foreground-muted">
                   {profile.bio}
                 </p>
               ) : null}
 
-              <dl className="mt-5 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
-                <div>
-                  <dt className="font-semibold text-foreground">Frameworks</dt>
-                  <dd>{profile.published_framework_count} published</dd>
+              {/* Bento Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+                {/* Frameworks Stat Box */}
+                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
+                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                    <ArchiveIcon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Frameworks</span>
+                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{profile.published_framework_count} published</span>
+                  </div>
                 </div>
-                <div>
-                  <dt className="font-semibold text-foreground">Attestations</dt>
-                  <dd>{reportLabel}</dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-foreground">Location</dt>
-                  <dd>{profile.location ?? "Not listed"}</dd>
-                </div>
-              </dl>
 
-              {safeHref(profile.website) ? (
-                <a
-                  className="mt-5 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
-                  href={safeHref(profile.website)}
-                  rel="noreferrer noopener"
-                  target="_blank"
-                >
-                  Visit website
-                </a>
-              ) : null}
+                {/* Attestations Stat Box */}
+                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
+                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                    <CheckCircledIcon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Attestations</span>
+                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{reportLabel}</span>
+                  </div>
+                </div>
+
+                {/* Location Stat Box */}
+                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
+                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                    <GlobeIcon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Location</span>
+                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{profile.location ?? "Not listed"}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>

@@ -1,7 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PublicMarketplaceShell } from "@/components/modules/layout/public-marketplace-shell";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 describe("PublicMarketplaceShell", () => {
   it("keeps public marketplace pages connected to Auracles navigation", () => {
