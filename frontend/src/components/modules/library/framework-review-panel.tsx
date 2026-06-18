@@ -160,7 +160,11 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
     return <TableSkeleton />;
   }
 
-  const canSubmit = isPositiveNumber(score);
+  const hasText = body.trim() !== "";
+  const isEdited = state.myReview
+    ? score !== state.myReview.score || body.trim() !== (state.myReview.body ?? "").trim()
+    : true;
+  const buttonEnabled = !saving && isPositiveNumber(score) && hasText && isEdited;
 
   const aggregate = state.reviews?.average_score
     ? `${state.reviews.average_score} average from ${state.reviews.review_count} review${
@@ -221,7 +225,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
         ) : null}
         <button
           className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={saving || !canSubmit}
+          disabled={!buttonEnabled}
           type="submit"
         >
           {saving

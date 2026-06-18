@@ -77,6 +77,9 @@ describe("FrameworkReviewPanel", () => {
 
     render(<FrameworkReviewPanel frameworkId="fw-1" />);
 
+    const textarea = await screen.findByPlaceholderText(/what changed/i);
+    fireEvent.change(textarea, { target: { value: "Updated." } });
+
     const update = await screen.findByRole("button", { name: /update review/i });
     fireEvent.click(update);
 

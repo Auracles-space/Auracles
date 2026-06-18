@@ -31,6 +31,7 @@ export function PurchaseHistoryTable() {
   const [items, setItems] = useState<PurchaseHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadPurchases() {
@@ -65,6 +66,7 @@ export function PurchaseHistoryTable() {
     setGeneratingInvoiceId(transactionId);
     setInvoiceMessage(null);
     setError(null);
+    setActionError(null);
     configureBrowserClient();
     try {
       let isDone = false;
@@ -172,6 +174,30 @@ export function PurchaseHistoryTable() {
           </div>
         </div>
       ) : null}
+      {actionError ? (
+        <div className="mx-4 mt-4 flex items-start gap-3.5 rounded-xl border border-error/20 bg-error/10 p-4 text-sm text-error md:mx-5 transition-all animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-error/10 text-error mt-0.5">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+              <line x1="12" y1="8" x2="12" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <line x1="12" y1="16" x2="12.01" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold font-heading text-error">Action failed</p>
+            <p className="text-xs opacity-90 mt-0.5">{actionError}</p>
+          </div>
+          <button
+            className="text-error opacity-60 hover:opacity-100 transition-opacity"
+            onClick={() => setActionError(null)}
+            type="button"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
       <div className="grid divide-y divide-border-default">
         {items.map((item) => (
           <article
@@ -196,7 +222,11 @@ export function PurchaseHistoryTable() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 md:w-[180px]">
-              <RefundButton item={item} onRefunded={handleRefunded} />
+              <RefundButton
+                item={item}
+                onError={setActionError}
+                onRefunded={handleRefunded}
+              />
               <button
                 className="min-h-12 rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
                 disabled={generatingInvoiceId !== null}
@@ -225,6 +255,7 @@ export function PurchaseHistoryTable() {
 
 type RefundButtonProps = {
   item: PurchaseHistoryItem;
+  onError: (msg: string | null) => void;
   onRefunded: (transactionId: string) => void;
 };
 
@@ -233,8 +264,7 @@ type RefundButtonProps = {
  *
  * @param props - Purchase row and callback for local state update.
  */
-export function RefundButton({ item, onRefunded }: RefundButtonProps) {
-  const [error, setError] = useState<string | null>(null);
+export function RefundButton({ item, onRefunded, onError }: RefundButtonProps) {
   const [submitting, setSubmitting] = useState(false);
   const refundable = item.status === "completed";
 
@@ -242,7 +272,7 @@ export function RefundButton({ item, onRefunded }: RefundButtonProps) {
     if (!refundable) {
       return;
     }
-    setError(null);
+    onError(null);
     setSubmitting(true);
     configureBrowserClient();
     const result = await refundFrameworkPurchase({
@@ -252,23 +282,20 @@ export function RefundButton({ item, onRefunded }: RefundButtonProps) {
     setSubmitting(false);
 
     if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+      onError(describeGeneratedError(result.error));
       return;
     }
     onRefunded(item.transaction_id);
   }
 
   return (
-    <div>
-      <button
-        className="min-h-12 w-full rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={!refundable || submitting}
-        onClick={handleRefund}
-        type="button"
-      >
-        {submitting ? "Refunding" : "Refund"}
-      </button>
-      {error ? <p className="mt-2 text-xs text-error">{error}</p> : null}
-    </div>
+    <button
+      className="min-h-12 w-full rounded-xl border border-border-default px-3 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={!refundable || submitting}
+      onClick={handleRefund}
+      type="button"
+    >
+      {submitting ? "Refunding" : "Refund"}
+    </button>
   );
 }
