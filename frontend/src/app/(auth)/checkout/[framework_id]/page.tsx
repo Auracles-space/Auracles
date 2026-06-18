@@ -77,7 +77,9 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
             <div className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               <dt className="text-foreground-muted">Rarity</dt>
               <dd className="mt-1 font-semibold text-foreground">
-                {framework.rarity_score ?? "Pending"}
+                {framework.rarity_score !== null && framework.rarity_score !== undefined
+                  ? `${Math.round(Number(framework.rarity_score) * 100)}%`
+                  : "Pending"}
               </dd>
             </div>
           </dl>
