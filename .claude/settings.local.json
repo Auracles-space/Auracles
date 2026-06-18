@@ -6,7 +6,8 @@
       "Bash(export TMPDIR=/Users/a0000/projects/auracles/.tmp_patch)",
       "Bash(grep -n \"export const relistFramework =\" src/lib/generated/sdk.gen.ts)",
       "Bash(pnpm vitest *)",
-      "Bash(pnpm exec *)"
+      "Bash(pnpm exec *)",
+      "Bash(SEED_USER_ID=316ab1b2-c043-45d5-861a-5d0aab3068ad uv run python -c ' *)"
     ]
   }
 }
