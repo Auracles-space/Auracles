@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError  # type: ignore[import-untyped]
 from pydantic import ValidationError
@@ -25,18 +25,28 @@ BearerCredentials = Annotated[
 ]
 
 
+async def get_token_string(
+    credentials: BearerCredentials,
+    token: str | None = Query(None, description="Access token via query parameter for links"),
+) -> str:
+    """Extract raw token string from Authorization header or token query parameter."""
+    if credentials is not None:
+        return credentials.credentials
+    if token is not None:
+        return token
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing access token.",
+    )
+
+
 async def get_current_user(
     db: DatabaseSession,
-    credentials: BearerCredentials,
+    token: Annotated[str, Depends(get_token_string)],
 ) -> User:
-    """Load the authenticated user from a bearer access token."""
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing access token.",
-        )
+    """Load the authenticated user from a bearer access token or query parameter."""
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(token)
     except (JWTError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -68,16 +78,11 @@ async def get_current_user(
 
 
 async def get_current_token_payload(
-    credentials: BearerCredentials,
+    token: Annotated[str, Depends(get_token_string)],
 ) -> TokenPayload:
     """Decode bearer token claims without loading the user."""
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing access token.",
-        )
     try:
-        return decode_access_token(credentials.credentials)
+        return decode_access_token(token)
     except (JWTError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

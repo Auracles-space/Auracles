@@ -22,6 +22,7 @@ vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
   describeGeneratedError: () => "The request could not be completed.",
   getAccessTokenHeaders: () => ({ Authorization: "Bearer access-token" }),
+  getAccessToken: () => "access-token",
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -204,10 +205,11 @@ describe("AccountSettingsPanel", () => {
       ).toHaveBeenCalledWith({
         headers: { Authorization: "Bearer access-token" },
         path: { export_request_id: "export-1" },
+        redirect: "manual",
       });
     });
     expect(location.assign).toHaveBeenCalledWith(
-      "https://s3.test/gdpr/export-1.json",
+      "http://localhost:8000/v1/gdpr/exports/export-1/download?token=access-token",
     );
   });
 

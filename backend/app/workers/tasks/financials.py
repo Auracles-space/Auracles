@@ -22,46 +22,317 @@ from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 INVOICE_TEMPLATE = Template(
-    """
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: sans-serif; color: #111827; }
-          h1 { font-size: 28px; margin-bottom: 8px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-          th, td { border-bottom: 1px solid #d1d5db; padding: 10px; }
-          th { text-align: left; background: #f3f4f6; }
-          .muted { color: #6b7280; }
-          .total { font-weight: 700; }
-        </style>
-      </head>
-      <body>
-        <h1>Auracles Invoice</h1>
-        <p class="muted">Transaction {{ transaction_id }}</p>
-        <p>Bill to: {{ operator_name }} &lt;{{ operator_email }}&gt;</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Framework</th>
-              <th>License</th>
-              <th>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{{ framework_title }}</td>
-              <td>{{ license_type }}</td>
-              <td>{{ amount_display }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p class="total">Total paid: {{ amount_display }}</p>
-        <p>Status: {{ status }}</p>
-      </body>
-    </html>
-    """
+    """<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Poppins:wght@400;500;600&display=swap');
+      
+      @page {
+        size: A4;
+        margin: 2cm 1.5cm;
+      }
+      
+      body {
+        font-family: 'Poppins', 'Helvetica Neue', Arial, sans-serif;
+        color: #111827;
+        margin: 0;
+        padding: 0;
+        line-height: 1.5;
+        background-color: #ffffff;
+      }
+      
+      .invoice-container {
+        position: relative;
+        width: 100%;
+      }
+      
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 3px solid #C74634;
+        padding-bottom: 24px;
+        margin-bottom: 40px;
+      }
+      
+      .logo-container {
+        display: flex;
+        align-items: center;
+      }
+      
+      .logo-icon {
+        margin-right: 12px;
+      }
+      
+      .brand-name {
+        font-family: 'Inter', sans-serif;
+        font-size: 24px;
+        font-weight: 800;
+        color: #111827;
+        letter-spacing: -0.02em;
+      }
+      
+      .invoice-title-wrapper h1 {
+        font-family: 'Inter', sans-serif;
+        font-size: 32px;
+        font-weight: 800;
+        color: #C74634;
+        margin: 0;
+        letter-spacing: -0.02em;
+      }
+      
+      .meta-grid {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 48px;
+      }
+      
+      .meta-column {
+        flex: 1;
+        margin-right: 20px;
+      }
+      
+      .meta-column:last-child {
+        margin-right: 0;
+        max-width: 300px;
+      }
+      
+      .meta-column h3 {
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        color: #C74634;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-top: 0;
+        margin-bottom: 12px;
+        border-bottom: 1px solid #E5E7EB;
+        padding-bottom: 6px;
+      }
+      
+      .meta-column p {
+        font-size: 13px;
+        color: #374151;
+        margin: 4px 0;
+      }
+      
+      .meta-column p.highlight {
+        font-weight: 600;
+        color: #111827;
+      }
+      
+      .mono-id {
+        font-family: monospace;
+        font-size: 11px;
+        background: #F3F4F6;
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #374151;
+      }
+      
+      .stamp {
+        position: absolute;
+        top: 90px;
+        right: 0;
+        border: 4px double;
+        padding: 8px 18px;
+        font-size: 20px;
+        font-weight: 800;
+        font-family: 'Inter', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        transform: rotate(-10deg);
+        border-radius: 6px;
+        opacity: 0.85;
+      }
+      
+      .stamp-completed {
+        color: #16A34A;
+        border-color: #16A34A;
+      }
+      
+      .stamp-refunded {
+        color: #DC2626;
+        border-color: #DC2626;
+      }
+      
+      .stamp-pending {
+        color: #F59E0B;
+        border-color: #F59E0B;
+      }
+      
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 30px;
+        margin-bottom: 30px;
+      }
+      
+      th {
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        color: #4B5563;
+        background-color: #F9FAFB;
+        border-bottom: 2px solid #E5E7EB;
+        padding: 12px 16px;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      
+      td {
+        font-size: 14px;
+        color: #111827;
+        border-bottom: 1px solid #E5E7EB;
+        padding: 16px;
+      }
+      
+      .td-product {
+        font-weight: 600;
+      }
+      
+      .td-license {
+        text-transform: uppercase;
+        font-size: 12px;
+        color: #4B5563;
+        font-weight: 500;
+      }
+      
+      .text-right {
+        text-align: right;
+      }
+      
+      .summary-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        margin-top: 20px;
+      }
+      
+      .summary-row {
+        display: flex;
+        width: 280px;
+        justify-content: space-between;
+        padding: 8px 16px;
+        font-size: 14px;
+        color: #4B5563;
+      }
+      
+      .total-row {
+        border-top: 2px solid #111827;
+        font-family: 'Inter', sans-serif;
+        font-size: 18px;
+        font-weight: 800;
+        color: #111827;
+        padding-top: 12px;
+        margin-top: 4px;
+      }
+      
+      footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        text-align: center;
+        border-top: 1px solid #E5E7EB;
+        padding-top: 24px;
+        font-size: 11px;
+        color: #9CA3AF;
+      }
+      
+      .footer-slug {
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: #C74634;
+        margin-top: 6px;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="invoice-container">
+      {% if status == 'completed' %}
+      <div class="stamp stamp-completed">PAID</div>
+      {% elif status == 'refunded' %}
+      <div class="stamp stamp-refunded">REFUNDED</div>
+      {% else %}
+      <div class="stamp stamp-pending">{{ status | upper }}</div>
+      {% endif %}
+      
+      <header>
+        <div class="logo-container">
+          <svg class="logo-icon" width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="24" cy="24" r="20" stroke="#C74634" stroke-width="4" />
+            <path d="M12 24C12 17.37 17.37 12 24 12" stroke="#C74634" stroke-width="3.5" stroke-linecap="round" />
+            <circle cx="24" cy="24" r="6" fill="#111827" />
+            <circle cx="24" cy="24" r="2" fill="#FFFFFF" />
+          </svg>
+          <span class="brand-name">AURACLES</span>
+        </div>
+        <div class="invoice-title-wrapper">
+          <h1>INVOICE</h1>
+        </div>
+      </header>
+      
+      <div class="meta-grid">
+        <div class="meta-column">
+          <h3>BILL TO</h3>
+          <p class="highlight">{{ operator_name }}</p>
+          <p>{{ operator_email }}</p>
+        </div>
+        <div class="meta-column">
+          <h3>ISSUED BY</h3>
+          <p class="highlight">Auracles Space</p>
+          <p>noreply@auracles.space</p>
+        </div>
+        <div class="meta-column">
+          <h3>DETAILS</h3>
+          <p><strong>Transaction:</strong> <span class="mono-id">{{ transaction_id }}</span></p>
+          <p><strong>Status:</strong> {{ status | upper }}</p>
+        </div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Framework Product</th>
+            <th>License Type</th>
+            <th class="text-right">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="td-product">{{ framework_title }}</td>
+            <td class="td-license">{{ license_type }}</td>
+            <td class="text-right highlight">{{ amount_display }}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <div class="summary-wrapper">
+        <div class="summary-row">
+          <span>Subtotal</span>
+          <span>{{ amount_display }}</span>
+        </div>
+        <div class="summary-row total-row">
+          <span>Total Paid</span>
+          <span class="highlight">{{ amount_display }}</span>
+        </div>
+      </div>
+      
+      <footer>
+        <p>This is a computer-generated document. No manual signature is required.</p>
+        <p class="footer-slug">AURACLES &mdash; The Knowledge Marketplace</p>
+      </footer>
+    </div>
+  </body>
+</html>
+"""
 )
 
 

@@ -55,3 +55,12 @@ export function describeGeneratedError(error: unknown): string {
   }
   return "The request could not be completed.";
 }
+
+/**
+ * Get the current raw access token from the auth store.
+ *
+ * @returns The raw JWT string, or null if unauthenticated.
+ */
+export function getAccessToken(): string | null {
+  return authTokenStore.getState().accessToken;
+}

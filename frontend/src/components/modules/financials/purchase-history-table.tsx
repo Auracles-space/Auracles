@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
+  getAccessToken,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import {
@@ -63,21 +64,37 @@ export function PurchaseHistoryTable() {
     setInvoiceMessage(null);
     setError(null);
     configureBrowserClient();
-    const result = await getFrameworkPurchaseInvoice({
-      headers: getAccessTokenHeaders(),
-      path: { transaction_id: transactionId },
-    });
+    try {
+      const result = await getFrameworkPurchaseInvoice({
+        headers: getAccessTokenHeaders(),
+        path: { transaction_id: transactionId },
+        redirect: "manual",
+      });
 
-    if (result.response.status === 202 || result.data?.status === "generating") {
-      setInvoiceMessage("Invoice is being prepared.");
-      return;
-    }
-    if (result.response.redirected && result.response.url) {
-      window.location.assign(result.response.url);
-      return;
-    }
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+      if (result.response.status === 202 || result.data?.status === "generating") {
+        setInvoiceMessage("Invoice is being prepared.");
+        return;
+      }
+
+      if (
+        result.response.status === 0 ||
+        result.response.status === 302 ||
+        result.response.type === "opaqueredirect" ||
+        result.response.redirected
+      ) {
+        const token = getAccessToken();
+        const invoiceUrl = `${
+          process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+        }/v1/financials/purchases/${transactionId}/invoice?token=${encodeURIComponent(token ?? "")}`;
+        window.location.assign(invoiceUrl);
+        return;
+      }
+
+      if (!result.response.ok) {
+        setError(describeGeneratedError(result.error));
+      }
+    } catch (err) {
+      setError("An unexpected error occurred while fetching the invoice.");
     }
   }
 

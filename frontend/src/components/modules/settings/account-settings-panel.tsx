@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
   describeGeneratedError,
+  getAccessToken,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { allValid, isEmail, isNonEmpty } from "@/lib/forms/validators";
@@ -266,22 +267,38 @@ export function AccountSettingsPanel() {
     setExportPending("download");
 
     configureBrowserClient();
-    const result = await downloadDataExportV1GdprExportsExportRequestIdDownloadGet({
-      headers: getAccessTokenHeaders(),
-      path: { export_request_id: exportStatus.id },
-    });
-    setExportPending(null);
+    try {
+      const result = await downloadDataExportV1GdprExportsExportRequestIdDownloadGet({
+        headers: getAccessTokenHeaders(),
+        path: { export_request_id: exportStatus.id },
+        redirect: "manual",
+      });
+      setExportPending(null);
 
-    if (result.response.redirected && result.response.url) {
-      window.location.assign(result.response.url);
-      return;
-    }
-    if (!result.response.ok) {
-      setExportError(describeGeneratedError(result.error));
-      return;
-    }
+      if (
+        result.response.status === 0 ||
+        result.response.status === 302 ||
+        result.response.type === "opaqueredirect" ||
+        result.response.redirected
+      ) {
+        const token = getAccessToken();
+        const downloadUrl = `${
+          process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+        }/v1/gdpr/exports/${exportStatus.id}/download?token=${encodeURIComponent(token ?? "")}`;
+        window.location.assign(downloadUrl);
+        return;
+      }
 
-    setExportMessage("Download started.");
+      if (!result.response.ok) {
+        setExportError(describeGeneratedError(result.error));
+        return;
+      }
+
+      setExportMessage("Download started.");
+    } catch (err) {
+      setExportPending(null);
+      setExportError("An unexpected error occurred while fetching the export.");
+    }
   }
 
   async function submitDeletionRequest(

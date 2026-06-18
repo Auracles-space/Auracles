@@ -12,6 +12,7 @@ vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
   describeGeneratedError: vi.fn(() => "The request could not be completed."),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer test-token" })),
+  getAccessToken: vi.fn(() => "test-token"),
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -83,5 +84,40 @@ describe("PurchaseHistoryTable", () => {
     expect(
       await screen.findByText("Invoice is being prepared."),
     ).toBeInTheDocument();
+  });
+
+  it("redirects to the backend invoice download URL when invoice is ready", async () => {
+    vi.mocked(getFrameworkPurchaseInvoice).mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: {
+        ok: true,
+        redirected: true,
+        status: 200,
+        url: "https://s3.test/invoice.pdf",
+      } as Response,
+    });
+    vi.stubGlobal("location", {
+      assign: vi.fn(),
+    });
+
+    render(<PurchaseHistoryTable />);
+
+    expect(await screen.findByText("Diligence Control Playbook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Invoice" }));
+
+    await waitFor(() => {
+      expect(getFrameworkPurchaseInvoice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { transaction_id: purchase.transaction_id },
+          redirect: "manual",
+        }),
+      );
+    });
+    expect(location.assign).toHaveBeenCalledWith(
+      `http://localhost:8000/v1/financials/purchases/${purchase.transaction_id}/invoice?token=test-token`,
+    );
   });
 });
