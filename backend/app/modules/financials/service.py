@@ -537,6 +537,11 @@ async def get_framework_purchase_invoice(
     generate_invoice_pdf.delay(str(transaction_id))
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
         content=InvoiceGenerationResponse(
             transaction_id=transaction_id,
             status="generating",

@@ -73,7 +73,12 @@ export function PurchaseHistoryTable() {
 
       while (!isDone && attempts < maxAttempts) {
         const result = await getFrameworkPurchaseInvoice({
-          headers: getAccessTokenHeaders(),
+          headers: {
+            ...getAccessTokenHeaders(),
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+          },
           path: { transaction_id: transactionId },
           redirect: "manual",
         });
