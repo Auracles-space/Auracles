@@ -42,7 +42,7 @@ function FilterTags({ filters }: { filters: Record<string, unknown> }) {
 
   if (entries.length === 0) {
     return (
-      <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground-muted">
+      <span className="rounded-md border border-border-default bg-surface-3 px-2.5 py-1 text-xs font-medium text-foreground-muted">
         All marketplace items
       </span>
     );
@@ -52,7 +52,7 @@ function FilterTags({ filters }: { filters: Record<string, unknown> }) {
     <div className="flex flex-wrap gap-2">
       {entries.slice(0, 6).map(([key, value]) => (
         <span
-          className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground-muted"
+          className="rounded-md border border-border-default bg-surface-3 px-2.5 py-1 text-xs font-medium text-foreground-muted"
           key={key}
         >
           {formatLabel(key)}: {formatLabel(String(value))}
@@ -207,53 +207,69 @@ export function SavedSearchesPanel() {
           {savedSearches.map((savedSearch) => {
             const pendingType =
               pending?.id === savedSearch.id ? pending.type : null;
+            const currentName = names[savedSearch.id] ?? savedSearch.name;
+            const isNameEdited =
+              names[savedSearch.id] !== undefined &&
+              currentName.trim() !== "" &&
+              currentName.trim() !== savedSearch.name.trim();
+
             return (
               <article
                 aria-label={savedSearch.name}
-                className="group rounded-xl border border-border-default bg-surface-1 p-5 transition-colors hover:bg-surface-2"
+                className="group rounded-2xl border border-border-default bg-surface-1 p-6 shadow-bento transition-all duration-300 hover:border-accent/30 hover:shadow-card"
                 key={savedSearch.id}
               >
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <label className="min-w-0 flex-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted transition-colors group-hover:text-accent">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Column - Input and Filter summary */}
+                  <div className="lg:col-span-8 flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row items-end gap-3">
+                      <label className="min-w-0 flex-1 w-full">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-accent mb-2 block">
                           Saved search name
                         </span>
                         <input
-                          className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-surface-1 px-4 py-2 text-sm font-medium text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+                          className="min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 py-2 text-sm font-medium text-foreground outline-none transition-all focus-visible:border-accent focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-accent"
                           onChange={(event) =>
                             setNames((current) => ({
                               ...current,
                               [savedSearch.id]: event.target.value,
                             }))
                           }
-                          value={names[savedSearch.id] ?? savedSearch.name}
+                          value={currentName}
                         />
                       </label>
                       <button
-                        className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-strong bg-background px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-1 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 sm:self-end"
-                        disabled={pendingType === "rename"}
+                        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl border border-border-default bg-background px-5 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 shrink-0"
+                        disabled={pendingType === "rename" || !isNameEdited}
                         onClick={() => void renameSavedSearch(savedSearch)}
                         type="button"
                       >
                         {pendingType === "rename" ? "Saving..." : "Save name"}
                       </button>
                     </div>
-                    <div className="mt-5">
+
+                    {/* Nested Filter Summary container (Surface Level 2) */}
+                    <div className="rounded-xl border border-border-default/40 bg-surface-2/60 p-4 mt-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-foreground-subtle mb-2.5 block">
+                        Search Parameters
+                      </span>
                       <FilterTags filters={savedSearch.filters} />
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 pt-1 lg:justify-end">
+                  {/* Right Column - Actions Panel */}
+                  <div className="lg:col-span-4 flex flex-col sm:flex-row lg:flex-col items-stretch justify-end lg:justify-start gap-2.5 border-t border-border-default/50 lg:border-t-0 pt-4 lg:pt-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-foreground-subtle mb-1 hidden lg:block text-right">
+                      Actions
+                    </span>
                     <Link
-                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent text-center w-full"
                       href={savedSearchFiltersToHref(savedSearch.filters)}
                     >
                       Open
                     </Link>
                     <button
-                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 w-full"
                       disabled={pendingType === "toggle"}
                       onClick={() => void toggleAlerts(savedSearch)}
                       type="button"
@@ -262,7 +278,7 @@ export function SavedSearchesPanel() {
                       {savedSearch.alert_enabled ? "Disable alerts" : "Enable alerts"}
                     </button>
                     <button
-                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/5 px-4 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60 w-full"
                       disabled={pendingType === "delete"}
                       onClick={() => void removeSavedSearch(savedSearch)}
                       type="button"

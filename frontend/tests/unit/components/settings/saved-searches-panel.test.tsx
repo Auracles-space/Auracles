@@ -96,10 +96,15 @@ describe("SavedSearchesPanel", () => {
     render(<SavedSearchesPanel />);
 
     const row = await screen.findByRole("article", { name: /risk playbooks/i });
+    const saveButton = within(row).getByRole("button", { name: /save name/i });
+    expect(saveButton).toBeDisabled();
+
     fireEvent.change(within(row).getByLabelText(/saved search name/i), {
       target: { value: "Updated playbooks" },
     });
-    fireEvent.click(within(row).getByRole("button", { name: /save name/i }));
+    expect(saveButton).not.toBeDisabled();
+
+    fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(updateSavedSearch).toHaveBeenCalledWith({

@@ -4,14 +4,13 @@
  * Server-rendered for SEO and fast public browsing. Authenticated action gates
  * are handled only when users attempt write/download actions.
  */
-import { cookies } from "next/headers";
-
 import { FilterSidebar } from "@/components/modules/explore/filter-sidebar";
 import {
   CollectionCard,
   FrameworkCard,
 } from "@/components/modules/explore/framework-card";
 import { ExploreSaveSearchAction } from "@/components/modules/explore/save-search-action";
+import { SortMenu } from "@/components/modules/explore/sort-menu";
 import type {
   ExploreAttestationStatus,
   ExploreCatalogResponse,
@@ -34,7 +33,7 @@ import {
   type MarketplaceOption,
 } from "@/lib/marketplace/taxonomy";
 import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
-import { verifySessionHintCookie } from "@/lib/auth/session-hint-cookie";
+import { getVerifiedSessionHintFromCookies } from "@/lib/auth/server-session";
 
 type ExplorePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -179,24 +178,16 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
   };
 
   // Saving a search persists per-user state, so only offer it to authenticated
-  // viewers. The signed session-hint cookie is the same UX signal the auth
-  // middleware uses; backend RBAC stays authoritative on the write itself.
-  const sessionSecret = process.env.SESSION_HINT_SECRET;
-  const sessionHint = sessionSecret
-    ? await verifySessionHintCookie(
-        (await cookies()).get("session_hint")?.value,
-        sessionSecret,
-      ).catch(() => null)
-    : null;
-  const isAuthenticated = sessionHint !== null;
+  // viewers. Backend RBAC stays authoritative on the write itself.
+  const isAuthenticated = (await getVerifiedSessionHintFromCookies()) !== null;
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
 
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto w-full max-w-[1600px]">
-        <div className="flex flex-col gap-8 lg:flex-row">
-          <div className="w-full lg:w-64 lg:shrink-0">
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+          <div className="w-full lg:sticky lg:top-20 lg:w-64 lg:shrink-0 lg:self-start lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
             {/* Mobile Filters Accordion */}
             <div className="block lg:hidden mb-4">
               <details className="group rounded-xl border border-border-default bg-surface-1 overflow-hidden">
@@ -231,15 +222,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
               <p className="text-sm font-medium text-foreground-muted">{catalog?.total ?? 0} marketplace items</p>
               
               <div className="flex items-center gap-3">
-                <button className="flex items-center gap-2 rounded-xl border border-border-default px-3 py-1.5 text-sm font-medium text-foreground-muted hover:bg-surface-2 transition-colors">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  Sort: Newest
-                  <svg className="h-3 w-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+                <SortMenu active={filterActive} current={query.sort ?? "newest"} />
               </div>
             </div>
             {isAuthenticated ? (
