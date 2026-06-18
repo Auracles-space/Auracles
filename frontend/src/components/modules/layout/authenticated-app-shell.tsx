@@ -43,7 +43,7 @@ export function AuthenticatedAppShell({
         </div>
         <nav aria-label="Application navigation" className="flex-1 space-y-1.5 px-4 py-6">
           {links.map((link) => {
-            const isActive = pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore");
+            const isActive = pathname.startsWith(link.href);
             return (
               <Link
                 className={[
@@ -109,7 +109,7 @@ export function AuthenticatedAppShell({
                       <Link
                         className={[
                           "rounded-xl px-3 py-2 text-sm font-medium transition-colors",
-                          pathname.startsWith(link.href) && (link.href !== "/explore" || pathname === "/explore")
+                          pathname.startsWith(link.href)
                             ? "bg-surface-2 text-foreground"
                             : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
                         ].join(" ")}

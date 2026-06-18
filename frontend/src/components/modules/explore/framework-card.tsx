@@ -115,7 +115,10 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
 
         {/* Title & Price Row */}
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 className="font-heading text-lg font-semibold leading-snug text-foreground group-hover:text-accent transition-colors">
+          <h2 
+            className="font-heading text-lg font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2"
+            title={framework.title}
+          >
             <Link
               href={`/explore/${framework.id}`}
               className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -223,7 +226,10 @@ export function CollectionCard({ collection }: CollectionCardProps) {
 
         {/* Title & Price Row */}
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 className="font-heading text-lg font-semibold leading-snug text-foreground transition-colors group-hover:text-accent">
+          <h2 
+            className="font-heading text-lg font-semibold leading-snug text-foreground transition-colors group-hover:text-accent line-clamp-2"
+            title={collection.title}
+          >
             <Link
               href={`/explore/collections/${collection.id}`}
               className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
