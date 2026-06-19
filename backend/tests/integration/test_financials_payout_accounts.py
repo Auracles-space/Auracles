@@ -347,3 +347,59 @@ async def test_contributor_lists_and_soft_deletes_payout_account_with_totp(
     assert payout_account is not None
     assert payout_account.deleted_at is not None
     assert audit is not None
+
+
+async def test_payout_account_onboarding_reuses_existing_account(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Initiating onboarding twice for the same contributor reuses the existing payout account."""
+    contributor_id, _ = await create_user_with_roles(
+        "stripe-contributor-reuse@auracles.space",
+        ["contributor"],
+    )
+
+    payload = {
+        "provider": "stripe",
+        "country": "US",
+        "refresh_url": "https://auracles.space/settings/payout-accounts",
+        "return_url": "https://auracles.space/dashboard/payouts",
+    }
+
+    # First onboarding call
+    response1 = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+    assert response1.status_code == 200
+    body1 = response1.json()
+    account_id_1 = body1["payout_account"]["id"]
+
+    # Second onboarding call (re-initiating)
+    response2 = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+    assert response2.status_code == 200
+    body2 = response2.json()
+    account_id_2 = body2["payout_account"]["id"]
+
+    # Assertions
+    assert account_id_1 == account_id_2
+
+    # Verify Stripe account creation was only called once, but link creation was called twice
+    assert len(payout_account_context["calls"]["stripe_accounts"]) == 1
+    assert len(payout_account_context["calls"]["stripe_links"]) == 2
+
+    # Verify only one PayoutAccount exists in the database for this user
+    async with async_session_factory() as session:
+        accounts = (
+            await session.execute(
+                select(PayoutAccount).where(PayoutAccount.user_id == contributor_id)
+            )
+        ).scalars().all()
+        assert len(accounts) == 1
+

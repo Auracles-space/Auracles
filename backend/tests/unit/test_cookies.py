@@ -48,7 +48,7 @@ def test_set_refresh_cookie_uses_runtime_samesite_none() -> None:
     assert "secure" in header.lower()
 
 
-def test_set_refresh_cookie_omits_secure_in_local_strict() -> None:
+def test_set_refresh_cookie_omits_secure_in_local_lax() -> None:
     """Local http dev must not mark the refresh cookie Secure.
 
     Safari (and any browser that does not treat http://localhost as a secure
@@ -56,14 +56,14 @@ def test_set_refresh_cookie_omits_secure_in_local_strict() -> None:
     unreadable so the session gate refresh fails and forces an immediate logout
     right after login.
     """
-    settings = Settings(ENVIRONMENT="local")  # COOKIE_SAMESITE defaults to strict
+    settings = Settings(ENVIRONMENT="local")  # COOKIE_SAMESITE defaults to lax
     response = Response()
 
     set_refresh_cookie(response, "token-value", settings=settings)
 
     header = _cookie_header(response, REFRESH_COOKIE_NAME)
     assert "secure" not in header.lower()
-    assert "samesite=strict" in header.lower()
+    assert "samesite=lax" in header.lower()
     assert "httponly" in header.lower()
 
 
@@ -111,15 +111,15 @@ def test_clear_refresh_cookie_echoes_samesite_none() -> None:
     assert "max-age=0" in header.lower()
 
 
-def test_clear_refresh_cookie_defaults_to_strict_in_local() -> None:
-    """Local deployments keep SameSite=Strict and clear with the same attribute."""
+def test_clear_refresh_cookie_defaults_to_lax_in_local() -> None:
+    """Local deployments keep SameSite=Lax and clear with the same attribute."""
     settings = Settings(ENVIRONMENT="local")
     response = Response()
 
     clear_refresh_cookie(response, settings=settings)
 
     header = _cookie_header(response, REFRESH_COOKIE_NAME)
-    assert "samesite=strict" in header.lower()
+    assert "samesite=lax" in header.lower()
 
 
 def test_clear_session_hint_cookie_echoes_samesite_none() -> None:
@@ -139,12 +139,12 @@ def test_clear_session_hint_cookie_echoes_samesite_none() -> None:
     assert "max-age=0" in header.lower()
 
 
-def test_clear_session_hint_cookie_defaults_to_strict() -> None:
-    """Default deployment leaves session_hint with SameSite=Strict on clear."""
+def test_clear_session_hint_cookie_defaults_to_lax() -> None:
+    """Default deployment leaves session_hint with SameSite=Lax on clear."""
     settings = Settings(ENVIRONMENT="local")
     response = Response()
 
     clear_session_hint_cookie(response, settings=settings)
 
     header = _cookie_header(response, SESSION_HINT_COOKIE_NAME)
-    assert "samesite=strict" in header.lower()
+    assert "samesite=lax" in header.lower()

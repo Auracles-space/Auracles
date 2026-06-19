@@ -1425,6 +1425,47 @@ async def onboard_payout_account(
     """Create a provider-held payout destination for a KYC-verified Contributor."""
     contributor_id = contributor.id
 
+    # Reuse the existing active Stripe account to avoid orphan express accounts on Stripe
+    existing_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.user_id == contributor_id,
+            PayoutAccount.provider == payload.provider,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+
+    if existing_account is not None:
+        try:
+            provider_account_id = _provider_account_id_plaintext(existing_account)
+            account_link = await stripe.create_account_link(
+                account_id=provider_account_id,
+                refresh_url=payload.refresh_url,
+                return_url=payload.return_url,
+            )
+            onboarding_url = account_link.url
+        except StripeProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="onboard_payout_account",
+                user_id=contributor_id,
+            ).error("payout_account_provider_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payout provider is unavailable.",
+            ) from exc
+
+        logger.bind(
+            module="financials",
+            action="onboard_payout_account",
+            user_id=contributor_id,
+        ).info("payout_account_onboard_reinitiated")
+
+        return PayoutAccountOnboardResponse(
+            provider=payload.provider,
+            onboarding_url=onboarding_url,
+            payout_account=_payout_account_response(existing_account),
+        )
+
     try:
         stripe_account = await stripe.create_express_account(
             email=contributor.email,

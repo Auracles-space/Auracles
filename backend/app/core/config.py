@@ -112,8 +112,8 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         alias="CORS_ALLOWED_ORIGINS",
     )
-    cookie_samesite: Literal["strict", "none"] = Field(
-        default="strict",
+    cookie_samesite: Literal["strict", "lax", "none"] = Field(
+        default="lax",
         alias="COOKIE_SAMESITE",
     )
     cookie_secure_override: bool | None = Field(
