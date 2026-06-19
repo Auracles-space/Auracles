@@ -108,6 +108,7 @@ function LibraryCard({ item }: LibraryCardProps) {
     async function loadArtifacts() {
       configureBrowserClient();
       const result = await getExploreFrameworkDetail({
+        headers: getAccessTokenHeaders(),
         path: { framework_id: item.framework_id },
       });
       if (!result.response.ok || !result.data) {

@@ -1144,3 +1144,59 @@ async def test_related_frameworks_use_tag_category_and_sector_overlap(
     titles = [item["title"] for item in response.json()]
     assert titles[0] == "Board Controls Companion"
     assert "Risk Control Hub" not in titles
+
+
+async def test_explore_delisted_framework_accessible_to_licensed_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Delisted (unpublished) frameworks must return 200 for licensed operators and 404 for others."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user("delisted-seller@auracles.space", ["contributor"])
+    operator_id = await create_user("delisted-buyer@auracles.space", ["operator"])
+    unlicensed_operator_id = await create_user("unlicensed-buyer-delisted@auracles.space", ["operator"])
+
+    # Create an unpublished/delisted framework
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Delisted Risk Framework",
+        status="unpublished",
+    )
+
+    # Grant active license to the buyer
+    async with async_session_factory() as session:
+        async with session.begin():
+            license_row = License(
+                id=uuid4(),
+                framework_id=framework_id,
+                operator_id=operator_id,
+                license_type="single_user",
+                status="active",
+                version_at_grant="1.0.0",
+            )
+            session.add(license_row)
+
+    # 1. Licensed operator requests details -> Should succeed and return 200 and owned=True
+    response = await client.get(
+        f"/v1/explore/frameworks/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "Delisted Risk Framework"
+    assert body["owned"] is True
+
+    # 2. Unlicensed operator requests details -> Should return 404 Not Found
+    response_unlicensed = await client.get(
+        f"/v1/explore/frameworks/{framework_id}",
+        headers=auth_headers(unlicensed_operator_id, ["operator"]),
+    )
+    assert response_unlicensed.status_code == 404
+
+    # 3. Unauthenticated request -> Should return 404 Not Found
+    response_unauth = await client.get(
+        f"/v1/explore/frameworks/{framework_id}"
+    )
+    assert response_unauth.status_code == 404
+

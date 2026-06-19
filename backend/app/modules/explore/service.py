@@ -1009,9 +1009,30 @@ async def get_detail(
     client_ip: str,
 ) -> ExploreFrameworkDetail:
     """Return public detail for one published Framework."""
+    # Attempt loading from the public catalog first.
     framework = await db.scalar(
         _base_catalog_query(current_user_id).where(Framework.id == framework_id)
     )
+    has_active_license = False
+
+    # Allow access if the user holds an active license.
+    if current_user_id is not None:
+        now = datetime.now(UTC)
+        license_count = await db.scalar(
+            select(func.count(License.id)).where(
+                License.operator_id == current_user_id,
+                License.framework_id == framework_id,
+                License.status == "active",
+                or_(License.expires_at.is_(None), License.expires_at > now),
+            )
+        )
+        if license_count and license_count > 0:
+            has_active_license = True
+            if framework is None:
+                framework = await db.scalar(
+                    select(Framework).where(Framework.id == framework_id)
+                )
+
     if framework is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1051,6 +1072,7 @@ async def get_detail(
         contributor_names.get(framework.contributor_id, "Contributor"),
         reputations.get(framework.id),
     )
+    card.owned = has_active_license
     return ExploreFrameworkDetail(
         **card.model_dump(),
         preview_artifact_id=framework.preview_artifact_id,
