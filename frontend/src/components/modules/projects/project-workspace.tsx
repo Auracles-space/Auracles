@@ -6,6 +6,7 @@
  * This component intentionally keeps the Project flow in one operational screen:
  * brief, proposals, milestones, workspace messages, and deliverable actions.
  */
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
@@ -101,9 +102,30 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [myProposals, setMyProposals] = useState<ProposalResponse[]>([]);
   const [milestones, setMilestones] = useState<MilestoneResponse[]>([]);
   const [messages, setMessages] = useState<WorkspaceMessageResponse[]>([]);
-  const [lastDeliverable, setLastDeliverable] = useState<DeliverableResponse | null>(
-    null,
-  );
+  const [lastDeliverable, setLastDeliverable] = useState<DeliverableResponse | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.sessionStorage.getItem(`last_deliverable:${projectId}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved) as DeliverableResponse;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+
+  const updateLastDeliverable = useCallback((deliverable: DeliverableResponse | null) => {
+    setLastDeliverable(deliverable);
+    if (typeof window !== "undefined") {
+      if (deliverable) {
+        window.sessionStorage.setItem(`last_deliverable:${projectId}`, JSON.stringify(deliverable));
+      } else {
+        window.sessionStorage.removeItem(`last_deliverable:${projectId}`);
+      }
+    }
+  }, [projectId]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [proposalScope, setProposalScope] = useState("");
@@ -332,7 +354,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       setError(describeGeneratedError(result.error));
       return;
     }
-    setLastDeliverable(result.data);
+    updateLastDeliverable(result.data);
     setMessages((current) => [
       {
         body: null,
@@ -370,7 +392,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       setError(describeGeneratedError(result.error));
       return;
     }
-    setLastDeliverable(result.data);
+    updateLastDeliverable(result.data);
     setNotice("Deliverable approved.");
     void loadWorkspace();
   }
@@ -408,6 +430,28 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 md:px-8">
+      <div className="flex items-center">
+        <Link
+          className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline"
+          href="/projects"
+        >
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to projects
+        </Link>
+      </div>
+
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

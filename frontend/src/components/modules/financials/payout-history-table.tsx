@@ -96,14 +96,22 @@ export function PayoutHistoryTable() {
             Request transfers to your verified Stripe Connect account.
           </p>
         </div>
-        <button
-          className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!accounts.some((account) => account.verified_at)}
-          onClick={() => setModalOpen(true)}
-          type="button"
-        >
-          Request payout
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            href="/settings/payout-accounts"
+          >
+            Manage payout accounts
+          </Link>
+          <button
+            className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!accounts.some((account) => account.verified_at)}
+            onClick={() => setModalOpen(true)}
+            type="button"
+          >
+            Request payout
+          </button>
+        </div>
       </div>
 
       {accounts.length === 0 ? (
@@ -248,9 +256,11 @@ export function PayoutRequestModal({
       aria-modal="true"
       className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-4"
       role="dialog"
+      onClick={onClose}
     >
       <form
         className="w-full rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-w-md sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
       >
         <div className="flex items-start justify-between gap-4">
