@@ -22,6 +22,19 @@ function base64Url(value: string): string {
     .replace(/=+$/, "");
 }
 
+function fakeAccessToken(roles: string[]): string {
+  const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const payload = base64Url(
+    JSON.stringify({
+      exp: Math.floor(Date.now() / 1000) + 900,
+      roles,
+      sub: "00000000-0000-4000-8000-000000000001",
+      totp_verified: true,
+    }),
+  );
+  return `${header}.${payload}.signature`;
+}
+
 /**
  * Create a signed Developer session hint accepted by middleware.
  */
@@ -81,6 +94,29 @@ async function mockDeveloperPlatformApi(page: Page): Promise<void> {
 
     if (request.method() === "OPTIONS") {
       await fulfillJson(route, {}, 204);
+      return;
+    }
+
+    if (path === "/v1/auth/me") {
+      await fulfillJson(route, {
+        avatar_url: null,
+        deactivated_at: null,
+        display_name: "Developer User",
+        email: "developer@example.com",
+        email_verified: true,
+        id: "00000000-0000-4000-8000-000000000001",
+        kyc_status: "verified",
+        roles: ["developer"],
+      });
+      return;
+    }
+
+    if (path === "/v1/auth/refresh") {
+      await fulfillJson(route, {
+        access_token: fakeAccessToken(["developer"]),
+        expires_in: 900,
+        token_type: "bearer",
+      });
       return;
     }
 

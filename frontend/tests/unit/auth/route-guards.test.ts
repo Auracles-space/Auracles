@@ -32,6 +32,7 @@ describe("auth route guards", () => {
     [["attestor"], "/attestor/assignments"],
     [["operator"], "/explore"],
     [["contributor"], "/dashboard"],
+    [["developer"], "/dashboard/developer"],
     [["operator", "contributor"], "/dashboard"],
   ])("maps %s to %s", (roles, expectedPath) => {
     expect(getRoleLandingPath(roles)).toBe(expectedPath);
@@ -65,6 +66,9 @@ describe("auth route guards", () => {
     ["/admin", ["admin"]],
     ["/attestations", ["attestor"]],
     ["/dashboard/frameworks", ["contributor"]],
+    ["/dashboard/developer", ["operator"]],
+    ["/dashboard/developer", ["contributor"]],
+    ["/dashboard/developer", ["developer"]],
     ["/library", ["operator"]],
     ["/projects/project-1", ["operator"]],
     ["/projects/project-1", ["contributor"]],

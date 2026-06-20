@@ -49,31 +49,8 @@ export function useDeveloperPortal() {
     configureBrowserClient();
     setError(null);
     const headers = getAccessTokenHeaders();
-    const [
-      applications,
-      apiKeys,
-      tier,
-      usage,
-      sales,
-      webhooks,
-      payouts,
-      payoutAccounts,
-    ] = await Promise.all([
-      listMyDeveloperApplicationsV1DeveloperApplicationsMineGet({ headers }),
-      listApiKeysV1DeveloperApiKeysGet({ headers }),
-      getDeveloperTierProgressV1DeveloperTierGet({ headers }),
-      getDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGet({
-        headers,
-        query: { days: 30 },
-      }),
-      getDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGet({
-        headers,
-        query: { days: 30 },
-      }),
-      listPartnerWebhooksV1DeveloperWebhooksGet({ headers }),
-      listPartnerPayoutsV1DeveloperPayoutsGet({ headers }),
-      listPayoutAccounts({ headers }),
-    ]);
+
+    const applications = await listMyDeveloperApplicationsV1DeveloperApplicationsMineGet({ headers });
 
     if (!applications.response.ok || !applications.data) {
       setError(describeGeneratedError(applications.error));
@@ -81,20 +58,61 @@ export function useDeveloperPortal() {
       return;
     }
 
-    setData({
-      applications: applications.data.applications,
-      apiKeys: apiKeys.response.ok && apiKeys.data ? apiKeys.data.api_keys : [],
-      payoutAccounts:
-        payoutAccounts.response.ok && payoutAccounts.data
-          ? payoutAccounts.data.payout_accounts
-          : [],
-      payouts: payouts.response.ok && payouts.data ? payouts.data.payouts : [],
-      sales: sales.response.ok && sales.data ? sales.data : null,
-      tier: tier.response.ok && tier.data ? tier.data : null,
-      usage: usage.response.ok && usage.data ? usage.data : null,
-      webhooks:
-        webhooks.response.ok && webhooks.data ? webhooks.data.webhooks : [],
-    });
+    const appList = applications.data.applications;
+    const latestApp = appList[0] ?? null;
+    const isApproved = latestApp?.status === "approved";
+
+    if (isApproved) {
+      const [
+        apiKeys,
+        tier,
+        usage,
+        sales,
+        webhooks,
+        payouts,
+        payoutAccounts,
+      ] = await Promise.all([
+        listApiKeysV1DeveloperApiKeysGet({ headers }),
+        getDeveloperTierProgressV1DeveloperTierGet({ headers }),
+        getDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGet({
+          headers,
+          query: { days: 30 },
+        }),
+        getDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGet({
+          headers,
+          query: { days: 30 },
+        }),
+        listPartnerWebhooksV1DeveloperWebhooksGet({ headers }),
+        listPartnerPayoutsV1DeveloperPayoutsGet({ headers }),
+        listPayoutAccounts({ headers }),
+      ]);
+
+      setData({
+        applications: appList,
+        apiKeys: apiKeys.response.ok && apiKeys.data ? apiKeys.data.api_keys : [],
+        payoutAccounts:
+          payoutAccounts.response.ok && payoutAccounts.data
+            ? payoutAccounts.data.payout_accounts
+            : [],
+        payouts: payouts.response.ok && payouts.data ? payouts.data.payouts : [],
+        sales: sales.response.ok && sales.data ? sales.data : null,
+        tier: tier.response.ok && tier.data ? tier.data : null,
+        usage: usage.response.ok && usage.data ? usage.data : null,
+        webhooks:
+          webhooks.response.ok && webhooks.data ? webhooks.data.webhooks : [],
+      });
+    } else {
+      setData({
+        applications: appList,
+        apiKeys: [],
+        payoutAccounts: [],
+        payouts: [],
+        sales: null,
+        tier: null,
+        usage: null,
+        webhooks: [],
+      });
+    }
     setLoading(false);
   }
 

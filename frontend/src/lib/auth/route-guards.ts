@@ -31,6 +31,7 @@ const protectedPathPrefixes: RoleProtectedPrefix[] = [
   { prefix: "/attestations", requiredRoles: ["attestor"] },
   { prefix: "/attestor", requiredRoles: ["attestor"] },
   { prefix: "/checkout", requiredRoles: ["operator"] },
+  { prefix: "/dashboard/developer", requiredRoles: null },
   { prefix: "/dashboard", requiredRoles: ["contributor"] },
   { prefix: "/library", requiredRoles: ["operator"] },
   { prefix: "/projects", requiredRoles: ["operator", "contributor"] },
@@ -54,6 +55,9 @@ export function getRoleLandingPath(roles: string[]): string {
   // pure operator still lands on Explore.
   if (roles.includes("contributor")) {
     return "/dashboard";
+  }
+  if (roles.includes("developer")) {
+    return "/dashboard/developer";
   }
   if (roles.includes("operator")) {
     return "/explore";
