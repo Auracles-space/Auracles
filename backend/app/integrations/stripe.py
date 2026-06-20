@@ -493,7 +493,7 @@ def verify_webhook(
     if not signature_header:
         raise StripeProviderError("Stripe-Signature header is missing.")
     resolved_settings = settings or get_settings()
-    secret = _require_webhook_secret(resolved_settings)
+    secret_value = _require_webhook_secret(resolved_settings)
     timestamp, signatures = _parse_signature_header(signature_header)
     current_timestamp = int(now.timestamp() if now else time.time())
     if abs(current_timestamp - timestamp) > tolerance_seconds:
@@ -504,8 +504,17 @@ def verify_webhook(
     except UnicodeDecodeError as exc:
         raise StripeProviderError("Stripe webhook payload is not valid UTF-8.") from exc
     signed_payload = f"{timestamp}.{decoded_payload}".encode()
-    expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
-    if not any(hmac.compare_digest(expected, candidate) for candidate in signatures):
+
+    # Support multiple secrets for concurrent standard and connect webhook endpoints
+    secrets = [s.strip() for s in secret_value.split(",") if s.strip()]
+    verified = False
+    for secret in secrets:
+        expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        if any(hmac.compare_digest(expected, candidate) for candidate in signatures):
+            verified = True
+            break
+
+    if not verified:
         raise StripeProviderError("Stripe webhook signature verification failed.")
 
     try:

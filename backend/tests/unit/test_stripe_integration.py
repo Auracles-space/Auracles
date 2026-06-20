@@ -189,3 +189,48 @@ def test_stripe_webhook_signature_matrix_accepts_only_valid_raw_payload() -> Non
             settings=STRIPE_SETTINGS,
             now=now,
         )
+
+
+def test_stripe_webhook_multiple_secrets() -> None:
+    """Webhook verification accepts signatures matching any of the comma-separated secrets."""
+    payload = json.dumps(
+        {"id": "evt_123", "type": "payment_intent.succeeded"},
+        separators=(",", ":"),
+    ).encode()
+    now = datetime(2026, 6, 9, tzinfo=UTC)
+
+    # Configure multiple secrets in settings
+    multi_settings = Settings(
+        STRIPE_SECRET_KEY="sk_test_123",
+        STRIPE_WEBHOOK_SECRET="whsec_first_secret, whsec_second_secret",
+    )
+
+    # Signature generated with the first secret
+    sig1 = make_test_signature_header(
+        payload,
+        secret="whsec_first_secret",
+        timestamp=int(now.timestamp()),
+    )
+    # Signature generated with the second secret
+    sig2 = make_test_signature_header(
+        payload,
+        secret="whsec_second_secret",
+        timestamp=int(now.timestamp()),
+    )
+
+    # Both should pass
+    event1 = verify_webhook(payload, sig1, settings=multi_settings, now=now)
+    event2 = verify_webhook(payload, sig2, settings=multi_settings, now=now)
+
+    assert event1["id"] == "evt_123"
+    assert event2["id"] == "evt_123"
+
+    # An invalid signature should still fail
+    with pytest.raises(StripeProviderError):
+        verify_webhook(
+            payload,
+            sig1.replace("v1=", "v1=bad"),
+            settings=multi_settings,
+            now=now,
+        )
+
