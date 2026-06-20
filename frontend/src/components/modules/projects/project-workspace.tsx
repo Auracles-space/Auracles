@@ -103,63 +103,93 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [proposalScope, setProposalScope] = useState(
-    "I will deliver the operating model and rollout plan.",
-  );
-  const [proposalBudget, setProposalBudget] = useState("1500.00");
+  const [proposalScope, setProposalScope] = useState("");
+  const [proposalBudget, setProposalBudget] = useState("");
   const [milestoneForm, setMilestoneForm] =
     useState<MilestoneFormState>(initialMilestoneForm);
   const deliverableName = "Final playbook";
   const deliverableDescription = "Approved implementation playbook and rollout guide.";
-  const [messageBody, setMessageBody] = useState("Implementation update posted.");
+  const [messageBody, setMessageBody] = useState("");
   const realtime = useProjectRealtime(projectId);
 
   const headers = useMemo(() => getAccessTokenHeaders(), []);
 
+  const currentUserId = authTokenStore.getState().userId;
   const userRoles = authTokenStore.getState().roles;
   const isOperator = userRoles.includes("operator");
   const isContributor = userRoles.includes("contributor");
+
+  // Project-specific roles and ownership
+  const isProjectOwner = project !== null && project.operator_id === currentUserId;
+  const isAssignedContributor = myProposals.some((p) => p.status === "accepted");
+
+  // Gating visibility of forms and actions
+  const showProposalForm = isContributor && project !== null && !isProjectOwner && project.status === "open" && myProposals.length === 0;
+  const showAcceptButton = isProjectOwner && project?.status === "open";
+  const showMilestoneForm = isAssignedContributor && project?.milestone_plan_status === "draft";
 
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
     setError(null);
 
+    const projectResult = await getProject({ headers, path: { project_id: projectId } });
+    if (!projectResult.response.ok || !projectResult.data) {
+      setError(describeGeneratedError(projectResult.error));
+      return;
+    }
+
+    const currentProject = projectResult.data;
+    setProject(currentProject);
+
+    const hasAcceptedProposal = currentProject.accepted_proposal_id !== null;
+
     const [
-      projectResult,
       operatorProposalResult,
       myProposalResult,
-      milestonesResult,
-      messagesResult,
     ] = await Promise.all([
-      getProject({ headers, path: { project_id: projectId } }),
       isOperator
         ? listProjectProposals({ headers, path: { project_id: projectId } })
         : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
       isContributor
         ? listMyProjectProposals({ headers, path: { project_id: projectId } })
         : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
-      listMilestones({ headers, path: { project_id: projectId } }),
-      listWorkspaceMessages({ headers, path: { project_id: projectId } }),
     ]);
 
-    if (projectResult.response.ok && projectResult.data) {
-      setProject(projectResult.data);
-    } else {
-      setError(describeGeneratedError(projectResult.error));
-    }
+    let activeOperatorProposals: ProposalResponse[] = [];
+    let activeMyProposals: ProposalResponse[] = [];
+
     if (operatorProposalResult.response.ok && operatorProposalResult.data) {
-      setOperatorProposals(operatorProposalResult.data.proposals);
+      activeOperatorProposals = operatorProposalResult.data.proposals;
+      setOperatorProposals(activeOperatorProposals);
     }
     if (myProposalResult.response.ok && myProposalResult.data) {
-      setMyProposals(myProposalResult.data.proposals);
+      activeMyProposals = myProposalResult.data.proposals;
+      setMyProposals(activeMyProposals);
     }
+
+    const activeProjectOwner = currentProject.operator_id === currentUserId;
+    const activeAssignedContributor = activeMyProposals.some((p) => p.status === "accepted");
+    const activeProjectMember = activeProjectOwner || activeAssignedContributor;
+
+    const [
+      milestonesResult,
+      messagesResult,
+    ] = await Promise.all([
+      hasAcceptedProposal
+        ? listMilestones({ headers, path: { project_id: projectId } })
+        : Promise.resolve({ response: new Response(), data: { milestones: [] }, error: undefined }),
+      activeProjectMember
+        ? listWorkspaceMessages({ headers, path: { project_id: projectId } })
+        : Promise.resolve({ response: new Response(), data: { messages: [] }, error: undefined }),
+    ]);
+
     if (milestonesResult.response.ok && milestonesResult.data) {
       setMilestones(milestonesResult.data.milestones);
     }
     if (messagesResult.response.ok && messagesResult.data) {
       setMessages(messagesResult.data.messages);
     }
-  }, [headers, projectId, isOperator, isContributor]);
+  }, [headers, projectId, isOperator, isContributor, currentUserId]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -189,6 +219,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setNotice("Proposal submitted.");
     setMyProposals([result.data]);
+    setProposalScope("");
+    setProposalBudget("");
   }
 
   async function acceptProjectProposal(proposalId: string) {
@@ -401,13 +433,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             Proposals
           </h2>
-          {isContributor ? (
+          {showProposalForm ? (
             <form className="grid gap-3" onSubmit={submitProjectProposal}>
               <label className="grid gap-1 text-sm font-semibold text-foreground">
                 Proposal scope
                 <textarea
                   className="min-h-24 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
                   onChange={(event) => setProposalScope(event.target.value)}
+                  placeholder="Describe your approach, scope, and deliverables..."
                   value={proposalScope}
                 />
               </label>
@@ -416,6 +449,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 <input
                   className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
                   onChange={(event) => setProposalBudget(event.target.value)}
+                  placeholder="e.g. 1500.00"
                   value={proposalBudget}
                 />
               </label>
@@ -449,7 +483,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     <StatusBadge status={proposal.status} />
                   </div>
                   <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
-                  {isOperator && proposal.status === "pending" && project?.status === "open" ? (
+                  {showAcceptButton && proposal.status === "pending" ? (
                     <button
                       className="mt-3 min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                       onClick={() => void acceptProjectProposal(proposal.id)}
@@ -464,11 +498,18 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           </div>
         </section>
 
-        <section className="grid content-start gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            Milestones
-          </h2>
-          {isContributor ? (
+        <section className={`grid content-start gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm ${project?.status === "open" ? "opacity-60 select-none pointer-events-none" : ""}`}>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-heading text-xl font-semibold text-foreground">
+              Milestones
+            </h2>
+            {project?.status === "open" ? (
+              <span className="rounded-badge border border-border-default bg-surface-2 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+                Inactive
+              </span>
+            ) : null}
+          </div>
+          {showMilestoneForm ? (
             <form className="grid gap-3" onSubmit={addMilestone}>
               <div className="grid gap-3 md:grid-cols-3">
                 <input
@@ -558,7 +599,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     {milestone.description}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {isOperator && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
+                    {isProjectOwner && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
                       <button
                         className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                         onClick={() => void fundProjectMilestone(milestone.id)}
@@ -567,7 +608,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         Fund milestone
                       </button>
                     ) : null}
-                    {isContributor && milestone.status === "funded" ? (
+                    {isAssignedContributor && milestone.status === "funded" ? (
                       <button
                         className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
                         onClick={() => void submitMilestoneDeliverable(milestone.id)}
@@ -584,70 +625,73 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
         </section>
       </div>
 
-      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            Workspace
-          </h2>
-          {isContributor && lastDeliverable ? (
-            <PublishAsFrameworkButton
-              deliverableId={lastDeliverable.id}
-              description={lastDeliverable.description}
-              fileKeys={lastDeliverable.file_keys}
-              projectId={projectId}
-              status={lastDeliverable.status}
-              title={lastDeliverable.name}
+      {isProjectOwner || isAssignedContributor ? (
+        <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-xl font-semibold text-foreground">
+              Workspace
+            </h2>
+            {isAssignedContributor && lastDeliverable ? (
+              <PublishAsFrameworkButton
+                deliverableId={lastDeliverable.id}
+                description={lastDeliverable.description}
+                fileKeys={lastDeliverable.file_keys}
+                projectId={projectId}
+                status={lastDeliverable.status}
+                title={lastDeliverable.name}
+              />
+            ) : null}
+          </div>
+          <form className="flex flex-col gap-3 sm:flex-row" onSubmit={postWorkspaceMessage}>
+            <input
+              aria-label="Workspace message"
+              className="min-h-12 flex-1 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+              onChange={(event) => setMessageBody(event.target.value)}
+              placeholder="Type a message..."
+              value={messageBody}
             />
-          ) : null}
-        </div>
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={postWorkspaceMessage}>
-          <input
-            aria-label="Workspace message"
-            className="min-h-12 flex-1 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-            onChange={(event) => setMessageBody(event.target.value)}
-            value={messageBody}
-          />
-          <button
-            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!canPostMessage}
-            type="submit"
-          >
-            Post message
-          </button>
-        </form>
-
-        {isOperator && deliverableApprovalActions.map((action) => (
-          <button
-            className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            key={action.messageId}
-            onClick={() =>
-              void approveMilestoneDeliverable(
-                action.milestoneId ?? "",
-                action.deliverableId ?? "",
-              )
-            }
-            type="button"
-          >
-            Approve deliverable
-          </button>
-        ))}
-
-        <div className="grid gap-2">
-          {messages.map((message) => (
-            <article
-              className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-              key={message.id}
+            <button
+              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canPostMessage}
+              type="submit"
             >
-              <p className="font-semibold text-foreground">
-                {message.system_event ?? "Message"}
-              </p>
-              <p className="mt-1 text-foreground-muted">
-                {message.body ?? JSON.stringify(message.system_payload ?? {})}
-              </p>
-            </article>
+              Post message
+            </button>
+          </form>
+
+          {isProjectOwner && deliverableApprovalActions.map((action) => (
+            <button
+              className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              key={action.messageId}
+              onClick={() =>
+                void approveMilestoneDeliverable(
+                  action.milestoneId ?? "",
+                  action.deliverableId ?? "",
+                )
+              }
+              type="button"
+            >
+              Approve deliverable
+            </button>
           ))}
-        </div>
-      </section>
+
+          <div className="grid gap-2">
+            {messages.map((message) => (
+              <article
+                className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                key={message.id}
+              >
+                <p className="font-semibold text-foreground">
+                  {message.system_event ?? "Message"}
+                </p>
+                <p className="mt-1 text-foreground-muted">
+                  {message.body ?? JSON.stringify(message.system_payload ?? {})}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

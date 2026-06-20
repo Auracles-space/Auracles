@@ -421,6 +421,10 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page.getByRole("button", { name: "Post project" }).click();
 
   await expect(page.getByRole("heading", { name: "Procurement Playbook" })).toBeVisible();
+  await page
+    .getByLabel("Proposal scope")
+    .fill("I will deliver the operating model and rollout plan.");
+  await page.getByRole("textbox", { name: "Budget", exact: true }).fill("1500.00");
   await page.getByRole("button", { name: "Submit proposal" }).click();
   await expect(page.getByText("Proposal submitted.")).toBeVisible();
 
