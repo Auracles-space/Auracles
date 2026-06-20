@@ -46,6 +46,7 @@ const initialState: ProjectFormState = {
  */
 function TextField({
   label,
+  min,
   onChange,
   placeholder,
   required = false,
@@ -53,6 +54,7 @@ function TextField({
   value,
 }: {
   label: string;
+  min?: string;
   onChange: (value: string) => void;
   placeholder?: string;
   required?: boolean;
@@ -66,6 +68,7 @@ function TextField({
       </span>
       <input
         className="min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+        min={min}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}
@@ -85,6 +88,9 @@ export function ProjectCreateForm() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const today = new Date().toISOString().split("T")[0];
+  const isPastDeadline = form.deadline ? form.deadline < today : false;
+
   const isValidBudget =
     isPositiveNumber(form.budgetMin) &&
     isPositiveNumber(form.budgetMax) &&
@@ -97,6 +103,7 @@ export function ProjectCreateForm() {
     isValidBudget,
     isNonEmpty(form.deliverableName),
     isNonEmpty(form.deliverableDescription),
+    !isPastDeadline,
   );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -132,8 +139,6 @@ export function ProjectCreateForm() {
     }
     router.push(`/projects/${result.data.id}`);
   }
-
-  const today = new Date().toISOString().split("T")[0];
 
   return (
     <form className="grid gap-5" onSubmit={handleSubmit}>
@@ -220,13 +225,20 @@ export function ProjectCreateForm() {
           required
           value={form.deliverableName}
         />
-        <TextField
-          label="Deadline"
-          min={today}
-          onChange={(deadline) => setForm((current) => ({ ...current, deadline }))}
-          type="date"
-          value={form.deadline}
-        />
+        <div className="flex flex-col gap-1.5">
+          <TextField
+            label="Deadline"
+            min={today}
+            onChange={(deadline) => setForm((current) => ({ ...current, deadline }))}
+            type="date"
+            value={form.deadline}
+          />
+          {isPastDeadline ? (
+            <p className="text-xs text-[#DC2626]">
+              Deadline cannot be in the past.
+            </p>
+          ) : null}
+        </div>
       </div>
       <label className="block">
         <span className="mb-1.5 block text-sm font-semibold text-foreground">

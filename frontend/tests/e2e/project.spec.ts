@@ -394,6 +394,15 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page
     .getByLabel("Deliverable description")
     .fill("Implementation guide and supporting templates.");
+
+  const pastDate = new Date();
+  pastDate.setDate(pastDate.getDate() - 1);
+  const pastDateString = pastDate.toISOString().split("T")[0];
+  await page.getByLabel("Deadline").fill(pastDateString);
+  await expect(page.getByText("Deadline cannot be in the past.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post project" })).toBeDisabled();
+  await page.getByLabel("Deadline").fill("");
+
   await page.getByRole("button", { name: "Post project" }).click();
 
   await expect(page.getByRole("heading", { name: "Procurement Playbook" })).toBeVisible();

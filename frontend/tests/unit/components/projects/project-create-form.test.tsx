@@ -78,6 +78,26 @@ describe("ProjectCreateForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps submit disabled if deadline is in the past", () => {
+    render(<ProjectCreateForm />);
+    const submit = screen.getByRole("button", { name: /post project/i });
+
+    fillForm();
+
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - 1);
+    const pastDateString = pastDate.toISOString().split("T")[0];
+
+    fireEvent.change(screen.getByLabelText(/^deadline$/i), {
+      target: { value: pastDateString },
+    });
+
+    expect(submit).toBeDisabled();
+    expect(
+      screen.getByText(/deadline cannot be in the past/i),
+    ).toBeInTheDocument();
+  });
+
   it("creates a project and routes to its workspace", async () => {
     vi.mocked(createProject).mockResolvedValue({
       data: { id: "proj-1" },
