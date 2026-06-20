@@ -16,6 +16,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { authTokenStore } from "@/lib/auth/token-store";
 import {
   acceptProposal,
   approveDeliverable,
@@ -118,6 +119,11 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
     setError(null);
+
+    const userRoles = authTokenStore.getState().roles;
+    const isOperator = userRoles.includes("operator");
+    const isContributor = userRoles.includes("contributor");
+
     const [
       projectResult,
       operatorProposalResult,
@@ -126,8 +132,12 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       messagesResult,
     ] = await Promise.all([
       getProject({ headers, path: { project_id: projectId } }),
-      listProjectProposals({ headers, path: { project_id: projectId } }),
-      listMyProjectProposals({ headers, path: { project_id: projectId } }),
+      isOperator
+        ? listProjectProposals({ headers, path: { project_id: projectId } })
+        : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
+      isContributor
+        ? listMyProjectProposals({ headers, path: { project_id: projectId } })
+        : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
       listMilestones({ headers, path: { project_id: projectId } }),
       listWorkspaceMessages({ headers, path: { project_id: projectId } }),
     ]);
