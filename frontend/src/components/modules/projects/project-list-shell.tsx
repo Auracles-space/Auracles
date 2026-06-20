@@ -9,7 +9,8 @@
  * client.
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import { authTokenStore } from "@/lib/auth/token-store";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
+import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
 import { listProjects } from "@/lib/generated/sdk.gen";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
 
@@ -73,6 +75,41 @@ function ProjectCard({ project }: { project: ProjectResponse }) {
 }
 
 /**
+ * Render a tab panel's Project list, skeleton, or empty state.
+ *
+ * @param projects - Projects to render.
+ * @param loading - Whether the list is still loading.
+ * @param emptyText - Directional copy shown when the list is empty.
+ */
+function ProjectGrid({
+  projects,
+  loading,
+  emptyText,
+}: {
+  projects: ProjectResponse[];
+  loading: boolean;
+  emptyText: string;
+}) {
+  if (loading) {
+    return <CardSkeleton />;
+  }
+  if (projects.length === 0) {
+    return (
+      <p className="rounded-xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        {emptyText}
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {projects.map((project) => (
+        <ProjectCard key={project.id} project={project} />
+      ))}
+    </div>
+  );
+}
+
+/**
  * Render the authenticated Projects landing page.
  */
 export function ProjectListShell() {
@@ -81,6 +118,42 @@ export function ProjectListShell() {
   const [assignedProjects, setAssignedProjects] = useState<ProjectResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Roles are stable for the page lifetime; an empty list (token not yet hydrated)
+  // falls back to showing every tab so nothing is hidden from a valid session.
+  const [roles] = useState<string[]>(() => authTokenStore.getState().roles);
+  const showOperator = roles.length === 0 || roles.includes("operator");
+  const showContributor = roles.length === 0 || roles.includes("contributor");
+
+  const tabItems = useMemo<TabItem[]>(() => {
+    const items: TabItem[] = [];
+    if (showContributor) {
+      items.push({ id: "open", label: "Open" });
+    }
+    if (showOperator) {
+      items.push({ id: "posted", label: "Posted" });
+    }
+    if (showContributor) {
+      items.push({ id: "engagements", label: "My engagements" });
+    }
+    return items;
+  }, [showContributor, showOperator]);
+
+  const requestedTab = searchParams.get("tab");
+  const activeTab =
+    tabItems.find((tab) => tab.id === requestedTab)?.id ??
+    tabItems[0]?.id ??
+    "open";
+
+  function selectTab(id: string): void {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", id);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -169,49 +242,42 @@ export function ProjectListShell() {
         </div>
       ) : null}
 
-      {assignedProjects.length > 0 ? (
-        <section className="grid content-start gap-3">
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            My engagements
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {assignedProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="grid content-start gap-3">
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            My posted Projects
-          </h2>
-          {loading ? <CardSkeleton /> : null}
-          {!loading && operatorProjects.length === 0 ? (
-            <p className="rounded-xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              No posted Projects yet.
-            </p>
+      <div className="grid gap-4">
+        <Tabs
+          activeId={activeTab}
+          label="Projects"
+          onChange={selectTab}
+          tabs={tabItems}
+        />
+        <div
+          aria-labelledby={tabId(activeTab)}
+          className="outline-none"
+          id={tabPanelId(activeTab)}
+          role="tabpanel"
+          tabIndex={0}
+        >
+          {activeTab === "open" ? (
+            <ProjectGrid
+              emptyText="No open Projects available right now. Check back soon."
+              loading={loading}
+              projects={openProjects}
+            />
           ) : null}
-          {operatorProjects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </section>
-
-        <section className="grid content-start gap-3">
-          <h2 className="font-heading text-xl font-semibold text-foreground">
-            Open Projects
-          </h2>
-          {loading ? <CardSkeleton /> : null}
-          {!loading && openProjects.length === 0 ? (
-            <p className="rounded-xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              No open Projects available.
-            </p>
+          {activeTab === "posted" ? (
+            <ProjectGrid
+              emptyText="No posted Projects yet. Post one to start commissioning work."
+              loading={loading}
+              projects={operatorProjects}
+            />
           ) : null}
-          {openProjects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </section>
+          {activeTab === "engagements" ? (
+            <ProjectGrid
+              emptyText="No active engagements yet. Accepted proposals appear here."
+              loading={loading}
+              projects={assignedProjects}
+            />
+          ) : null}
+        </div>
       </div>
     </section>
   );
