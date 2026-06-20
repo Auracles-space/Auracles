@@ -267,6 +267,11 @@ async function mockProjectApi(page: Page): Promise<void> {
     }
 
     if (path === `/v1/projects/${projectId}/milestones/${milestoneId}/fund`) {
+      milestones = milestones.map((m) => ({
+        ...(m as Record<string, unknown>),
+        status: "funded",
+        funded_at: "2026-06-10T00:03:30Z",
+      }));
       await fulfillJson(route, {
         client_secret: "pi_project_secret",
         provider: "stripe",
@@ -279,6 +284,11 @@ async function mockProjectApi(page: Page): Promise<void> {
       path ===
       `/v1/projects/${projectId}/milestones/${milestoneId}/deliverables`
     ) {
+      milestones = milestones.map((m) => ({
+        ...(m as Record<string, unknown>),
+        status: "delivered",
+        submitted_at: "2026-06-10T00:04:00Z",
+      }));
       messages = [
         {
           body: null,
@@ -320,6 +330,11 @@ async function mockProjectApi(page: Page): Promise<void> {
       path ===
       `/v1/projects/${projectId}/milestones/${milestoneId}/deliverables/${deliverableId}/approve`
     ) {
+      milestones = milestones.map((m) => ({
+        ...(m as Record<string, unknown>),
+        status: "approved",
+        approved_at: "2026-06-10T00:05:00Z",
+      }));
       await fulfillJson(route, {
         approved_at: "2026-06-10T00:05:00Z",
         auto_approved: false,

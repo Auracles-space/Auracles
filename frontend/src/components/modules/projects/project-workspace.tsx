@@ -116,13 +116,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
   const headers = useMemo(() => getAccessTokenHeaders(), []);
 
+  const userRoles = authTokenStore.getState().roles;
+  const isOperator = userRoles.includes("operator");
+  const isContributor = userRoles.includes("contributor");
+
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
     setError(null);
-
-    const userRoles = authTokenStore.getState().roles;
-    const isOperator = userRoles.includes("operator");
-    const isContributor = userRoles.includes("contributor");
 
     const [
       projectResult,
@@ -159,7 +159,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     if (messagesResult.response.ok && messagesResult.data) {
       setMessages(messagesResult.data.messages);
     }
-  }, [headers, projectId]);
+  }, [headers, projectId, isOperator, isContributor]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -202,6 +202,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setProject(result.data);
     setNotice("Proposal accepted.");
+    void loadWorkspace();
   }
 
   async function addMilestone(event: React.FormEvent<HTMLFormElement>) {
@@ -223,6 +224,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setMilestones((current) => [...current, result.data]);
     setNotice("Milestone added.");
+    void loadWorkspace();
   }
 
   async function finalizePlan() {
@@ -236,6 +238,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setProject(result.data);
     setNotice("Milestone plan finalized.");
+    void loadWorkspace();
   }
 
   async function fundProjectMilestone(milestoneId: string) {
@@ -248,6 +251,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       return;
     }
     setNotice("Milestone funding started.");
+    void loadWorkspace();
   }
 
   async function submitMilestoneDeliverable(milestoneId: string) {
@@ -283,6 +287,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       ...current,
     ]);
     setNotice("Deliverable submitted.");
+    void loadWorkspace();
   }
 
   async function approveMilestoneDeliverable(
@@ -303,6 +308,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setLastDeliverable(result.data);
     setNotice("Deliverable approved.");
+    void loadWorkspace();
   }
 
   async function postWorkspaceMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -395,56 +401,66 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             Proposals
           </h2>
-          <form className="grid gap-3" onSubmit={submitProjectProposal}>
-            <label className="grid gap-1 text-sm font-semibold text-foreground">
-              Proposal scope
-              <textarea
-                className="min-h-24 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
-                onChange={(event) => setProposalScope(event.target.value)}
-                value={proposalScope}
-              />
-            </label>
-            <label className="grid gap-1 text-sm font-semibold text-foreground">
-              Budget
-              <input
-                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
-                onChange={(event) => setProposalBudget(event.target.value)}
-                value={proposalBudget}
-              />
-            </label>
-            <button
-              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!canSubmitProposal}
-              type="submit"
-            >
-              Submit proposal
-            </button>
-          </form>
+          {isContributor ? (
+            <form className="grid gap-3" onSubmit={submitProjectProposal}>
+              <label className="grid gap-1 text-sm font-semibold text-foreground">
+                Proposal scope
+                <textarea
+                  className="min-h-24 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
+                  onChange={(event) => setProposalScope(event.target.value)}
+                  value={proposalScope}
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold text-foreground">
+                Budget
+                <input
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
+                  onChange={(event) => setProposalBudget(event.target.value)}
+                  value={proposalBudget}
+                />
+              </label>
+              <button
+                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canSubmitProposal}
+                type="submit"
+              >
+                Submit proposal
+              </button>
+            </form>
+          ) : null}
 
           <div className="grid gap-2">
-            {[...operatorProposals, ...myProposals].map((proposal) => (
-              <div
-                className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                key={proposal.id}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">
-                    ${proposal.budget} · {proposal.timeline_days} days
-                  </p>
-                  <StatusBadge status={proposal.status} />
+            {operatorProposals.length === 0 && myProposals.length === 0 ? (
+              <p className="text-sm text-foreground-muted italic">
+                {isOperator
+                  ? "No proposals submitted yet."
+                  : "Submit a proposal below to bid on this project."}
+              </p>
+            ) : (
+              [...operatorProposals, ...myProposals].map((proposal) => (
+                <div
+                  className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                  key={proposal.id}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">
+                      ${proposal.budget} · {proposal.timeline_days} days
+                    </p>
+                    <StatusBadge status={proposal.status} />
+                  </div>
+                  <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
+                  {isOperator && proposal.status === "pending" && project?.status === "open" ? (
+                    <button
+                      className="mt-3 min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                      onClick={() => void acceptProjectProposal(proposal.id)}
+                      type="button"
+                    >
+                      Accept proposal
+                    </button>
+                  ) : null}
                 </div>
-                <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
-                {proposal.status === "pending" ? (
-                  <button
-                    className="mt-3 min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                    onClick={() => void acceptProjectProposal(proposal.id)}
-                    type="button"
-                  >
-                    Accept proposal
-                  </button>
-                ) : null}
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
@@ -452,104 +468,118 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             Milestones
           </h2>
-          <form className="grid gap-3" onSubmit={addMilestone}>
-            <div className="grid gap-3 md:grid-cols-3">
-              <input
-                aria-label="Milestone sequence"
-                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+          {isContributor ? (
+            <form className="grid gap-3" onSubmit={addMilestone}>
+              <div className="grid gap-3 md:grid-cols-3">
+                <input
+                  aria-label="Milestone sequence"
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                  onChange={(event) =>
+                    setMilestoneForm((current) => ({
+                      ...current,
+                      sequence: event.target.value,
+                    }))
+                  }
+                  value={milestoneForm.sequence}
+                />
+                <input
+                  aria-label="Milestone name"
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                  onChange={(event) =>
+                    setMilestoneForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  value={milestoneForm.name}
+                />
+                <input
+                  aria-label="Milestone budget"
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
+                  onChange={(event) =>
+                    setMilestoneForm((current) => ({
+                      ...current,
+                      budget: event.target.value,
+                    }))
+                  }
+                  value={milestoneForm.budget}
+                />
+              </div>
+              <textarea
+                aria-label="Milestone description"
+                className="min-h-20 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm outline-none transition-all focus:border-accent focus:ring-0"
                 onChange={(event) =>
                   setMilestoneForm((current) => ({
                     ...current,
-                    sequence: event.target.value,
+                    description: event.target.value,
                   }))
                 }
-                value={milestoneForm.sequence}
+                value={milestoneForm.description}
               />
-              <input
-                aria-label="Milestone name"
-                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-                onChange={(event) =>
-                  setMilestoneForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                value={milestoneForm.name}
-              />
-              <input
-                aria-label="Milestone budget"
-                className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-                onChange={(event) =>
-                  setMilestoneForm((current) => ({
-                    ...current,
-                    budget: event.target.value,
-                  }))
-                }
-                value={milestoneForm.budget}
-              />
-            </div>
-            <textarea
-              aria-label="Milestone description"
-              className="min-h-20 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-              onChange={(event) =>
-                setMilestoneForm((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-              value={milestoneForm.description}
-            />
-            <div className="flex flex-wrap gap-3">
-              <button
-                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!canAddMilestone}
-                type="submit"
-              >
-                Add milestone
-              </button>
-              <button
-                className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                onClick={() => void finalizePlan()}
-                type="button"
-              >
-                Finalize plan
-              </button>
-            </div>
-          </form>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canAddMilestone}
+                  type="submit"
+                >
+                  Add milestone
+                </button>
+                <button
+                  className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={() => void finalizePlan()}
+                  type="button"
+                >
+                  Finalize plan
+                </button>
+              </div>
+            </form>
+          ) : null}
 
           <div className="grid gap-2">
-            {milestones.map((milestone) => (
-              <div
-                className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                key={milestone.id}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-semibold text-foreground">
-                    {milestone.sequence}. {milestone.name} · ${milestone.budget}
+            {milestones.length === 0 ? (
+              <p className="text-sm text-foreground-muted italic">
+                {project?.status === "open"
+                  ? "Milestones will be defined by the contributor after a proposal is accepted."
+                  : "No milestones defined yet."}
+              </p>
+            ) : (
+              milestones.map((milestone) => (
+                <div
+                  className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                  key={milestone.id}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-semibold text-foreground">
+                      {milestone.sequence}. {milestone.name} · ${milestone.budget}
                   </p>
-                  <StatusBadge status={milestone.status} />
+                    <StatusBadge status={milestone.status} />
+                  </div>
+                  <p className="mt-2 text-sm text-foreground-muted">
+                    {milestone.description}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {isOperator && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
+                      <button
+                        className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                        onClick={() => void fundProjectMilestone(milestone.id)}
+                        type="button"
+                      >
+                        Fund milestone
+                      </button>
+                    ) : null}
+                    {isContributor && milestone.status === "funded" ? (
+                      <button
+                        className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                        onClick={() => void submitMilestoneDeliverable(milestone.id)}
+                        type="button"
+                      >
+                        Submit deliverable
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <p className="mt-2 text-sm text-foreground-muted">
-                  {milestone.description}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                    onClick={() => void fundProjectMilestone(milestone.id)}
-                    type="button"
-                  >
-                    Fund milestone
-                  </button>
-                  <button
-                    className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                    onClick={() => void submitMilestoneDeliverable(milestone.id)}
-                    type="button"
-                  >
-                    Submit deliverable
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
       </div>
@@ -559,7 +589,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           <h2 className="font-heading text-xl font-semibold text-foreground">
             Workspace
           </h2>
-          {lastDeliverable ? (
+          {isContributor && lastDeliverable ? (
             <PublishAsFrameworkButton
               deliverableId={lastDeliverable.id}
               description={lastDeliverable.description}
@@ -586,7 +616,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           </button>
         </form>
 
-        {deliverableApprovalActions.map((action) => (
+        {isOperator && deliverableApprovalActions.map((action) => (
           <button
             className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
             key={action.messageId}
