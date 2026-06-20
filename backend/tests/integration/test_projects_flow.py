@@ -307,6 +307,28 @@ async def test_operator_creates_project_contributor_proposes_and_operator_accept
     assert proposal.status == "accepted"
 
 
+async def test_project_create_rejects_past_deadline(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Project creation must reject deadlines earlier than today."""
+    operator_id = await create_user("project-deadline@auracles.space", ["operator"])
+    payload = project_payload()
+    payload["deadline"] = date.fromordinal(date.today().toordinal() - 1).isoformat()
+
+    response = await client.post(
+        "/v1/projects",
+        headers=auth_headers(operator_id, ["operator"]),
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == (
+        "Value error, deadline cannot be in the past."
+    )
+
+
 async def test_project_create_requires_kyc_and_enforces_active_cap(
     client: AsyncClient,
     migrated_database: None,

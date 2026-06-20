@@ -48,6 +48,14 @@ class ProjectCreateRequest(BaseModel):
             raise ValueError("budget_max must be greater than or equal to budget_min.")
         return value
 
+    @field_validator("deadline")
+    @classmethod
+    def deadline_cannot_be_in_the_past(cls, value: date | None) -> date | None:
+        """Reject Project deadlines earlier than today."""
+        if value is not None and value < date.today():
+            raise ValueError("deadline cannot be in the past.")
+        return value
+
 
 class ProjectUpdateRequest(BaseModel):
     """Operator request body for editing an open Project."""
@@ -72,6 +80,14 @@ class ProjectUpdateRequest(BaseModel):
         decimal_places=2,
     )
     deadline: date | None = None
+
+    @field_validator("deadline")
+    @classmethod
+    def deadline_cannot_be_in_the_past(cls, value: date | None) -> date | None:
+        """Reject Project deadline edits that move the date into the past."""
+        if value is not None and value < date.today():
+            raise ValueError("deadline cannot be in the past.")
+        return value
 
 
 class ProposalCreateRequest(BaseModel):

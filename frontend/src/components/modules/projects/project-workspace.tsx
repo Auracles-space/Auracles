@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -35,6 +36,7 @@ import {
 import type {
   DeliverableResponse,
   MilestoneResponse,
+  CurrentUserResponse,
   ProjectResponse,
   ProposalResponse,
   WorkspaceMessageResponse,
@@ -54,10 +56,10 @@ type MilestoneFormState = {
 };
 
 const initialMilestoneForm: MilestoneFormState = {
-  budget: "1500.00",
-  description: "Build the approved operating model.",
-  name: "Implementation",
-  sequence: "1",
+  budget: "",
+  description: "",
+  name: "",
+  sequence: "",
 };
 
 /**
@@ -93,6 +95,7 @@ function StatusBadge({ status }: { status: string }) {
  * Render the Project workspace.
  */
 export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
+  const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [operatorProposals, setOperatorProposals] = useState<ProposalResponse[]>([]);
   const [myProposals, setMyProposals] = useState<ProposalResponse[]>([]);
@@ -114,8 +117,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
 
   const headers = useMemo(() => getAccessTokenHeaders(), []);
 
-  const currentUserId = authTokenStore.getState().userId;
-  const userRoles = authTokenStore.getState().roles;
+  const currentUserId = currentUser?.id ?? authTokenStore.getState().userId;
+  const userRoles = currentUser?.roles ?? authTokenStore.getState().roles;
   const isOperator = userRoles.includes("operator");
   const isContributor = userRoles.includes("contributor");
 
@@ -132,7 +135,23 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     configureBrowserClient();
     setError(null);
 
-    const projectResult = await getProject({ headers, path: { project_id: projectId } });
+    const sessionUser = await loadCurrentUserSession();
+    if (sessionUser === null) {
+      setError("Please sign in again.");
+      return;
+    }
+    setCurrentUser(sessionUser);
+
+    const activeHeaders = getAccessTokenHeaders();
+    const activeRoles = sessionUser.roles;
+    const activeUserId = sessionUser.id;
+    const isOperatorRole = activeRoles.includes("operator");
+    const isContributorRole = activeRoles.includes("contributor");
+
+    const projectResult = await getProject({
+      headers: activeHeaders,
+      path: { project_id: projectId },
+    });
     if (!projectResult.response.ok || !projectResult.data) {
       setError(describeGeneratedError(projectResult.error));
       return;
@@ -147,11 +166,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       operatorProposalResult,
       myProposalResult,
     ] = await Promise.all([
-      isOperator
-        ? listProjectProposals({ headers, path: { project_id: projectId } })
+      isOperatorRole
+        ? listProjectProposals({
+            headers: activeHeaders,
+            path: { project_id: projectId },
+          })
         : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
-      isContributor
-        ? listMyProjectProposals({ headers, path: { project_id: projectId } })
+      isContributorRole
+        ? listMyProjectProposals({
+            headers: activeHeaders,
+            path: { project_id: projectId },
+          })
         : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
     ]);
 
@@ -167,7 +192,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       setMyProposals(activeMyProposals);
     }
 
-    const activeProjectOwner = currentProject.operator_id === currentUserId;
+    const activeProjectOwner = currentProject.operator_id === activeUserId;
     const activeAssignedContributor = activeMyProposals.some((p) => p.status === "accepted");
     const activeProjectMember = activeProjectOwner || activeAssignedContributor;
 
@@ -176,10 +201,16 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       messagesResult,
     ] = await Promise.all([
       hasAcceptedProposal
-        ? listMilestones({ headers, path: { project_id: projectId } })
+        ? listMilestones({
+            headers: activeHeaders,
+            path: { project_id: projectId },
+          })
         : Promise.resolve({ response: new Response(), data: { milestones: [] }, error: undefined }),
       activeProjectMember
-        ? listWorkspaceMessages({ headers, path: { project_id: projectId } })
+        ? listWorkspaceMessages({
+            headers: activeHeaders,
+            path: { project_id: projectId },
+          })
         : Promise.resolve({ response: new Response(), data: { messages: [] }, error: undefined }),
     ]);
 
@@ -189,7 +220,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     if (messagesResult.response.ok && messagesResult.data) {
       setMessages(messagesResult.data.messages);
     }
-  }, [headers, projectId, isOperator, isContributor, currentUserId]);
+  }, [projectId]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -256,6 +287,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setMilestones((current) => [...current, result.data]);
     setNotice("Milestone added.");
+    setMilestoneForm(initialMilestoneForm);
     void loadWorkspace();
   }
 
@@ -521,6 +553,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       sequence: event.target.value,
                     }))
                   }
+                  placeholder="Sequence (e.g. 1)"
                   value={milestoneForm.sequence}
                 />
                 <input
@@ -532,6 +565,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       name: event.target.value,
                     }))
                   }
+                  placeholder="Milestone name (e.g. Design)"
                   value={milestoneForm.name}
                 />
                 <input
@@ -543,6 +577,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       budget: event.target.value,
                     }))
                   }
+                  placeholder="Budget (e.g. 1500.00)"
                   value={milestoneForm.budget}
                 />
               </div>
@@ -555,6 +590,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     description: event.target.value,
                   }))
                 }
+                placeholder="Describe milestone deliverables..."
                 value={milestoneForm.description}
               />
               <div className="flex flex-wrap gap-3">

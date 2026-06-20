@@ -25,13 +25,16 @@ function base64Url(value: string): string {
     .replace(/=+$/, "");
 }
 
-function fakeAccessToken(roles: string[]): string {
+let currentUserId = "00000000-0000-4000-8000-000000000011"; // Operator ID by default
+let currentUserRoles = ["operator"];
+
+function fakeAccessToken(userId: string, roles: string[]): string {
   const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
       exp: Math.floor(Date.now() / 1000) + 900,
       roles,
-      sub: "00000000-0000-4000-8000-000000000001",
+      sub: userId,
       totp_verified: true,
     }),
   );
@@ -41,15 +44,18 @@ function fakeAccessToken(roles: string[]): string {
 /**
  * Create a signed session hint accepted by auth middleware.
  */
-function sessionHintValue(): string {
+function sessionHintValue(
+  userId = "00000000-0000-4000-8000-000000000011",
+  roles = ["operator"],
+): string {
   const payload = base64Url(
     JSON.stringify(
       {
         exp: Math.floor(Date.now() / 1000) + 900,
         iat: Math.floor(Date.now() / 1000),
-        roles: ["operator", "contributor"],
+        roles,
         totp_verified: true,
-        user_id: "00000000-0000-4000-8000-000000000001",
+        user_id: userId,
       },
       ["exp", "iat", "roles", "totp_verified", "user_id"],
     ),
@@ -138,16 +144,16 @@ async function mockProjectApi(page: Page): Promise<void> {
         display_name: "Test User",
         email: "test@example.com",
         email_verified: true,
-        id: "00000000-0000-4000-8000-000000000001",
+        id: currentUserId,
         kyc_status: "verified",
-        roles: ["operator", "contributor"],
+        roles: currentUserRoles,
       });
       return;
     }
 
     if (path === "/v1/auth/refresh") {
       await fulfillJson(route, {
-        access_token: fakeAccessToken(["operator", "contributor"]),
+        access_token: fakeAccessToken(currentUserId, currentUserRoles),
         expires_in: 900,
         token_type: "bearer",
       });
@@ -384,12 +390,32 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   context,
   page,
 }) => {
+  const operatorId = "00000000-0000-4000-8000-000000000011";
+  const contributorId = "00000000-0000-4000-8000-000000000012";
+
+  const switchUser = async (userId: string, roles: string[]) => {
+    currentUserId = userId;
+    currentUserRoles = roles;
+    await context.addCookies([
+      {
+        domain: "127.0.0.1",
+        name: "session_hint",
+        path: "/",
+        value: sessionHintValue(userId, roles),
+      },
+    ]);
+    await page.reload();
+  };
+
+  // Initialize as Operator to post the project
+  currentUserId = operatorId;
+  currentUserRoles = ["operator"];
   await context.addCookies([
     {
       domain: "127.0.0.1",
       name: "session_hint",
       path: "/",
-      value: sessionHintValue(),
+      value: sessionHintValue(operatorId, ["operator"]),
     },
   ]);
   await mockProjectApi(page);
@@ -421,6 +447,10 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page.getByRole("button", { name: "Post project" }).click();
 
   await expect(page.getByRole("heading", { name: "Procurement Playbook" })).toBeVisible();
+
+  // Switch to Contributor to submit proposal
+  await switchUser(contributorId, ["contributor"]);
+
   await page
     .getByLabel("Proposal scope")
     .fill("I will deliver the operating model and rollout plan.");
@@ -428,8 +458,19 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page.getByRole("button", { name: "Submit proposal" }).click();
   await expect(page.getByText("Proposal submitted.")).toBeVisible();
 
+  // Switch to Operator to accept proposal
+  await switchUser(operatorId, ["operator"]);
+
   await page.getByRole("button", { name: "Accept proposal" }).click();
   await expect(page.getByText("Proposal accepted.")).toBeVisible();
+
+  // Switch to Contributor to add milestone and finalize plan
+  await switchUser(contributorId, ["contributor"]);
+
+  await page.getByLabel("Milestone sequence").fill("1");
+  await page.getByLabel("Milestone name").fill("Implementation");
+  await page.getByLabel("Milestone budget").fill("1500.00");
+  await page.getByLabel("Milestone description").fill("Build the approved operating model.");
 
   await page.getByRole("button", { name: "Add milestone" }).click();
   await expect(page.getByText("Milestone added.")).toBeVisible();
@@ -437,13 +478,25 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page.getByRole("button", { name: "Finalize plan" }).click();
   await expect(page.getByText("Milestone plan finalized.")).toBeVisible();
 
+  // Switch to Operator to fund milestone
+  await switchUser(operatorId, ["operator"]);
+
   await page.getByRole("button", { name: "Fund milestone" }).click();
   await expect(page.getByText("Milestone funding started.")).toBeVisible();
+
+  // Switch to Contributor to submit deliverable
+  await switchUser(contributorId, ["contributor"]);
 
   await page.getByRole("button", { name: "Submit deliverable" }).click();
   await expect(page.getByText("Deliverable submitted.")).toBeVisible();
 
+  // Switch to Operator to approve deliverable
+  await switchUser(operatorId, ["operator"]);
+
   await page.getByRole("button", { name: "Approve deliverable" }).click();
   await expect(page.getByText("Deliverable approved.")).toBeVisible();
+
+  // Switch back to Contributor to check Publish as Framework
+  await switchUser(contributorId, ["contributor"]);
   await expect(page.getByRole("link", { name: "Publish as Framework" })).toBeVisible();
 });

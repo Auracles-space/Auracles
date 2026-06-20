@@ -30,4 +30,12 @@ describe("visibleNavLinks", () => {
     expect(visible.some((link) => link.href === "/library")).toBe(true);
     expect(visible.some((link) => link.href === "/projects")).toBe(true);
   });
+
+  it("shows the Developer link for developer users", () => {
+    const visible = visibleNavLinks(appLinks, ["developer"]);
+
+    expect(visible.some((link) => link.href === "/dashboard/developer")).toBe(
+      true,
+    );
+  });
 });

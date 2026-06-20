@@ -22,7 +22,11 @@ export const appLinks: AppNavigationLink[] = [
   { href: "/dashboard/frameworks", label: "Frameworks", roles: ["contributor"] },
   { href: "/dashboard/collections", label: "Collections", roles: ["contributor"] },
   { href: "/dashboard/financials", label: "Financials", roles: ["contributor"] },
-  { href: "/dashboard/developer", label: "Developer", roles: ["contributor"] },
+  {
+    href: "/dashboard/developer",
+    label: "Developer",
+    roles: ["contributor", "developer"],
+  },
   { href: "/library", label: "Library", roles: ["operator"] },
   { href: "/settings/credentials", label: "Credentials", roles: null },
   { href: "/settings/consent", label: "Consent", roles: null },
