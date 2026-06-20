@@ -22,28 +22,60 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   createProject: vi.fn(),
 }));
 
+function fillForm() {
+  fireEvent.change(screen.getByLabelText(/^title$/i), {
+    target: { value: "Procurement Playbook" },
+  });
+  fireEvent.change(screen.getByLabelText(/^description$/i), {
+    target: { value: "Build a procurement operating model." },
+  });
+  fireEvent.change(screen.getByLabelText(/^category$/i), {
+    target: { value: "operations" },
+  });
+  fireEvent.change(screen.getByLabelText(/^minimum budget$/i), {
+    target: { value: "1000.00" },
+  });
+  fireEvent.change(screen.getByLabelText(/^maximum budget$/i), {
+    target: { value: "2000.00" },
+  });
+  fireEvent.change(screen.getByLabelText(/^deliverable name$/i), {
+    target: { value: "Implementation playbook" },
+  });
+  fireEvent.change(screen.getByLabelText(/^deliverable description$/i), {
+    target: { value: "Implementation guide and supporting templates." },
+  });
+}
+
 describe("ProjectCreateForm", () => {
   beforeEach(() => {
     vi.mocked(createProject).mockReset();
     push.mockReset();
   });
 
-  it("disables submit until title and description are filled", () => {
+  it("disables submit until all required fields are filled", () => {
     render(<ProjectCreateForm />);
 
     const submit = screen.getByRole("button", { name: /post project/i });
-    // Title and description start empty, so the button is gated off.
     expect(submit).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(/^title$/i), {
-      target: { value: "Procurement Playbook" },
-    });
-    fireEvent.change(screen.getByLabelText(/^description$/i), {
-      target: { value: "Build a procurement operating model." },
+    fillForm();
+
+    expect(submit).toBeEnabled();
+  });
+
+  it("keeps submit disabled if minimum budget is greater than maximum budget", () => {
+    render(<ProjectCreateForm />);
+    const submit = screen.getByRole("button", { name: /post project/i });
+
+    fillForm();
+    fireEvent.change(screen.getByLabelText(/^minimum budget$/i), {
+      target: { value: "3000.00" },
     });
 
-    // Remaining required fields default to valid values.
-    expect(submit).toBeEnabled();
+    expect(submit).toBeDisabled();
+    expect(
+      screen.getByText(/maximum budget must be greater than or equal to minimum budget/i),
+    ).toBeInTheDocument();
   });
 
   it("creates a project and routes to its workspace", async () => {
@@ -54,12 +86,7 @@ describe("ProjectCreateForm", () => {
     });
 
     render(<ProjectCreateForm />);
-    fireEvent.change(screen.getByLabelText(/^title$/i), {
-      target: { value: "Procurement Playbook" },
-    });
-    fireEvent.change(screen.getByLabelText(/^description$/i), {
-      target: { value: "Build a procurement operating model." },
-    });
+    fillForm();
     fireEvent.click(screen.getByRole("button", { name: /post project/i }));
 
     await waitFor(() => {
@@ -76,12 +103,7 @@ describe("ProjectCreateForm", () => {
     });
 
     render(<ProjectCreateForm />);
-    fireEvent.change(screen.getByLabelText(/^title$/i), {
-      target: { value: "Procurement Playbook" },
-    });
-    fireEvent.change(screen.getByLabelText(/^description$/i), {
-      target: { value: "Build a procurement operating model." },
-    });
+    fillForm();
     fireEvent.click(screen.getByRole("button", { name: /post project/i }));
 
     expect(

@@ -25,6 +25,19 @@ function base64Url(value: string): string {
     .replace(/=+$/, "");
 }
 
+function fakeAccessToken(roles: string[]): string {
+  const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const payload = base64Url(
+    JSON.stringify({
+      exp: Math.floor(Date.now() / 1000) + 900,
+      roles,
+      sub: "00000000-0000-4000-8000-000000000001",
+      totp_verified: true,
+    }),
+  );
+  return `${header}.${payload}.signature`;
+}
+
 /**
  * Create a signed session hint accepted by auth middleware.
  */
@@ -115,6 +128,29 @@ async function mockProjectApi(page: Page): Promise<void> {
 
     if (request.method() === "OPTIONS") {
       await fulfillJson(route, {}, 204);
+      return;
+    }
+
+    if (path === "/v1/auth/me") {
+      await fulfillJson(route, {
+        avatar_url: null,
+        deactivated_at: null,
+        display_name: "Test User",
+        email: "test@example.com",
+        email_verified: true,
+        id: "00000000-0000-4000-8000-000000000001",
+        kyc_status: "verified",
+        roles: ["operator", "contributor"],
+      });
+      return;
+    }
+
+    if (path === "/v1/auth/refresh") {
+      await fulfillJson(route, {
+        access_token: fakeAccessToken(["operator", "contributor"]),
+        expires_in: 900,
+        token_type: "bearer",
+      });
       return;
     }
 
@@ -351,6 +387,13 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await page
     .getByRole("textbox", { exact: true, name: "Description" })
     .fill("Build a procurement operating model for regional rollout.");
+  await page.getByLabel("Category").selectOption("operations");
+  await page.getByLabel("Minimum budget").fill("1000.00");
+  await page.getByLabel("Maximum budget").fill("2000.00");
+  await page.getByLabel("Deliverable name").fill("Implementation playbook");
+  await page
+    .getByLabel("Deliverable description")
+    .fill("Implementation guide and supporting templates.");
   await page.getByRole("button", { name: "Post project" }).click();
 
   await expect(page.getByRole("heading", { name: "Procurement Playbook" })).toBeVisible();

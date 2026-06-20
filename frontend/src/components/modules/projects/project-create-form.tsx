@@ -17,6 +17,7 @@ import {
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { createProject } from "@/lib/generated/sdk.gen";
 import type { ProjectCreateRequest } from "@/lib/generated/types.gen";
+import { FUNCTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 
 type ProjectFormState = {
   budgetMax: string;
@@ -30,12 +31,12 @@ type ProjectFormState = {
 };
 
 const initialState: ProjectFormState = {
-  budgetMax: "2000.00",
-  budgetMin: "1000.00",
-  category: "operations",
+  budgetMax: "",
+  budgetMin: "",
+  category: "",
   deadline: "",
-  deliverableDescription: "Implementation guide and supporting templates.",
-  deliverableName: "Implementation playbook",
+  deliverableDescription: "",
+  deliverableName: "",
   description: "",
   title: "",
 };
@@ -46,12 +47,14 @@ const initialState: ProjectFormState = {
 function TextField({
   label,
   onChange,
+  placeholder,
   required = false,
   type = "text",
   value,
 }: {
   label: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   required?: boolean;
   type?: string;
   value: string;
@@ -64,6 +67,7 @@ function TextField({
       <input
         className="min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
         onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
         required={required}
         type={type}
         value={value}
@@ -81,12 +85,16 @@ export function ProjectCreateForm() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const isValidBudget =
+    isPositiveNumber(form.budgetMin) &&
+    isPositiveNumber(form.budgetMax) &&
+    Number(form.budgetMin) <= Number(form.budgetMax);
+
   const canSubmit = allValid(
     isNonEmpty(form.title),
     isNonEmpty(form.description),
     isNonEmpty(form.category),
-    isPositiveNumber(form.budgetMin),
-    isPositiveNumber(form.budgetMax),
+    isValidBudget,
     isNonEmpty(form.deliverableName),
     isNonEmpty(form.deliverableDescription),
   );
@@ -125,11 +133,14 @@ export function ProjectCreateForm() {
     router.push(`/projects/${result.data.id}`);
   }
 
+  const today = new Date().toISOString().split("T")[0];
+
   return (
     <form className="grid gap-5" onSubmit={handleSubmit}>
       <TextField
         label="Title"
         onChange={(title) => setForm((current) => ({ ...current, title }))}
+        placeholder="e.g. Migrate billing to Stripe"
         required
         value={form.title}
       />
@@ -145,22 +156,40 @@ export function ProjectCreateForm() {
               description: event.target.value,
             }))
           }
+          placeholder="Describe the scope, requirements, and deliverables of this project..."
           required
           value={form.description}
         />
       </label>
       <div className="grid gap-5 md:grid-cols-3">
-        <TextField
-          label="Category"
-          onChange={(category) => setForm((current) => ({ ...current, category }))}
-          required
-          value={form.category}
-        />
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+            Category
+          </span>
+          <select
+            className="min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+            onChange={(event) =>
+              setForm((current) => ({ ...current, category: event.target.value }))
+            }
+            required
+            value={form.category}
+          >
+            <option disabled value="">
+              Select a category
+            </option>
+            {FUNCTION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <TextField
           label="Minimum budget"
           onChange={(budgetMin) =>
             setForm((current) => ({ ...current, budgetMin }))
           }
+          placeholder="e.g. 500"
           required
           value={form.budgetMin}
         />
@@ -169,21 +198,31 @@ export function ProjectCreateForm() {
           onChange={(budgetMax) =>
             setForm((current) => ({ ...current, budgetMax }))
           }
+          placeholder="e.g. 2000"
           required
           value={form.budgetMax}
         />
       </div>
+      {Number(form.budgetMin) > Number(form.budgetMax) &&
+      isPositiveNumber(form.budgetMin) &&
+      isPositiveNumber(form.budgetMax) ? (
+        <p className="text-xs text-[#DC2626]">
+          Maximum budget must be greater than or equal to minimum budget.
+        </p>
+      ) : null}
       <div className="grid gap-5 md:grid-cols-2">
         <TextField
           label="Deliverable name"
           onChange={(deliverableName) =>
             setForm((current) => ({ ...current, deliverableName }))
           }
+          placeholder="e.g. Implementation playbook"
           required
           value={form.deliverableName}
         />
         <TextField
           label="Deadline"
+          min={today}
           onChange={(deadline) => setForm((current) => ({ ...current, deadline }))}
           type="date"
           value={form.deadline}
@@ -201,6 +240,7 @@ export function ProjectCreateForm() {
               deliverableDescription: event.target.value,
             }))
           }
+          placeholder="Describe the expected deliverable details and format..."
           required
           value={form.deliverableDescription}
         />
