@@ -4652,7 +4652,9 @@ paths:
       tags:
       - Projects
       summary: List Projects
-      description: List open Projects for Contributors or owned Projects for Operators.
+      description: List Projects for a role. Contributors get the open marketplace
+        feed (scope=open) or their assigned Projects (scope=assigned); Operators always
+        get owned Projects.
       operationId: list_projects_v1_projects_get
       security:
       - HTTPBearer: []
@@ -4666,6 +4668,16 @@ paths:
           - operator
           type: string
           title: Role
+      - name: scope
+        in: query
+        required: false
+        schema:
+          enum:
+          - open
+          - assigned
+          type: string
+          default: open
+          title: Scope
       - name: page
         in: query
         required: false

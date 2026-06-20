@@ -307,6 +307,102 @@ async def test_operator_creates_project_contributor_proposes_and_operator_accept
     assert proposal.status == "accepted"
 
 
+async def test_contributor_assigned_scope_lists_accepted_project(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A Contributor's accepted Project appears under scope=assigned, not scope=open.
+
+    Regression: list_projects(role=contributor) returned only status=='open'
+    Projects, so an accepted Contributor lost all navigation to their assigned
+    Project once acceptance moved it out of the open feed.
+    """
+    operator_id = await create_user("assign-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "assign-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+
+    assigned = await client.get(
+        "/v1/projects",
+        params={"role": "contributor", "scope": "assigned"},
+        headers=contributor_headers,
+    )
+    open_feed = await client.get(
+        "/v1/projects",
+        params={"role": "contributor", "scope": "open"},
+        headers=contributor_headers,
+    )
+
+    assert assigned.status_code == 200
+    assert [item["id"] for item in assigned.json()["projects"]] == [project_id]
+    assert open_feed.status_code == 200
+    assert project_id not in [item["id"] for item in open_feed.json()["projects"]]
+
+
+async def test_contributor_assigned_scope_excludes_pending_proposal(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A merely-pending Proposal does not surface the Project under scope=assigned.
+
+    Only an accepted Proposal counts as an assignment; otherwise an open feed of
+    every Project a Contributor bid on would leak through the assigned scope.
+    """
+    operator_id = await create_user("pending-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "pending-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+
+    assigned = await client.get(
+        "/v1/projects",
+        params={"role": "contributor", "scope": "assigned"},
+        headers=contributor_headers,
+    )
+
+    assert assigned.status_code == 200
+    assert project_id not in [item["id"] for item in assigned.json()["projects"]]
+
+
 async def test_project_create_rejects_past_deadline(
     client: AsyncClient,
     migrated_database: None,

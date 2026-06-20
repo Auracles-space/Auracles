@@ -4054,6 +4054,7 @@ export type ListProjectsV1ProjectsGetData = {
         page?: number;
         page_size?: number;
         role: 'contributor' | 'operator';
+        scope?: 'open' | 'assigned';
     };
 };
 

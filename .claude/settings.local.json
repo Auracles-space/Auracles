@@ -10,7 +10,8 @@
       "Bash(SEED_USER_ID=316ab1b2-c043-45d5-861a-5d0aab3068ad uv run python -c ' *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/health)",
       "Bash(node scripts/repro_login_bounce.mjs)",
-      "Bash(grep -vE \"^$\")"
+      "Bash(grep -vE \"^$\")",
+      "Bash(pnpm generate:api)"
     ]
   }
 }

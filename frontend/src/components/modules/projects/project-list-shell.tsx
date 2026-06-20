@@ -3,8 +3,10 @@
 /**
  * Authenticated Projects landing shell.
  *
- * Operators see their posted Projects. Contributors see open Projects they can
- * bid on. Both lists use the generated OpenAPI client.
+ * Operators see their posted Projects. Contributors see the open Projects they
+ * can bid on plus "My engagements" — Projects they were assigned via an accepted
+ * Proposal, which have left the open feed. All lists use the generated OpenAPI
+ * client.
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -76,6 +78,7 @@ function ProjectCard({ project }: { project: ProjectResponse }) {
 export function ProjectListShell() {
   const [operatorProjects, setOperatorProjects] = useState<ProjectResponse[]>([]);
   const [openProjects, setOpenProjects] = useState<ProjectResponse[]>([]);
+  const [assignedProjects, setAssignedProjects] = useState<ProjectResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -90,14 +93,24 @@ export function ProjectListShell() {
       const shouldLoadOperator = roles.length === 0 || roles.includes("operator");
       const shouldLoadContributor =
         roles.length === 0 || roles.includes("contributor");
-      const [operatorResult, contributorResult] = await Promise.all([
-        shouldLoadOperator
-          ? listProjects({ headers, query: { role: "operator" } })
-          : Promise.resolve(null),
-        shouldLoadContributor
-          ? listProjects({ headers, query: { role: "contributor" } })
-          : Promise.resolve(null),
-      ]);
+      const [operatorResult, contributorResult, assignedResult] =
+        await Promise.all([
+          shouldLoadOperator
+            ? listProjects({ headers, query: { role: "operator" } })
+            : Promise.resolve(null),
+          shouldLoadContributor
+            ? listProjects({
+                headers,
+                query: { role: "contributor", scope: "open" },
+              })
+            : Promise.resolve(null),
+          shouldLoadContributor
+            ? listProjects({
+                headers,
+                query: { role: "contributor", scope: "assigned" },
+              })
+            : Promise.resolve(null),
+        ]);
       if (!mounted) {
         return;
       }
@@ -107,12 +120,19 @@ export function ProjectListShell() {
       if (contributorResult?.response.ok && contributorResult.data) {
         setOpenProjects(contributorResult.data.projects);
       }
-      const failedResults = [operatorResult, contributorResult].filter(
-        (result) => result && !result.response.ok,
-      );
-      const successfulResults = [operatorResult, contributorResult].filter(
-        (result) => result?.response.ok,
-      );
+      if (assignedResult?.response.ok && assignedResult.data) {
+        setAssignedProjects(assignedResult.data.projects);
+      }
+      const failedResults = [
+        operatorResult,
+        contributorResult,
+        assignedResult,
+      ].filter((result) => result && !result.response.ok);
+      const successfulResults = [
+        operatorResult,
+        contributorResult,
+        assignedResult,
+      ].filter((result) => result?.response.ok);
       if (failedResults.length > 0 && successfulResults.length === 0) {
         setError(describeGeneratedError(failedResults[0]?.error));
       }
@@ -147,6 +167,19 @@ export function ProjectListShell() {
         <div className="rounded-xl border border-[#DC2626]/30 bg-[#DC2626]/10 p-4 text-sm text-[#DC2626]">
           {error}
         </div>
+      ) : null}
+
+      {assignedProjects.length > 0 ? (
+        <section className="grid content-start gap-3">
+          <h2 className="font-heading text-xl font-semibold text-foreground">
+            My engagements
+          </h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            {assignedProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
+            ))}
+          </div>
+        </section>
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">

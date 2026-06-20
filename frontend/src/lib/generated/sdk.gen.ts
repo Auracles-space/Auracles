@@ -1615,7 +1615,7 @@ export const createProjectV1ProjectsPost = <ThrowOnError extends boolean = false
 
 /**
  * List Projects
- * List open Projects for Contributors or owned Projects for Operators.
+ * List Projects for a role. Contributors get the open marketplace feed (scope=open) or their assigned Projects (scope=assigned); Operators always get owned Projects.
  */
 export const listProjectsV1ProjectsGet = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<ListProjectsV1ProjectsGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<ListProjectsV1ProjectsGetResponse, ListProjectsV1ProjectsGetError, ThrowOnError>({

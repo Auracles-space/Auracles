@@ -72,10 +72,15 @@ async def list_projects(
     token: TokenClaims,
     db: DatabaseSession,
     role: Literal["contributor", "operator"] = Query(...),
+    scope: Literal["open", "assigned"] = Query(default="open"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> ProjectsResponse:
-    """List open Projects for Contributors or owned Projects for Operators."""
+    """List Projects for a role.
+
+    Contributors get the open marketplace feed (``scope=open``) or their
+    assigned Projects (``scope=assigned``); Operators always get owned Projects.
+    """
     return await service.list_projects(
         db=db,
         user=current_user,
@@ -83,6 +88,7 @@ async def list_projects(
         token_roles=token.roles,
         page=page,
         page_size=page_size,
+        scope=scope,
     )
 
 

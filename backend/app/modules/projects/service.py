@@ -230,8 +230,15 @@ async def list_projects(
     token_roles: list[str],
     page: int,
     page_size: int,
+    scope: Literal["open", "assigned"] = "open",
 ) -> ProjectsResponse:
-    """List open Contributor feed or Operator-owned Projects."""
+    """List Projects for a role.
+
+    For Contributors, ``scope`` selects the open marketplace feed
+    (``scope="open"``) or the Projects the Contributor has been assigned via an
+    accepted Proposal (``scope="assigned"``). ``scope`` is ignored for
+    Operators, who always see the Projects they own.
+    """
     if role not in token_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -240,7 +247,20 @@ async def list_projects(
 
     query = _project_query()
     if role == "contributor":
-        query = query.where(Project.status == "open")
+        if scope == "assigned":
+            # Projects this Contributor was assigned via an accepted Proposal —
+            # these have left the open feed (status moved to 'assigned'), so the
+            # open filter alone would hide their own active work.
+            query = query.where(
+                Project.id.in_(
+                    select(Proposal.project_id).where(
+                        Proposal.contributor_id == user.id,
+                        Proposal.status == "accepted",
+                    )
+                )
+            )
+        else:
+            query = query.where(Project.status == "open")
     else:
         query = query.where(Project.operator_id == user.id)
 
