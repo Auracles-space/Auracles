@@ -44,6 +44,42 @@ function sessionHintValue(): string {
   return `${payload}.${signature}`;
 }
 
+function fakeAccessToken(roles: string[]): string {
+  const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const payload = base64Url(
+    JSON.stringify({
+      exp: Math.floor(Date.now() / 1000) + 900,
+      roles,
+      sub: "00000000-0000-4000-8000-000000000001",
+      totp_verified: true,
+    }),
+  );
+  return `${header}.${payload}.signature`;
+}
+
+async function mockAuthenticatedShellApi(page: Page): Promise<void> {
+  await page.route(`${apiOrigin}/v1/auth/me`, async (route) => {
+    await fulfillJson(route, {
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Contributor User",
+      email: "contributor@example.com",
+      email_verified: true,
+      id: "00000000-0000-4000-8000-000000000001",
+      kyc_status: "verified",
+      roles: ["contributor"],
+    });
+  });
+
+  await page.route(`${apiOrigin}/v1/auth/refresh`, async (route) => {
+    await fulfillJson(route, {
+      access_token: fakeAccessToken(["contributor"]),
+      expires_in: 900,
+      token_type: "bearer",
+    });
+  });
+}
+
 /**
  * Fulfill mocked API responses with browser-accepted CORS headers.
  *
@@ -187,10 +223,12 @@ test("Contributor views earnings, payout account, and requests payout", async ({
       value: sessionHintValue(),
     },
   ]);
+  await mockAuthenticatedShellApi(page);
   await mockContributorFinancialsApi(page);
 
   await page.goto("/dashboard/earnings");
-  await expect(page.getByRole("heading", { name: "Earnings" })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard\/financials/);
+  await expect(page.getByRole("heading", { name: "Financials" })).toBeVisible();
   await expect(page.getByText("$637.50")).toBeVisible();
   await expect(page.getByText("Minimum payout $50")).toBeVisible();
 
@@ -200,6 +238,7 @@ test("Contributor views earnings, payout account, and requests payout", async ({
   await expect(page.getByText("Verified")).toBeVisible();
 
   await page.goto("/dashboard/payouts");
+  await expect(page).toHaveURL(/\/dashboard\/financials/);
   await expect(page.getByText("****tr_1")).toBeVisible();
   await page.getByRole("button", { name: "Request payout" }).click();
   await page.getByLabel("Amount").fill("200.00");

@@ -90,7 +90,7 @@ describe("auth route guards", () => {
     expect(
       resolveAuthRouteDecision({
         hint,
-        pathname: "/dashboard/earnings",
+        pathname: "/dashboard/financials",
       }),
     ).toEqual({ kind: "next" });
     expect(

@@ -86,7 +86,7 @@ export function PayoutAccountConnect() {
       <div className="flex items-center">
         <Link
           className="inline-flex items-center gap-2 text-sm font-semibold text-accent hover:underline"
-          href="/dashboard/payouts"
+          href="/dashboard/financials"
         >
           <svg
             className="h-4 w-4"
@@ -101,7 +101,7 @@ export function PayoutAccountConnect() {
               d="M10 19l-7-7m0 0l7-7m-7 7h18"
             />
           </svg>
-          Back to payouts
+          Back to financials
         </Link>
       </div>
 

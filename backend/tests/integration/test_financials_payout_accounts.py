@@ -222,7 +222,7 @@ async def test_contributor_can_onboard_stripe_express_payout_account(
             "provider": "stripe",
             "country": "US",
             "refresh_url": "https://auracles.space/settings/payout-accounts",
-            "return_url": "https://auracles.space/dashboard/payouts",
+            "return_url": "https://auracles.space/dashboard/financials",
         },
     )
 
@@ -268,7 +268,7 @@ async def test_payout_account_onboarding_requires_contributor_and_kyc(
         "provider": "stripe",
         "country": "US",
         "refresh_url": "https://auracles.space/settings/payout-accounts",
-        "return_url": "https://auracles.space/dashboard/payouts",
+        "return_url": "https://auracles.space/dashboard/financials",
     }
 
     pending_kyc = await client.post(
@@ -364,7 +364,7 @@ async def test_payout_account_onboarding_reuses_existing_account(
         "provider": "stripe",
         "country": "US",
         "refresh_url": "https://auracles.space/settings/payout-accounts",
-        "return_url": "https://auracles.space/dashboard/payouts",
+        "return_url": "https://auracles.space/dashboard/financials",
     }
 
     # First onboarding call
