@@ -45,6 +45,11 @@ const adminLinks = [
     label: "Credentials",
     summary: "Review evidence and verify or reject submitted credentials.",
   },
+  {
+    href: "/admin/disputes",
+    label: "Disputes",
+    summary: "Audit and resolve active milestone escrow disputes.",
+  },
 ];
 
 /**

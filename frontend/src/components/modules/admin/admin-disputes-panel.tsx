@@ -6,7 +6,7 @@
  * Lists Project milestone disputes across all Projects and lets an admin
  * resolve an active dispute with a release, refund, or split escrow outcome.
  * Resolution is 2FA-gated (TOTP) to match the audited admin escrow controls.
- * Styled as a responsive card list that reads as a table on desktop.
+ * Styled as a responsive CSS Grid table that collapses to cards on mobile.
  *
  * Maps to: FR-PROJ-022, BR-PROJ-014.
  */
@@ -162,26 +162,33 @@ export function AdminDisputesPanel() {
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2">
-        {(["active", "resolved"] as const).map((value) => (
-          <button
-            className={[
-              "min-h-11 rounded-xl border px-4 text-sm font-semibold transition-colors",
-              statusFilter === value
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border-default bg-surface-1 text-foreground-muted hover:bg-surface-2/40",
-            ].join(" ")}
-            key={value}
-            onClick={() => {
-              resetForm();
-              setStatusFilter(value);
-            }}
-            type="button"
-          >
-            {value === "active" ? "Active" : "Resolved"}
-          </button>
-        ))}
-      </div>
+      <nav
+        aria-label="Filter disputes by status"
+        className="flex flex-wrap gap-1 rounded-2xl border border-border-default bg-surface-1 p-1.5 shadow-sm max-w-xs"
+      >
+        {(["active", "resolved"] as const).map((value) => {
+          const isActive = statusFilter === value;
+          return (
+            <button
+              aria-pressed={isActive}
+              className={[
+                "flex-1 min-h-11 rounded-xl px-4 text-sm font-semibold transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                isActive
+                  ? "bg-foreground text-background shadow-sm"
+                  : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
+              ].join(" ")}
+              key={value}
+              onClick={() => {
+                resetForm();
+                setStatusFilter(value);
+              }}
+              type="button"
+            >
+              {value === "active" ? "Active" : "Resolved"}
+            </button>
+          );
+        })}
+      </nav>
 
       {error ? (
         <div className="rounded-2xl border border-error/30 bg-error/10 p-4 text-sm text-error">
@@ -195,22 +202,41 @@ export function AdminDisputesPanel() {
             ? "No active disputes. Raised disputes will appear here for resolution."
             : "No resolved disputes yet."}
         </div>
-      ) : null}
+      ) : (
+        <div className="grid gap-4 md:gap-0 md:divide-y md:divide-border-default/40 md:rounded-2xl md:border md:border-border-default md:bg-surface-1 md:shadow-sm overflow-hidden">
+          {/* Table Header - Only visible on desktop/tablet */}
+          <div className="hidden md:grid md:grid-cols-[0.8fr_1fr_1.5fr_1fr_1.2fr] md:gap-4 md:bg-surface-2/40 md:p-4 md:pl-6 md:pr-6 text-xs font-semibold uppercase tracking-wider text-foreground-muted select-none">
+            <div>Status</div>
+            <div>Project</div>
+            <div>Reason</div>
+            <div>Raised</div>
+            <div className="text-right">Actions / Outcome</div>
+          </div>
 
-      <div className="grid gap-4">
-        {rows.map((dispute) => {
-          const isSelected = selectedId === dispute.id;
-          const isResolved = dispute.status === "resolved";
-          return (
-            <article
-              className="grid gap-3 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
-              key={dispute.id}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="grid gap-1">
+          {rows.map((dispute) => {
+            const isSelected = selectedId === dispute.id;
+            const isResolved = dispute.status === "resolved";
+            return (
+              <article
+                aria-label={`Dispute ${dispute.id.slice(0, 8)}`}
+                className={`
+                  transition-colors flex flex-col
+                  /* Mobile Card styles */
+                  rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm gap-3
+                  /* Desktop/Tablet Table row styles */
+                  md:grid md:grid-cols-[0.8fr_1fr_1.5fr_1fr_1.2fr] md:items-center md:gap-4
+                  md:rounded-none md:border-none md:bg-transparent md:p-4 md:pl-6 md:pr-6 md:shadow-none
+                  ${isSelected ? "md:bg-surface-2/50" : "md:hover:bg-surface-2/30"}
+                `}
+                key={dispute.id}
+                role="article"
+              >
+                {/* Column 1: Status */}
+                <div>
+                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Status</span>
                   <span
                     className={[
-                      "inline-flex w-fit items-center rounded-badge border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                      "inline-flex items-center rounded-badge border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
                       isResolved
                         ? "border-success/30 bg-success/10 text-success"
                         : "border-warning/30 bg-warning/10 text-warning",
@@ -218,105 +244,147 @@ export function AdminDisputesPanel() {
                   >
                     {formatLabel(dispute.status)}
                   </span>
-                  <p className="text-sm leading-6 text-foreground">{dispute.reason}</p>
-                  <p className="text-xs text-foreground-muted">
-                    Raised {formatTimestamp(dispute.created_at)} · Milestone{" "}
-                    <span className="font-mono">{dispute.milestone_id.slice(0, 8)}</span>
-                  </p>
                 </div>
-                <a
-                  className="text-sm font-semibold text-accent hover:underline"
-                  href={`/projects/${dispute.project_id}`}
-                >
-                  Open project
-                </a>
-              </div>
 
-              {isResolved ? (
-                <p className="text-xs text-foreground-muted">
-                  Resolved {dispute.resolved_at ? formatTimestamp(dispute.resolved_at) : ""}
-                  {dispute.resolution_type
-                    ? ` · ${formatLabel(dispute.resolution_type)}`
-                    : ""}
-                  {dispute.resolution_notes ? ` — ${dispute.resolution_notes}` : ""}
-                </p>
-              ) : isSelected ? (
-                <div className="grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4">
-                  <label className="grid gap-2 text-sm font-semibold text-foreground">
-                    Outcome
-                    <select
-                      className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                      onChange={(event) =>
-                        setResolutionType(event.target.value as ResolutionType)
-                      }
-                      value={resolutionType}
-                    >
-                      <option value="release">Release to Contributor</option>
-                      <option value="refund">Refund to Operator</option>
-                      <option value="split">Split</option>
-                    </select>
-                  </label>
+                {/* Column 2: Project Link & Milestone ID */}
+                <div className="grid gap-0.5">
+                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Project</span>
+                  <a
+                    className="text-sm font-semibold text-accent hover:underline md:text-xs"
+                    href={`/projects/${dispute.project_id}`}
+                  >
+                    Open Project
+                  </a>
+                  <span className="text-xs text-foreground-muted font-mono">
+                    MS: {dispute.milestone_id.slice(0, 8)}
+                  </span>
+                </div>
 
-                  {resolutionType !== "refund" ? (
-                    <label className="grid gap-2 text-sm font-semibold text-foreground">
-                      Release amount
-                      <input
-                        className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                        inputMode="decimal"
-                        onChange={(event) => setReleaseAmount(event.target.value)}
-                        placeholder="e.g. 900.00"
-                        value={releaseAmount}
-                      />
-                    </label>
-                  ) : null}
+                {/* Column 3: Dispute Reason */}
+                <div className="text-sm text-foreground md:text-xs leading-relaxed max-h-32 overflow-y-auto" title={dispute.reason}>
+                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Reason</span>
+                  <p className="whitespace-pre-wrap">{dispute.reason}</p>
+                </div>
 
-                  {resolutionType !== "release" ? (
-                    <label className="grid gap-2 text-sm font-semibold text-foreground">
-                      Refund amount
-                      <input
-                        className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                        inputMode="decimal"
-                        onChange={(event) => setRefundAmount(event.target.value)}
-                        placeholder="e.g. 600.00"
-                        value={refundAmount}
-                      />
-                    </label>
-                  ) : null}
+                {/* Column 4: Raised Timestamp */}
+                <div className="text-sm text-foreground md:text-xs">
+                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Raised</span>
+                  <span>{formatTimestamp(dispute.created_at)}</span>
+                </div>
 
-                  <label className="grid gap-2 text-sm font-semibold text-foreground">
-                    Resolution notes
-                    <textarea
-                      className="min-h-24 rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                      onChange={(event) => setNotes(event.target.value)}
-                      value={notes}
-                    />
-                  </label>
-
-                  <TotpInput onChange={setTotpCode} value={totpCode} />
-
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      disabled={!canResolve}
-                      onClick={() => void handleResolve(dispute.id)}
-                    >
-                      Confirm resolution
+                {/* Column 5: Action Button or Resolved Outcome */}
+                <div className="md:text-right">
+                  {isResolved ? (
+                    <div className="text-xs text-foreground-muted leading-relaxed">
+                      <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Outcome</span>
+                      <span className="font-semibold block text-foreground md:text-xs">
+                        {formatLabel(dispute.resolution_type || "")}
+                      </span>
+                      {dispute.resolved_at && (
+                        <span className="block text-[10px]">
+                          {formatTimestamp(dispute.resolved_at)}
+                        </span>
+                      )}
+                    </div>
+                  ) : isSelected ? (
+                    <Button disabled size="sm">Resolving...</Button>
+                  ) : (
+                    <Button onClick={() => setSelectedId(dispute.id)} size="sm">
+                      Resolve dispute
                     </Button>
-                    <Button onClick={resetForm} variant="secondary">
-                      Cancel
-                    </Button>
+                  )}
+                </div>
+
+                {/* Expandable Outcome Details / Form */}
+                {isResolved && dispute.resolution_notes ? (
+                  <div className="mt-2 rounded-xl bg-surface-2 p-3 border border-border-default/50 col-span-full text-xs text-foreground-muted text-left">
+                    <span className="font-semibold text-foreground block mb-1">Resolution Notes:</span>
+                    <p>{dispute.resolution_notes}</p>
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <Button onClick={() => setSelectedId(dispute.id)}>
-                    Resolve dispute
-                  </Button>
-                </div>
-              )}
-            </article>
-          );
-        })}
-      </div>
+                ) : null}
+
+                {isSelected && !isResolved ? (
+                  <div className="mt-4 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4 col-span-full text-left">
+                    <h4 className="font-heading text-sm font-bold text-foreground">
+                      Resolve Project Dispute
+                    </h4>
+                    <p className="text-xs text-foreground-muted leading-relaxed max-w-2xl">
+                      Select a resolution strategy, specify optional release and refund amounts, write resolution notes for the audit trail, and verify with your admin TOTP authenticator code.
+                    </p>
+                    
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-semibold text-foreground">
+                        Outcome
+                        <select
+                          className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                          onChange={(event) =>
+                            setResolutionType(event.target.value as ResolutionType)
+                          }
+                          value={resolutionType}
+                        >
+                          <option value="release">Release to Contributor</option>
+                          <option value="refund">Refund to Operator</option>
+                          <option value="split">Split Escrow Funds</option>
+                        </select>
+                      </label>
+
+                      {resolutionType !== "refund" ? (
+                        <label className="grid gap-2 text-sm font-semibold text-foreground">
+                          Release amount ($)
+                          <input
+                            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                            inputMode="decimal"
+                            onChange={(event) => setReleaseAmount(event.target.value)}
+                            placeholder="e.g. 900.00"
+                            value={releaseAmount}
+                          />
+                        </label>
+                      ) : null}
+
+                      {resolutionType !== "release" ? (
+                        <label className="grid gap-2 text-sm font-semibold text-foreground">
+                          Refund amount ($)
+                          <input
+                            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                            inputMode="decimal"
+                            onChange={(event) => setRefundAmount(event.target.value)}
+                            placeholder="e.g. 600.00"
+                            value={refundAmount}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+
+                    <label className="grid gap-2 text-sm font-semibold text-foreground">
+                      Resolution notes
+                      <textarea
+                        className="min-h-24 rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                        onChange={(event) => setNotes(event.target.value)}
+                        placeholder="Audit log details for this resolution..."
+                        value={notes}
+                      />
+                    </label>
+
+                    <TotpInput onChange={setTotpCode} value={totpCode} />
+
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        disabled={!canResolve}
+                        onClick={() => void handleResolve(dispute.id)}
+                      >
+                        Confirm resolution
+                      </Button>
+                      <Button onClick={resetForm} variant="secondary">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
