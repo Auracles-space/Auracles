@@ -1055,6 +1055,41 @@ async def test_cancel_acceptance_blocked_after_funding(
     assert blocked.status_code == 409
 
 
+async def test_contributor_can_rebid_after_cancelled_acceptance(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A cancelled acceptance leaves the Contributor free to submit a new Proposal.
+
+    The reopened Project accepts a fresh bid because the prior Proposal is no
+    longer in an active (pending/accepted) state.
+    """
+    operator_id = await create_user("rebid-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "rebid-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/cancel-acceptance",
+        headers=operator_headers,
+    )
+
+    rebid = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+
+    assert rebid.status_code == 201
+    assert rebid.json()["status"] == "pending"
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,

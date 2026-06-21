@@ -159,7 +159,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const isAssignedContributor = myProposals.some((p) => p.status === "accepted");
 
   // Gating visibility of forms and actions
-  const showProposalForm = isContributor && project !== null && !isProjectOwner && project.status === "open" && myProposals.length === 0;
+  // Re-bidding is allowed after a rejected/withdrawn proposal: gate on having no
+  // *active* (pending/accepted) proposal, not on never having proposed before.
+  const hasActiveProposal = myProposals.some(
+    (proposal) => proposal.status === "pending" || proposal.status === "accepted",
+  );
+  const showProposalForm =
+    isContributor &&
+    project !== null &&
+    !isProjectOwner &&
+    project.status === "open" &&
+    !hasActiveProposal;
   const showAcceptButton = isProjectOwner && project?.status === "open";
   const showMilestoneForm = isAssignedContributor && project?.milestone_plan_status === "draft";
   // Either member may reopen a finalized plan to renegotiate the split, but only
