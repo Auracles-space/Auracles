@@ -11,6 +11,7 @@ import {
   AttestationBadge,
   ReviewSummary,
 } from "@/components/modules/explore/framework-card";
+import { FrameworkLicenseCta } from "@/components/modules/explore/framework-license-cta";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
@@ -127,12 +128,10 @@ export default async function ExploreDetailPage({
               </div>
             </div>
             
-            <Link
-              className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-bold tracking-wide text-white shadow-[0_4px_14px_0_rgba(199,70,52,0.39)] outline-none transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-              href={`/checkout/${framework.id}`}
-            >
-              License Framework
-            </Link>
+            <FrameworkLicenseCta
+              contributorId={framework.contributor_id}
+              frameworkId={framework.id}
+            />
           </aside>
         </div>
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start min-w-0">

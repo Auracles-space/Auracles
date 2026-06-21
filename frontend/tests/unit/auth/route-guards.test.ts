@@ -33,7 +33,7 @@ describe("auth route guards", () => {
     [["operator"], "/explore"],
     [["contributor"], "/dashboard"],
     [["developer"], "/dashboard/developer"],
-    [["operator", "contributor"], "/dashboard"],
+    [["operator", "contributor"], "/explore"],
   ])("maps %s to %s", (roles, expectedPath) => {
     expect(getRoleLandingPath(roles)).toBe(expectedPath);
   });

@@ -50,17 +50,17 @@ export function getRoleLandingPath(roles: string[]): string {
   if (roles.includes("attestor")) {
     return "/attestor/assignments";
   }
-  // Contributor takes precedence over operator: a dual-role user lands on their
-  // creator dashboard, while Explore stays reachable from the authed nav. A
-  // pure operator still lands on Explore.
+  // Operator takes precedence: anyone who can license lands on Explore (the
+  // marketplace), with the creator dashboard reachable from the authed nav. A
+  // pure contributor still lands on their dashboard.
+  if (roles.includes("operator")) {
+    return "/explore";
+  }
   if (roles.includes("contributor")) {
     return "/dashboard";
   }
   if (roles.includes("developer")) {
     return "/dashboard/developer";
-  }
-  if (roles.includes("operator")) {
-    return "/explore";
   }
   // No active role (e.g. a pending attestor awaiting approval). Land on a route
   // with no role requirement — the contributor `/dashboard` would bounce them
