@@ -293,11 +293,19 @@ export function AdminDisputesPanel() {
                   <p className="whitespace-pre-wrap">{dispute.reason}</p>
                 </div>
 
-                {/* Column 4: Who raised it and when */}
+                {/* Column 4: Parties, who raised it, and when */}
                 <div className="text-sm text-foreground md:text-xs">
-                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Raised</span>
-                  <span className="block font-semibold">{dispute.raised_by_name}</span>
-                  <span className="text-foreground-muted">
+                  <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Parties</span>
+                  <span className="block">
+                    <span className="text-foreground-muted">Operator:</span>{" "}
+                    {dispute.operator_name}
+                  </span>
+                  <span className="block">
+                    <span className="text-foreground-muted">Contributor:</span>{" "}
+                    {dispute.contributor_name}
+                  </span>
+                  <span className="mt-1 block text-foreground-muted">
+                    Raised by {dispute.raised_by_name} ({formatLabel(dispute.raised_by_role)}) ·{" "}
                     {formatTimestamp(dispute.created_at)}
                   </span>
                 </div>
@@ -338,7 +346,7 @@ export function AdminDisputesPanel() {
                     <h4 className="font-heading text-sm font-bold text-foreground">
                       Resolve Project Dispute
                     </h4>
-                    <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border-default bg-background p-3 text-xs sm:grid-cols-3">
+                    <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border-default bg-background p-3 text-xs sm:grid-cols-4">
                       <div>
                         <dt className="text-foreground-muted">Milestone budget</dt>
                         <dd className="mt-0.5 font-semibold text-foreground">
@@ -354,9 +362,25 @@ export function AdminDisputesPanel() {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-foreground-muted">Raised by</dt>
+                        <dt className="text-foreground-muted">Operator</dt>
                         <dd className="mt-0.5 font-semibold text-foreground">
-                          {dispute.raised_by_name}
+                          {dispute.operator_name}
+                          {dispute.raised_by_role === "operator" ? (
+                            <span className="ml-1 text-[10px] font-bold uppercase text-warning">
+                              raised
+                            </span>
+                          ) : null}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-foreground-muted">Contributor</dt>
+                        <dd className="mt-0.5 font-semibold text-foreground">
+                          {dispute.contributor_name}
+                          {dispute.raised_by_role === "contributor" ? (
+                            <span className="ml-1 text-[10px] font-bold uppercase text-warning">
+                              raised
+                            </span>
+                          ) : null}
                         </dd>
                       </div>
                     </dl>

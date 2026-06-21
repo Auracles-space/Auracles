@@ -318,6 +318,9 @@ class AdminDisputeResponse(DisputeResponse):
     escrow_amount: Decimal | None
     escrow_status: str | None
     raised_by_name: str
+    raised_by_role: str
+    operator_name: str
+    contributor_name: str
 
 
 class AdminDisputesResponse(BaseModel):

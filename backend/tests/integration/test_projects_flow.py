@@ -2645,6 +2645,12 @@ async def test_admin_lists_open_project_disputes(
     assert listed["escrow_status"] == "held"
     assert listed["project_title"]
     assert listed["raised_by_name"]
+    # Both sides of the dispute must be visible, not only the raising party.
+    assert listed["operator_name"]
+    assert listed["contributor_name"]
+    assert listed["operator_name"] != listed["contributor_name"]
+    # The fixture's operator raises the dispute, so the role must read operator.
+    assert listed["raised_by_role"] == "operator"
 
     forbidden = await client.get(
         "/v1/admin/projects/disputes",

@@ -17,6 +17,7 @@ from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.audit import write_audit
 from app.integrations import stripe
@@ -394,12 +395,23 @@ async def list_disputes_for_admin(
     Returns:
         Disputes ordered newest-first, each with resolution context.
     """
+    operator_user = aliased(User, name="operator_user")
+    contributor_user = aliased(User, name="contributor_user")
     statement = (
-        select(Dispute, Project, Milestone, Escrow, User)
+        select(
+            Dispute,
+            Project,
+            Milestone,
+            Escrow,
+            operator_user,
+            contributor_user,
+        )
         .join(Project, Project.id == Dispute.project_id)
         .join(Milestone, Milestone.id == Dispute.milestone_id)
         .outerjoin(Escrow, Escrow.id == Milestone.escrow_id)
-        .join(User, User.id == Dispute.raised_by)
+        .join(operator_user, operator_user.id == Project.operator_id)
+        .join(Proposal, Proposal.id == Project.accepted_proposal_id)
+        .join(contributor_user, contributor_user.id == Proposal.contributor_id)
         .order_by(Dispute.created_at.desc())
     )
     if status_filter is None:
@@ -410,19 +422,26 @@ async def list_disputes_for_admin(
         statement = statement.where(Dispute.status == status_filter)
 
     rows = await db.execute(statement)
-    disputes = [
-        AdminDisputeResponse(
-            **DisputeResponse.model_validate(dispute).model_dump(),
-            project_title=project.title,
-            milestone_name=milestone.name,
-            milestone_budget=milestone.budget,
-            currency=milestone.currency,
-            escrow_amount=escrow.amount if escrow is not None else None,
-            escrow_status=escrow.status if escrow is not None else None,
-            raised_by_name=raiser.display_name,
+    disputes: list[AdminDisputeResponse] = []
+    for dispute, project, milestone, escrow, operator, contributor in rows.all():
+        # The raiser is always one of the two parties; label which side acted.
+        raised_by_operator = dispute.raised_by == operator.id
+        raiser = operator if raised_by_operator else contributor
+        disputes.append(
+            AdminDisputeResponse(
+                **DisputeResponse.model_validate(dispute).model_dump(),
+                project_title=project.title,
+                milestone_name=milestone.name,
+                milestone_budget=milestone.budget,
+                currency=milestone.currency,
+                escrow_amount=escrow.amount if escrow is not None else None,
+                escrow_status=escrow.status if escrow is not None else None,
+                raised_by_name=raiser.display_name,
+                raised_by_role="operator" if raised_by_operator else "contributor",
+                operator_name=operator.display_name,
+                contributor_name=contributor.display_name,
+            )
         )
-        for dispute, project, milestone, escrow, raiser in rows.all()
-    ]
     return AdminDisputesResponse(disputes=disputes)
 
 

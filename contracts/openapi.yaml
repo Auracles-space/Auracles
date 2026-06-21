@@ -10425,6 +10425,15 @@ components:
         raised_by_name:
           type: string
           title: Raised By Name
+        raised_by_role:
+          type: string
+          title: Raised By Role
+        operator_name:
+          type: string
+          title: Operator Name
+        contributor_name:
+          type: string
+          title: Contributor Name
       type: object
       required:
       - id
@@ -10448,6 +10457,9 @@ components:
       - escrow_amount
       - escrow_status
       - raised_by_name
+      - raised_by_role
+      - operator_name
+      - contributor_name
       title: AdminDisputeResponse
       description: Dispute enriched with the context an Admin needs to resolve it.
     AdminDisputesResponse:

@@ -255,6 +255,9 @@ export type AdminDisputeResponse = {
     escrow_amount: (string | null);
     escrow_status: (string | null);
     raised_by_name: string;
+    raised_by_role: string;
+    operator_name: string;
+    contributor_name: string;
 };
 
 /**
