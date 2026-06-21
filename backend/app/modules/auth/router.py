@@ -241,6 +241,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         email_verified=current_user.email_verified,
         kyc_status=current_user.kyc_status,
         deactivated_at=current_user.deactivated_at,
+        is_superadmin=current_user.is_superadmin,
     )
 
 

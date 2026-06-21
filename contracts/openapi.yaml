@@ -7965,6 +7965,10 @@ components:
             format: date-time
           - type: 'null'
           title: Suspended At
+        is_superadmin:
+          type: boolean
+          title: Is Superadmin
+          default: false
       type: object
       required:
       - user_id
@@ -9770,6 +9774,10 @@ components:
             format: date-time
           - type: 'null'
           title: Deactivated At
+        is_superadmin:
+          type: boolean
+          title: Is Superadmin
+          default: false
       type: object
       required:
       - id

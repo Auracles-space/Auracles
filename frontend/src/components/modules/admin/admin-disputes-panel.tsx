@@ -47,6 +47,23 @@ function formatTimestamp(value: string): string {
 }
 
 /**
+ * Restrict a money input to digits and a single two-decimal fraction.
+ *
+ * Strips letters, symbols, and stray separators so an amount field can never
+ * submit a malformed value, and caps the fraction at two places (cents).
+ *
+ * @param value - Raw input value.
+ */
+function sanitizeMoneyInput(value: string): string {
+  const cleaned = value.replace(/[^0-9.]/g, "");
+  const [whole, ...fraction] = cleaned.split(".");
+  if (fraction.length === 0) {
+    return whole;
+  }
+  return `${whole}.${fraction.join("").slice(0, 2)}`;
+}
+
+/**
  * Render the project-dispute queue with resolution controls for admins.
  */
 export function AdminDisputesPanel() {
@@ -115,15 +132,36 @@ export function AdminDisputesPanel() {
   function startResolve(dispute: AdminDisputeResponse): void {
     setSelectedId(dispute.id);
     setResolutionType("release");
-    setReleaseAmount(dispute.escrow_amount ?? "");
+    // Amounts only apply to split; release/refund move the full held escrow.
+    setReleaseAmount("");
     setRefundAmount("");
     setNotes("");
     setTotpCode("");
   }
 
-  const splitInvalid =
-    resolutionType === "split" &&
-    (releaseAmount.trim().length === 0 || refundAmount.trim().length === 0);
+  const selectedDispute =
+    (disputes ?? []).find((row) => row.id === selectedId) ?? null;
+  const heldAmount =
+    selectedDispute?.escrow_amount != null
+      ? Number(selectedDispute.escrow_amount)
+      : null;
+  const releaseNum = Number(releaseAmount);
+  const refundNum = Number(refundAmount);
+  const splitAllocated =
+    (Number.isFinite(releaseNum) ? releaseNum : 0) +
+    (Number.isFinite(refundNum) ? refundNum : 0);
+  // Split must distribute exactly the held escrow — no more, no less (cents
+  // tolerance). This mirrors the server guard so the admin sees the error first.
+  const splitMatchesHeld =
+    heldAmount != null &&
+    releaseAmount.trim() !== "" &&
+    refundAmount.trim() !== "" &&
+    Number.isFinite(releaseNum) &&
+    Number.isFinite(refundNum) &&
+    releaseNum >= 0 &&
+    refundNum >= 0 &&
+    Math.abs(splitAllocated - heldAmount) < 0.005;
+  const splitInvalid = resolutionType === "split" && !splitMatchesHeld;
   const canResolve =
     !pending && notes.trim().length > 0 && totpCode.trim().length >= 6 && !splitInvalid;
 
@@ -134,8 +172,9 @@ export function AdminDisputesPanel() {
     const result = await resolveAdminProjectDispute({
       body: {
         resolution_type: resolutionType,
-        release_amount: resolutionType === "refund" ? null : releaseAmount.trim() || null,
-        refund_amount: resolutionType === "release" ? null : refundAmount.trim() || null,
+        // Only split carries amounts; release/refund always move the full escrow.
+        release_amount: resolutionType === "split" ? releaseAmount.trim() || null : null,
+        refund_amount: resolutionType === "split" ? refundAmount.trim() || null : null,
         resolution_notes: notes.trim(),
         totp_code: totpCode.trim(),
       },
@@ -406,32 +445,69 @@ export function AdminDisputesPanel() {
                         </select>
                       </label>
 
-                      {resolutionType !== "refund" ? (
-                        <label className="grid gap-2 text-sm font-semibold text-foreground">
-                          Release amount ($)
-                          <input
-                            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                            inputMode="decimal"
-                            onChange={(event) => setReleaseAmount(event.target.value)}
-                            placeholder="e.g. 900.00"
-                            value={releaseAmount}
-                          />
-                        </label>
-                      ) : null}
+                      {resolutionType === "split" ? (
+                        <>
+                          <label className="grid gap-1.5 text-sm font-semibold text-foreground">
+                            Release to Contributor ($)
+                            <span className="text-xs font-normal text-foreground-muted">
+                              Paid to {dispute.contributor_name}.
+                            </span>
+                            <input
+                              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                              inputMode="decimal"
+                              onChange={(event) =>
+                                setReleaseAmount(sanitizeMoneyInput(event.target.value))
+                              }
+                              placeholder="e.g. 900.00"
+                              value={releaseAmount}
+                            />
+                          </label>
 
-                      {resolutionType !== "release" ? (
-                        <label className="grid gap-2 text-sm font-semibold text-foreground">
-                          Refund amount ($)
-                          <input
-                            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                            inputMode="decimal"
-                            onChange={(event) => setRefundAmount(event.target.value)}
-                            placeholder="e.g. 600.00"
-                            value={refundAmount}
-                          />
-                        </label>
-                      ) : null}
+                          <label className="grid gap-1.5 text-sm font-semibold text-foreground">
+                            Refund to Operator ($)
+                            <span className="text-xs font-normal text-foreground-muted">
+                              Returned to {dispute.operator_name}.
+                            </span>
+                            <input
+                              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                              inputMode="decimal"
+                              onChange={(event) =>
+                                setRefundAmount(sanitizeMoneyInput(event.target.value))
+                              }
+                              placeholder="e.g. 600.00"
+                              value={refundAmount}
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <p className="self-end text-xs text-foreground-muted leading-relaxed">
+                          {dispute.escrow_amount
+                            ? `Releases the full ${formatMoney(dispute.escrow_amount, dispute.currency)} held to `
+                            : "Moves the full held escrow to "}
+                          {resolutionType === "release"
+                            ? dispute.contributor_name
+                            : dispute.operator_name}
+                          .
+                        </p>
+                      )}
                     </div>
+
+                    {resolutionType === "split" && dispute.escrow_amount ? (
+                      <div
+                        className={[
+                          "rounded-xl border px-3 py-2 text-xs font-semibold",
+                          splitMatchesHeld
+                            ? "border-success/30 bg-success/10 text-success"
+                            : "border-error/30 bg-error/10 text-error",
+                        ].join(" ")}
+                      >
+                        Allocated {formatMoney(String(splitAllocated), dispute.currency)} of{" "}
+                        {formatMoney(dispute.escrow_amount, dispute.currency)} held
+                        {splitMatchesHeld
+                          ? " — balanced."
+                          : ` — must total exactly ${formatMoney(dispute.escrow_amount, dispute.currency)}.`}
+                      </div>
+                    ) : null}
 
                     <label className="grid gap-2 text-sm font-semibold text-foreground">
                       Resolution notes

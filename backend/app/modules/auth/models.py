@@ -98,6 +98,11 @@ class User(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("false"),
     )
+    is_superadmin: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
     deactivated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

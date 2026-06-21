@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_role
+from app.core.dependencies import require_role, require_superadmin
 from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
@@ -54,6 +54,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
+SuperAdminUser = Annotated[User, Depends(require_superadmin)]
 
 
 def _escrow_response(escrow: Escrow) -> AdminEscrowResponse:
@@ -194,11 +195,11 @@ async def list_moderation_queue(
 @router.patch("/config", response_model=AdminConfigResponse)
 async def update_platform_config(
     payload: AdminConfigPatchRequest,
-    admin: AdminUser,
+    admin: SuperAdminUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> AdminConfigResponse:
-    """Update editable platform financial configuration with admin 2FA."""
+    """Update editable platform configuration. Super-admin only, with 2FA."""
     items = await service.update_platform_config(
         db=db,
         redis=redis,

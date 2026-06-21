@@ -157,6 +157,7 @@ async def _create_user(
     email: str,
     roles: list[str],
     enable_totp: bool = False,
+    is_superadmin: bool = False,
 ) -> tuple[UUID, str | None]:
     """Create one verified user with approved roles and optional TOTP."""
     totp_secret = pyotp.random_base32() if enable_totp else None
@@ -169,6 +170,7 @@ async def _create_user(
                 email_verified=True,
                 kyc_status="verified",
                 totp_enabled=enable_totp,
+                is_superadmin=is_superadmin,
                 totp_secret=(
                     encrypt_totp_secret(totp_secret)
                     if totp_secret is not None
@@ -349,3 +351,33 @@ async def test_admin_cannot_suspend_self(
         },
     )
     assert self_suspend.status_code == 409
+
+
+async def test_super_admin_cannot_be_suspended(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """No admin may suspend the protected super-admin account."""
+    del migrated_database, admin_user_suspension_context
+    actor_id, actor_totp = await _create_user(
+        email=f"actor-admin-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+    )
+    assert actor_totp is not None
+    super_id, _ = await _create_user(
+        email=f"super-admin-{uuid4()}@auracles.space",
+        roles=["admin"],
+        is_superadmin=True,
+    )
+
+    blocked = await client.post(
+        f"/v1/admin/users/{super_id}/suspend",
+        headers=_auth_headers(actor_id, ["admin"]),
+        json={
+            "reason": "Attempt to suspend the super-admin.",
+            "totp_code": pyotp.TOTP(actor_totp).now(),
+        },
+    )
+    assert blocked.status_code == 403

@@ -155,6 +155,7 @@ async def test_admin_can_search_and_filter_user_directory(
             "suspended": True,
             "suspended_at": suspended.suspended_at.isoformat().replace("+00:00", "Z"),
             "user_id": str(suspended.id),
+            "is_superadmin": False,
         }
     finally:
         await _cleanup_admin_user_directory_state()

@@ -154,8 +154,16 @@ async def admin_config_context() -> AsyncIterator[FakeRedis]:
         await engine.dispose()
 
 
-async def create_admin_user(*, enable_totp: bool = True) -> tuple[UUID, str | None]:
-    """Create an admin user and optional encrypted TOTP secret."""
+async def create_admin_user(
+    *,
+    enable_totp: bool = True,
+    is_superadmin: bool = True,
+) -> tuple[UUID, str | None]:
+    """Create an admin user and optional encrypted TOTP secret.
+
+    Defaults to a super-admin because editing platform configuration is reserved
+    for the super-admin; pass ``is_superadmin=False`` to test the denial path.
+    """
     secret = pyotp.random_base32() if enable_totp else None
     async with async_session_factory() as session:
         async with session.begin():
@@ -166,6 +174,7 @@ async def create_admin_user(*, enable_totp: bool = True) -> tuple[UUID, str | No
                 email_verified=True,
                 totp_enabled=enable_totp,
                 totp_secret=encrypt_totp_secret(secret) if secret else None,
+                is_superadmin=is_superadmin,
             )
             session.add(user)
             await session.flush()
@@ -228,6 +237,39 @@ async def test_admin_can_read_platform_config(
         "recency": "0.0000",
     }
     assert config["min_payout_ngn"]["editable"] is False
+
+
+async def test_non_super_admin_cannot_update_platform_config(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """A plain admin (not super-admin) is forbidden from editing config.
+
+    Enforces that platform configuration changes are reserved for the protected
+    super-admin account, while ordinary admins retain read access.
+    """
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user(is_superadmin=False)
+    assert totp_secret is not None
+
+    forbidden = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Ordinary admin should not be able to do this.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "commission_rate", "value": "0.10"}],
+        },
+    )
+    assert forbidden.status_code == 403
+
+    # Read access is unaffected for ordinary admins.
+    readable = await client.get(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+    )
+    assert readable.status_code == 200
 
 
 async def test_admin_updates_editable_config_with_totp_reason_and_audit(

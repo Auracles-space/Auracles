@@ -124,6 +124,43 @@ def require_role(*allowed_roles: str) -> Callable[..., object]:
     return checker
 
 
+async def require_superadmin(
+    db: DatabaseSession,
+    user: Annotated[User, Depends(require_role("admin"))],
+) -> User:
+    """Require the authenticated admin to be the protected super-admin.
+
+    Layered on top of the admin role check so platform-level controls (e.g.
+    editing platform configuration) are reserved for the bootstrap super-admin.
+    Denials are audited like any other RBAC rejection.
+
+    Args:
+        db: Async database session for the audit write.
+        user: The authenticated admin from the role gate.
+
+    Returns:
+        The super-admin user when the flag is set.
+
+    Raises:
+        HTTPException(403): If the admin is not a super-admin.
+    """
+    if not user.is_superadmin:
+        await write_audit(
+            db=db,
+            actor_id=user.id,
+            action="access_denied",
+            target_type="rbac",
+            target_id=user.id,
+            metadata={"required": "superadmin"},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "superadmin_required"},
+        )
+    return user
+
+
 async def require_kyc_verified(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:

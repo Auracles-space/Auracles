@@ -54,11 +54,14 @@ def bootstrap_admin() -> BootstrapResult:
                     password_hash=hash_password(admin_password),
                     display_name="Auracles Admin",
                     email_verified=True,
+                    is_superadmin=True,
                 )
                 session.add(user)
                 session.flush()
                 created = True
             else:
+                # Idempotent re-run: ensure the bootstrap admin keeps super powers.
+                user.is_superadmin = True
                 created = False
 
             role = session.scalar(

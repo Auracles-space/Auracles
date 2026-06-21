@@ -327,7 +327,11 @@ export function AdminUserDirectoryPanel() {
 
               {/* Action Buttons cell */}
               <div className="md:text-right">
-                {item.suspended ? (
+                {item.is_superadmin ? (
+                  <span className="inline-flex items-center rounded-badge border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+                    Super admin
+                  </span>
+                ) : item.suspended ? (
                   <Button
                     onClick={() => setSelectedUserId(item.user_id)}
                     disabled={isSelf}

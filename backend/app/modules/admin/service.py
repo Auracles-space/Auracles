@@ -1160,6 +1160,7 @@ async def list_admin_users(
                 "created_at": user.created_at,
                 "suspended": user.suspended_at is not None,
                 "suspended_at": user.suspended_at,
+                "is_superadmin": user.is_superadmin,
             }
             for user in users
         ],
@@ -1457,6 +1458,11 @@ async def suspend_user(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Admins cannot suspend themselves.",
+            )
+        if target.is_superadmin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The super-admin account cannot be suspended.",
             )
         if target.suspended_at is None and await _is_active_admin(db, target.id):
             if await _count_active_admins(db) <= 1:

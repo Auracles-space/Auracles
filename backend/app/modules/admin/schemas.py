@@ -88,6 +88,7 @@ class AdminUserDirectoryItem(BaseModel):
     created_at: datetime
     suspended: bool
     suspended_at: datetime | None
+    is_superadmin: bool = False
 
 
 class AdminUserDirectoryResponse(BaseModel):

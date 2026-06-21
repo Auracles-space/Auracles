@@ -117,6 +117,7 @@ class CurrentUserResponse(BaseModel):
     email_verified: bool
     kyc_status: str
     deactivated_at: datetime | None
+    is_superadmin: bool = False
 
 
 class AddRoleRequest(BaseModel):

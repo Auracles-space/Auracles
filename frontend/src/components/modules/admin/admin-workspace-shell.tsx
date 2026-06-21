@@ -45,6 +45,11 @@ const adminLinks = [
     label: "Credentials",
     summary: "Review evidence and verify or reject submitted credentials.",
   },
+  {
+    href: "/admin/configuration",
+    label: "Configuration",
+    summary: "Commission, fees, SLAs, and reputation tuning (super-admin).",
+  },
 ];
 
 /**

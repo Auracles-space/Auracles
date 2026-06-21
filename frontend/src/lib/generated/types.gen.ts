@@ -453,6 +453,7 @@ export type AdminUserDirectoryItem = {
     created_at: string;
     suspended: boolean;
     suspended_at: (string | null);
+    is_superadmin?: boolean;
 };
 
 /**
@@ -1063,6 +1064,7 @@ export type CurrentUserResponse = {
     email_verified: boolean;
     kyc_status: string;
     deactivated_at: (string | null);
+    is_superadmin?: boolean;
 };
 
 /**
