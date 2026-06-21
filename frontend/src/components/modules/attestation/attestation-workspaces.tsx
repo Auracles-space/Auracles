@@ -871,7 +871,11 @@ export function AdminAttestationPanel() {
       </div>
 
       {/* Applications List */}
-      <ApplicationList applications={applications} onReview={handleReview} />
+      <ApplicationList
+        applications={applications}
+        onReview={handleReview}
+        reviewDisabled={!hasTotp}
+      />
 
       {/* Step 2: Action Panels Bento Grid */}
       <div className="grid gap-6 md:grid-cols-2">
@@ -1065,6 +1069,7 @@ function ApplicationList({
   onEdit,
   onReview,
   onWithdraw,
+  reviewDisabled = false,
 }: {
   applications: AttestorApplicationResponse[];
   onEdit?: (application: AttestorApplicationResponse) => void;
@@ -1073,6 +1078,8 @@ function ApplicationList({
     decision: "approved" | "rejected",
   ) => void;
   onWithdraw?: (applicationId: string) => void;
+  /** Disable Approve/Reject until a 2FA code is entered. */
+  reviewDisabled?: boolean;
 }) {
   return (
     <div className="grid gap-3">
@@ -1158,12 +1165,17 @@ function ApplicationList({
               ) : null}
               {onReview ? (
                 <>
-                  <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onReview(application, "approved")} type="button">
+                  <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={reviewDisabled} onClick={() => onReview(application, "approved")} type="button">
                     Approve
                   </button>
-                  <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onReview(application, "rejected")} type="button">
+                  <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50" disabled={reviewDisabled} onClick={() => onReview(application, "rejected")} type="button">
                     Reject
                   </button>
+                  {reviewDisabled ? (
+                    <p className="w-full text-xs text-foreground-muted">
+                      Enter your 6-digit 2FA code above to approve or reject.
+                    </p>
+                  ) : null}
                 </>
               ) : null}
             </div>
