@@ -62,12 +62,18 @@ async def get_current_user(
     if user.deactivated_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated.",
+            detail={
+                "error_code": "account_deactivated",
+                "message": "Account is deactivated.",
+            },
         )
     if user.suspended_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is suspended.",
+            detail={
+                "error_code": "account_suspended",
+                "message": "Account is suspended.",
+            },
         )
     if auth_service.is_access_token_revoked_for_user(user, payload):
         raise HTTPException(

@@ -35,6 +35,7 @@ export const metadata: Metadata = {
 };
 
 import { IncompleteUserListener } from "@/components/incomplete-user-listener";
+import { SessionTerminatedListener } from "@/components/session-terminated-listener";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export default function RootLayout({
@@ -52,6 +53,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <IncompleteUserListener />
+          <SessionTerminatedListener />
           {children}
         </ThemeProvider>
       </body>
