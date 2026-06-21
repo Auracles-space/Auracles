@@ -217,6 +217,61 @@ async def test_user_submits_and_lists_own_attestor_application(
     assert audit is not None
 
 
+async def test_application_rejects_unsafe_input(
+    client: AsyncClient,
+    migrated_database: None,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Disallowed characters in application fields are rejected with 422.
+
+    List items accept only a safe charset (no ``;`` or angle brackets) and prose
+    fields reject markup characters, keeping stored data clean and inert.
+    """
+    del migrated_database, attestor_application_context
+    user_id = await create_user("unsafe-candidate@auracles.space", ["operator"])
+    headers = auth_headers(user_id, ["operator"])
+
+    bad_specialization = await client.post(
+        "/v1/attestor/applications",
+        headers=headers,
+        json={**application_payload(), "specializations": ["health;; drop"]},
+    )
+    bad_summary = await client.post(
+        "/v1/attestor/applications",
+        headers=headers,
+        json={
+            **application_payload(),
+            "credentials_summary": "Ten years <script>alert(1)</script> auditing.",
+        },
+    )
+
+    assert bad_specialization.status_code == 422
+    assert bad_summary.status_code == 422
+
+
+async def test_application_normalizes_list_items(
+    client: AsyncClient,
+    migrated_database: None,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """List items are trimmed and de-duplicated case-insensitively on submit."""
+    del migrated_database, attestor_application_context
+    user_id = await create_user("normalize-candidate@auracles.space", ["operator"])
+    headers = auth_headers(user_id, ["operator"])
+
+    submitted = await client.post(
+        "/v1/attestor/applications",
+        headers=headers,
+        json={
+            **application_payload(),
+            "specializations": ["Healthcare", "  healthcare ", "Governance"],
+        },
+    )
+
+    assert submitted.status_code == 201
+    assert submitted.json()["specializations"] == ["Healthcare", "Governance"]
+
+
 async def test_owner_edits_pending_application_in_place(
     client: AsyncClient,
     migrated_database: None,

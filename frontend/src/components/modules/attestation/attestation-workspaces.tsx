@@ -67,6 +67,32 @@ function splitCsv(value: string): string[] {
     .filter(Boolean);
 }
 
+// Mirror the backend input-hardening rules so the form blocks unsafe data
+// before it is sent. Labels accept a safe charset only; prose rejects markup
+// and control characters. Keep these in sync with attestation/schemas.py.
+const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 .,&/()-]*$/;
+// Markup delimiters plus ASCII control chars (tab/newline/return excepted).
+const PROSE_FORBIDDEN = /[<>\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
+
+/**
+ * Whether every comma-separated label uses only the safe charset.
+ *
+ * @param value - Raw comma-separated input.
+ */
+function areLabelsSafe(value: string): boolean {
+  const items = splitCsv(value);
+  return items.length > 0 && items.every((item) => LABEL_PATTERN.test(item));
+}
+
+/**
+ * Whether free-text prose is free of markup and control characters.
+ *
+ * @param value - Raw prose input.
+ */
+function isProseSafe(value: string): boolean {
+  return !PROSE_FORBIDDEN.test(value);
+}
+
 /**
  * Show user-facing request errors.
  */
@@ -315,11 +341,17 @@ export function AttestorApplicationPanel() {
   // Mirror the backend AttestorApplicationCreateRequest constraints so the
   // form cannot post a body the API rejects with 422: at least one
   // specialization and jurisdiction, a 10+ char summary, and 3+ char references.
+  const hasUnsafeInput =
+    (specializations.length > 0 && !areLabelsSafe(specializations)) ||
+    (jurisdictions.length > 0 && !areLabelsSafe(jurisdictions)) ||
+    !isProseSafe(credentialsSummary) ||
+    !isProseSafe(professionalReferences);
   const canSubmit = allValid(
     splitCsv(specializations).length > 0,
     splitCsv(jurisdictions).length > 0,
     isLengthBetween(credentialsSummary.trim(), 10, 5000),
     isLengthBetween(professionalReferences.trim(), 3, 5000),
+    !hasUnsafeInput,
   );
 
   useEffect(() => {
@@ -498,6 +530,12 @@ export function AttestorApplicationPanel() {
             </button>
           ) : null}
         </div>
+        {hasUnsafeInput ? (
+          <p className="mt-3 text-sm text-error">
+            Remove special characters like ; &lt; &gt; — letters, numbers and
+            basic punctuation only.
+          </p>
+        ) : null}
       </div>
       ) : null}
       <ApplicationList

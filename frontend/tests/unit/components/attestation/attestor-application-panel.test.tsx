@@ -108,6 +108,25 @@ describe("AttestorApplicationPanel submit gating", () => {
     ).toBeEnabled();
   });
 
+  it("blocks submit when an input contains unsafe characters", async () => {
+    render(<AttestorApplicationPanel />);
+    await waitFor(() =>
+      expect(listMyAttestorApplications).toHaveBeenCalled(),
+    );
+
+    fillFields({
+      specializations: "ISO 27001;; drop",
+      jurisdictions: "US",
+      summary: "Ten plus years auditing security programs.",
+      references: "Jane Doe, CISO",
+    });
+
+    expect(
+      screen.getByRole("button", { name: /submit application/i }),
+    ).toBeDisabled();
+    expect(screen.getByText(/Remove special characters/i)).toBeInTheDocument();
+  });
+
   it("hides the create form while an application is pending and edits in place", async () => {
     vi.mocked(listMyAttestorApplications).mockResolvedValue({
       data: { applications: [application()] },

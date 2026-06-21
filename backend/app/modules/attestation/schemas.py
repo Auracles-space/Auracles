@@ -7,29 +7,106 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 IssuerType = Literal["institution", "organisation", "government", "association"]
 
+# Safe charset for short controlled labels (specializations, jurisdictions):
+# letters, digits, spaces, and a few separators. Excludes ``;``, angle brackets,
+# quotes, and other punctuation that signals injected or malformed input.
+_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,&/()\-]*$")
+# Characters never allowed in free-text prose: markup delimiters and ASCII
+# control characters (tab/newline excepted) that have no place in plain text.
+_PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f]")
 
-class AttestorApplicationCreateRequest(BaseModel):
+
+def _normalise_labels(values: list[str]) -> list[str]:
+    """Trim, validate, and de-duplicate a list of short controlled labels.
+
+    Each item is stripped and must match the safe label charset. Duplicates are
+    removed case-insensitively while preserving first-seen order.
+
+    Args:
+        values: Raw label strings from the request body.
+
+    Returns:
+        The cleaned, de-duplicated labels.
+
+    Raises:
+        ValueError: If an item is empty or contains disallowed characters.
+    """
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        item = raw.strip()
+        if not item:
+            raise ValueError("items cannot be empty.")
+        if not _LABEL_PATTERN.match(item):
+            raise ValueError(
+                "items may only contain letters, numbers, spaces, and . , & / ( ) -"
+            )
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+    if not cleaned:
+        raise ValueError("at least one item is required.")
+    return cleaned
+
+
+def _ensure_safe_prose(value: str) -> str:
+    """Reject free-text prose containing markup or control characters.
+
+    Args:
+        value: Raw prose value from the request body.
+
+    Returns:
+        The original value when it contains only safe characters.
+
+    Raises:
+        ValueError: If the value contains markup delimiters or control chars.
+    """
+    if _PROSE_FORBIDDEN.search(value):
+        raise ValueError("text may not contain '<', '>', or control characters.")
+    return value
+
+
+class _AttestorApplicationFields(BaseModel):
+    """Shared, sanitized fields for submitting and editing applications.
+
+    Centralizes the input-hardening rules so create and edit accept identical,
+    cleaned data: controlled labels are trimmed/de-duplicated against a safe
+    charset, and prose fields reject markup and control characters.
+    """
+
+    specializations: list[str] = Field(min_length=1, max_length=25)
+    jurisdictions: list[str] = Field(min_length=1, max_length=25)
+    credentials_summary: str = Field(min_length=10, max_length=5000)
+    sample_work: dict[str, Any] = Field(default_factory=dict)
+    professional_references: str = Field(min_length=3, max_length=5000)
+
+    @field_validator("specializations", "jurisdictions")
+    @classmethod
+    def _clean_labels(cls, value: list[str]) -> list[str]:
+        """Trim, validate, and de-duplicate controlled label lists."""
+        return _normalise_labels(value)
+
+    @field_validator("credentials_summary", "professional_references")
+    @classmethod
+    def _clean_prose(cls, value: str) -> str:
+        """Reject markup and control characters in free-text prose."""
+        return _ensure_safe_prose(value)
+
+
+class AttestorApplicationCreateRequest(_AttestorApplicationFields):
     """Request body for submitting an Attestor role application."""
 
-    specializations: list[str] = Field(min_length=1, max_length=25)
-    jurisdictions: list[str] = Field(min_length=1, max_length=25)
-    credentials_summary: str = Field(min_length=10, max_length=5000)
-    sample_work: dict[str, Any] = Field(default_factory=dict)
-    professional_references: str = Field(min_length=3, max_length=5000)
 
-
-class AttestorApplicationUpdateRequest(BaseModel):
+class AttestorApplicationUpdateRequest(_AttestorApplicationFields):
     """Request body for editing a pending Attestor application in place."""
-
-    specializations: list[str] = Field(min_length=1, max_length=25)
-    jurisdictions: list[str] = Field(min_length=1, max_length=25)
-    credentials_summary: str = Field(min_length=10, max_length=5000)
-    sample_work: dict[str, Any] = Field(default_factory=dict)
-    professional_references: str = Field(min_length=3, max_length=5000)
 
 
 class AttestorApplicationResponse(BaseModel):
