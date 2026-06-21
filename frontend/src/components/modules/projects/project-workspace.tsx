@@ -184,6 +184,24 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const canCancelAcceptance =
     (isProjectOwner || isAssignedContributor) && project?.status === "assigned";
 
+  // Finalize requires a balanced plan: at least one milestone whose budgets sum
+  // exactly to the accepted Proposal budget. Compared in integer cents to avoid
+  // float drift; mirrors the backend's strict SUM == proposal.budget gate.
+  const acceptedProposalBudget =
+    myProposals.find((proposal) => proposal.status === "accepted")?.budget ?? null;
+  const milestoneTotalCents = milestones.reduce(
+    (sum, milestone) => sum + Math.round(Number(milestone.budget) * 100),
+    0,
+  );
+  const proposalBudgetCents =
+    acceptedProposalBudget !== null
+      ? Math.round(Number(acceptedProposalBudget) * 100)
+      : null;
+  const milestoneRemainingCents =
+    proposalBudgetCents !== null ? proposalBudgetCents - milestoneTotalCents : null;
+  const canFinalizePlan =
+    milestones.length > 0 && milestoneRemainingCents === 0;
+
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
     setError(null);
@@ -799,6 +817,23 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 placeholder="Describe milestone deliverables..."
                 value={milestoneForm.description}
               />
+              {milestoneRemainingCents !== null ? (
+                <p className="text-xs text-foreground-muted">
+                  {milestones.length === 0
+                    ? `Add milestones totaling $${(
+                        (proposalBudgetCents ?? 0) / 100
+                      ).toFixed(2)} to finalize.`
+                    : milestoneRemainingCents > 0
+                      ? `Remaining to allocate: $${(
+                          milestoneRemainingCents / 100
+                        ).toFixed(2)} before you can finalize.`
+                      : milestoneRemainingCents < 0
+                        ? `Over budget by $${(
+                            -milestoneRemainingCents / 100
+                          ).toFixed(2)} — lower or remove a milestone.`
+                        : "Balanced — ready to finalize."}
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-3">
                 <button
                   className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
@@ -808,7 +843,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   Add milestone
                 </button>
                 <button
-                  className="min-h-12 rounded-xl bg-[#16A34A] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#16A34A]/90 focus-visible:ring-2 focus-visible:ring-[#16A34A]"
+                  className="min-h-12 rounded-xl bg-[#16A34A] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#16A34A]/90 focus-visible:ring-2 focus-visible:ring-[#16A34A] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canFinalizePlan}
                   onClick={() => void finalizePlan()}
                   type="button"
                 >
