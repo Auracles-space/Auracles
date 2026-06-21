@@ -365,6 +365,40 @@ async def list_project_disputes(
     return DisputesResponse(disputes=list(rows.scalars()))
 
 
+_ADMIN_ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
+
+
+async def list_disputes_for_admin(
+    *,
+    db: AsyncSession,
+    status_filter: str | None = None,
+) -> DisputesResponse:
+    """List Project disputes across all Projects for the Admin queue.
+
+    Admins do not belong to Project workspaces, so this bypasses the member
+    check used by the workspace listing. The default view shows only active
+    disputes (open or under_review); passing an explicit status narrows to that
+    single status so resolved disputes remain auditable.
+
+    Args:
+        db: Async database session.
+        status_filter: Optional exact status to filter by. When omitted, only
+            active (open/under_review) disputes are returned.
+
+    Returns:
+        Disputes ordered newest-first.
+    """
+    statement = select(Dispute).order_by(Dispute.created_at.desc())
+    if status_filter is None:
+        statement = statement.where(
+            Dispute.status.in_(_ADMIN_ACTIVE_DISPUTE_STATUSES)
+        )
+    else:
+        statement = statement.where(Dispute.status == status_filter)
+    rows = await db.execute(statement)
+    return DisputesResponse(disputes=list(rows.scalars()))
+
+
 async def get_project_dispute(
     *,
     db: AsyncSession,

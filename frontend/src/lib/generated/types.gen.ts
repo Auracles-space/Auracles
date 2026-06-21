@@ -2963,6 +2963,16 @@ export type RecomputeReputationSubjectV1AdminReputationRecomputePostResponse = (
 
 export type RecomputeReputationSubjectV1AdminReputationRecomputePostError = (HTTPValidationError);
 
+export type ListProjectDisputesV1AdminProjectsDisputesGetData = {
+    query?: {
+        status?: ('open' | 'under_review' | 'resolved' | null);
+    };
+};
+
+export type ListProjectDisputesV1AdminProjectsDisputesGetResponse = (DisputesResponse);
+
+export type ListProjectDisputesV1AdminProjectsDisputesGetError = (HTTPValidationError);
+
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData = {
     body: AdminDisputeResolveRequest;
     path: {

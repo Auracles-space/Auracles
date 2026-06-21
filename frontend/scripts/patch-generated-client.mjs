@@ -103,6 +103,8 @@ const compatibilityAliases = {
   resetPassword: "resetPasswordV1AuthResetPasswordPost",
   resolveArtifactPiiReview: "resolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost",
   resolveAttestationDispute: "resolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePost",
+  listAdminProjectDisputes: "listProjectDisputesV1AdminProjectsDisputesGet",
+  resolveAdminProjectDispute: "resolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePost",
   reviewAttestorApplication: "reviewAttestorApplicationV1AdminAttestorApplicationsApplicationIdReviewPost",
   createSavedSearch: "createSavedSearchV1SavedSearchesPost",
   deleteSavedSearch: "deleteSavedSearchV1SavedSearchesSavedSearchIdDelete",

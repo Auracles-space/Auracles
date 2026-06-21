@@ -2557,6 +2557,94 @@ async def _assigned_finalized_project_with_amendment(
     return project_id, proposal_id, amendment.json()["id"]
 
 
+async def test_admin_lists_open_project_disputes(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Admin dispute queue surfaces active Project disputes; non-admins are denied.
+
+    Enforces the admin-visibility path for Project disputes (the operator-raised
+    milestone dispute must be reachable by an Admin without knowing its id).
+    """
+    del migrated_database, project_context
+    context = await create_disputed_funded_project(client, name="queue-dispute")
+
+    queue = await client.get(
+        "/v1/admin/projects/disputes",
+        headers=context["admin_headers"],
+    )
+    assert queue.status_code == 200
+    disputes = queue.json()["disputes"]
+    ids = {row["id"] for row in disputes}
+    assert context["dispute_id"] in ids
+    listed = next(row for row in disputes if row["id"] == context["dispute_id"])
+    assert listed["status"] == "open"
+    assert listed["project_id"] == context["project_id"]
+
+    forbidden = await client.get(
+        "/v1/admin/projects/disputes",
+        headers=context["operator_headers"],
+    )
+    assert forbidden.status_code == 403
+
+
+async def test_admin_dispute_queue_excludes_resolved_by_default(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default queue shows only active disputes; resolved ones drop off."""
+    del migrated_database, project_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_create_refund(**kwargs: Any) -> FakeStripeRefund:
+        """Stub Stripe refund for the split resolution."""
+        del kwargs
+        return FakeStripeRefund("re_queue_resolve_123")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    context = await create_disputed_funded_project(client, name="resolved-dispute")
+
+    await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "release",
+            "resolution_notes": "Delivery accepted in full by support.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+
+    default_queue = await client.get(
+        "/v1/admin/projects/disputes",
+        headers=context["admin_headers"],
+    )
+    assert context["dispute_id"] not in {
+        row["id"] for row in default_queue.json()["disputes"]
+    }
+
+    resolved_queue = await client.get(
+        "/v1/admin/projects/disputes?status=resolved",
+        headers=context["admin_headers"],
+    )
+    assert context["dispute_id"] in {
+        row["id"] for row in resolved_queue.json()["disputes"]
+    }
+
+
 async def test_operator_edits_open_project_and_validates_budget_and_status(
     client: AsyncClient,
     migrated_database: None,

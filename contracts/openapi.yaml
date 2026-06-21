@@ -697,6 +697,45 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/admin/projects/disputes:
+    get:
+      tags:
+      - Admin
+      summary: List Project disputes for the admin queue
+      description: >-
+        Return Project milestone disputes across all Projects. Defaults to
+        active disputes (open or under_review); pass an explicit status to view
+        a single status such as resolved.
+      operationId: list_project_disputes_v1_admin_projects_disputes_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            enum:
+            - open
+            - under_review
+            - resolved
+          - type: 'null'
+          title: Status
+          description: Filter by an exact dispute status.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/projects/disputes/{dispute_id}/resolve:
     post:
       tags:

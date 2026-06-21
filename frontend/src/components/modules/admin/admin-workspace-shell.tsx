@@ -31,6 +31,11 @@ const adminLinks = [
     summary: "Search accounts and apply suspension controls.",
   },
   {
+    href: "/admin/disputes",
+    label: "Disputes",
+    summary: "Resolve Project milestone disputes with escrow outcomes.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",
