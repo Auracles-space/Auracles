@@ -201,6 +201,32 @@ export function AccountSettingsPanel() {
     };
   }, []);
 
+  // Export generation is async (Celery). While a request is pending/processing,
+  // poll the latest status so the download surfaces without a manual reload.
+  const exportStatusValue = exportStatus?.status;
+  useEffect(() => {
+    if (exportStatusValue !== "pending" && exportStatusValue !== "processing") {
+      return;
+    }
+    let active = true;
+    const interval = setInterval(async () => {
+      configureBrowserClient();
+      const latest = await getLatestDataExportStatusV1GdprExportsLatestGet({
+        headers: getAccessTokenHeaders(),
+      });
+      if (!active) {
+        return;
+      }
+      if (latest.response.ok && latest.data) {
+        setExportStatus(latest.data);
+      }
+    }, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [exportStatusValue]);
+
   const scheduledDeletionDate = useMemo(
     () => formatScheduledFor(deletionStatus?.scheduled_for),
     [deletionStatus?.scheduled_for],

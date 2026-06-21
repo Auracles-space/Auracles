@@ -4,7 +4,7 @@
  * Verifies email-change behavior plus GDPR data-export and delete-account
  * controls on the authenticated account settings page.
  */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountSettingsPanel } from "@/components/modules/settings/account-settings-panel";
@@ -327,6 +327,66 @@ describe("AccountSettingsPanel", () => {
     expect(
       await within(exportSection).findByText(/export requested\. we will prepare/i),
     ).toBeInTheDocument();
+  });
+
+  it("polls a pending export and reveals the download when it becomes ready", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Mount load: no export yet. Then the poll observes the ready bundle.
+    vi.mocked(getLatestDataExportStatusV1GdprExportsLatestGet)
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: { detail: "No data export request found." },
+        response: new Response(null, { status: 404 }),
+      })
+      .mockResolvedValue({
+        data: {
+          id: "export-9",
+          status: "ready",
+          requested_at: "2026-06-12T10:00:00Z",
+          completed_at: "2026-06-12T10:05:00Z",
+          expires_at: "2026-06-19T10:05:00Z",
+          failure_reason: null,
+        },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      });
+    vi.mocked(requestDataExportV1GdprExportsPost).mockResolvedValue({
+      data: {
+        id: "export-9",
+        status: "pending",
+        requested_at: "2026-06-12T10:00:00Z",
+        completed_at: null,
+        expires_at: null,
+        failure_reason: null,
+      },
+      error: undefined,
+      response: new Response(null, { status: 202 }),
+    });
+
+    render(<AccountSettingsPanel />);
+    const exportSection = await screen.findByRole("region", {
+      name: /data export/i,
+    });
+
+    fireEvent.click(
+      within(exportSection).getByRole("button", { name: /request export/i }),
+    );
+    await screen.findByText(/export requested\. we will prepare/i);
+
+    // No download yet while pending.
+    expect(
+      within(exportSection).queryByRole("button", { name: /download/i }),
+    ).not.toBeInTheDocument();
+
+    // Advance to the next poll tick; the status flips to ready.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(
+      within(exportSection).getByRole("button", { name: /download/i }),
+    ).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("loads a scheduled deletion request and lets the user cancel it", async () => {
