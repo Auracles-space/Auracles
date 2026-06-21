@@ -729,7 +729,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DisputesResponse'
+                $ref: '#/components/schemas/AdminDisputesResponse'
         '422':
           description: Validation Error
           content:
@@ -10330,6 +10330,138 @@ components:
       - reason
       title: DisputeCreateRequest
       description: Project member request body for raising a Milestone dispute.
+    AdminDisputeResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          type: string
+          format: uuid
+          title: Milestone Id
+        raised_by:
+          type: string
+          format: uuid
+          title: Raised By
+        reason:
+          type: string
+          title: Reason
+        status:
+          type: string
+          title: Status
+        resolution_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Type
+        release_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Release Amount
+        refund_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Refund Amount
+        admin_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Admin Id
+        resolution_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Notes
+        escalated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Escalated At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        project_title:
+          type: string
+          title: Project Title
+        milestone_name:
+          type: string
+          title: Milestone Name
+        milestone_budget:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Milestone Budget
+        currency:
+          type: string
+          title: Currency
+        escrow_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Escrow Amount
+        escrow_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Escrow Status
+        raised_by_name:
+          type: string
+          title: Raised By Name
+      type: object
+      required:
+      - id
+      - project_id
+      - milestone_id
+      - raised_by
+      - reason
+      - status
+      - resolution_type
+      - release_amount
+      - refund_amount
+      - admin_id
+      - resolution_notes
+      - escalated_at
+      - resolved_at
+      - created_at
+      - project_title
+      - milestone_name
+      - milestone_budget
+      - currency
+      - escrow_amount
+      - escrow_status
+      - raised_by_name
+      title: AdminDisputeResponse
+      description: Dispute enriched with the context an Admin needs to resolve it.
+    AdminDisputesResponse:
+      properties:
+        disputes:
+          items:
+            $ref: '#/components/schemas/AdminDisputeResponse'
+          type: array
+          title: Disputes
+      type: object
+      required:
+      - disputes
+      title: AdminDisputesResponse
+      description: Admin list response for Project Disputes with resolution context.
     DisputeResponse:
       properties:
         id:

@@ -33,7 +33,10 @@ from app.modules.projects.models import (
     Proposal,
 )
 from app.modules.projects.schemas import (
+    AdminDisputeResponse,
+    AdminDisputesResponse,
     DisputeCreateRequest,
+    DisputeResponse,
     DisputesResponse,
 )
 from app.modules.workspace.models import WorkspaceMessage
@@ -372,13 +375,16 @@ async def list_disputes_for_admin(
     *,
     db: AsyncSession,
     status_filter: str | None = None,
-) -> DisputesResponse:
+) -> AdminDisputesResponse:
     """List Project disputes across all Projects for the Admin queue.
 
     Admins do not belong to Project workspaces, so this bypasses the member
-    check used by the workspace listing. The default view shows only active
-    disputes (open or under_review); passing an explicit status narrows to that
-    single status so resolved disputes remain auditable.
+    check used by the workspace listing. Each row is enriched with the milestone
+    budget, held escrow amount, project title, and the raising party's name so
+    the resolver has the money context needed to choose a release/refund/split
+    amount. The default view shows only active disputes (open or under_review);
+    passing an explicit status narrows to that single status so resolved
+    disputes remain auditable.
 
     Args:
         db: Async database session.
@@ -386,17 +392,38 @@ async def list_disputes_for_admin(
             active (open/under_review) disputes are returned.
 
     Returns:
-        Disputes ordered newest-first.
+        Disputes ordered newest-first, each with resolution context.
     """
-    statement = select(Dispute).order_by(Dispute.created_at.desc())
+    statement = (
+        select(Dispute, Project, Milestone, Escrow, User)
+        .join(Project, Project.id == Dispute.project_id)
+        .join(Milestone, Milestone.id == Dispute.milestone_id)
+        .outerjoin(Escrow, Escrow.id == Milestone.escrow_id)
+        .join(User, User.id == Dispute.raised_by)
+        .order_by(Dispute.created_at.desc())
+    )
     if status_filter is None:
         statement = statement.where(
             Dispute.status.in_(_ADMIN_ACTIVE_DISPUTE_STATUSES)
         )
     else:
         statement = statement.where(Dispute.status == status_filter)
+
     rows = await db.execute(statement)
-    return DisputesResponse(disputes=list(rows.scalars()))
+    disputes = [
+        AdminDisputeResponse(
+            **DisputeResponse.model_validate(dispute).model_dump(),
+            project_title=project.title,
+            milestone_name=milestone.name,
+            milestone_budget=milestone.budget,
+            currency=milestone.currency,
+            escrow_amount=escrow.amount if escrow is not None else None,
+            escrow_status=escrow.status if escrow is not None else None,
+            raised_by_name=raiser.display_name,
+        )
+        for dispute, project, milestone, escrow, raiser in rows.all()
+    ]
+    return AdminDisputesResponse(disputes=disputes)
 
 
 async def get_project_dispute(

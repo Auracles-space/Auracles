@@ -231,6 +231,40 @@ export type AdminDisputeResolveRequest = {
 };
 
 /**
+ * Dispute enriched with the context an Admin needs to resolve it.
+ */
+export type AdminDisputeResponse = {
+    id: string;
+    project_id: string;
+    milestone_id: string;
+    raised_by: string;
+    reason: string;
+    status: string;
+    resolution_type: (string | null);
+    release_amount: (string | null);
+    refund_amount: (string | null);
+    admin_id: (string | null);
+    resolution_notes: (string | null);
+    escalated_at: (string | null);
+    resolved_at: (string | null);
+    created_at: string;
+    project_title: string;
+    milestone_name: string;
+    milestone_budget: string;
+    currency: string;
+    escrow_amount: (string | null);
+    escrow_status: (string | null);
+    raised_by_name: string;
+};
+
+/**
+ * Admin list response for Project Disputes with resolution context.
+ */
+export type AdminDisputesResponse = {
+    disputes: Array<AdminDisputeResponse>;
+};
+
+/**
  * Request body for admin escrow release or refund overrides.
  */
 export type AdminEscrowOverrideRequest = {
@@ -2969,7 +3003,7 @@ export type ListProjectDisputesV1AdminProjectsDisputesGetData = {
     };
 };
 
-export type ListProjectDisputesV1AdminProjectsDisputesGetResponse = (DisputesResponse);
+export type ListProjectDisputesV1AdminProjectsDisputesGetResponse = (AdminDisputesResponse);
 
 export type ListProjectDisputesV1AdminProjectsDisputesGetError = (HTTPValidationError);
 

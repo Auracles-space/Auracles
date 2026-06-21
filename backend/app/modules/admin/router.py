@@ -48,7 +48,7 @@ from app.modules.attestation.schemas import (
 from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
 from app.modules.projects import dispute_service
-from app.modules.projects.schemas import DisputeResponse, DisputesResponse
+from app.modules.projects.schemas import AdminDisputesResponse, DisputeResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -578,12 +578,13 @@ async def recompute_reputation_subject(
 
 @router.get(
     "/projects/disputes",
-    response_model=DisputesResponse,
+    response_model=AdminDisputesResponse,
     summary="List Project disputes for the admin queue",
     description=(
-        "Return Project milestone disputes across all Projects. Defaults to "
-        "active disputes (open or under_review); pass an explicit status to "
-        "view a single status such as resolved."
+        "Return Project milestone disputes across all Projects, enriched with "
+        "the milestone budget, held escrow amount, project title, and raising "
+        "party. Defaults to active disputes (open or under_review); pass an "
+        "explicit status to view a single status such as resolved."
     ),
 )
 async def list_project_disputes(
@@ -593,7 +594,7 @@ async def list_project_disputes(
         Literal["open", "under_review", "resolved"] | None,
         Query(description="Filter by an exact dispute status."),
     ] = None,
-) -> DisputesResponse:
+) -> AdminDisputesResponse:
     """Return the Project dispute queue for an authenticated admin."""
     del admin
     return await dispute_service.list_disputes_for_admin(

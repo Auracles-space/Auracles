@@ -303,6 +303,29 @@ class DisputesResponse(BaseModel):
     disputes: list[DisputeResponse]
 
 
+class AdminDisputeResponse(DisputeResponse):
+    """Dispute enriched with the context an Admin needs to resolve it.
+
+    Adds the milestone budget, currently-held escrow amount, project title, and
+    the name of the party who raised the dispute so the resolver can choose a
+    release/refund/split amount without leaving the queue.
+    """
+
+    project_title: str
+    milestone_name: str
+    milestone_budget: Decimal
+    currency: str
+    escrow_amount: Decimal | None
+    escrow_status: str | None
+    raised_by_name: str
+
+
+class AdminDisputesResponse(BaseModel):
+    """Admin list response for Project Disputes with resolution context."""
+
+    disputes: list[AdminDisputeResponse]
+
+
 class ProjectResponse(BaseModel):
     """Project response returned by CRUD and assignment endpoints."""
 

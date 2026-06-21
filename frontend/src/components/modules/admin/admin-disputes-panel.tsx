@@ -24,8 +24,8 @@ import {
   listAdminProjectDisputes,
   resolveAdminProjectDispute,
 } from "@/lib/generated/sdk.gen";
-import type { DisputeResponse } from "@/lib/generated/types.gen";
-import { formatLabel } from "@/lib/marketplace/format";
+import type { AdminDisputeResponse } from "@/lib/generated/types.gen";
+import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type DisputeStatusFilter = "active" | "resolved";
 type ResolutionType = "release" | "refund" | "split";
@@ -50,7 +50,7 @@ function formatTimestamp(value: string): string {
  * Render the project-dispute queue with resolution controls for admins.
  */
 export function AdminDisputesPanel() {
-  const [disputes, setDisputes] = useState<DisputeResponse[] | null>(null);
+  const [disputes, setDisputes] = useState<AdminDisputeResponse[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<DisputeStatusFilter>("active");
@@ -101,6 +101,21 @@ export function AdminDisputesPanel() {
     setSelectedId(null);
     setResolutionType("release");
     setReleaseAmount("");
+    setRefundAmount("");
+    setNotes("");
+    setTotpCode("");
+  }
+
+  /**
+   * Open the resolution form for one dispute, prefilling the release amount with
+   * the full held escrow so the common "release in full" case is one click.
+   *
+   * @param dispute - The dispute being resolved.
+   */
+  function startResolve(dispute: AdminDisputeResponse): void {
+    setSelectedId(dispute.id);
+    setResolutionType("release");
+    setReleaseAmount(dispute.escrow_amount ?? "");
     setRefundAmount("");
     setNotes("");
     setTotpCode("");
@@ -246,17 +261,29 @@ export function AdminDisputesPanel() {
                   </span>
                 </div>
 
-                {/* Column 2: Project Link & Milestone ID */}
+                {/* Column 2: Project, milestone, and money at stake */}
                 <div className="grid gap-0.5">
                   <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Project</span>
                   <a
                     className="text-sm font-semibold text-accent hover:underline md:text-xs"
                     href={`/projects/${dispute.project_id}`}
                   >
-                    Open Project
+                    {dispute.project_title}
                   </a>
-                  <span className="text-xs text-foreground-muted font-mono">
-                    MS: {dispute.milestone_id.slice(0, 8)}
+                  <span className="text-xs text-foreground-muted">
+                    {dispute.milestone_name}
+                  </span>
+                  <span className="text-xs font-semibold text-foreground">
+                    Escrow{" "}
+                    {dispute.escrow_amount
+                      ? formatMoney(dispute.escrow_amount, dispute.currency)
+                      : "—"}
+                    {dispute.escrow_status ? (
+                      <span className="font-normal text-foreground-muted">
+                        {" "}
+                        ({formatLabel(dispute.escrow_status)})
+                      </span>
+                    ) : null}
                   </span>
                 </div>
 
@@ -266,10 +293,13 @@ export function AdminDisputesPanel() {
                   <p className="whitespace-pre-wrap">{dispute.reason}</p>
                 </div>
 
-                {/* Column 4: Raised Timestamp */}
+                {/* Column 4: Who raised it and when */}
                 <div className="text-sm text-foreground md:text-xs">
                   <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Raised</span>
-                  <span>{formatTimestamp(dispute.created_at)}</span>
+                  <span className="block font-semibold">{dispute.raised_by_name}</span>
+                  <span className="text-foreground-muted">
+                    {formatTimestamp(dispute.created_at)}
+                  </span>
                 </div>
 
                 {/* Column 5: Action Button or Resolved Outcome */}
@@ -289,7 +319,7 @@ export function AdminDisputesPanel() {
                   ) : isSelected ? (
                     <Button disabled className="min-h-10 px-4">Resolving...</Button>
                   ) : (
-                    <Button onClick={() => setSelectedId(dispute.id)} className="min-h-10 px-4">
+                    <Button onClick={() => startResolve(dispute)} className="min-h-10 px-4">
                       Resolve dispute
                     </Button>
                   )}
@@ -308,8 +338,32 @@ export function AdminDisputesPanel() {
                     <h4 className="font-heading text-sm font-bold text-foreground">
                       Resolve Project Dispute
                     </h4>
+                    <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border-default bg-background p-3 text-xs sm:grid-cols-3">
+                      <div>
+                        <dt className="text-foreground-muted">Milestone budget</dt>
+                        <dd className="mt-0.5 font-semibold text-foreground">
+                          {formatMoney(dispute.milestone_budget, dispute.currency)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-foreground-muted">Escrow held</dt>
+                        <dd className="mt-0.5 font-semibold text-foreground">
+                          {dispute.escrow_amount
+                            ? formatMoney(dispute.escrow_amount, dispute.currency)
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-foreground-muted">Raised by</dt>
+                        <dd className="mt-0.5 font-semibold text-foreground">
+                          {dispute.raised_by_name}
+                        </dd>
+                      </div>
+                    </dl>
                     <p className="text-xs text-foreground-muted leading-relaxed max-w-2xl">
-                      Select a resolution strategy, specify optional release and refund amounts, write resolution notes for the audit trail, and verify with your admin TOTP authenticator code.
+                      Release and refund amounts must come out of the held escrow.
+                      Write resolution notes for the audit trail, then verify with
+                      your admin TOTP authenticator code.
                     </p>
                     
                     <div className="grid gap-4 md:grid-cols-2">

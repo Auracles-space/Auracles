@@ -2557,6 +2557,60 @@ async def _assigned_finalized_project_with_amendment(
     return project_id, proposal_id, amendment.json()["id"]
 
 
+async def test_admin_resolve_rejects_split_over_held_escrow(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A split whose parts exceed the held escrow is rejected (no over-spend).
+
+    The held escrow is the hard cap on resolution payouts: release + refund must
+    equal the held amount, so a larger sum must fail and leave the dispute open.
+    """
+    del migrated_database, project_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def unexpected_refund(**kwargs: Any) -> FakeStripeRefund:
+        """Fail if an invalid over-cap split reaches Stripe."""
+        raise AssertionError(f"Unexpected refund call: {kwargs}")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    context = await create_disputed_funded_project(client, name="overcap-dispute")
+
+    # Held escrow equals the 1500.00 milestone budget; 1000 + 1000 exceeds it.
+    over_cap = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "split",
+            "release_amount": "1000.00",
+            "refund_amount": "1000.00",
+            "resolution_notes": "Attempt to pay out more than the held escrow.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+    assert over_cap.status_code == 422
+
+    # The dispute must remain open and resolvable after the rejected attempt.
+    queue = await client.get(
+        "/v1/admin/projects/disputes",
+        headers=context["admin_headers"],
+    )
+    assert context["dispute_id"] in {row["id"] for row in queue.json()["disputes"]}
+
+
 async def test_admin_lists_open_project_disputes(
     client: AsyncClient,
     migrated_database: None,
@@ -2581,6 +2635,16 @@ async def test_admin_lists_open_project_disputes(
     listed = next(row for row in disputes if row["id"] == context["dispute_id"])
     assert listed["status"] == "open"
     assert listed["project_id"] == context["project_id"]
+    # Admin needs the money context to choose a resolution amount: the milestone
+    # budget, the escrow currently held, the project title, and who raised it.
+    assert listed["milestone_id"] == context["milestone_id"]
+    assert listed["milestone_name"] == "Implementation"
+    assert Decimal(listed["milestone_budget"]) == Decimal("1500.00")
+    assert listed["currency"] == "USD"
+    assert Decimal(listed["escrow_amount"]) == Decimal("1500.00")
+    assert listed["escrow_status"] == "held"
+    assert listed["project_title"]
+    assert listed["raised_by_name"]
 
     forbidden = await client.get(
         "/v1/admin/projects/disputes",
