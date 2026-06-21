@@ -229,6 +229,7 @@ class DeliverableResponse(BaseModel):
     file_keys: list[str]
     revision_notes: str | None
     status: str
+    scan_status: str
     submitted_at: datetime
     approved_at: datetime | None
     auto_approved: bool

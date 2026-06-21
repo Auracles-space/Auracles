@@ -9657,6 +9657,9 @@ components:
         status:
           type: string
           title: Status
+        scan_status:
+          type: string
+          title: Scan Status
         submitted_at:
           type: string
           format: date-time
@@ -9684,6 +9687,7 @@ components:
       - file_keys
       - revision_notes
       - status
+      - scan_status
       - submitted_at
       - approved_at
       - auto_approved

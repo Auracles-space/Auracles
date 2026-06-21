@@ -514,7 +514,9 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       },
       ...current,
     ]);
-    setNotice("Deliverable submitted.");
+    setNotice(
+      "Deliverable submitted. Files are scanned for viruses before the operator can approve.",
+    );
     setDeliverableFormMilestoneId(null);
     void loadWorkspace();
   }

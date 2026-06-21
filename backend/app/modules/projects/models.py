@@ -93,6 +93,13 @@ DELIVERABLE_STATUS_ENUM = ENUM(
     name="deliverable_status_enum",
     create_type=False,
 )
+DELIVERABLE_SCAN_STATUS_ENUM = ENUM(
+    "pending_scan",
+    "visible",
+    "quarantined",
+    name="deliverable_scan_status_enum",
+    create_type=False,
+)
 DISPUTE_STATUS_ENUM = ENUM(
     "open",
     "under_review",
@@ -382,6 +389,11 @@ class Deliverable(CreatedAtMixin, Base):
         DELIVERABLE_STATUS_ENUM,
         nullable=False,
         server_default="submitted",
+    )
+    scan_status: Mapped[str] = mapped_column(
+        DELIVERABLE_SCAN_STATUS_ENUM,
+        nullable=False,
+        server_default="pending_scan",
     )
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

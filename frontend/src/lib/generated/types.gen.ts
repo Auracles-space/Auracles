@@ -1038,6 +1038,7 @@ export type DeliverableResponse = {
     file_keys: Array<(string)>;
     revision_notes: (string | null);
     status: string;
+    scan_status: string;
     submitted_at: string;
     approved_at: (string | null);
     auto_approved: boolean;

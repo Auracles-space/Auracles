@@ -36,6 +36,7 @@ from app.modules.projects.schemas import (
     MilestoneUpdateRequest,
 )
 from app.modules.workspace.models import WorkspaceMessage
+from app.workers.tasks.deliverable_scan import scan_deliverable_upload
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
@@ -949,6 +950,9 @@ async def submit_deliverable(
         )
         await db.flush()
         await db.refresh(deliverable)
+    # Dispatch the virus scan after commit so the worker can read the row; the
+    # Deliverable stays pending_scan and approval is blocked until it is clean.
+    scan_deliverable_upload.delay(str(deliverable.id))
     return deliverable
 
 
@@ -1057,6 +1061,16 @@ async def approve_deliverable(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Only submitted Deliverables can be approved.",
+            )
+        # Never release Escrow for a Deliverable whose files have not passed the
+        # virus scan; a quarantined file must be re-submitted, not approved.
+        if deliverable.scan_status != "visible":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Deliverable files are still being scanned or were "
+                    "quarantined; approval is blocked."
+                ),
             )
         await db.scalar(
             select(Escrow).where(Escrow.id == milestone.escrow_id).with_for_update()

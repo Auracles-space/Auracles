@@ -698,6 +698,14 @@ async def _accept_project_for_milestones(
     return project_id
 
 
+async def _mark_deliverable_scanned(deliverable_id: str) -> None:
+    """Simulate the ClamAV scan completing so a Deliverable can be approved."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            deliverable = await session.get(Deliverable, UUID(deliverable_id))
+            deliverable.scan_status = "visible"
+
+
 async def test_create_milestone_rejects_total_over_proposal_budget(
     client: AsyncClient,
     migrated_database: None,
@@ -1416,6 +1424,59 @@ async def test_fund_milestone_resumes_existing_pending_payment(
     assert transaction_count == 1
 
 
+async def test_deliverable_scan_gate_blocks_approval_until_visible(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A submitted Deliverable is pending_scan and cannot be approved until clean.
+
+    Guards Escrow release: approval is refused while files are unscanned, then
+    succeeds once the scan marks the Deliverable visible.
+    """
+    operator_id = await create_user("scan-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "scan-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+
+    submitted = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Final playbook",
+            "description": "Implementation playbook.",
+            "file_keys": ["workspace/project/final.pdf"],
+        },
+    )
+    deliverable_id = submitted.json()["id"]
+    blocked = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/approve",
+        headers=operator_headers,
+    )
+    await _mark_deliverable_scanned(deliverable_id)
+    approved = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/approve",
+        headers=operator_headers,
+    )
+
+    assert submitted.status_code == 201
+    assert submitted.json()["scan_status"] == "pending_scan"
+    assert blocked.status_code == 409
+    assert approved.status_code == 200
+
+
 async def create_funded_project_milestone(
     client: AsyncClient,
     *,
@@ -1593,6 +1654,7 @@ async def test_deliverable_revision_approval_and_manual_project_close(
         },
     )
     second_deliverable_id = second_submission.json()["id"]
+    await _mark_deliverable_scanned(second_deliverable_id)
     approved = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
         f"{second_deliverable_id}/approve",
@@ -1672,6 +1734,7 @@ async def test_approved_deliverable_prefills_framework_draft(
         },
     )
     deliverable_id = submitted.json()["id"]
+    await _mark_deliverable_scanned(deliverable_id)
     await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
         f"{deliverable_id}/approve",
@@ -1761,6 +1824,7 @@ async def test_operator_cannot_build_framework_prefill_from_contributor_delivera
         },
     )
     deliverable_id = submitted.json()["id"]
+    await _mark_deliverable_scanned(deliverable_id)
     await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
         f"{deliverable_id}/approve",
