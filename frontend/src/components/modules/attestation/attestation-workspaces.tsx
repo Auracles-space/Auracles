@@ -38,7 +38,7 @@ import type {
   AttestorApplicationResponse,
   AttestorAssignmentResponse,
 } from "@/lib/generated/types.gen";
-import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import { allValid, isLengthBetween, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
@@ -307,11 +307,14 @@ export function AttestorApplicationPanel() {
   const [loading, setLoading] = useState(true);
   const [professionalReferences, setProfessionalReferences] = useState("");
   const [specializations, setSpecializations] = useState("");
+  // Mirror the backend AttestorApplicationCreateRequest constraints so the
+  // form cannot post a body the API rejects with 422: at least one
+  // specialization and jurisdiction, a 10+ char summary, and 3+ char references.
   const canSubmit = allValid(
-    isNonEmpty(specializations),
-    isNonEmpty(jurisdictions),
-    isNonEmpty(credentialsSummary),
-    isNonEmpty(professionalReferences),
+    splitCsv(specializations).length > 0,
+    splitCsv(jurisdictions).length > 0,
+    isLengthBetween(credentialsSummary.trim(), 10, 5000),
+    isLengthBetween(professionalReferences.trim(), 3, 5000),
   );
 
   useEffect(() => {
@@ -395,19 +398,23 @@ export function AttestorApplicationPanel() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSpecializations(event.target.value)} value={specializations} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSpecializations(event.target.value)} placeholder="e.g. ISO 27001, SOC 2" value={specializations} />
+            <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setJurisdictions(event.target.value)} value={jurisdictions} />
+            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setJurisdictions(event.target.value)} placeholder="e.g. US, EU, NG" value={jurisdictions} />
+            <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground md:col-span-2">
             Credentials summary
             <textarea className="min-h-28 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setCredentialsSummary(event.target.value)} value={credentialsSummary} />
+            <span className="text-xs font-normal text-foreground-subtle">At least 10 characters.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground md:col-span-2">
             Professional references
             <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setProfessionalReferences(event.target.value)} value={professionalReferences} />
+            <span className="text-xs font-normal text-foreground-subtle">At least 3 characters.</span>
           </label>
         </div>
         <button className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmit} onClick={handleSubmitApplication} type="button">

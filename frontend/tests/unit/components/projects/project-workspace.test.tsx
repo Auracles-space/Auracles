@@ -108,6 +108,7 @@ describe("ProjectWorkspace", () => {
       email_verified: true,
       id: "operator-1",
       kyc_status: "verified",
+      pending_roles: [],
       roles: ["operator"],
     });
     vi.mocked(getProject).mockResolvedValue({

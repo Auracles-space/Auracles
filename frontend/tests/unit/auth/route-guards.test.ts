@@ -38,6 +38,18 @@ describe("auth route guards", () => {
     expect(getRoleLandingPath(roles)).toBe(expectedPath);
   });
 
+  it("lands a no-active-role user on a path they are allowed to view", () => {
+    // A pending attestor has zero active roles. Their landing path must not be
+    // a role-gated route, or middleware redirects it back to the same landing
+    // path forever (ERR_TOO_MANY_REDIRECTS on login).
+    const landing = getRoleLandingPath([]);
+    const decision = resolveAuthRouteDecision({
+      hint: makeHint([]),
+      pathname: landing,
+    });
+    expect(decision).toEqual({ kind: "next" });
+  });
+
   it("redirects an authenticated visitor away from login", () => {
     expect(
       resolveAuthRouteDecision({ hint: futureHint, pathname: "/login" }),
