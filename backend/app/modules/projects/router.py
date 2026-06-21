@@ -236,6 +236,25 @@ async def finalize_milestone_plan(
     return ProjectResponse.model_validate(project)
 
 
+@router.post("/{project_id}/milestones/reopen", response_model=ProjectResponse)
+async def reopen_milestone_plan(
+    project_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Reopen a finalized Milestone plan to draft while no Milestone is funded.
+
+    Open to either Project member so the breakdown can be renegotiated before
+    any Escrow is funded.
+    """
+    project = await milestone_service.reopen_milestone_plan(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+    )
+    return ProjectResponse.model_validate(project)
+
+
 @router.post(
     "/{project_id}/milestones/{milestone_id}/fund",
     response_model=MilestoneFundingResponse,

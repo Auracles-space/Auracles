@@ -667,6 +667,263 @@ async def test_accepted_contributor_manages_draft_milestones_and_finalizes_plan(
     assert str(milestones[0].budget) == "1500.00"
 
 
+async def _accept_project_for_milestones(
+    client: AsyncClient,
+    operator_headers: Mapping[str, str],
+    contributor_headers: Mapping[str, str],
+) -> str:
+    """Create an Operator Project and accept the Contributor Proposal.
+
+    Returns the project id with an accepted Proposal of budget 1500.00 (from
+    ``proposal_payload``), ready for draft milestone management.
+    """
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    return project_id
+
+
+async def test_create_milestone_rejects_total_over_proposal_budget(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Adding a Milestone may not push the budget total over the Proposal budget.
+
+    The accepted Proposal budget is 1500.00; a running total that would exceed it
+    is rejected, while a total equal to it is allowed.
+    """
+    operator_id = await create_user("over-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "over-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    first = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Discovery",
+            "description": "Map current procurement workflows.",
+            "budget": "1000.00",
+            "currency": "USD",
+        },
+    )
+    over = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 2,
+            "name": "Too much",
+            "description": "This would push the total to 1600.",
+            "budget": "600.00",
+            "currency": "USD",
+        },
+    )
+    at_limit = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 3,
+            "name": "Exact remainder",
+            "description": "Brings the total to exactly 1500.",
+            "budget": "500.00",
+            "currency": "USD",
+        },
+    )
+
+    assert first.status_code == 201
+    assert over.status_code == 422
+    assert at_limit.status_code == 201
+
+
+async def test_update_milestone_rejects_total_over_proposal_budget(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Raising a Milestone budget may not push the plan total over the Proposal.
+
+    With two Milestones summing to exactly 1500.00, raising one rejects, while a
+    change that keeps the total within 1500.00 is allowed.
+    """
+    operator_id = await create_user("upd-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "upd-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    first_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones",
+            headers=contributor_headers,
+            json={
+                "sequence": 1,
+                "name": "Discovery",
+                "description": "Map current procurement workflows.",
+                "budget": "1000.00",
+                "currency": "USD",
+            },
+        )
+    ).json()["id"]
+    second_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones",
+            headers=contributor_headers,
+            json={
+                "sequence": 2,
+                "name": "Delivery",
+                "description": "Deliver the playbook.",
+                "budget": "500.00",
+                "currency": "USD",
+            },
+        )
+    ).json()["id"]
+
+    over = await client.patch(
+        f"/v1/projects/{project_id}/milestones/{second_id}",
+        headers=contributor_headers,
+        json={"budget": "600.00"},
+    )
+    within = await client.patch(
+        f"/v1/projects/{project_id}/milestones/{first_id}",
+        headers=contributor_headers,
+        json={"budget": "900.00"},
+    )
+
+    assert over.status_code == 422
+    assert within.status_code == 200
+
+
+async def _finalize_single_milestone_plan(
+    client: AsyncClient,
+    project_id: str,
+    contributor_headers: Mapping[str, str],
+) -> str:
+    """Create one Milestone equal to the Proposal budget and finalize the plan.
+
+    Returns the milestone id; the plan ends ``finalized``.
+    """
+    milestone_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones",
+            headers=contributor_headers,
+            json={
+                "sequence": 1,
+                "name": "Whole engagement",
+                "description": "Single milestone covering the full budget.",
+                "budget": "1500.00",
+                "currency": "USD",
+            },
+        )
+    ).json()["id"]
+    finalized = await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+    assert finalized.status_code == 200
+    assert finalized.json()["milestone_plan_status"] == "finalized"
+    return milestone_id
+
+
+async def test_reopen_milestone_plan_while_unfunded_returns_to_draft(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Either member may reopen a finalized plan to draft while nothing is funded.
+
+    Reopening flips the plan back to ``draft`` and re-enables milestone edits.
+    """
+    operator_id = await create_user("reopen-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "reopen-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    await _finalize_single_milestone_plan(client, project_id, contributor_headers)
+
+    reopened = await client.post(
+        f"/v1/projects/{project_id}/milestones/reopen",
+        headers=operator_headers,
+    )
+    edit_after_reopen = await client.patch(
+        f"/v1/projects/{project_id}/milestones/"
+        f"{(await client.get(f'/v1/projects/{project_id}/milestones', headers=contributor_headers)).json()['milestones'][0]['id']}",
+        headers=contributor_headers,
+        json={"budget": "1200.00"},
+    )
+
+    assert reopened.status_code == 200
+    assert reopened.json()["milestone_plan_status"] == "draft"
+    assert edit_after_reopen.status_code == 200
+
+
+async def test_reopen_milestone_plan_blocked_after_funding(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A plan may not be reopened once any Milestone has been funded."""
+    operator_id = await create_user("nofund-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "nofund-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    milestone_id = await _finalize_single_milestone_plan(
+        client, project_id, contributor_headers
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            milestone = await session.scalar(
+                select(Milestone).where(Milestone.id == milestone_id)
+            )
+            milestone.status = "funded"
+
+    blocked = await client.post(
+        f"/v1/projects/{project_id}/milestones/reopen",
+        headers=operator_headers,
+    )
+
+    assert blocked.status_code == 409
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,

@@ -41,6 +41,7 @@ WORKSPACE_SYSTEM_EVENT_ENUM = ENUM(
     "amendment_rejected",
     "amendment_expired",
     "milestone_funded",
+    "milestone_plan_reopened",
     "deliverable_submitted",
     "deliverable_approved",
     "deliverable_auto_approved",

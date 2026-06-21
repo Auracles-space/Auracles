@@ -4963,6 +4963,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/milestones/reopen:
+    post:
+      tags:
+      - Projects
+      summary: Reopen Milestone Plan
+      description: Reopen a finalized Milestone plan to draft while no Milestone is
+        funded. Open to either Project member so the breakdown can be renegotiated
+        before any Escrow is funded.
+      operationId: reopen_milestone_plan_v1_projects__project_id__milestones_reopen_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/projects/{project_id}/milestones/{milestone_id}/fund:
     post:
       tags:

@@ -4145,6 +4145,16 @@ export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostRespon
 
 export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostError = (HTTPValidationError);
 
+export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostResponse = (ProjectResponse);
+
+export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostError = (HTTPValidationError);
+
 export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData = {
     path: {
         milestone_id: string;

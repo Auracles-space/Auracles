@@ -413,6 +413,45 @@ async def _mark_milestone_funding_failed(
         )
 
 
+async def _ensure_within_proposal_budget(
+    *,
+    db: AsyncSession,
+    project_id: UUID,
+    proposal: Proposal,
+    new_budget: Decimal,
+    exclude_milestone_id: UUID | None = None,
+) -> None:
+    """Reject a Milestone budget that pushes the plan total over the Proposal.
+
+    Upper-bound guard: the running ``SUM(milestone budgets)`` may not exceed the
+    accepted Proposal budget (the agreed value). Under-sum is still allowed while
+    drafting; the strict ``SUM == proposal.budget`` invariant remains enforced at
+    finalize. ``exclude_milestone_id`` omits the Milestone being edited so an
+    in-place budget change is measured against the other Milestones only.
+
+    Args:
+        db: Async session.
+        project_id: Project whose Milestone budgets are summed.
+        proposal: Accepted Proposal supplying the agreed budget ceiling.
+        new_budget: Budget of the Milestone being created or updated.
+        exclude_milestone_id: Milestone to exclude from the existing total.
+
+    Raises:
+        HTTPException(422): If the resulting total would exceed the Proposal budget.
+    """
+    query = select(func.coalesce(func.sum(Milestone.budget), Decimal("0.00"))).where(
+        Milestone.project_id == project_id
+    )
+    if exclude_milestone_id is not None:
+        query = query.where(Milestone.id != exclude_milestone_id)
+    existing_total = Decimal(await db.scalar(query) or "0.00")
+    if existing_total + new_budget > proposal.budget:
+        raise HTTPException(
+            status_code=422,
+            detail="Milestone budget total may not exceed the accepted Proposal budget.",
+        )
+
+
 async def create_milestone(
     *,
     db: AsyncSession,
@@ -438,6 +477,12 @@ async def create_milestone(
             db=db,
             project_id=project.id,
             sequence=payload.sequence,
+        )
+        await _ensure_within_proposal_budget(
+            db=db,
+            project_id=project.id,
+            proposal=proposal,
+            new_budget=payload.budget,
         )
 
         milestone = Milestone(
@@ -518,6 +563,14 @@ async def update_milestone(
                 db=db,
                 project_id=project.id,
                 sequence=updates["sequence"],
+                exclude_milestone_id=milestone.id,
+            )
+        if "budget" in updates:
+            await _ensure_within_proposal_budget(
+                db=db,
+                project_id=project.id,
+                proposal=proposal,
+                new_budget=updates["budget"],
                 exclude_milestone_id=milestone.id,
             )
         for key, value in updates.items():
@@ -617,6 +670,83 @@ async def finalize_milestone_plan(
                 "accepted_proposal_id": str(proposal.id),
                 "budget": f"{proposal.budget:.2f}",
             },
+        )
+        await db.flush()
+        await db.refresh(project)
+    return project
+
+
+async def reopen_milestone_plan(
+    *,
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+) -> Project:
+    """Reopen a finalized Milestone plan to draft while no Milestone is funded.
+
+    Either Project member (the Operator or the accepted Contributor) may reopen,
+    so the breakdown can be renegotiated after finalization — e.g. the Operator
+    asks for a different split of the same agreed budget. Refused once any
+    Milestone has moved beyond ``pending`` (funding has begun), so reopening can
+    never disturb held Escrow. The strict ``SUM == proposal.budget`` invariant is
+    re-checked when the Contributor finalizes again.
+
+    Args:
+        db: Async session.
+        user: Requesting Project member.
+        project_id: Project whose plan is reopened.
+
+    Returns:
+        The Project with ``milestone_plan_status`` set back to ``draft``.
+
+    Raises:
+        HTTPException(403): If the user is not a Project member.
+        HTTPException(409): If the plan is not finalized, or a Milestone is funded.
+    """
+    # Capture the id before the rollback below expires the auth-loaded User.
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal = await _load_project_with_accepted_proposal(
+            db=db,
+            project_id=project_id,
+            lock_project=True,
+            lock_proposal=True,
+        )
+        _ensure_project_member(project, proposal, user_id)
+        if project.milestone_plan_status != "finalized":
+            raise HTTPException(
+                status_code=409,
+                detail="Only a finalized Milestone plan can be reopened.",
+            )
+        funded_count = await db.scalar(
+            select(func.count(Milestone.id)).where(
+                Milestone.project_id == project.id,
+                Milestone.status != "pending",
+            )
+        )
+        if int(funded_count or 0) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot reopen the plan after a Milestone has been funded.",
+            )
+        project.milestone_plan_status = "draft"
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="milestone_plan_reopened",
+                payload={"reopened_by": str(user_id)},
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="milestone_plan_reopened",
+            target_type="project",
+            target_id=project.id,
+            metadata={"accepted_proposal_id": str(proposal.id)},
         )
         await db.flush()
         await db.refresh(project)

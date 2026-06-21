@@ -24,9 +24,12 @@ import {
   approveDeliverable,
   createMilestone,
   createWorkspaceMessage,
+  deleteMilestone,
   finalizeMilestonePlan,
   fundMilestone,
   getProject,
+  reopenMilestonePlan,
+  updateMilestone,
   listMilestones,
   listMyProjectProposals,
   listProjectProposals,
@@ -132,6 +135,12 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [proposalBudget, setProposalBudget] = useState("");
   const [milestoneForm, setMilestoneForm] =
     useState<MilestoneFormState>(initialMilestoneForm);
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+  const [editMilestoneForm, setEditMilestoneForm] = useState<{
+    budget: string;
+    description: string;
+    name: string;
+  }>({ budget: "", description: "", name: "" });
   const deliverableName = "Final playbook";
   const deliverableDescription = "Approved implementation playbook and rollout guide.";
   const [messageBody, setMessageBody] = useState("");
@@ -152,6 +161,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const showProposalForm = isContributor && project !== null && !isProjectOwner && project.status === "open" && myProposals.length === 0;
   const showAcceptButton = isProjectOwner && project?.status === "open";
   const showMilestoneForm = isAssignedContributor && project?.milestone_plan_status === "draft";
+  // Either member may reopen a finalized plan to renegotiate the split, but only
+  // before any milestone is funded (escrow stays untouched).
+  const canReopenPlan =
+    (isProjectOwner || isAssignedContributor) &&
+    project?.milestone_plan_status === "finalized" &&
+    milestones.length > 0 &&
+    milestones.every((milestone) => milestone.status === "pending");
 
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
@@ -324,6 +340,78 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setProject(result.data);
     setNotice("Milestone plan finalized.");
+    void loadWorkspace();
+  }
+
+  async function reopenPlan() {
+    const result = await reopenMilestonePlan({
+      headers,
+      path: { project_id: projectId },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setProject(result.data);
+    setNotice("Milestone plan reopened for changes.");
+    void loadWorkspace();
+  }
+
+  function startEditMilestone(milestone: MilestoneResponse) {
+    setEditingMilestoneId(milestone.id);
+    setEditMilestoneForm({
+      budget: String(milestone.budget),
+      description: milestone.description,
+      name: milestone.name,
+    });
+    setError(null);
+  }
+
+  function cancelEditMilestone() {
+    setEditingMilestoneId(null);
+  }
+
+  async function saveMilestoneEdit(milestoneId: string) {
+    const result = await updateMilestone({
+      body: {
+        budget: editMilestoneForm.budget,
+        description: editMilestoneForm.description,
+        name: editMilestoneForm.name,
+      },
+      headers,
+      path: { milestone_id: milestoneId, project_id: projectId },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    const updated = result.data;
+    setMilestones((current) =>
+      current.map((milestone) =>
+        milestone.id === milestoneId ? updated : milestone,
+      ),
+    );
+    setEditingMilestoneId(null);
+    setNotice("Milestone updated.");
+    void loadWorkspace();
+  }
+
+  async function deleteProjectMilestone(milestoneId: string) {
+    const result = await deleteMilestone({
+      headers,
+      path: { milestone_id: milestoneId, project_id: projectId },
+    });
+    if (!result.response.ok) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setMilestones((current) =>
+      current.filter((milestone) => milestone.id !== milestoneId),
+    );
+    if (editingMilestoneId === milestoneId) {
+      setEditingMilestoneId(null);
+    }
+    setNotice("Milestone removed.");
     void loadWorkspace();
   }
 
@@ -524,8 +612,16 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 Budget
                 <input
                   className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
-                  onChange={(event) => setProposalBudget(event.target.value)}
+                  inputMode="decimal"
+                  onChange={(event) => {
+                    const cleaned = event.target.value.replace(/[^0-9.]/g, "");
+                    const parts = cleaned.split(".");
+                    if (parts.length > 2) return;
+                    setProposalBudget(cleaned);
+                  }}
+                  pattern="[0-9]*\.?[0-9]*"
                   placeholder="e.g. 1500.00"
+                  type="text"
                   value={proposalBudget}
                 />
               </label>
@@ -591,13 +687,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 <input
                   aria-label="Milestone sequence"
                   className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-                  onChange={(event) =>
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    const cleaned = event.target.value.replace(/[^0-9]/g, "");
                     setMilestoneForm((current) => ({
                       ...current,
-                      sequence: event.target.value,
-                    }))
-                  }
+                      sequence: cleaned,
+                    }));
+                  }}
+                  pattern="[0-9]*"
                   placeholder="Sequence (e.g. 1)"
+                  type="text"
                   value={milestoneForm.sequence}
                 />
                 <input
@@ -610,18 +710,25 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     }))
                   }
                   placeholder="Milestone name (e.g. Design)"
+                  type="text"
                   value={milestoneForm.name}
                 />
                 <input
                   aria-label="Milestone budget"
                   className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-                  onChange={(event) =>
+                  inputMode="decimal"
+                  onChange={(event) => {
+                    const cleaned = event.target.value.replace(/[^0-9.]/g, "");
+                    const parts = cleaned.split(".");
+                    if (parts.length > 2) return;
                     setMilestoneForm((current) => ({
                       ...current,
-                      budget: event.target.value,
-                    }))
-                  }
+                      budget: cleaned,
+                    }));
+                  }}
+                  pattern="[0-9]*\.?[0-9]*"
                   placeholder="Budget (e.g. 1500.00)"
+                  type="text"
                   value={milestoneForm.budget}
                 />
               </div>
@@ -656,6 +763,22 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             </form>
           ) : null}
 
+          {canReopenPlan ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-4">
+              <p className="text-sm text-foreground-muted">
+                Plan finalized. Reopen to change the milestone breakdown before
+                funding begins.
+              </p>
+              <button
+                className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                onClick={() => void reopenPlan()}
+                type="button"
+              >
+                Reopen plan
+              </button>
+            </div>
+          ) : null}
+
           <div className="grid gap-2">
             {milestones.length === 0 ? (
               <p className="text-sm text-foreground-muted italic">
@@ -664,42 +787,134 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   : "No milestones defined yet."}
               </p>
             ) : (
-              milestones.map((milestone) => (
-                <div
-                  className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                  key={milestone.id}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-semibold text-foreground">
-                      {milestone.sequence}. {milestone.name} · ${milestone.budget}
-                  </p>
-                    <StatusBadge status={milestone.status} />
+              milestones.map((milestone) => {
+                const canManage =
+                  isAssignedContributor &&
+                  milestone.status === "pending" &&
+                  project?.milestone_plan_status === "draft";
+                const isEditing = editingMilestoneId === milestone.id;
+                return (
+                  <div
+                    className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                    key={milestone.id}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="font-semibold text-foreground">
+                        {milestone.sequence}. {milestone.name} · ${milestone.budget}
+                      </p>
+                      <StatusBadge status={milestone.status} />
+                    </div>
+                    {isEditing ? (
+                      <div className="mt-3 grid gap-3">
+                        <label className="grid gap-1 text-sm">
+                          <span className="font-medium text-foreground">Name</span>
+                          <input
+                            className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            onChange={(event) =>
+                              setEditMilestoneForm((form) => ({
+                                ...form,
+                                name: event.target.value,
+                              }))
+                            }
+                            value={editMilestoneForm.name}
+                          />
+                        </label>
+                        <label className="grid gap-1 text-sm">
+                          <span className="font-medium text-foreground">
+                            Budget (USD)
+                          </span>
+                          <input
+                            className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            inputMode="decimal"
+                            onChange={(event) =>
+                              setEditMilestoneForm((form) => ({
+                                ...form,
+                                budget: event.target.value,
+                              }))
+                            }
+                            value={editMilestoneForm.budget}
+                          />
+                        </label>
+                        <label className="grid gap-1 text-sm">
+                          <span className="font-medium text-foreground">
+                            Description
+                          </span>
+                          <textarea
+                            className="min-h-20 rounded-xl border border-border-default bg-surface-1 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            onChange={(event) =>
+                              setEditMilestoneForm((form) => ({
+                                ...form,
+                                description: event.target.value,
+                              }))
+                            }
+                            value={editMilestoneForm.description}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-foreground-muted">
+                        {milestone.description}
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {isProjectOwner && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
+                        <button
+                          className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                          onClick={() => void fundProjectMilestone(milestone.id)}
+                          type="button"
+                        >
+                          Fund milestone
+                        </button>
+                      ) : null}
+                      {isAssignedContributor && milestone.status === "funded" ? (
+                        <button
+                          className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                          onClick={() => void submitMilestoneDeliverable(milestone.id)}
+                          type="button"
+                        >
+                          Submit deliverable
+                        </button>
+                      ) : null}
+                      {canManage && isEditing ? (
+                        <>
+                          <button
+                            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+                            onClick={() => void saveMilestoneEdit(milestone.id)}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                            onClick={cancelEditMilestone}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : null}
+                      {canManage && !isEditing ? (
+                        <>
+                          <button
+                            className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                            onClick={() => startEditMilestone(milestone)}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="min-h-12 rounded-xl border border-[#DC2626]/40 px-6 text-sm font-semibold text-[#DC2626] transition-all hover:bg-[#DC2626]/10 focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                            onClick={() => void deleteProjectMilestone(milestone.id)}
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-                  <p className="mt-2 text-sm text-foreground-muted">
-                    {milestone.description}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {isProjectOwner && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
-                      <button
-                        className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                        onClick={() => void fundProjectMilestone(milestone.id)}
-                        type="button"
-                      >
-                        Fund milestone
-                      </button>
-                    ) : null}
-                    {isAssignedContributor && milestone.status === "funded" ? (
-                      <button
-                        className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                        onClick={() => void submitMilestoneDeliverable(milestone.id)}
-                        type="button"
-                      >
-                        Submit deliverable
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </section>
