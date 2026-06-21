@@ -18,8 +18,10 @@ from app.modules.projects import dispute_service, milestone_service, service
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     AmendmentResponse,
+    DeliverableDownloadResponse,
     DeliverableResponse,
     DeliverableRevisionRequest,
+    DeliverablesResponse,
     DeliverableSubmitRequest,
     DisputeCreateRequest,
     DisputeResponse,
@@ -318,6 +320,46 @@ async def submit_deliverable(
         payload=payload,
     )
     return DeliverableResponse.model_validate(deliverable)
+
+
+@router.get(
+    "/{project_id}/milestones/{milestone_id}/deliverables",
+    response_model=DeliverablesResponse,
+)
+async def list_deliverables(
+    project_id: UUID,
+    milestone_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DeliverablesResponse:
+    """List a Milestone's Deliverables for either Project member to review."""
+    return await milestone_service.list_deliverables(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+
+@router.get(
+    "/{project_id}/milestones/{milestone_id}/deliverables/{deliverable_id}/download",
+    response_model=DeliverableDownloadResponse,
+)
+async def download_deliverable_files(
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> DeliverableDownloadResponse:
+    """Return presigned download URLs for a scanned Deliverable's files."""
+    return await milestone_service.create_deliverable_download(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+    )
 
 
 @router.post(

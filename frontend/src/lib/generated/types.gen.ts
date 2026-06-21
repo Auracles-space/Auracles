@@ -1027,6 +1027,22 @@ export type DataExportRequestResponse = {
 };
 
 /**
+ * Presigned download targets for a Deliverable's files.
+ */
+export type DeliverableDownloadResponse = {
+    files: Array<DeliverableFileDownload>;
+};
+
+/**
+ * A single downloadable Deliverable file with a presigned URL.
+ */
+export type DeliverableFileDownload = {
+    file_key: string;
+    file_name: string;
+    url: string;
+};
+
+/**
  * Deliverable response returned to Project members.
  */
 export type DeliverableResponse = {
@@ -1058,6 +1074,13 @@ export type DeliverableRevisionRequest = {
 export type DeliverableSpec = {
     name: string;
     description: string;
+};
+
+/**
+ * List of Deliverables submitted against a Milestone.
+ */
+export type DeliverablesResponse = {
+    deliverables: Array<DeliverableResponse>;
 };
 
 /**
@@ -4204,6 +4227,29 @@ export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverable
 export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesPostResponse = (DeliverableResponse);
 
 export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesPostError = (HTTPValidationError);
+
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetData = {
+    path: {
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetResponse = (DeliverablesResponse);
+
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetError = (HTTPValidationError);
+
+export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetData = {
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        project_id: string;
+    };
+};
+
+export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetResponse = (DeliverableDownloadResponse);
+
+export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetError = (HTTPValidationError);
 
 export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostData = {
     path: {

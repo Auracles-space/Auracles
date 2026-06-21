@@ -10,6 +10,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { DeliverableReviewCard } from "@/components/modules/projects/deliverable-review-card";
 import { DeliverableSubmitForm } from "@/components/modules/projects/deliverable-submit-form";
 import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
@@ -26,7 +27,6 @@ import {
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
   acceptProposal,
-  approveDeliverable,
   cancelAcceptance,
   createMilestone,
   createWorkspaceMessage,
@@ -70,24 +70,6 @@ const initialMilestoneForm: MilestoneFormState = {
   name: "",
   sequence: "",
 };
-
-/**
- * Return IDs from a workspace system payload when present.
- */
-function payloadIds(message: WorkspaceMessageResponse): {
-  deliverableId?: string;
-  milestoneId?: string;
-} {
-  const payload = message.system_payload ?? {};
-  return {
-    deliverableId:
-      typeof payload.deliverable_id === "string"
-        ? payload.deliverable_id
-        : undefined,
-    milestoneId:
-      typeof payload.milestone_id === "string" ? payload.milestone_id : undefined,
-  };
-}
 
 /**
  * Render a small status badge.
@@ -544,27 +526,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     void loadWorkspace();
   }
 
-  async function approveMilestoneDeliverable(
-    milestoneId: string,
-    deliverableId: string,
-  ) {
-    const result = await approveDeliverable({
-      headers,
-      path: {
-        deliverable_id: deliverableId,
-        milestone_id: milestoneId,
-        project_id: projectId,
-      },
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    updateLastDeliverable(result.data);
-    setNotice("Deliverable approved.");
-    void loadWorkspace();
-  }
-
   async function handleSendMessage(body: string): Promise<boolean> {
     const result = await createWorkspaceMessage({
       body: { body },
@@ -578,11 +539,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     setMessages((current) => [result.data, ...current]);
     return true;
   }
-
-  const deliverableApprovalActions = messages
-    .filter((message) => message.system_event === "deliverable_submitted")
-    .map((message) => ({ ...payloadIds(message), messageId: message.id }))
-    .filter((ids) => ids.deliverableId && ids.milestoneId);
 
   const canSubmitProposal = allValid(
     isNonEmpty(proposalScope),
@@ -1068,6 +1024,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         projectId={projectId}
                       />
                     ) : null}
+                    {["submitted", "approved", "revision_requested"].includes(
+                      milestone.status,
+                    ) ? (
+                      <DeliverableReviewCard
+                        isOperator={isProjectOwner}
+                        milestoneId={milestone.id}
+                        milestoneStatus={milestone.status}
+                        onChanged={() => void loadWorkspace()}
+                        projectId={projectId}
+                      />
+                    ) : null}
                   </div>
                 );
               })
@@ -1089,28 +1056,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             </div>
           ) : null}
 
-          {isProjectOwner && deliverableApprovalActions.length > 0 ? (
-            <div className="grid gap-2 rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm">
-              <p className="text-sm font-semibold text-foreground">
-                Deliverables awaiting your approval
-              </p>
-              {deliverableApprovalActions.map((action) => (
-                <button
-                  className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  key={action.messageId}
-                  onClick={() =>
-                    void approveMilestoneDeliverable(
-                      action.milestoneId ?? "",
-                      action.deliverableId ?? "",
-                    )
-                  }
-                  type="button"
-                >
-                  Approve deliverable
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
 

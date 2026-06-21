@@ -5150,6 +5150,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Projects
+      summary: List Deliverables
+      description: List a Milestone's Deliverables for either Project member to review.
+      operationId: list_deliverables_v1_projects__project_id__milestones__milestone_id__deliverables_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverablesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/milestones/{milestone_id}/deliverables/{deliverable_id}/download:
+    get:
+      tags:
+      - Projects
+      summary: Download Deliverable Files
+      description: Return presigned download URLs for a scanned Deliverable's files.
+      operationId: download_deliverable_files_v1_projects__project_id__milestones__milestone_id__deliverables__deliverable_id__download_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      - name: deliverable_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Deliverable Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverableDownloadResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/projects/{project_id}/milestones/{milestone_id}/deliverables/{deliverable_id}/approve:
     post:
       tags:
@@ -9694,6 +9774,48 @@ components:
       - created_at
       title: DeliverableResponse
       description: Deliverable response returned to Project members.
+    DeliverablesResponse:
+      properties:
+        deliverables:
+          items:
+            $ref: '#/components/schemas/DeliverableResponse'
+          type: array
+          title: Deliverables
+      type: object
+      required:
+      - deliverables
+      title: DeliverablesResponse
+      description: List of Deliverables submitted against a Milestone.
+    DeliverableFileDownload:
+      properties:
+        file_key:
+          type: string
+          title: File Key
+        file_name:
+          type: string
+          title: File Name
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - file_key
+      - file_name
+      - url
+      title: DeliverableFileDownload
+      description: A single downloadable Deliverable file with a presigned URL.
+    DeliverableDownloadResponse:
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/DeliverableFileDownload'
+          type: array
+          title: Files
+      type: object
+      required:
+      - files
+      title: DeliverableDownloadResponse
+      description: Presigned download targets for a Deliverable's files.
     DeliverableRevisionRequest:
       properties:
         revision_notes:

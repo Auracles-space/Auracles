@@ -238,6 +238,26 @@ class DeliverableResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DeliverablesResponse(BaseModel):
+    """List of Deliverables submitted against a Milestone."""
+
+    deliverables: list[DeliverableResponse]
+
+
+class DeliverableFileDownload(BaseModel):
+    """A single downloadable Deliverable file with a presigned URL."""
+
+    file_key: str
+    file_name: str
+    url: str
+
+
+class DeliverableDownloadResponse(BaseModel):
+    """Presigned download targets for a Deliverable's files."""
+
+    files: list[DeliverableFileDownload]
+
+
 class FrameworkPrefillResponse(BaseModel):
     """Framework draft prefill data derived from an approved Deliverable."""
 

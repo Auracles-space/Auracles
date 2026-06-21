@@ -14,7 +14,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.integrations import stripe
+from app.core.config import get_settings
+from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
@@ -27,7 +28,11 @@ from app.modules.projects.models import (
     Proposal,
 )
 from app.modules.projects.schemas import (
+    DeliverableDownloadResponse,
+    DeliverableFileDownload,
+    DeliverableResponse,
     DeliverableRevisionRequest,
+    DeliverablesResponse,
     DeliverableSubmitRequest,
     FrameworkPrefillResponse,
     MilestoneCreateRequest,
@@ -233,6 +238,115 @@ async def _load_deliverable_for_update(
             detail="Deliverable not found.",
         )
     return deliverable
+
+
+DELIVERABLE_DOWNLOAD_TTL_SECONDS = 900
+
+
+async def list_deliverables(
+    *,
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+    milestone_id: UUID,
+) -> DeliverablesResponse:
+    """List Deliverables for a Milestone, newest first, for a Project member."""
+    project, proposal, milestone = await _load_project_milestone_for_workspace_action(
+        db=db,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        lock_project=False,
+        lock_milestone=False,
+    )
+    _ensure_project_member(project, proposal, user.id)
+    rows = await db.execute(
+        select(Deliverable)
+        .where(Deliverable.milestone_id == milestone.id)
+        .order_by(Deliverable.submitted_at.desc())
+    )
+    return DeliverablesResponse(
+        deliverables=[
+            DeliverableResponse.model_validate(deliverable)
+            for deliverable in rows.scalars()
+        ]
+    )
+
+
+async def create_deliverable_download(
+    *,
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+) -> DeliverableDownloadResponse:
+    """Issue presigned download URLs for a Deliverable's files.
+
+    Restricted to Project members, and only for a Deliverable whose files have
+    passed the virus scan (``scan_status == 'visible'``). Each request is audited
+    and the URLs force attachment download to avoid inline rendering.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal, milestone = (
+            await _load_project_milestone_for_workspace_action(
+                db=db,
+                project_id=project_id,
+                milestone_id=milestone_id,
+                lock_project=False,
+                lock_milestone=False,
+            )
+        )
+        _ensure_project_member(project, proposal, user_id)
+        deliverable = await db.scalar(
+            select(Deliverable).where(
+                Deliverable.id == deliverable_id,
+                Deliverable.milestone_id == milestone.id,
+            )
+        )
+        if deliverable is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deliverable not found.",
+            )
+        if deliverable.scan_status != "visible":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Deliverable files are still being scanned or were "
+                    "quarantined."
+                ),
+            )
+        settings = get_settings()
+        files = []
+        for file_key in deliverable.file_keys:
+            file_name = file_key.rsplit("/", 1)[-1]
+            url = s3.storage.presigned_get(
+                settings.s3_artifacts_bucket,
+                file_key,
+                DELIVERABLE_DOWNLOAD_TTL_SECONDS,
+                download_name=file_name,
+            )
+            files.append(
+                DeliverableFileDownload(
+                    file_key=file_key, file_name=file_name, url=url
+                )
+            )
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="deliverable_downloaded",
+            target_type="deliverable",
+            target_id=deliverable.id,
+            metadata={
+                "milestone_id": str(milestone.id),
+                "file_count": len(files),
+            },
+        )
+    return DeliverableDownloadResponse(files=files)
 
 
 async def _maybe_mark_project_delivered(

@@ -1542,6 +1542,69 @@ async def test_deliverable_scan_gate_blocks_approval_until_visible(
     assert approved.status_code == 200
 
 
+async def test_operator_reviews_and_downloads_deliverable(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Operator can list a Milestone's Deliverables and download scanned files.
+
+    Listing surfaces what was submitted; downloads are blocked until the scan
+    marks the Deliverable visible, then return presigned URLs.
+    """
+    operator_id = await create_user("review-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "review-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    deliverable_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+            headers=contributor_headers,
+            json={
+                "name": "Final playbook",
+                "description": "What was achieved this milestone.",
+                "file_keys": ["workspace/project/final.pdf"],
+            },
+        )
+    ).json()["id"]
+
+    listed = await client.get(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=operator_headers,
+    )
+    download_blocked = await client.get(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/download",
+        headers=operator_headers,
+    )
+    await _mark_deliverable_scanned(deliverable_id)
+    download_ok = await client.get(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/download",
+        headers=operator_headers,
+    )
+
+    assert listed.status_code == 200
+    deliverables = listed.json()["deliverables"]
+    assert deliverables[0]["name"] == "Final playbook"
+    assert deliverables[0]["description"] == "What was achieved this milestone."
+    assert download_blocked.status_code == 409
+    assert download_ok.status_code == 200
+    files = download_ok.json()["files"]
+    assert files[0]["file_name"] == "final.pdf"
+    assert files[0]["url"].startswith("http")
+
+
 async def create_funded_project_milestone(
     client: AsyncClient,
     *,
