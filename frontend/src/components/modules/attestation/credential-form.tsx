@@ -243,23 +243,34 @@ export function CredentialForm({
 
       <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-2 text-sm font-semibold text-foreground">
-          Credential title
+          <span>
+            Credential title
+            <span aria-hidden="true" className="ml-1 text-accent">*</span>
+          </span>
           <input
             className={INPUT_CLASSES}
             onChange={(event) => setTitle(event.target.value)}
+            placeholder="e.g. Project Management Professional"
             value={title}
           />
         </label>
         <label className="grid gap-2 text-sm font-semibold text-foreground">
-          Issuer
+          <span>
+            Issuer
+            <span aria-hidden="true" className="ml-1 text-accent">*</span>
+          </span>
           <input
             className={INPUT_CLASSES}
             onChange={(event) => setIssuer(event.target.value)}
+            placeholder="e.g. Project Management Institute"
             value={issuer}
           />
         </label>
         <label className="grid gap-2 text-sm font-semibold text-foreground">
-          Issued date
+          <span>
+            Issued date
+            <span aria-hidden="true" className="ml-1 text-accent">*</span>
+          </span>
           <input
             className={INPUT_CLASSES}
             onChange={(event) => setIssuedDate(event.target.value)}
@@ -317,6 +328,7 @@ export function CredentialForm({
           <input
             className={INPUT_CLASSES}
             onChange={(event) => setReferenceNumber(event.target.value)}
+            placeholder="e.g. PMP-2026-001245"
             value={referenceNumber}
           />
         </label>

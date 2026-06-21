@@ -38,6 +38,23 @@ const existing: CredentialResponse = {
 };
 
 describe("CredentialForm evidence uploader", () => {
+  it("renders placeholders for the free-text credential fields", () => {
+    render(
+      <CredentialForm
+        mode="create"
+        onSubmit={vi.fn()}
+        submitting={false}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText("e.g. Project Management Professional")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. Project Management Institute")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. PMP-2026-001245")).toBeInTheDocument();
+    expect(screen.getByText(/Credential title/i)).toBeInTheDocument();
+    expect(screen.getByText(/Issuer/i)).toBeInTheDocument();
+    expect(screen.getByText(/Issued date/i)).toBeInTheDocument();
+  });
+
   it("hides the uploader and shows the save-first hint in create mode", () => {
     render(
       <CredentialForm
