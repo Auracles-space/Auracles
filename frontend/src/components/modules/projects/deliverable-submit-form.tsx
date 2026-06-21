@@ -151,6 +151,7 @@ export function DeliverableSubmitForm({
       <label className="grid gap-1 text-sm">
         <span className="font-medium text-foreground">Files (required)</span>
         <input
+          accept=".pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.zip"
           className="text-sm text-foreground-muted file:mr-3 file:min-h-11 file:rounded-xl file:border-0 file:bg-surface-3 file:px-4 file:text-sm file:font-semibold file:text-foreground"
           multiple
           onChange={(event) =>
@@ -158,6 +159,9 @@ export function DeliverableSubmitForm({
           }
           type="file"
         />
+        <span className="text-xs text-foreground-subtle">
+          PDF, Office docs, images, text, or ZIP — up to 25MB each.
+        </span>
         {files.length > 0 ? (
           <span className="text-xs text-foreground-muted">
             {files.length} file{files.length === 1 ? "" : "s"} selected

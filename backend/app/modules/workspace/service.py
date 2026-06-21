@@ -29,6 +29,24 @@ from app.workers.tasks.workspace_scan import scan_workspace_upload
 
 WORKSPACE_UPLOAD_TTL_SECONDS = 300
 WORKSPACE_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+# Content types allowed for workspace + Deliverable file uploads. Deliberately
+# excludes inline-renderable vectors (text/html, image/svg+xml) and executables
+# to limit stored-XSS and malware risk; the ClamAV scan is a second layer.
+WORKSPACE_ALLOWED_CONTENT_TYPES = frozenset(
+    {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/zip",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+    }
+)
 
 
 def _safe_file_name(file_name: str) -> str:
@@ -121,6 +139,11 @@ async def create_upload_session(
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Workspace upload is too large.",
+        )
+    if payload.content_type not in WORKSPACE_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="This file type is not allowed.",
         )
     if db.in_transaction():
         await db.rollback()

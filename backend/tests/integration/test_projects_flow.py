@@ -1175,6 +1175,50 @@ async def test_proposal_listings_include_proposer_name(
     )
 
 
+async def test_workspace_upload_session_rejects_disallowed_file_type(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Deliverable/workspace uploads enforce a content-type allowlist.
+
+    Dangerous, inline-renderable types (HTML) are rejected with 415; document
+    types used for Deliverables are allowed.
+    """
+    operator_id = await create_user("upmime-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "upmime-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    rejected = await client.post(
+        f"/v1/projects/{project_id}/messages/uploads",
+        headers=contributor_headers,
+        json={
+            "file_name": "evil.html",
+            "content_type": "text/html",
+            "size_bytes": 1024,
+        },
+    )
+    allowed = await client.post(
+        f"/v1/projects/{project_id}/messages/uploads",
+        headers=contributor_headers,
+        json={
+            "file_name": "report.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 1024,
+        },
+    )
+
+    assert rejected.status_code == 415
+    assert allowed.status_code == 201
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,
