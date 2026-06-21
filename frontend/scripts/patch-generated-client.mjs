@@ -121,6 +121,7 @@ const compatibilityAliases = {
   submitProposal: "submitProposalV1ProjectsProjectIdProposalsPost",
   totpStatus: "totpStatusV1Auth2FaStatusGet",
   unpublishFramework: "unpublishFrameworkV1FrameworksFrameworkIdUnpublishPost",
+  updateAttestorApplication: "updateAttestorApplicationV1AttestorApplicationsApplicationIdPatch",
   updateFramework: "updateFrameworkV1FrameworksFrameworkIdPatch",
   updateMilestone: "updateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatch",
   updateMyFrameworkReview: "updateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatch",

@@ -1191,6 +1191,42 @@ paths:
                 $ref: '#/components/schemas/AttestorApplicationsResponse'
       security:
       - HTTPBearer: []
+  /v1/attestor/applications/{application_id}:
+    patch:
+      tags:
+      - Attestation
+      summary: Update Attestor Application
+      description: Edit a pending Attestor application owned by the current user.
+      operationId: update_attestor_application_v1_attestor_applications__application_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestorApplicationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestor/applications/{application_id}/withdraw:
     patch:
       tags:
@@ -8861,6 +8897,44 @@ components:
       - professional_references
       title: AttestorApplicationCreateRequest
       description: Request body for submitting an Attestor role application.
+    AttestorApplicationUpdateRequest:
+      properties:
+        specializations:
+          items:
+            type: string
+          type: array
+          maxItems: 25
+          minItems: 1
+          title: Specializations
+        jurisdictions:
+          items:
+            type: string
+          type: array
+          maxItems: 25
+          minItems: 1
+          title: Jurisdictions
+        credentials_summary:
+          type: string
+          maxLength: 5000
+          minLength: 10
+          title: Credentials Summary
+        sample_work:
+          additionalProperties: true
+          type: object
+          title: Sample Work
+        professional_references:
+          type: string
+          maxLength: 5000
+          minLength: 3
+          title: Professional References
+      type: object
+      required:
+      - specializations
+      - jurisdictions
+      - credentials_summary
+      - professional_references
+      title: AttestorApplicationUpdateRequest
+      description: Request body for editing a pending Attestor application in place.
     AttestorApplicationResponse:
       properties:
         id:

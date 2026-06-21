@@ -784,6 +784,19 @@ export type AttestorApplicationsResponse = {
 };
 
 /**
+ * Request body for editing a pending Attestor application in place.
+ */
+export type AttestorApplicationUpdateRequest = {
+    specializations: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    credentials_summary: string;
+    sample_work?: {
+        [key: string]: unknown;
+    };
+    professional_references: string;
+};
+
+/**
  * Attestation offer or assignment visible to an approved Attestor.
  */
 export type AttestorAssignmentResponse = {
@@ -3100,6 +3113,17 @@ export type SubmitAttestorApplicationV1AttestorApplicationsPostError = (HTTPVali
 export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetResponse = (AttestorApplicationsResponse);
 
 export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = unknown;
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchData = {
+    body: AttestorApplicationUpdateRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchResponse = (AttestorApplicationResponse);
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchError = (HTTPValidationError);
 
 export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchData = {
     path: {

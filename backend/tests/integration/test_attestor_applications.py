@@ -217,6 +217,78 @@ async def test_user_submits_and_lists_own_attestor_application(
     assert audit is not None
 
 
+async def test_owner_edits_pending_application_in_place(
+    client: AsyncClient,
+    migrated_database: None,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """An owner can edit a pending application; edits are rejected once it is not.
+
+    Editing updates the fields in place and keeps the application pending. After
+    withdrawal the same application can no longer be edited (422).
+    """
+    del migrated_database, attestor_application_context
+    user_id = await create_user("edit-candidate@auracles.space", ["operator"])
+    headers = auth_headers(user_id, ["operator"])
+
+    submitted = await client.post(
+        "/v1/attestor/applications",
+        headers=headers,
+        json=application_payload(),
+    )
+    application_id = submitted.json()["id"]
+    edited = await client.patch(
+        f"/v1/attestor/applications/{application_id}",
+        headers=headers,
+        json={
+            **application_payload(),
+            "specializations": ["cybersecurity"],
+            "credentials_summary": "Updated summary covering security audits.",
+        },
+    )
+    await client.patch(
+        f"/v1/attestor/applications/{application_id}/withdraw",
+        headers=headers,
+    )
+    edit_after_withdraw = await client.patch(
+        f"/v1/attestor/applications/{application_id}",
+        headers=headers,
+        json=application_payload(),
+    )
+
+    assert edited.status_code == 200
+    assert edited.json()["status"] == "pending"
+    assert edited.json()["specializations"] == ["cybersecurity"]
+    assert edited.json()["credentials_summary"] == (
+        "Updated summary covering security audits."
+    )
+    assert edit_after_withdraw.status_code == 422
+
+
+async def test_user_cannot_edit_another_users_application(
+    client: AsyncClient,
+    migrated_database: None,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Editing an application you do not own returns 404 (no disclosure)."""
+    del migrated_database, attestor_application_context
+    owner_id = await create_user("edit-owner@auracles.space", ["operator"])
+    other_id = await create_user("edit-other@auracles.space", ["operator"])
+
+    submitted = await client.post(
+        "/v1/attestor/applications",
+        headers=auth_headers(owner_id, ["operator"]),
+        json=application_payload(),
+    )
+    forbidden = await client.patch(
+        f"/v1/attestor/applications/{submitted.json()['id']}",
+        headers=auth_headers(other_id, ["operator"]),
+        json=application_payload(),
+    )
+
+    assert forbidden.status_code == 404
+
+
 async def test_pending_application_can_be_withdrawn_and_then_reapplied(
     client: AsyncClient,
     migrated_database: None,

@@ -19,6 +19,7 @@ from app.modules.attestation.models import AttestorApplication, AttestorProfile
 from app.modules.attestation.schemas import (
     AttestorApplicationCreateRequest,
     AttestorApplicationReviewRequest,
+    AttestorApplicationUpdateRequest,
 )
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
@@ -114,6 +115,70 @@ async def withdraw_application(
             db=db,
             actor_id=user_id,
             action="attestor_application_withdrawn",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"status": application.status},
+        )
+    return application
+
+
+async def update_application(
+    db: AsyncSession,
+    user: User,
+    application_id: UUID,
+    payload: AttestorApplicationUpdateRequest,
+) -> AttestorApplication:
+    """Edit a pending Attestor application owned by the current user.
+
+    Only the owner may edit, and only while the application is still pending
+    (before an admin acts on it). Approved, rejected, or withdrawn applications
+    are immutable; the user re-applies instead.
+
+    Args:
+        db: Async session.
+        user: Authenticated owner of the application.
+        application_id: Application to edit.
+        payload: Replacement application fields.
+
+    Returns:
+        The updated, still-pending application.
+
+    Raises:
+        HTTPException(404): If the application does not exist for this user.
+        HTTPException(422): If the application is no longer pending.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await db.scalar(
+            select(AttestorApplication)
+            .where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor application not found.",
+            )
+        if application.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only pending Attestor applications can be edited.",
+            )
+
+        application.specializations = payload.specializations
+        application.jurisdictions = payload.jurisdictions
+        application.credentials_summary = payload.credentials_summary
+        application.sample_work = payload.sample_work
+        application.professional_references = payload.professional_references
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="attestor_application_updated",
             target_type="attestor_application",
             target_id=application.id,
             metadata={"status": application.status},

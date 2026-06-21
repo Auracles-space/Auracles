@@ -22,6 +22,16 @@ class AttestorApplicationCreateRequest(BaseModel):
     professional_references: str = Field(min_length=3, max_length=5000)
 
 
+class AttestorApplicationUpdateRequest(BaseModel):
+    """Request body for editing a pending Attestor application in place."""
+
+    specializations: list[str] = Field(min_length=1, max_length=25)
+    jurisdictions: list[str] = Field(min_length=1, max_length=25)
+    credentials_summary: str = Field(min_length=10, max_length=5000)
+    sample_work: dict[str, Any] = Field(default_factory=dict)
+    professional_references: str = Field(min_length=3, max_length=5000)
+
+
 class AttestorApplicationResponse(BaseModel):
     """Attestor application details visible to its owner and admins."""
 

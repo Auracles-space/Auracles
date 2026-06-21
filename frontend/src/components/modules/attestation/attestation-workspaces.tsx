@@ -31,6 +31,7 @@ import {
   reviewAttestorApplication,
   submitAttestationReport,
   submitAttestorApplication,
+  updateAttestorApplication,
   withdrawAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import type {
@@ -303,10 +304,14 @@ export function AttestorApplicationPanel() {
   const [applications, setApplications] = useState<AttestorApplicationResponse[]>([]);
   const [credentialsSummary, setCredentialsSummary] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [jurisdictions, setJurisdictions] = useState("");
   const [loading, setLoading] = useState(true);
   const [professionalReferences, setProfessionalReferences] = useState("");
   const [specializations, setSpecializations] = useState("");
+  // Id of the pending application currently being edited in place (null = the
+  // form creates a new application instead of updating one).
+  const [editingId, setEditingId] = useState<string | null>(null);
   // Mirror the backend AttestorApplicationCreateRequest constraints so the
   // form cannot post a body the API rejects with 422: at least one
   // specialization and jurisdiction, a 10+ char summary, and 3+ char references.
@@ -339,26 +344,71 @@ export function AttestorApplicationPanel() {
   }
 
   /**
-   * Submit an Attestor application.
+   * Clear the application form back to an empty, create-mode state.
+   */
+  function resetForm() {
+    setEditingId(null);
+    setSpecializations("");
+    setJurisdictions("");
+    setCredentialsSummary("");
+    setProfessionalReferences("");
+  }
+
+  /**
+   * Load a pending application's fields into the form for in-place editing.
+   *
+   * @param application - The pending application to edit.
+   */
+  function startEdit(application: AttestorApplicationResponse) {
+    setEditingId(application.id);
+    setSpecializations(application.specializations.join(", "));
+    setJurisdictions(application.jurisdictions.join(", "));
+    setCredentialsSummary(application.credentials_summary);
+    setProfessionalReferences(application.professional_references);
+    setError(null);
+    setNotice(null);
+  }
+
+  /**
+   * Submit a new application, or update the one being edited in place.
    */
   async function handleSubmitApplication() {
     setError(null);
+    setNotice(null);
     configureBrowserClient();
-    const result = await submitAttestorApplication({
-      body: {
-        credentials_summary: credentialsSummary,
-        jurisdictions: splitCsv(jurisdictions),
-        professional_references: professionalReferences,
-        sample_work: {},
-        specializations: splitCsv(specializations),
-      },
-      headers: getAccessTokenHeaders(),
-    });
+    const body = {
+      credentials_summary: credentialsSummary,
+      jurisdictions: splitCsv(jurisdictions),
+      professional_references: professionalReferences,
+      sample_work: {},
+      specializations: splitCsv(specializations),
+    };
+    const result = editingId
+      ? await updateAttestorApplication({
+          body,
+          headers: getAccessTokenHeaders(),
+          path: { application_id: editingId },
+        })
+      : await submitAttestorApplication({
+          body,
+          headers: getAccessTokenHeaders(),
+        });
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
     }
-    setApplications((current) => [result.data, ...current]);
+    const wasEditing = editingId !== null;
+    setApplications((current) =>
+      wasEditing
+        ? current.map((item) => (item.id === result.data.id ? result.data : item))
+        : [result.data, ...current],
+    );
+    resetForm();
+    setNotice(
+      wasEditing
+        ? "Application updated. It stays pending while an admin reviews it."
+        : "Application submitted. You'll be notified once an admin reviews it.",
+    );
   }
 
   /**
@@ -368,6 +418,7 @@ export function AttestorApplicationPanel() {
    */
   async function handleWithdraw(applicationId: string) {
     setError(null);
+    setNotice(null);
     configureBrowserClient();
     const result = await withdrawAttestorApplication({
       headers: getAccessTokenHeaders(),
@@ -380,11 +431,22 @@ export function AttestorApplicationPanel() {
     setApplications((current) =>
       current.map((item) => (item.id === applicationId ? result.data : item)),
     );
+    if (editingId === applicationId) {
+      resetForm();
+    }
+    setNotice("Application withdrawn. You can submit a new one when ready.");
   }
 
   if (loading) {
     return <TableSkeleton />;
   }
+
+  // One application can be pending at a time. While it is, hide the create form
+  // and let the user edit that application in place instead (re-submitting would
+  // 409). The form reappears in edit mode, or once nothing is pending.
+  const pendingApplication =
+    applications.find((application) => application.status === "pending") ?? null;
+  const showForm = editingId !== null || pendingApplication === null;
 
   return (
     <section className="grid gap-6">
@@ -394,7 +456,16 @@ export function AttestorApplicationPanel() {
         summary="Apply to receive verification assignments matched to your specialization and jurisdiction."
       />
       <ErrorMessage message={error} />
+      {notice ? (
+        <p className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success">
+          {notice}
+        </p>
+      ) : null}
+      {showForm ? (
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+        <p className="mb-4 text-sm font-semibold text-foreground">
+          {editingId ? "Edit your application" : "Submit an application"}
+        </p>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
@@ -417,11 +488,23 @@ export function AttestorApplicationPanel() {
             <span className="text-xs font-normal text-foreground-subtle">At least 3 characters.</span>
           </label>
         </div>
-        <button className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmit} onClick={handleSubmitApplication} type="button">
-          Submit application
-        </button>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmit} onClick={handleSubmitApplication} type="button">
+            {editingId ? "Update application" : "Submit application"}
+          </button>
+          {editingId ? (
+            <button className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={resetForm} type="button">
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </div>
-      <ApplicationList applications={applications} onWithdraw={handleWithdraw} />
+      ) : null}
+      <ApplicationList
+        applications={applications}
+        onEdit={startEdit}
+        onWithdraw={handleWithdraw}
+      />
     </section>
   );
 }
@@ -818,10 +901,12 @@ function AttestationCard({
  */
 function ApplicationList({
   applications,
+  onEdit,
   onReview,
   onWithdraw,
 }: {
   applications: AttestorApplicationResponse[];
+  onEdit?: (application: AttestorApplicationResponse) => void;
   onReview?: (
     application: AttestorApplicationResponse,
     decision: "approved" | "rejected",
@@ -851,7 +936,32 @@ function ApplicationList({
             <p className="mt-3 text-sm leading-6 text-foreground-muted">
               {application.credentials_summary}
             </p>
+            {application.status === "pending" ? (
+              <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
+                Submitted and awaiting admin review. You can edit or withdraw it
+                until a decision is made.
+              </p>
+            ) : null}
+            {application.status === "rejected" ? (
+              <p className="mt-3 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">
+                Rejected.{" "}
+                {application.admin_feedback
+                  ? application.admin_feedback
+                  : "No reason was provided. You can submit a new application."}
+              </p>
+            ) : null}
+            {application.status === "approved" ? (
+              <p className="mt-3 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm text-success">
+                Approved.{" "}
+                {application.admin_feedback ?? "Your attestor access is active."}
+              </p>
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-3">
+              {onEdit && application.status === "pending" ? (
+                <button className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onEdit(application)} type="button">
+                  Edit
+                </button>
+              ) : null}
               {onWithdraw && application.status === "pending" ? (
                 <button className="min-h-12 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground shadow-sm outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onWithdraw(application.id)} type="button">
                   Withdraw

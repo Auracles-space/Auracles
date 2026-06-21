@@ -43,6 +43,7 @@ from app.modules.attestation.schemas import (
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
     AttestorApplicationsResponse,
+    AttestorApplicationUpdateRequest,
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
     CredentialCreateRequest,
@@ -413,6 +414,26 @@ async def list_my_attestor_applications(
             for application in applications
         ]
     )
+
+
+@router.patch(
+    "/attestor/applications/{application_id}",
+    response_model=AttestorApplicationResponse,
+)
+async def update_attestor_application(
+    application_id: UUID,
+    payload: AttestorApplicationUpdateRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestorApplicationResponse:
+    """Edit a pending Attestor application owned by the current user."""
+    application = await application_service.update_application(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
 
 
 @router.patch(
