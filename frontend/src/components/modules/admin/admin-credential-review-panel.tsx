@@ -361,7 +361,7 @@ export function AdminCredentialReviewPanel() {
                             onClick={() =>
                               handleViewEvidence(credential.id, key)
                             }
-                            size="sm"
+                            className="min-h-10 px-4"
                             variant="secondary"
                           >
                             View

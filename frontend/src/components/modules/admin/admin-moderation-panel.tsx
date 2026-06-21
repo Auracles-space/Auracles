@@ -312,7 +312,7 @@ export function AdminModerationPanel() {
                     </div>
 
                     {/* External matches list */}
-                    {details.external_phrases_queried &&
+                    {!!details.external_phrases_queried &&
                       (details.external_phrases_queried as string[]).length > 0 && (
                         <div className="border-t border-border-default/40 pt-3">
                           <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted mb-2">
@@ -340,7 +340,7 @@ export function AdminModerationPanel() {
                       )}
 
                     {/* Blocked artifact list */}
-                    {details.blocked_artifact_ids &&
+                    {!!details.blocked_artifact_ids &&
                       (details.blocked_artifact_ids as string[]).length > 0 && (
                         <div className="border-t border-border-default/40 pt-3">
                           <h4 className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted mb-2">
@@ -371,7 +371,7 @@ export function AdminModerationPanel() {
                       setFormAction("override");
                       setReason("");
                     }}
-                    size="sm"
+                    className="min-h-10 px-4"
                     variant="secondary"
                   >
                     Override Rarity Block
@@ -384,7 +384,7 @@ export function AdminModerationPanel() {
                       setFormAction("suspend");
                       setReason("");
                     }}
-                    size="sm"
+                    className="min-h-10 px-4"
                     variant="destructive"
                   >
                     Suspend Framework

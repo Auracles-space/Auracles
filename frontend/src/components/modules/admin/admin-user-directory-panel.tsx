@@ -331,7 +331,7 @@ export function AdminUserDirectoryPanel() {
                   <Button
                     onClick={() => setSelectedUserId(item.user_id)}
                     disabled={isSelf}
-                    size="sm"
+                    className="min-h-10 px-4"
                     variant="secondary"
                   >
                     Unsuspend
@@ -340,7 +340,7 @@ export function AdminUserDirectoryPanel() {
                   <Button
                     onClick={() => setSelectedUserId(item.user_id)}
                     disabled={isSelf}
-                    size="sm"
+                    className="min-h-10 px-4"
                     variant="destructive"
                   >
                     Suspend

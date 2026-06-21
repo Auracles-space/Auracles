@@ -287,9 +287,9 @@ export function AdminDisputesPanel() {
                       )}
                     </div>
                   ) : isSelected ? (
-                    <Button disabled size="sm">Resolving...</Button>
+                    <Button disabled className="min-h-10 px-4">Resolving...</Button>
                   ) : (
-                    <Button onClick={() => setSelectedId(dispute.id)} size="sm">
+                    <Button onClick={() => setSelectedId(dispute.id)} className="min-h-10 px-4">
                       Resolve dispute
                     </Button>
                   )}
