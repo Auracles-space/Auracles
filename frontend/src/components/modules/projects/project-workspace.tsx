@@ -669,7 +669,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     if (parts.length > 2) return;
                     setProposalBudget(cleaned);
                   }}
-                  pattern="[0-9]*\.?[0-9]*"
+                  pattern="[0-9]*[.]?[0-9]*"
                   placeholder="e.g. 1500.00"
                   type="text"
                   value={proposalBudget}
@@ -707,7 +707,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
                   {showAcceptButton && proposal.status === "pending" ? (
                     <button
-                      className="mt-3 min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                      className="mt-3 min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
                       onClick={() => void acceptProjectProposal(proposal.id)}
                       type="button"
                     >
@@ -776,7 +776,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       budget: cleaned,
                     }));
                   }}
-                  pattern="[0-9]*\.?[0-9]*"
+                  pattern="[0-9]*[.]?[0-9]*"
                   placeholder="Budget (e.g. 1500.00)"
                   type="text"
                   value={milestoneForm.budget}
@@ -803,7 +803,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   Add milestone
                 </button>
                 <button
-                  className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                  className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
                   onClick={() => void finalizePlan()}
                   type="button"
                 >
@@ -820,7 +820,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 funding begins.
               </p>
               <button
-                className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-12 rounded-xl border border-accent/40 bg-accent/5 px-6 text-sm font-semibold text-accent transition-all hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={() => void reopenPlan()}
                 type="button"
               >
@@ -909,7 +909,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                     <div className="mt-3 flex flex-wrap gap-2">
                       {isProjectOwner && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
                         <button
-                          className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
                           onClick={() => void fundProjectMilestone(milestone.id)}
                           type="button"
                         >
@@ -918,7 +918,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       ) : null}
                       {isAssignedContributor && milestone.status === "funded" ? (
                         <button
-                          className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
                           onClick={() => void submitMilestoneDeliverable(milestone.id)}
                           type="button"
                         >
