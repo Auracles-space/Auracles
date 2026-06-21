@@ -23,6 +23,8 @@ const compatibilityAliases = {
   confirmArtifactUpload: "confirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPost",
   createAttestationDispute: "createAttestationDisputeV1AttestationsAttestationIdDisputesPost",
   createCredential: "createCredentialV1CredentialsPost",
+  createDispute: "createDisputeV1ProjectsProjectIdDisputesPost",
+  listDisputes: "listDisputesV1ProjectsProjectIdDisputesGet",
   createCollection: "createCollectionV1CollectionsPost",
   createCollectionPurchase:
     "createCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePost",

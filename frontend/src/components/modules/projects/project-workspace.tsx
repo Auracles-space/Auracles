@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DeliverableReviewCard } from "@/components/modules/projects/deliverable-review-card";
 import { DeliverableSubmitForm } from "@/components/modules/projects/deliverable-submit-form";
+import { MilestoneDisputePanel } from "@/components/modules/projects/milestone-dispute-panel";
 import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { WorkspaceMessagePanel } from "@/components/modules/projects/workspace-message-panel";
@@ -34,6 +35,7 @@ import {
   finalizeMilestonePlan,
   fundMilestone,
   getProject,
+  listDisputes,
   reopenMilestonePlan,
   updateMilestone,
   listMilestones,
@@ -44,6 +46,7 @@ import {
 } from "@/lib/generated/sdk.gen";
 import type {
   DeliverableResponse,
+  DisputeResponse,
   MilestoneResponse,
   CurrentUserResponse,
   ProjectResponse,
@@ -91,6 +94,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [operatorProposals, setOperatorProposals] = useState<ProposalResponse[]>([]);
   const [myProposals, setMyProposals] = useState<ProposalResponse[]>([]);
   const [milestones, setMilestones] = useState<MilestoneResponse[]>([]);
+  const [disputes, setDisputes] = useState<DisputeResponse[]>([]);
   const [messages, setMessages] = useState<WorkspaceMessageResponse[]>([]);
   const [lastDeliverable, setLastDeliverable] = useState<DeliverableResponse | null>(() => {
     if (typeof window !== "undefined") {
@@ -195,6 +199,28 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     milestones.length > 0 && milestoneRemainingCents === 0;
 
   const isWorkspaceMember = isProjectOwner || isAssignedContributor;
+
+  // Map each Milestone to its active dispute (open/under_review) if present,
+  // otherwise its most recent resolved one, so the panel can show live status.
+  const disputeByMilestone = useMemo(() => {
+    const map = new Map<string, DisputeResponse>();
+    for (const dispute of disputes) {
+      const existing = map.get(dispute.milestone_id);
+      const existingActive =
+        existing !== undefined && existing.status !== "resolved";
+      const candidateActive = dispute.status !== "resolved";
+      if (
+        existing === undefined ||
+        (candidateActive && !existingActive) ||
+        (candidateActive === existingActive &&
+          dispute.created_at > existing.created_at)
+      ) {
+        map.set(dispute.milestone_id, dispute);
+      }
+    }
+    return map;
+  }, [disputes]);
+
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -283,6 +309,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     const [
       milestonesResult,
       messagesResult,
+      disputesResult,
     ] = await Promise.all([
       hasAcceptedProposal
         ? listMilestones({
@@ -296,6 +323,12 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
             path: { project_id: projectId },
           })
         : Promise.resolve({ response: new Response(), data: { messages: [] }, error: undefined }),
+      activeProjectMember && hasAcceptedProposal
+        ? listDisputes({
+            headers: activeHeaders,
+            path: { project_id: projectId },
+          })
+        : Promise.resolve({ response: new Response(), data: { disputes: [] }, error: undefined }),
     ]);
 
     if (milestonesResult.response.ok && milestonesResult.data) {
@@ -303,6 +336,9 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     if (messagesResult.response.ok && messagesResult.data) {
       setMessages(messagesResult.data.messages);
+    }
+    if (disputesResult.response.ok && disputesResult.data) {
+      setDisputes(disputesResult.data.disputes);
     }
   }, [projectId]);
 
@@ -1035,6 +1071,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         projectId={projectId}
                       />
                     ) : null}
+                    <MilestoneDisputePanel
+                      canRaise={isWorkspaceMember}
+                      dispute={disputeByMilestone.get(milestone.id) ?? null}
+                      milestoneId={milestone.id}
+                      milestoneStatus={milestone.status}
+                      onRaised={() => void loadWorkspace()}
+                      projectId={projectId}
+                    />
                   </div>
                 );
               })

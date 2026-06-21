@@ -6,6 +6,7 @@ import { clearAuthToken } from "@/lib/auth/token-store";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 import {
   getProject,
+  listDisputes,
   listMilestones,
   listMyProjectProposals,
   listProjectProposals,
@@ -59,6 +60,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   finalizeMilestonePlan: vi.fn(),
   fundMilestone: vi.fn(),
   getProject: vi.fn(),
+  listDisputes: vi.fn(),
   listMilestones: vi.fn(),
   listMyProjectProposals: vi.fn(),
   listProjectProposals: vi.fn(),
@@ -147,6 +149,11 @@ describe("ProjectWorkspace", () => {
     });
     vi.mocked(listWorkspaceMessages).mockResolvedValue({
       data: { messages: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listDisputes).mockResolvedValue({
+      data: { disputes: [] },
       error: undefined,
       response: okResponse,
     });
