@@ -32,4 +32,25 @@ describe("ReputationBadge", () => {
     expect(screen.getByText(/attestations/i)).toBeInTheDocument();
     expect(screen.queryByText(/adoption/i)).not.toBeInTheDocument();
   });
+
+  it.each([
+    ["88", "high", /success/],
+    ["55", "medium", /warning/],
+    ["22", "low", /error/],
+  ])(
+    "tiers score %s as %s with a matching color",
+    (score, tier, colorPattern) => {
+      render(
+        <ReputationBadge score={score} isProvisional={false} factors={[]} />,
+      );
+      const badge = screen.getByLabelText(/reputation/i);
+      expect(badge).toHaveAttribute("data-tier", tier);
+      expect(badge.className).toMatch(colorPattern);
+    },
+  );
+
+  it("names the tier in the accessible label so color is not the only signal", () => {
+    render(<ReputationBadge score="22" isProvisional={false} factors={[]} />);
+    expect(screen.getByLabelText(/low/i)).toBeInTheDocument();
+  });
 });

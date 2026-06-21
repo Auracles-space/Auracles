@@ -21,6 +21,38 @@ interface ReputationBadgeProps {
   factors: ReputationFactorLabel[];
 }
 
+type ReputationTier = "low" | "medium" | "high";
+
+/**
+ * Bucket a 0-100 score into a trust tier with its color classes.
+ *
+ * Color alone never carries the meaning — callers also expose the tier word in
+ * the accessible label (WCAG 1.4.1, use of color).
+ *
+ * @param score - Rounded reputation score on a 0-100 scale.
+ */
+function reputationTier(score: number): {
+  tier: ReputationTier;
+  className: string;
+} {
+  if (score >= 70) {
+    return {
+      tier: "high",
+      className: "border-success/30 bg-success/10 text-success",
+    };
+  }
+  if (score >= 40) {
+    return {
+      tier: "medium",
+      className: "border-warning/30 bg-warning/10 text-warning",
+    };
+  }
+  return {
+    tier: "low",
+    className: "border-error/30 bg-error/10 text-error",
+  };
+}
+
 /**
  * Reputation trust badge for Explore cards, detail pages, and profiles.
  *
@@ -44,18 +76,22 @@ export function ReputationBadge({
     );
   }
 
+  const rounded = Math.round(numericScore);
+  const { tier, className } = reputationTier(rounded);
+
   const strongFactors = factors
     .filter((factor) => factor.label === "strong")
     .map((factor) => formatLabel(factor.factor));
 
   return (
     <span
-      className="inline-flex min-h-6 items-center gap-1.5 rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-success"
-      aria-label={`Reputation ${Math.round(numericScore)} out of 100`}
+      className={`inline-flex min-h-6 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] ${className}`}
+      data-tier={tier}
+      aria-label={`Reputation ${rounded} out of 100, ${tier}`}
     >
-      <span className="text-xs font-bold">{Math.round(numericScore)}</span>
+      <span className="text-xs font-bold">{rounded}</span>
       {strongFactors.length > 0 ? (
-        <span className="font-medium normal-case tracking-normal text-success/80">
+        <span className="font-medium normal-case tracking-normal opacity-80">
           · {strongFactors.join(", ")}
         </span>
       ) : null}
