@@ -43,6 +43,11 @@ export function CredentialManager() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editing, setEditing] = useState<CredentialResponse | null>(null);
 
+  const createSubmitLabel =
+    credentials.length > 0 ? "Add credentials" : "Create credential";
+  const creatingSubmitLabel =
+    credentials.length > 0 ? "Adding credentials" : "Creating credential";
+
   useEffect(() => {
     async function loadCredentials() {
       configureBrowserClient();
@@ -205,7 +210,7 @@ export function CredentialManager() {
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
         {editing ? (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default pb-4">
               <div className="grid gap-1">
                 <h2 className="font-heading text-xl font-bold text-foreground">
                   Edit credential
@@ -215,24 +220,16 @@ export function CredentialManager() {
                   submit this credential for verification.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                <p className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs font-semibold text-success">
-                  Credential saved. You can add evidence now.
-                </p>
-                <button
-                  className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
-                  onClick={() => setEditing(null)}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
             </div>
-            <div className="mt-4">
+            <div className="mt-4 grid gap-4">
+              <p className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm font-semibold text-success">
+                Credential saved. You can add evidence now.
+              </p>
               <CredentialForm
                 initial={editing}
                 key={editing.id}
                 mode="edit"
+                onCancel={() => setEditing(null)}
                 onSubmit={handleUpdateCredential}
                 submitting={submitting}
               />
@@ -241,10 +238,15 @@ export function CredentialManager() {
         ) : (
           <>
             <h2 className="font-heading text-xl font-bold text-foreground">
-              Add credential
+              Create credential
             </h2>
+            <p className="mt-2 text-sm text-foreground-muted">
+              Save the credential once to unlock evidence upload.
+            </p>
             <div className="mt-4">
               <CredentialForm
+                createSubmitLabel={createSubmitLabel}
+                creatingSubmitLabel={creatingSubmitLabel}
                 mode="create"
                 onSubmit={handleCreateCredential}
                 submitting={submitting}

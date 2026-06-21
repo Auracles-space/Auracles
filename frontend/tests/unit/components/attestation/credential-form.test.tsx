@@ -50,12 +50,13 @@ describe("CredentialForm evidence uploader", () => {
     expect(screen.getByPlaceholderText("e.g. Project Management Professional")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. Project Management Institute")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. PMP-2026-001245")).toBeInTheDocument();
-    expect(screen.getByText(/Credential title/i)).toBeInTheDocument();
-    expect(screen.getByText(/Issuer/i)).toBeInTheDocument();
-    expect(screen.getByText(/Issued date/i)).toBeInTheDocument();
+    expect(screen.getByText("Credential title")).toBeInTheDocument();
+    expect(screen.getByText("Issuer")).toBeInTheDocument();
+    expect(screen.getByText("Issued date")).toBeInTheDocument();
+    expect(screen.getAllByText("*")).toHaveLength(3);
   });
 
-  it("hides the uploader and shows the save-first hint in create mode", () => {
+  it("shows a disabled upload placeholder and save-first guidance in create mode", () => {
     render(
       <CredentialForm
         mode="create"
@@ -64,11 +65,15 @@ describe("CredentialForm evidence uploader", () => {
       />,
     );
 
+    expect(screen.getByLabelText("Upload evidence")).toBeDisabled();
     expect(
-      screen.queryByLabelText("Upload evidence"),
-    ).not.toBeInTheDocument();
+      screen.getByText("Upload is available after the first save."),
+    ).toBeInTheDocument();
     expect(
-      screen.getByText("Save the credential first, then add evidence files."),
+      screen.getByText("Save the credential once to unlock evidence upload."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("PDF, Word, and image files up to 10 MB."),
     ).toBeInTheDocument();
   });
 

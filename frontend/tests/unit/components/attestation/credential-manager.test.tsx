@@ -57,16 +57,22 @@ describe("CredentialManager", () => {
       await screen.findByText("Certified Operating Model Lead"),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Credential title"), {
+    fireEvent.change(
+      screen.getByPlaceholderText("e.g. Project Management Professional"),
+      {
       target: { value: "Healthcare Compliance Lead" },
-    });
-    fireEvent.change(screen.getByLabelText("Issuer"), {
+      },
+    );
+    fireEvent.change(
+      screen.getByPlaceholderText("e.g. Project Management Institute"),
+      {
       target: { value: "Auracles Institute" },
-    });
-    fireEvent.change(screen.getByLabelText("Issued date"), {
+      },
+    );
+    fireEvent.change(screen.getByLabelText(/Issued date/), {
       target: { value: "2026-01-01" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add credential" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add credentials" }));
 
     await waitFor(() => {
       expect(createCredential).toHaveBeenCalledWith(
@@ -91,6 +97,21 @@ describe("CredentialManager", () => {
     expect(screen.getByLabelText("Upload evidence")).toBeInTheDocument();
     expect(
       screen.getByText("PDF, Word, and image files up to 10 MB."),
+    ).toBeInTheDocument();
+  });
+
+  it("starts in create mode with explicit evidence guidance", async () => {
+    render(<CredentialManager />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Create credential" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Save the credential once to unlock evidence upload."),
+    ).toHaveLength(2);
+    expect(screen.getByLabelText("Upload evidence")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add credentials" }),
     ).toBeInTheDocument();
   });
 });

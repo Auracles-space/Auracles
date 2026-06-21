@@ -73,12 +73,18 @@ export type CredentialFormValues = {
 type CredentialFormProps = {
   /** Existing credential to pre-fill when editing. */
   initial?: CredentialResponse;
+  /** Create-mode submit label chosen by the parent surface. */
+  createSubmitLabel?: string;
+  /** Create-mode busy label chosen by the parent surface. */
+  creatingSubmitLabel?: string;
   /** Persist the collected values; resolves when the call completes. */
   onSubmit: (values: CredentialFormValues) => Promise<void>;
   /** Whether a submit is currently in flight. */
   submitting: boolean;
   /** Create a new record or edit an existing one. */
   mode: "create" | "edit";
+  /** Optional cancel handler to collapse the form or discard edits. */
+  onCancel?: () => void;
 };
 
 /** Coerce a blank string to null for optional payload fields. */
@@ -99,10 +105,13 @@ function blankToNull(value: string): string | null {
  * @param mode - "create" or "edit".
  */
 export function CredentialForm({
+  createSubmitLabel = "Create credential",
+  creatingSubmitLabel = "Creating credential",
   initial,
   onSubmit,
   submitting,
   mode,
+  onCancel,
 }: CredentialFormProps) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [issuer, setIssuer] = useState(initial?.issuer ?? "");
@@ -398,26 +407,55 @@ export function CredentialForm({
             )}
           </>
         ) : (
-          <p className="text-xs text-foreground-muted">
-            Save the credential first, then add evidence files.
-          </p>
+          <>
+            <label className="grid gap-2 text-sm font-semibold text-foreground">
+              Upload evidence
+              <input
+                accept={EVIDENCE_ACCEPT}
+                aria-label="Upload evidence"
+                className="min-h-12 rounded-xl border border-border-default bg-background px-4 py-3 text-sm font-medium text-foreground outline-none transition-colors file:mr-4 file:rounded-lg file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                disabled
+                type="file"
+              />
+            </label>
+            <p className="text-xs font-medium text-foreground-muted">
+              Upload is available after the first save.
+            </p>
+            <p className="text-xs text-foreground-muted">
+              Save the credential once to unlock evidence upload.
+            </p>
+            <p className="text-xs text-foreground-muted">
+              PDF, Word, and image files up to 10 MB.
+            </p>
+          </>
         )}
       </div>
 
-      <button
-        className="min-h-12 w-full rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 md:w-auto md:justify-self-start"
-        disabled={!canSubmit}
-        onClick={handleSubmit}
-        type="button"
-      >
-        {mode === "create"
-          ? submitting
-            ? "Adding credential"
-            : "Add credential"
-          : submitting
-            ? "Saving changes"
-            : "Save changes"}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className="min-h-12 w-full rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+          disabled={!canSubmit}
+          onClick={handleSubmit}
+          type="button"
+        >
+          {mode === "create"
+            ? submitting
+              ? creatingSubmitLabel
+              : createSubmitLabel
+            : submitting
+              ? "Saving changes"
+              : "Save changes"}
+        </button>
+        {onCancel && (
+          <button
+            className="min-h-12 w-full rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent md:w-auto"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
     </div>
   );
 }
