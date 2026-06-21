@@ -22,6 +22,7 @@ import { authTokenStore } from "@/lib/auth/token-store";
 import {
   acceptProposal,
   approveDeliverable,
+  cancelAcceptance,
   createMilestone,
   createWorkspaceMessage,
   deleteMilestone,
@@ -168,6 +169,10 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     project?.milestone_plan_status === "finalized" &&
     milestones.length > 0 &&
     milestones.every((milestone) => milestone.status === "pending");
+  // Either member may unwind an acceptance while it is still unfunded
+  // (project assigned, no escrow). After funding, disputes are the exit.
+  const canCancelAcceptance =
+    (isProjectOwner || isAssignedContributor) && project?.status === "assigned";
 
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
@@ -354,6 +359,24 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     }
     setProject(result.data);
     setNotice("Milestone plan reopened for changes.");
+    void loadWorkspace();
+  }
+
+  async function cancelAcceptanceAction() {
+    const result = await cancelAcceptance({
+      headers,
+      path: { project_id: projectId },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setProject(result.data);
+    setNotice(
+      isProjectOwner
+        ? "Acceptance cancelled. The project is open for new proposals."
+        : "You have withdrawn from this project.",
+    );
     void loadWorkspace();
   }
 
@@ -580,6 +603,23 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
           </div>
         </div>
       </div>
+
+      {canCancelAcceptance ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#DC2626]/30 bg-[#DC2626]/5 p-4">
+          <p className="text-sm text-foreground-muted">
+            {isProjectOwner
+              ? "No milestone is funded yet. You can cancel and reopen this project for new proposals."
+              : "No milestone is funded yet. You can withdraw from this project."}
+          </p>
+          <button
+            className="min-h-12 rounded-xl border border-[#DC2626]/40 px-6 text-sm font-semibold text-[#DC2626] transition-all hover:bg-[#DC2626]/10 focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            onClick={() => void cancelAcceptanceAction()}
+            type="button"
+          >
+            {isProjectOwner ? "Cancel acceptance" : "Withdraw from project"}
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <p className="rounded-xl border border-[#DC2626]/30 bg-[#DC2626]/10 p-3 text-sm text-[#DC2626]">

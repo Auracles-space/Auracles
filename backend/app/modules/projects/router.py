@@ -602,3 +602,22 @@ async def accept_proposal(
         proposal_id=proposal_id,
     )
     return ProjectResponse.model_validate(project)
+
+
+@router.post("/{project_id}/cancel-acceptance", response_model=ProjectResponse)
+async def cancel_acceptance(
+    project_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Cancel an unfunded Proposal acceptance and reopen the Project.
+
+    Open to either Project member while the Project is still ``assigned`` (no
+    Escrow funded). Once funding has begun, use the dispute flow instead.
+    """
+    project = await service.cancel_acceptance(
+        db=db,
+        user=current_user,
+        project_id=project_id,
+    )
+    return ProjectResponse.model_validate(project)

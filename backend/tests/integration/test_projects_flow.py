@@ -924,6 +924,137 @@ async def test_reopen_milestone_plan_blocked_after_funding(
     assert blocked.status_code == 409
 
 
+async def test_operator_cancels_acceptance_reopens_project_and_clears_plan(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Operator cancels an unfunded acceptance: Project reopens, plan cleared.
+
+    The Proposal is marked rejected, the Project returns to ``open`` with no
+    accepted Proposal, and the Contributor's draft Milestones are removed.
+    """
+    operator_id = await create_user("cancel-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "cancel-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Discovery",
+            "description": "Draft milestone that should be cleared on cancel.",
+            "budget": "500.00",
+            "currency": "USD",
+        },
+    )
+
+    cancelled = await client.post(
+        f"/v1/projects/{project_id}/cancel-acceptance",
+        headers=operator_headers,
+    )
+
+    async with async_session_factory() as session:
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        proposal = await session.scalar(
+            select(Proposal).where(Proposal.project_id == project_id)
+        )
+        remaining = (
+            await session.execute(
+                select(Milestone).where(Milestone.project_id == project_id)
+            )
+        ).scalars().all()
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "open"
+    assert cancelled.json()["accepted_proposal_id"] is None
+    assert project is not None
+    assert project.status == "open"
+    assert project.accepted_proposal_id is None
+    assert proposal is not None
+    assert proposal.status == "rejected"
+    assert remaining == []
+
+
+async def test_contributor_cancels_acceptance_marks_proposal_withdrawn(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A Contributor backing out of an unfunded acceptance withdraws the Proposal."""
+    operator_id = await create_user("cback-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "cback-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    cancelled = await client.post(
+        f"/v1/projects/{project_id}/cancel-acceptance",
+        headers=contributor_headers,
+    )
+
+    async with async_session_factory() as session:
+        proposal = await session.scalar(
+            select(Proposal).where(Proposal.project_id == project_id)
+        )
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "open"
+    assert proposal is not None
+    assert proposal.status == "withdrawn"
+
+
+async def test_cancel_acceptance_blocked_after_funding(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Acceptance cannot be cancelled once a Milestone is funded (use disputes)."""
+    operator_id = await create_user("cblock-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "cblock-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    milestone_id = await _finalize_single_milestone_plan(
+        client, project_id, contributor_headers
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            project = await session.scalar(
+                select(Project).where(Project.id == project_id)
+            )
+            project.status = "in_progress"
+            milestone = await session.scalar(
+                select(Milestone).where(Milestone.id == milestone_id)
+            )
+            milestone.status = "funded"
+
+    blocked = await client.post(
+        f"/v1/projects/{project_id}/cancel-acceptance",
+        headers=operator_headers,
+    )
+
+    assert blocked.status_code == 409
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,

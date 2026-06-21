@@ -14,12 +14,17 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
-from app.modules.projects.models import Project, Proposal, ProposalAmendment
+from app.modules.projects.models import (
+    Milestone,
+    Project,
+    Proposal,
+    ProposalAmendment,
+)
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     DeliverableSpec,
@@ -530,6 +535,99 @@ async def withdraw_proposal(
         await db.flush()
         await db.refresh(proposal)
     return proposal
+
+
+async def cancel_acceptance(
+    *,
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+) -> Project:
+    """Cancel an unfunded Proposal acceptance and reopen the Project.
+
+    Either Project member may cancel while the Project is still ``assigned``
+    (no Escrow funded yet): the Operator to re-bid the work, or the Contributor
+    to back out. The accepted Proposal is marked ``rejected`` (Operator) or
+    ``withdrawn`` (Contributor), the Project returns to ``open`` with its plan
+    cleared, and the Contributor's draft Milestones are deleted. Once any
+    Milestone is funded the Project is ``in_progress`` and this is refused —
+    that exit belongs to the dispute flow, which settles held Escrow.
+
+    Args:
+        db: Async session.
+        user: Requesting Project member.
+        project_id: Project whose acceptance is cancelled.
+
+    Returns:
+        The reopened Project.
+
+    Raises:
+        HTTPException(403): If the user is not a Project member.
+        HTTPException(409): If there is no acceptance, or funding has begun.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project = await db.scalar(
+            select(Project).where(Project.id == project_id).with_for_update()
+        )
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if project.status != "assigned" or project.accepted_proposal_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only an assigned, unfunded Project acceptance can be cancelled.",
+            )
+        proposal = await db.scalar(
+            select(Proposal)
+            .where(Proposal.id == project.accepted_proposal_id)
+            .with_for_update()
+        )
+        if proposal is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Accepted Proposal is not available.",
+            )
+        if user_id not in {project.operator_id, proposal.contributor_id}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Project members can cancel the acceptance.",
+            )
+
+        now = datetime.now(UTC)
+        if user_id == proposal.contributor_id:
+            proposal.status = "withdrawn"
+            proposal.withdrawn_at = now
+        else:
+            proposal.status = "rejected"
+        proposal.accepted_at = None
+
+        await db.execute(
+            delete(Milestone).where(Milestone.project_id == project.id)
+        )
+        project.status = "open"
+        project.accepted_proposal_id = None
+        project.milestone_plan_status = "draft"
+
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="proposal_acceptance_cancelled",
+            target_type="project",
+            target_id=project.id,
+            metadata={
+                "proposal_id": str(proposal.id),
+                "proposal_status": proposal.status,
+            },
+        )
+        await db.flush()
+        await db.refresh(project)
+    return project
 
 
 async def accept_proposal(

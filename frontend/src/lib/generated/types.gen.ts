@@ -4350,6 +4350,16 @@ export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostRespon
 
 export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
 
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
+
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
+
 export type ListPartnerCatalogV1PartnerCatalogGetData = {
     headers?: {
         'X-API-Key'?: (string | null);

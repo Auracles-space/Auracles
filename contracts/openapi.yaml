@@ -5669,6 +5669,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/projects/{project_id}/cancel-acceptance:
+    post:
+      tags:
+      - Projects
+      summary: Cancel Acceptance
+      description: Cancel an unfunded Proposal acceptance and reopen the Project. Open
+        to either Project member while the Project is still assigned (no Escrow funded);
+        once funding has begun, use the dispute flow instead.
+      operationId: cancel_acceptance_v1_projects__project_id__cancel_acceptance_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/partner/catalog:
     get:
       tags:
