@@ -12,7 +12,10 @@
       "Bash(node scripts/repro_login_bounce.mjs)",
       "Bash(grep -vE \"^$\")",
       "Bash(pnpm generate:api)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(python -m pytest tests/integration/test_projects_flow.py -k \"due_date_must_fall\" -q)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

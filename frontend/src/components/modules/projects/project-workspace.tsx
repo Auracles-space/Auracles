@@ -63,6 +63,7 @@ type ProjectWorkspaceProps = {
 type MilestoneFormState = {
   budget: string;
   description: string;
+  dueDate: string;
   name: string;
   sequence: string;
 };
@@ -70,9 +71,13 @@ type MilestoneFormState = {
 const initialMilestoneForm: MilestoneFormState = {
   budget: "",
   description: "",
+  dueDate: "",
   name: "",
   sequence: "",
 };
+
+/** Today as an ISO date, used to bound Milestone due-date pickers. */
+const todayIso = new Date().toISOString().slice(0, 10);
 
 /**
  * Render a small status badge.
@@ -130,8 +135,9 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [editMilestoneForm, setEditMilestoneForm] = useState<{
     budget: string;
     description: string;
+    dueDate: string;
     name: string;
-  }>({ budget: "", description: "", name: "" });
+  }>({ budget: "", description: "", dueDate: "", name: "" });
   const [fundingInFlight, setFundingInFlight] = useState(false);
   const [fundingSession, setFundingSession] = useState<{
     milestoneId: string;
@@ -395,6 +401,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
         budget: milestoneForm.budget,
         currency: "USD",
         description: milestoneForm.description,
+        due_date: milestoneForm.dueDate || null,
         name: milestoneForm.name,
         sequence: Number(milestoneForm.sequence),
       },
@@ -462,6 +469,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     setEditMilestoneForm({
       budget: String(milestone.budget),
       description: milestone.description,
+      dueDate: milestone.due_date ?? "",
       name: milestone.name,
     });
     setError(null);
@@ -476,6 +484,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
       body: {
         budget: editMilestoneForm.budget,
         description: editMilestoneForm.description,
+        due_date: editMilestoneForm.dueDate || null,
         name: editMilestoneForm.name,
       },
       headers,
@@ -851,6 +860,27 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 placeholder="Describe milestone deliverables..."
                 value={milestoneForm.description}
               />
+              <label className="grid gap-1 text-sm font-semibold text-foreground">
+                Due date (optional)
+                <input
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-normal outline-none transition-all focus:border-accent focus:ring-0"
+                  max={project?.deadline ?? undefined}
+                  min={todayIso}
+                  onChange={(event) =>
+                    setMilestoneForm((current) => ({
+                      ...current,
+                      dueDate: event.target.value,
+                    }))
+                  }
+                  type="date"
+                  value={milestoneForm.dueDate}
+                />
+                {project?.deadline ? (
+                  <span className="text-xs font-normal text-foreground-subtle">
+                    Must fall on or before the project deadline ({project.deadline}).
+                  </span>
+                ) : null}
+              </label>
               {milestoneRemainingCents !== null ? (
                 <p className="text-xs text-foreground-muted">
                   {milestones.length === 0
@@ -975,11 +1005,36 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                             value={editMilestoneForm.description}
                           />
                         </label>
+                        <label className="grid gap-1 text-sm">
+                          <span className="font-medium text-foreground">
+                            Due date (optional)
+                          </span>
+                          <input
+                            className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            max={project?.deadline ?? undefined}
+                            min={todayIso}
+                            onChange={(event) =>
+                              setEditMilestoneForm((form) => ({
+                                ...form,
+                                dueDate: event.target.value,
+                              }))
+                            }
+                            type="date"
+                            value={editMilestoneForm.dueDate}
+                          />
+                        </label>
                       </div>
                     ) : (
-                      <p className="mt-2 text-sm text-foreground-muted">
-                        {milestone.description}
-                      </p>
+                      <>
+                        <p className="mt-2 text-sm text-foreground-muted">
+                          {milestone.description}
+                        </p>
+                        {milestone.due_date ? (
+                          <p className="mt-1 text-xs font-medium text-foreground-subtle">
+                            Due {milestone.due_date}
+                          </p>
+                        ) : null}
+                      </>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">
                       {isProjectOwner &&

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -577,6 +577,38 @@ async def _ensure_within_proposal_budget(
         )
 
 
+def _ensure_due_date_within_deadline(
+    *,
+    due_date: date | None,
+    project: Project,
+) -> None:
+    """Reject a Milestone due date outside the valid scheduling window.
+
+    A due date is optional. When supplied it must be today-or-later and, when the
+    Project carries a deadline, on or before it — a Milestone may not be scheduled
+    to finish after the Project it belongs to.
+
+    Args:
+        due_date: Proposed Milestone due date, or ``None`` to leave it unset.
+        project: Parent Project supplying the optional deadline ceiling.
+
+    Raises:
+        HTTPException(422): If the due date is in the past or after the deadline.
+    """
+    if due_date is None:
+        return
+    if due_date < date.today():
+        raise HTTPException(
+            status_code=422,
+            detail="Milestone due date cannot be in the past.",
+        )
+    if project.deadline is not None and due_date > project.deadline:
+        raise HTTPException(
+            status_code=422,
+            detail="Milestone due date must fall on or before the project deadline.",
+        )
+
+
 async def create_milestone(
     *,
     db: AsyncSession,
@@ -609,6 +641,7 @@ async def create_milestone(
             proposal=proposal,
             new_budget=payload.budget,
         )
+        _ensure_due_date_within_deadline(due_date=payload.due_date, project=project)
 
         milestone = Milestone(
             project_id=project.id,
@@ -697,6 +730,10 @@ async def update_milestone(
                 proposal=proposal,
                 new_budget=updates["budget"],
                 exclude_milestone_id=milestone.id,
+            )
+        if "due_date" in updates:
+            _ensure_due_date_within_deadline(
+                due_date=updates["due_date"], project=project
             )
         for key, value in updates.items():
             setattr(milestone, key, value)

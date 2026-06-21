@@ -829,6 +829,79 @@ async def test_update_milestone_rejects_total_over_proposal_budget(
     assert within.status_code == 200
 
 
+async def test_milestone_due_date_must_fall_within_project_deadline(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A Milestone due date must be today-or-later and on/before the deadline.
+
+    The Project deadline is 2026-08-01. A due date after it is rejected, a past
+    due date is rejected, and a date inside the window is accepted and stored.
+    Editing a Milestone to a date beyond the deadline is rejected too.
+    """
+    operator_id = await create_user("due-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "due-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    past_due = date.fromordinal(date.today().toordinal() - 1).isoformat()
+    after_deadline = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Too late",
+            "description": "Due after the project deadline.",
+            "budget": "500.00",
+            "currency": "USD",
+            "due_date": "2026-09-01",
+        },
+    )
+    in_past = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Backdated",
+            "description": "Due in the past.",
+            "budget": "500.00",
+            "currency": "USD",
+            "due_date": past_due,
+        },
+    )
+    valid = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "On time",
+            "description": "Due inside the project window.",
+            "budget": "500.00",
+            "currency": "USD",
+            "due_date": "2026-07-15",
+        },
+    )
+    milestone_id = valid.json().get("id") if valid.status_code == 201 else None
+    edit_after_deadline = await client.patch(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}",
+        headers=contributor_headers,
+        json={"due_date": "2026-08-15"},
+    )
+
+    assert after_deadline.status_code == 422
+    assert in_past.status_code == 422
+    assert valid.status_code == 201
+    assert valid.json()["due_date"] == "2026-07-15"
+    assert edit_after_deadline.status_code == 422
+
+
 async def _finalize_single_milestone_plan(
     client: AsyncClient,
     project_id: str,
