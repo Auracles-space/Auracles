@@ -121,6 +121,7 @@ async def settings_account_context(
     """Reset auth state and install fake Redis/email hooks."""
     fake_redis = FakeRedis()
     sent_email_changes: list[tuple[str, str]] = []
+    sent_email_alerts: list[tuple[str, str]] = []
 
     await engine.dispose()
     async with async_session_factory() as session:
@@ -136,8 +137,18 @@ async def settings_account_context(
         FakeEmailChangeTask(sent_email_changes),
         raising=False,
     )
+    monkeypatch.setattr(
+        settings_service,
+        "send_email_change_alert",
+        FakeEmailChangeTask(sent_email_alerts),
+        raising=False,
+    )
     try:
-        yield {"redis": fake_redis, "sent_email_changes": sent_email_changes}
+        yield {
+            "redis": fake_redis,
+            "sent_email_changes": sent_email_changes,
+            "sent_email_alerts": sent_email_alerts,
+        }
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await engine.dispose()
@@ -232,12 +243,16 @@ async def test_email_change_requires_totp_and_confirmation_swaps_email(
     missing_totp = await client.post(
         "/v1/settings/account/email-change",
         headers={"Authorization": f"Bearer {access_token}"},
-        json={"new_email": "next@auracles.space"},
+        json={"new_email": "next@auracles.space", "password": "CorrectHorse9"},
     )
     requested = await client.post(
         "/v1/settings/account/email-change",
         headers={"Authorization": f"Bearer {access_token}"},
-        json={"new_email": "next@auracles.space", "totp_code": code},
+        json={
+            "new_email": "next@auracles.space",
+            "password": "CorrectHorse9",
+            "totp_code": code,
+        },
     )
     sent = settings_account_context["sent_email_changes"]
     confirmed = await client.post(
@@ -258,9 +273,48 @@ async def test_email_change_requires_totp_and_confirmation_swaps_email(
     assert missing_totp.status_code == 403
     assert requested.status_code == 200
     assert sent[0][0] == "next@auracles.space"
+    # The old address is alerted that a change was requested.
+    alerts = settings_account_context["sent_email_alerts"]
+    assert alerts[0] == ("email-change@auracles.space", "next@auracles.space")
     assert confirmed.status_code == 200
     assert reused.status_code == 410
     assert user is not None
     assert user.email == "next@auracles.space"
     assert audit_log is not None
+
+
+async def test_email_change_without_2fa_uses_password_only(
+    client: AsyncClient,
+    migrated_database: None,
+    settings_account_context: dict[str, Any],
+) -> None:
+    """An account without 2FA changes email with password re-auth and no TOTP.
+
+    Regression: previously the unconditional TOTP gate locked no-2FA accounts
+    out of email change entirely (403 "2FA not enabled").
+    """
+    user_id, _ = await create_verified_user(
+        "no2fa-change@auracles.space",
+        "CorrectHorse9",
+        enable_totp=False,
+    )
+    access_token = create_access_token(user_id=user_id, roles=["operator"])
+
+    wrong_password = await client.post(
+        "/v1/settings/account/email-change",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"new_email": "fresh@auracles.space", "password": "WrongPass1"},
+    )
+    requested = await client.post(
+        "/v1/settings/account/email-change",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"new_email": "fresh@auracles.space", "password": "CorrectHorse9"},
+    )
+
+    assert wrong_password.status_code == 401
+    assert requested.status_code == 200
+    sent = settings_account_context["sent_email_changes"]
+    assert sent[0][0] == "fresh@auracles.space"
+    alerts = settings_account_context["sent_email_alerts"]
+    assert alerts[0] == ("no2fa-change@auracles.space", "fresh@auracles.space")
 

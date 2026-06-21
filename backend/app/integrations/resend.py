@@ -338,6 +338,48 @@ def send_email_change_verification(email: str, token: str) -> None:
     )
 
 
+def send_email_change_alert(email: str, new_email: str) -> None:
+    """Notify the current (old) address that an email change was requested.
+
+    Sent to the existing address so the account owner can react if the change
+    was not initiated by them (account-takeover early warning).
+    """
+    settings = get_settings()
+    if _delivery_disabled(
+        "settings", "send_email_change_alert", email, new_email=new_email
+    ):
+        return
+    if settings.resend_api_key is None:
+        logger.bind(module="settings", action="send_email_change_alert").info(
+            "resend_not_configured",
+            email=email,
+        )
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key.get_secret_value()
+
+    content_html = f"""
+    <p style="margin: 0 0 16px 0;">A request was made to change the email address on your Auracles account to <strong>{escape(new_email)}</strong>.</p>
+    <p style="margin: 0 0 16px 0;">The change only takes effect after the new address is confirmed. Your current address stays active until then.</p>
+    <p style="margin: 16px 0 0 0; font-size: 12px; color: #DC2626;">If you did not request this, reset your password immediately and contact platform support — your account may be compromised.</p>
+    """
+    html = _render_email_html(
+        title="Email change requested on your account",
+        content_html=content_html,
+    )
+
+    _dispatch(
+        {
+            "from": settings.resend_from_address,
+            "to": email,
+            "subject": "Security alert: email change requested",
+            "html": html,
+        }
+    )
+
+
 def send_new_device_email(
     email: str,
     ip: str | None,

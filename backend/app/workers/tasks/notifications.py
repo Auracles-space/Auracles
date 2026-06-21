@@ -13,6 +13,9 @@ from sqlalchemy import func, select
 from app.core.database import async_session_factory
 from app.integrations.resend import PermanentEmailError
 from app.integrations.resend import (
+    send_email_change_alert as send_email_change_alert_via_resend,
+)
+from app.integrations.resend import (
     send_email_change_verification as send_email_change_via_resend,
 )
 from app.integrations.resend import send_new_device_email as send_new_device_via_resend
@@ -79,6 +82,26 @@ def send_email_change_verification(self: Any, email: str, token: str) -> None:
     log.info("task_started")
     try:
         send_email_change_via_resend(email=email, token=token)
+    except PermanentEmailError as exc:
+        log.error("task_failed_permanent", error=str(exc))
+        return
+    except Exception as exc:
+        log.error("task_failed", error=str(exc))
+        raise self.retry(exc=exc, countdown=60) from exc
+    log.info("task_completed")
+
+
+@app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
+def send_email_change_alert(self: Any, email: str, new_email: str) -> None:
+    """Notify the old account address that an email change was requested."""
+    log = logger.bind(
+        module="settings",
+        action="send_email_change_alert",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    try:
+        send_email_change_alert_via_resend(email=email, new_email=new_email)
     except PermanentEmailError as exc:
         log.error("task_failed_permanent", error=str(exc))
         return

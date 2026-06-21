@@ -176,6 +176,7 @@ async def request_email_change(
         redis=redis,
         user=current_user,
         new_email=str(payload.new_email),
+        password=payload.password.get_secret_value(),
         totp_code=payload.totp_code,
     )
     return RegisterResponse(message="Email change verification sent.")

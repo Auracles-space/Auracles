@@ -1313,6 +1313,7 @@ export type EmailChangeConfirmRequest = {
  */
 export type EmailChangeRequest = {
     new_email: string;
+    password: string;
     totp_code?: (string | null);
 };
 

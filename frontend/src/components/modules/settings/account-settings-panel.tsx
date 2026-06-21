@@ -142,6 +142,7 @@ export function AccountSettingsPanel() {
   );
   const [exportStatusLoading, setExportStatusLoading] = useState(true);
   const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
   const [statusLoading, setStatusLoading] = useState(true);
   const [totpCode, setTotpCode] = useState("");
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
@@ -217,7 +218,8 @@ export function AccountSettingsPanel() {
     exportStatus?.status === "pending" || exportStatus?.status === "processing";
   const canSubmitEmailChange = allValid(
     isEmail(newEmail),
-    totpCode.trim().length >= 6,
+    isNonEmpty(emailPassword),
+    !twoFactorEnabled || totpCode.trim().length >= 6,
   );
   const canSubmitDeletion =
     isNonEmpty(deletionPassword) &&
@@ -228,14 +230,23 @@ export function AccountSettingsPanel() {
     setEmailError(null);
     setEmailMessage(null);
 
-    if (totpCode.trim().length < 6) {
-      setEmailError("Enter a 2FA code.");
+    if (!isNonEmpty(emailPassword)) {
+      setEmailError("Enter your current password.");
+      return;
+    }
+    // 2FA is a step-up only for accounts that have it enabled.
+    if (twoFactorEnabled && totpCode.trim().length < 6) {
+      setEmailError("Enter your 2FA code.");
       return;
     }
 
     configureBrowserClient();
     const result = await requestEmailChange({
-      body: { new_email: newEmail.trim(), totp_code: totpCode.trim() },
+      body: {
+        new_email: newEmail.trim(),
+        password: emailPassword,
+        totp_code: twoFactorEnabled ? totpCode.trim() : null,
+      },
       headers: getAccessTokenHeaders(),
     });
 
@@ -245,6 +256,8 @@ export function AccountSettingsPanel() {
     }
 
     setEmailMessage(result.data?.message ?? "Email change verification sent.");
+    setEmailPassword("");
+    setTotpCode("");
   }
 
   async function submitExportRequest(): Promise<void> {
@@ -377,7 +390,9 @@ export function AccountSettingsPanel() {
             Email address
           </h2>
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
-            Confirm with 2FA, then verify the new address from your email.
+            Confirm with your password{twoFactorEnabled ? " and 2FA code" : ""},
+            then verify the new address from your email. We notify your current
+            address for security.
           </p>
         </div>
         {emailError ? <FormMessage kind="error" message={emailError} /> : null}
@@ -394,12 +409,23 @@ export function AccountSettingsPanel() {
           value={newEmail}
         />
         <FormField
-          autoComplete="one-time-code"
-          label="2FA code"
-          name="totp_code"
-          onChange={(event) => setTotpCode(event.target.value)}
-          value={totpCode}
+          autoComplete="current-password"
+          label="Account password"
+          name="email_change_password"
+          onChange={(event) => setEmailPassword(event.target.value)}
+          required
+          type="password"
+          value={emailPassword}
         />
+        {twoFactorEnabled ? (
+          <FormField
+            autoComplete="one-time-code"
+            label="2FA code"
+            name="totp_code"
+            onChange={(event) => setTotpCode(event.target.value)}
+            value={totpCode}
+          />
+        ) : null}
         <Button disabled={!canSubmitEmailChange} type="submit">
           Request email change
         </Button>

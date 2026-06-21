@@ -10632,6 +10632,11 @@ components:
           type: string
           format: email
           title: New Email
+        password:
+          type: string
+          format: password
+          title: Password
+          writeOnly: true
         totp_code:
           anyOf:
           - type: string
@@ -10642,6 +10647,7 @@ components:
       type: object
       required:
       - new_email
+      - password
       title: EmailChangeRequest
       description: Request body for starting a verified account email change.
     ExploreArtifactSummary:

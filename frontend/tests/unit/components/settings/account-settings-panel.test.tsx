@@ -103,6 +103,9 @@ describe("AccountSettingsPanel", () => {
 
   it("keeps email change disabled until a 2FA code is entered", async () => {
     render(<AccountSettingsPanel />);
+    // Without 2FA, the 2FA field is not shown; password gates the change.
+    await screen.findByLabelText(/account password/i);
+    expect(screen.queryByLabelText(/^2fa code$/i)).not.toBeInTheDocument();
 
     const submit = screen.getByRole("button", {
       name: /request email change/i,
@@ -113,14 +116,14 @@ describe("AccountSettingsPanel", () => {
     });
     expect(submit).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(/^2fa code$/i), {
-      target: { value: "123456" },
+    fireEvent.change(screen.getByLabelText(/account password/i), {
+      target: { value: "CorrectHorse9" },
     });
     expect(submit).toBeEnabled();
     expect(requestEmailChange).not.toHaveBeenCalled();
   });
 
-  it("submits an email-change request through the generated client", async () => {
+  it("submits an email-change request with password and null totp without 2FA", async () => {
     vi.mocked(requestEmailChange).mockResolvedValue({
       data: { message: "Email change verification sent." },
       error: undefined,
@@ -128,18 +131,59 @@ describe("AccountSettingsPanel", () => {
     });
 
     render(<AccountSettingsPanel />);
+    await screen.findByLabelText(/account password/i);
 
     fireEvent.change(screen.getByLabelText(/new email/i), {
       target: { value: "next@auracles.space" },
     });
-    fireEvent.change(screen.getByLabelText(/^2fa code$/i), {
-      target: { value: "123456" },
+    fireEvent.change(screen.getByLabelText(/account password/i), {
+      target: { value: "CorrectHorse9" },
     });
     fireEvent.click(screen.getByRole("button", { name: /request email change/i }));
 
     await waitFor(() => {
       expect(requestEmailChange).toHaveBeenCalledWith({
-        body: { new_email: "next@auracles.space", totp_code: "123456" },
+        body: {
+          new_email: "next@auracles.space",
+          password: "CorrectHorse9",
+          totp_code: null,
+        },
+        headers: { Authorization: "Bearer access-token" },
+      });
+    });
+  });
+
+  it("includes the 2FA code in the email-change request when 2FA is enabled", async () => {
+    vi.mocked(totpStatus).mockResolvedValue({
+      data: { totp_enabled: true },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(requestEmailChange).mockResolvedValue({
+      data: { message: "Email change verification sent." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AccountSettingsPanel />);
+    const totpField = await screen.findByLabelText(/^2fa code$/i);
+
+    fireEvent.change(screen.getByLabelText(/new email/i), {
+      target: { value: "next@auracles.space" },
+    });
+    fireEvent.change(screen.getByLabelText(/account password/i), {
+      target: { value: "CorrectHorse9" },
+    });
+    fireEvent.change(totpField, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /request email change/i }));
+
+    await waitFor(() => {
+      expect(requestEmailChange).toHaveBeenCalledWith({
+        body: {
+          new_email: "next@auracles.space",
+          password: "CorrectHorse9",
+          totp_code: "123456",
+        },
         headers: { Authorization: "Bearer access-token" },
       });
     });

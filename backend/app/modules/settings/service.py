@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
-from app.core.security import generate_opaque_token, hash_token
+from app.core.security import generate_opaque_token, hash_token, verify_password
 from app.integrations import s3
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User
@@ -23,7 +23,10 @@ from app.modules.settings.schemas import (
     SessionResponse,
     SessionsResponse,
 )
-from app.workers.tasks.notifications import send_email_change_verification
+from app.workers.tasks.notifications import (
+    send_email_change_alert,
+    send_email_change_verification,
+)
 
 ALLOWED_KYC_MIME_TYPES = {"image/jpeg", "image/png", "application/pdf"}
 KYC_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -234,9 +237,16 @@ async def request_email_change(
     redis: Redis,
     user: User,
     new_email: str,
+    password: str,
     totp_code: str | None,
 ) -> None:
-    """Create a new-email verification token after TOTP confirmation."""
+    """Create a new-email verification token after re-authentication.
+
+    Email change always re-authenticates with the account password. Accounts
+    with 2FA enabled additionally step up with a TOTP/backup code; accounts
+    without 2FA rely on password plus the new-address verification link, so they
+    are not locked out. The current (old) address is notified for awareness.
+    """
     normalized_email = auth_service.normalize_email(new_email)
     if normalized_email == user.email:
         raise HTTPException(
@@ -250,13 +260,22 @@ async def request_email_change(
             detail="Email is already in use.",
         )
 
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=user,
-        code=totp_code,
-    )
+    if user.password_hash is None or not verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password.",
+        )
+    # Step up with 2FA only when the account has it; never demand a factor the
+    # account does not possess (that would lock the user out of email change).
+    if user.totp_enabled:
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=user,
+            code=totp_code,
+        )
 
+    previous_email = user.email
     token = f"{EMAIL_CHANGE_PREFIX}{generate_opaque_token()}"
     await redis.setex(
         _email_change_key(token),
@@ -264,6 +283,8 @@ async def request_email_change(
         json.dumps({"user_id": str(user.id), "new_email": normalized_email}),
     )
     send_email_change_verification.delay(normalized_email, token)
+    # Alert the existing address so an unauthorized change can be caught early.
+    send_email_change_alert.delay(previous_email, normalized_email)
     await write_audit(
         db=db,
         actor_id=user.id,

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 KycDocType = Literal[
     "passport",
@@ -79,9 +79,14 @@ class SessionsResponse(BaseModel):
 
 
 class EmailChangeRequest(BaseModel):
-    """Request body for starting a verified account email change."""
+    """Request body for starting a verified account email change.
+
+    Email change always re-authenticates with the account password and, when the
+    account has 2FA enabled, additionally steps up with a TOTP/backup code.
+    """
 
     new_email: EmailStr
+    password: SecretStr
     totp_code: str | None = Field(default=None, min_length=6, max_length=16)
 
 
