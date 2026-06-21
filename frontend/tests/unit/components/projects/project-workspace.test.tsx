@@ -30,6 +30,12 @@ vi.mock("@/lib/projects/realtime", () => ({
   useProjectRealtime: () => ({ connected: false, lastEvent: null }),
 }));
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/projects/test",
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+}));
+
 vi.mock("@/lib/auth/form-client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/form-client")>(
     "@/lib/auth/form-client",

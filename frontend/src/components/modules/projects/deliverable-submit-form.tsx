@@ -24,6 +24,7 @@ import {
 import type { DeliverableResponse } from "@/lib/generated/types.gen";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 10;
 
 type DeliverableSubmitFormProps = {
   /** Project the Milestone belongs to. */
@@ -55,6 +56,7 @@ export function DeliverableSubmitForm({
     name.trim().length > 0 &&
     description.trim().length > 0 &&
     files.length > 0 &&
+    files.length <= MAX_FILES &&
     !submitting;
 
   /** Upload one file via a presigned workspace session and return its S3 key. */
@@ -160,11 +162,18 @@ export function DeliverableSubmitForm({
           type="file"
         />
         <span className="text-xs text-foreground-subtle">
-          PDF, Office docs, images, text, or ZIP — up to 25MB each.
+          PDF, Office docs, images, text, or ZIP — up to 10 files, 25MB each.
         </span>
         {files.length > 0 ? (
-          <span className="text-xs text-foreground-muted">
+          <span
+            className={
+              files.length > MAX_FILES
+                ? "text-xs text-error"
+                : "text-xs text-foreground-muted"
+            }
+          >
             {files.length} file{files.length === 1 ? "" : "s"} selected
+            {files.length > MAX_FILES ? ` — max ${MAX_FILES}` : ""}
           </span>
         ) : null}
       </label>

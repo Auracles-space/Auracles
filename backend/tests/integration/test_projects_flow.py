@@ -1227,6 +1227,71 @@ async def test_workspace_upload_session_rejects_disallowed_file_type(
     assert allowed.status_code == 201
 
 
+async def test_workspace_messages_include_sender_name(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Workspace messages carry the sender's display name for the chat UI."""
+    operator_id = await create_user("msg-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "msgname-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+
+    posted = await client.post(
+        f"/v1/projects/{project_id}/messages",
+        headers=contributor_headers,
+        json={"body": "Kicking off the work."},
+    )
+    listed = await client.get(
+        f"/v1/projects/{project_id}/messages",
+        headers=operator_headers,
+    )
+
+    assert posted.status_code == 201
+    assert posted.json()["sender_name"] == "msgname-contributor"
+    assert listed.status_code == 200
+    assert any(
+        message["sender_name"] == "msgname-contributor"
+        for message in listed.json()["messages"]
+    )
+
+
+async def test_deliverable_submit_rejects_too_many_files(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A Deliverable may not carry more than the per-submission file cap.
+
+    Bounds total upload size together with the per-file 25MB S3 limit.
+    """
+    contributor_id = await create_user(
+        "manyfiles-contributor@auracles.space",
+        ["contributor"],
+    )
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    zero_uuid = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.post(
+        f"/v1/projects/{zero_uuid}/milestones/{zero_uuid}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Too many",
+            "description": "Eleven files exceeds the cap.",
+            "file_keys": [f"workspace/project/file-{index}.pdf" for index in range(11)],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,

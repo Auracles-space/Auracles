@@ -40,6 +40,7 @@ class WorkspaceMessageResponse(BaseModel):
     id: UUID
     project_id: UUID
     sender_id: UUID | None
+    sender_name: str | None = None
     body: str | None
     file_keys: list[str] | None
     scan_status: str

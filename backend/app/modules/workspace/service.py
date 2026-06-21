@@ -21,6 +21,7 @@ from app.modules.realtime.pubsub import publish_to_channel
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.modules.workspace.schemas import (
     WorkspaceMessageCreateRequest,
+    WorkspaceMessageResponse,
     WorkspaceMessagesResponse,
     WorkspaceUploadCreateRequest,
     WorkspaceUploadSessionResponse,
@@ -124,6 +125,18 @@ async def _publish_workspace_event(
 def _message_query(project_id: UUID) -> Select[tuple[WorkspaceMessage]]:
     """Return the base query for workspace message list endpoints."""
     return select(WorkspaceMessage).where(WorkspaceMessage.project_id == project_id)
+
+
+def _message_with_sender_name(
+    message: WorkspaceMessage, sender_name: str | None
+) -> WorkspaceMessageResponse:
+    """Build a message response carrying the sender's display name.
+
+    System messages have no sender, so ``sender_name`` is None for them.
+    """
+    response = WorkspaceMessageResponse.model_validate(message)
+    response.sender_name = sender_name
+    return response
 
 
 async def create_upload_session(
@@ -307,7 +320,13 @@ async def list_messages(
     if before is not None:
         query = query.where(WorkspaceMessage.created_at < before)
     rows = await db.execute(
-        query.order_by(WorkspaceMessage.created_at.desc()).limit(limit)
+        query.add_columns(User.display_name)
+        .outerjoin(User, User.id == WorkspaceMessage.sender_id)
+        .order_by(WorkspaceMessage.created_at.desc())
+        .limit(limit)
     )
-    messages = list(reversed(rows.scalars().all()))
+    messages = [
+        _message_with_sender_name(message, sender_name)
+        for message, sender_name in reversed(rows.all())
+    ]
     return WorkspaceMessagesResponse(messages=messages)

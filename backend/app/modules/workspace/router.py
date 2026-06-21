@@ -58,13 +58,17 @@ async def create_workspace_message(
     db: DatabaseSession,
 ) -> WorkspaceMessageResponse:
     """Create a user workspace message."""
+    # Capture before the service commit expires the auth-loaded user.
+    sender_name = current_user.display_name
     message = await service.create_message(
         db=db,
         user=current_user,
         project_id=project_id,
         payload=payload,
     )
-    return WorkspaceMessageResponse.model_validate(message)
+    response = WorkspaceMessageResponse.model_validate(message)
+    response.sender_name = sender_name
+    return response
 
 
 @router.get("/{project_id}/messages", response_model=WorkspaceMessagesResponse)

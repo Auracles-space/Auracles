@@ -7,11 +7,14 @@
  * brief, proposals, milestones, workspace messages, and deliverable actions.
  */
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DeliverableSubmitForm } from "@/components/modules/projects/deliverable-submit-form";
 import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
+import { WorkspaceMessagePanel } from "@/components/modules/projects/workspace-message-panel";
+import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
@@ -152,7 +155,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   const [deliverableFormMilestoneId, setDeliverableFormMilestoneId] = useState<
     string | null
   >(null);
-  const [messageBody, setMessageBody] = useState("");
   const realtime = useProjectRealtime(projectId);
 
   const headers = useMemo(() => getAccessTokenHeaders(), []);
@@ -209,6 +211,27 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     proposalBudgetCents !== null ? proposalBudgetCents - milestoneTotalCents : null;
   const canFinalizePlan =
     milestones.length > 0 && milestoneRemainingCents === 0;
+
+  const isWorkspaceMember = isProjectOwner || isAssignedContributor;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabItems = useMemo<TabItem[]>(() => {
+    const items: TabItem[] = [{ id: "overview", label: "Overview" }];
+    if (isWorkspaceMember) {
+      items.push({ id: "messages", label: "Messages" });
+    }
+    return items;
+  }, [isWorkspaceMember]);
+  const requestedTab = searchParams.get("tab");
+  const activeTab =
+    tabItems.find((tab) => tab.id === requestedTab)?.id ?? "overview";
+
+  function selectTab(id: string): void {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", id);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   const loadWorkspace = useCallback(async () => {
     configureBrowserClient();
@@ -542,19 +565,18 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     void loadWorkspace();
   }
 
-  async function postWorkspaceMessage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSendMessage(body: string): Promise<boolean> {
     const result = await createWorkspaceMessage({
-      body: { body: messageBody },
+      body: { body },
       headers,
       path: { project_id: projectId },
     });
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
-      return;
+      return false;
     }
     setMessages((current) => [result.data, ...current]);
-    setMessageBody("");
+    return true;
   }
 
   const deliverableApprovalActions = messages
@@ -571,7 +593,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     isPositiveNumber(milestoneForm.budget),
     isPositiveNumber(milestoneForm.sequence),
   );
-  const canPostMessage = isNonEmpty(messageBody);
 
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 md:px-8">
@@ -666,6 +687,21 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
         </p>
       ) : null}
 
+      <Tabs
+        activeId={activeTab}
+        label="Project workspace"
+        onChange={selectTab}
+        tabs={tabItems}
+      />
+
+      {activeTab === "overview" ? (
+        <div
+          aria-labelledby={tabId("overview")}
+          className="grid gap-6 outline-none"
+          id={tabPanelId("overview")}
+          role="tabpanel"
+          tabIndex={0}
+        >
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <section className="grid content-start gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
           <h2 className="font-heading text-xl font-semibold text-foreground">
@@ -1040,13 +1076,8 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
         </section>
       </div>
 
-      {isProjectOwner || isAssignedContributor ? (
-        <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-heading text-xl font-semibold text-foreground">
-              Workspace
-            </h2>
-            {isAssignedContributor && lastDeliverable ? (
+          {isAssignedContributor && lastDeliverable ? (
+            <div className="flex justify-end">
               <PublishAsFrameworkButton
                 deliverableId={lastDeliverable.id}
                 description={lastDeliverable.description}
@@ -1055,57 +1086,49 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 status={lastDeliverable.status}
                 title={lastDeliverable.name}
               />
-            ) : null}
-          </div>
-          <form className="flex flex-col gap-3 sm:flex-row" onSubmit={postWorkspaceMessage}>
-            <input
-              aria-label="Workspace message"
-              className="min-h-12 flex-1 rounded-xl border border-border-default bg-surface-2 px-4 text-sm outline-none transition-all focus:border-accent focus:ring-0"
-              onChange={(event) => setMessageBody(event.target.value)}
-              placeholder="Type a message..."
-              value={messageBody}
-            />
-            <button
-              className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!canPostMessage}
-              type="submit"
-            >
-              Post message
-            </button>
-          </form>
+            </div>
+          ) : null}
 
-          {isProjectOwner && deliverableApprovalActions.map((action) => (
-            <button
-              className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              key={action.messageId}
-              onClick={() =>
-                void approveMilestoneDeliverable(
-                  action.milestoneId ?? "",
-                  action.deliverableId ?? "",
-                )
-              }
-              type="button"
-            >
-              Approve deliverable
-            </button>
-          ))}
+          {isProjectOwner && deliverableApprovalActions.length > 0 ? (
+            <div className="grid gap-2 rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">
+                Deliverables awaiting your approval
+              </p>
+              {deliverableApprovalActions.map((action) => (
+                <button
+                  className="min-h-12 rounded-xl border border-[#16A34A]/30 bg-[#16A34A]/10 px-6 text-sm font-semibold text-[#16A34A] transition-all hover:bg-[#16A34A]/20 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  key={action.messageId}
+                  onClick={() =>
+                    void approveMilestoneDeliverable(
+                      action.milestoneId ?? "",
+                      action.deliverableId ?? "",
+                    )
+                  }
+                  type="button"
+                >
+                  Approve deliverable
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
-          <div className="grid gap-2">
-            {messages.map((message) => (
-              <article
-                className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                key={message.id}
-              >
-                <p className="font-semibold text-foreground">
-                  {message.system_event ?? "Message"}
-                </p>
-                <p className="mt-1 text-foreground-muted">
-                  {message.body ?? JSON.stringify(message.system_payload ?? {})}
-                </p>
-              </article>
-            ))}
-          </div>
-        </section>
+      {activeTab === "messages" && isWorkspaceMember ? (
+        <div
+          aria-labelledby={tabId("messages")}
+          className="outline-none"
+          id={tabPanelId("messages")}
+          role="tabpanel"
+          tabIndex={0}
+        >
+          <WorkspaceMessagePanel
+            connected={realtime.connected}
+            currentUserId={currentUserId}
+            messages={messages}
+            onSend={handleSendMessage}
+          />
+        </div>
       ) : null}
     </section>
   );

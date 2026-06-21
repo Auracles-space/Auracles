@@ -9741,6 +9741,7 @@ components:
           items:
             type: string
           type: array
+          maxItems: 10
           minItems: 1
           title: File Keys
       type: object
@@ -14694,6 +14695,11 @@ components:
             format: uuid
           - type: 'null'
           title: Sender Id
+        sender_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sender Name
         body:
           anyOf:
           - type: string

@@ -2685,6 +2685,7 @@ export type WorkspaceMessageResponse = {
     id: string;
     project_id: string;
     sender_id: (string | null);
+    sender_name?: (string | null);
     body: (string | null);
     file_keys: (Array<(string)> | null);
     scan_status: string;

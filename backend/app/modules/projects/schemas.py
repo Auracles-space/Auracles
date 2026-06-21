@@ -209,7 +209,7 @@ class DeliverableSubmitRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=4000)
-    file_keys: list[str] = Field(min_length=1)
+    file_keys: list[str] = Field(min_length=1, max_length=10)
 
 
 class DeliverableRevisionRequest(BaseModel):
