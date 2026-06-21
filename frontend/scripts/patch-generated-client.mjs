@@ -35,6 +35,7 @@ const compatibilityAliases = {
   createPaymentMethodSetup: "createPaymentMethodSetupV1FinancialsPaymentMethodsPost",
   createProject: "createProjectV1ProjectsPost",
   createWorkspaceMessage: "createWorkspaceMessageV1ProjectsProjectIdMessagesPost",
+  createWorkspaceUploadSession: "createWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPost",
   declineAttestationOffer: "declineAttestationOfferV1AttestationsAttestationIdDeclinePost",
   deleteArtifact: "deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete",
   deleteCredential: "deleteCredentialV1CredentialsCredentialIdDelete",

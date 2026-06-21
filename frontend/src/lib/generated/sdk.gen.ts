@@ -2268,6 +2268,7 @@ export const createMilestone = createMilestoneV1ProjectsProjectIdMilestonesPost;
 export const createPaymentMethodSetup = createPaymentMethodSetupV1FinancialsPaymentMethodsPost;
 export const createProject = createProjectV1ProjectsPost;
 export const createWorkspaceMessage = createWorkspaceMessageV1ProjectsProjectIdMessagesPost;
+export const createWorkspaceUploadSession = createWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPost;
 export const declineAttestationOffer = declineAttestationOfferV1AttestationsAttestationIdDeclinePost;
 export const deleteArtifact = deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete;
 export const deleteCredential = deleteCredentialV1CredentialsCredentialIdDelete;

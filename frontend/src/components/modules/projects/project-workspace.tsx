@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { DeliverableSubmitForm } from "@/components/modules/projects/deliverable-submit-form";
 import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
@@ -36,7 +37,6 @@ import {
   listMyProjectProposals,
   listProjectProposals,
   listWorkspaceMessages,
-  submitDeliverable,
   submitProposal,
 } from "@/lib/generated/sdk.gen";
 import type {
@@ -149,8 +149,9 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     clientSecret: string;
     transactionId: string;
   } | null>(null);
-  const deliverableName = "Final playbook";
-  const deliverableDescription = "Approved implementation playbook and rollout guide.";
+  const [deliverableFormMilestoneId, setDeliverableFormMilestoneId] = useState<
+    string | null
+  >(null);
   const [messageBody, setMessageBody] = useState("");
   const realtime = useProjectRealtime(projectId);
 
@@ -494,39 +495,27 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     });
   }
 
-  async function submitMilestoneDeliverable(milestoneId: string) {
-    const result = await submitDeliverable({
-      body: {
-        description: deliverableDescription,
-        file_keys: ["workspace/project/final-playbook.pdf"],
-        name: deliverableName,
-      },
-      headers,
-      path: { milestone_id: milestoneId, project_id: projectId },
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    updateLastDeliverable(result.data);
+  function onDeliverableSubmitted(deliverable: DeliverableResponse) {
+    updateLastDeliverable(deliverable);
     setMessages((current) => [
       {
         body: null,
-        created_at: result.data.created_at,
+        created_at: deliverable.created_at,
         file_keys: null,
-        id: `deliverable:${result.data.id}`,
+        id: `deliverable:${deliverable.id}`,
         project_id: projectId,
         scan_status: "visible",
         sender_id: null,
         system_event: "deliverable_submitted",
         system_payload: {
-          deliverable_id: result.data.id,
-          milestone_id: result.data.milestone_id,
+          deliverable_id: deliverable.id,
+          milestone_id: deliverable.milestone_id,
         },
       },
       ...current,
     ]);
     setNotice("Deliverable submitted.");
+    setDeliverableFormMilestoneId(null);
     void loadWorkspace();
   }
 
@@ -976,10 +965,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                           {fundingInFlight ? "Preparing payment" : "Fund milestone"}
                         </button>
                       ) : null}
-                      {isAssignedContributor && milestone.status === "funded" ? (
+                      {isAssignedContributor &&
+                      (milestone.status === "funded" ||
+                        milestone.status === "revision_requested") &&
+                      deliverableFormMilestoneId !== milestone.id ? (
                         <button
                           className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
-                          onClick={() => void submitMilestoneDeliverable(milestone.id)}
+                          onClick={() => setDeliverableFormMilestoneId(milestone.id)}
                           type="button"
                         >
                           Submit deliverable
@@ -1028,6 +1020,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         onCancel={() => setFundingSession(null)}
                         projectId={projectId}
                         transactionId={fundingSession.transactionId}
+                      />
+                    ) : null}
+                    {deliverableFormMilestoneId === milestone.id ? (
+                      <DeliverableSubmitForm
+                        milestoneId={milestone.id}
+                        onCancel={() => setDeliverableFormMilestoneId(null)}
+                        onSubmitted={onDeliverableSubmitted}
+                        projectId={projectId}
                       />
                     ) : null}
                   </div>
