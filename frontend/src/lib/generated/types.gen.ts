@@ -1009,6 +1009,7 @@ export type CurrentUserResponse = {
     display_name: string;
     avatar_url: (string | null);
     roles: Array<(string)>;
+    pending_roles: Array<(string)>;
     email_verified: boolean;
     kyc_status: string;
     deactivated_at: (string | null);

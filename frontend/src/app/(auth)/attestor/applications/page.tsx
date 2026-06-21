@@ -1,17 +1,15 @@
 /**
- * Authenticated Attestor application route.
+ * Legacy Attestor application route.
+ *
+ * The application flow moved to `/settings/attestor` (outside the role-gated
+ * `/attestor/*` area so applicants without an approved role can reach it). This
+ * route now redirects to preserve any existing links and bookmarks.
  */
-import { AttestorApplicationPanel } from "@/components/modules/attestation/attestation-workspaces";
+import { redirect } from "next/navigation";
 
 /**
- * Render Attestor application submission and history.
+ * Redirect the old attestor application path to its new settings home.
  */
 export default function AttestorApplicationsPage() {
-  return (
-    <main className="px-4 py-8 text-foreground md:px-8">
-      <div className="mx-auto max-w-[1280px]">
-        <AttestorApplicationPanel />
-      </div>
-    </main>
-  );
+  redirect("/settings/attestor");
 }

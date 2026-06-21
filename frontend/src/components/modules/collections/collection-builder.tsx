@@ -58,6 +58,34 @@ export function CollectionBuilder() {
     () => collections.find((collection) => collection.id === activeCollectionId),
     [activeCollectionId, collections],
   );
+  const activeCollectionMemberValue = useMemo(() => {
+    if (!activeCollection) {
+      return 0;
+    }
+
+    return activeCollection.members.reduce((total, member) => {
+      const price = Number(member.price);
+      return Number.isFinite(price) ? total + price : total;
+    }, 0);
+  }, [activeCollection]);
+  const canPublishActiveCollection = useMemo(() => {
+    if (!activeCollection || activeCollection.status === "published") {
+      return false;
+    }
+
+    const bundlePrice = Number(activeCollection.bundle_price);
+    const hasEnoughMembers = activeCollection.members.length >= 2;
+    const allMembersPublished = activeCollection.members.every(
+      (member) => member.status === "published",
+    );
+
+    return (
+      Number.isFinite(bundlePrice) &&
+      hasEnoughMembers &&
+      allMembersPublished &&
+      bundlePrice < activeCollectionMemberValue
+    );
+  }, [activeCollection, activeCollectionMemberValue]);
   const publishedFrameworks = frameworks.filter(
     (framework) => framework.status === "published",
   );
@@ -268,17 +296,20 @@ export function CollectionBuilder() {
               priced below member value before publish.
             </p>
           </div>
-          <select
-            className="min-h-12 min-w-[200px] rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-semibold text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
-            onChange={(event) => setActiveCollectionId(event.target.value)}
-            value={activeCollectionId ?? ""}
-          >
-            {collections.map((collection) => (
-              <option key={collection.id} value={collection.id}>
-                {collection.title}
-              </option>
-            ))}
-          </select>
+          {collections.length > 0 ? (
+            <select
+              aria-label="Select collection"
+              className="min-h-12 min-w-[200px] rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-semibold text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              onChange={(event) => setActiveCollectionId(event.target.value)}
+              value={activeCollectionId ?? ""}
+            >
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.title}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
 
         {activeCollection ? (
@@ -369,7 +400,7 @@ export function CollectionBuilder() {
               </button>
               <button
                 className="min-h-12 rounded-xl bg-foreground px-8 text-sm font-bold text-background outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={submitting || activeCollection.status === "published"}
+                disabled={submitting || !canPublishActiveCollection}
                 onClick={handlePublish}
                 type="button"
               >

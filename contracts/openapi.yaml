@@ -9640,6 +9640,11 @@ components:
             type: string
           type: array
           title: Roles
+        pending_roles:
+          items:
+            type: string
+          type: array
+          title: Pending Roles
         email_verified:
           type: boolean
           title: Email Verified
@@ -9659,6 +9664,7 @@ components:
       - display_name
       - avatar_url
       - roles
+      - pending_roles
       - email_verified
       - kyc_status
       - deactivated_at
