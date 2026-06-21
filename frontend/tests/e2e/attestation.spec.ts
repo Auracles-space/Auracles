@@ -168,12 +168,46 @@ async function mockAttestationApi(page: Page): Promise<void> {
     }
 
     if (path === "/v1/attestor/applications/mine") {
-      await fulfillJson(route, { applications: [] });
+      await fulfillJson(route, {
+        applications: [
+          {
+            id: "00000000-0000-4000-8000-000000000099",
+            user_id: "00000000-0000-4000-8000-000000000001",
+            status: "pending",
+            specializations: ["isso"],
+            jurisdictions: ["us"],
+            credentials_summary: "huininkomo",
+            sample_work: {},
+            professional_references: "",
+            admin_feedback: null,
+            reviewed_by: null,
+            reviewed_at: null,
+            created_at: "2026-06-20T12:00:00Z",
+          },
+        ],
+      });
       return;
     }
 
     if (path === "/v1/admin/attestor/applications") {
-      await fulfillJson(route, { applications: [] });
+      await fulfillJson(route, {
+        applications: [
+          {
+            id: "00000000-0000-4000-8000-000000000099",
+            user_id: "00000000-0000-4000-8000-000000000001",
+            status: "pending",
+            specializations: ["isso"],
+            jurisdictions: ["us"],
+            credentials_summary: "huininkomo",
+            sample_work: {},
+            professional_references: "",
+            admin_feedback: null,
+            reviewed_by: null,
+            reviewed_at: null,
+            created_at: "2026-06-20T12:00:00Z",
+          },
+        ],
+      });
       return;
     }
 

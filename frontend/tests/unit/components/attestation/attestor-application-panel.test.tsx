@@ -143,7 +143,6 @@ describe("AttestorApplicationPanel submit gating", () => {
     expect(
       screen.queryByRole("button", { name: /submit application/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/awaiting admin review/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
     expect(

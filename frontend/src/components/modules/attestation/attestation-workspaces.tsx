@@ -48,8 +48,20 @@ import { formatLabel, formatMoney } from "@/lib/marketplace/format";
  * @param value - Raw status value from the API.
  */
 function StatusTag({ value }: { value: string }) {
+  let classes = "border-info/30 bg-info/10 text-info";
+  if (["pending", "offered"].includes(value)) {
+    classes = "border-warning/30 bg-warning/10 text-warning";
+  } else if (
+    ["approved", "completed", "accepted", "verified", "active"].includes(value)
+  ) {
+    classes = "border-success/30 bg-success/10 text-success";
+  } else if (["rejected", "declined", "withdrawn", "failed"].includes(value)) {
+    classes = "border-error/30 bg-error/10 text-error";
+  }
   return (
-    <span className="inline-flex rounded-md border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-info">
+    <span
+      className={`inline-flex rounded-badge border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] ${classes}`}
+    >
       {formatLabel(value)}
     </span>
   );
@@ -961,27 +973,55 @@ function ApplicationList({
         applications.map((application) => (
           <article className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm" key={application.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="font-heading text-lg font-bold text-foreground">
-                  {application.specializations.join(", ")}
-                </h2>
-                <p className="mt-1 text-sm text-foreground-muted">
-                  {application.jurisdictions.join(", ")}
-                </p>
+              <div className="grid gap-2">
+                <h3 className="font-heading text-lg font-bold text-foreground">
+                  Attestor Application
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {application.specializations.map((spec) => (
+                    <span
+                      key={spec}
+                      className="inline-flex items-center rounded-lg border border-border-default bg-surface-2 px-2 py-0.5 text-xs font-semibold text-foreground-muted"
+                    >
+                      {spec}
+                    </span>
+                  ))}
+                  {application.jurisdictions.map((jur) => (
+                    <span
+                      key={jur}
+                      className="inline-flex items-center rounded-lg border border-accent/20 bg-accent/5 px-2 py-0.5 text-xs font-semibold text-accent"
+                    >
+                      {jur}
+                    </span>
+                  ))}
+                </div>
               </div>
               <StatusTag value={application.status} />
             </div>
-            <p className="mt-3 text-sm leading-6 text-foreground-muted">
-              {application.credentials_summary}
-            </p>
-            {application.status === "pending" ? (
-              <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
-                Submitted and awaiting admin review. You can edit or withdraw it
-                until a decision is made.
-              </p>
-            ) : null}
+            
+            <div className="mt-4 grid gap-3 border-t border-border-default pt-4">
+              <div className="grid gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
+                  Credentials Summary
+                </span>
+                <p className="text-sm leading-relaxed text-foreground">
+                  {application.credentials_summary}
+                </p>
+              </div>
+              {application.professional_references ? (
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
+                    Professional References
+                  </span>
+                  <p className="text-sm leading-relaxed text-foreground-muted">
+                    {application.professional_references}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
             {application.status === "rejected" ? (
-              <p className="mt-3 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">
+              <p className="mt-3 rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error font-medium">
                 Rejected.{" "}
                 {application.admin_feedback
                   ? application.admin_feedback
@@ -989,28 +1029,28 @@ function ApplicationList({
               </p>
             ) : null}
             {application.status === "approved" ? (
-              <p className="mt-3 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm text-success">
+              <p className="mt-3 rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm text-success font-medium">
                 Approved.{" "}
                 {application.admin_feedback ?? "Your attestor access is active."}
               </p>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-3">
               {onEdit && application.status === "pending" ? (
-                <button className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onEdit(application)} type="button">
+                <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onEdit(application)} type="button">
                   Edit
                 </button>
               ) : null}
               {onWithdraw && application.status === "pending" ? (
-                <button className="min-h-12 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground shadow-sm outline-none transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onWithdraw(application.id)} type="button">
+                <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-5 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onWithdraw(application.id)} type="button">
                   Withdraw
                 </button>
               ) : null}
               {onReview ? (
                 <>
-                  <button className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onReview(application, "approved")} type="button">
+                  <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onReview(application, "approved")} type="button">
                     Approve
                   </button>
-                  <button className="min-h-12 rounded-xl border border-error px-4 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onReview(application, "rejected")} type="button">
+                  <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onReview(application, "rejected")} type="button">
                     Reject
                   </button>
                 </>
