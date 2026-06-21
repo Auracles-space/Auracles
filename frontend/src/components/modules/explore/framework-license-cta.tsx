@@ -90,7 +90,10 @@ export function FrameworkLicenseCta({
     return (
       <div className="mt-6 rounded-xl border border-border-default bg-surface-1 px-4 py-3 text-center text-sm font-semibold text-foreground-muted">
         This is your framework.{" "}
-        <Link className="text-accent hover:underline" href="/dashboard/frameworks">
+        <Link
+          className="text-accent hover:underline"
+          href={`/dashboard/frameworks/${frameworkId}`}
+        >
           Manage it
         </Link>
       </div>

@@ -78,6 +78,10 @@ describe("FrameworkLicenseCta", () => {
       screen.queryByRole("link", { name: /license framework/i }),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/your framework/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /manage it/i })).toHaveAttribute(
+      "href",
+      `/dashboard/frameworks/${FRAMEWORK_ID}`,
+    );
     expect(listOperatorLibrary).not.toHaveBeenCalled();
   });
 
