@@ -85,5 +85,12 @@ describe("CredentialManager", () => {
       );
     });
     expect(await screen.findByText("Healthcare Compliance Lead")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Edit credential" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Upload evidence")).toBeInTheDocument();
+    expect(
+      screen.getByText("PDF, Word, and image files up to 10 MB."),
+    ).toBeInTheDocument();
   });
 });

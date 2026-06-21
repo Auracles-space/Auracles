@@ -113,6 +113,7 @@ class CurrentUserResponse(BaseModel):
     display_name: str
     avatar_url: str | None
     roles: list[str]
+    pending_roles: list[str]
     email_verified: bool
     kyc_status: str
     deactivated_at: datetime | None

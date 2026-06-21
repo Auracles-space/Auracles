@@ -192,6 +192,49 @@ async def test_login_sets_refresh_cookie_and_me_accepts_access_token(
     assert me_response.json()["avatar_url"] is None
 
 
+async def test_me_exposes_pending_attestor_role(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """`/me` reports an unapproved attestor role under ``pending_roles``.
+
+    A registered attestor's role is inert until admin approval, so it is excluded
+    from active ``roles`` but surfaced in ``pending_roles`` so the UI can prompt
+    the user to complete (or track) their attestor application.
+    """
+    from datetime import UTC, datetime
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="pending-attestor@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="Pending Attestor",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(user_id=user.id, role="attestor", approved_at=None)
+            )
+
+    login = await client.post(
+        "/v1/auth/login",
+        json={"email": "pending-attestor@auracles.space", "password": "CorrectHorse9"},
+    )
+    access_token = login.json()["access_token"]
+    me_response = await client.get(
+        "/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    body = me_response.json()
+    assert me_response.status_code == 200
+    assert body["roles"] == []
+    assert body["pending_roles"] == ["attestor"]
+
+
 async def test_login_rejects_unverified_and_deactivated_accounts(
     client: AsyncClient,
     migrated_database: None,

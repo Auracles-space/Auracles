@@ -226,12 +226,18 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         for role, approved_at in role_rows
         if role != "attestor" or approved_at is not None
     ]
+    # Roles held but not yet usable (attestor awaiting admin approval). Surfaced
+    # so the UI can prompt the user to complete or track their application.
+    pending_roles = [
+        role for role, approved_at in role_rows if approved_at is None
+    ]
     return CurrentUserResponse(
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
         avatar_url=current_user.avatar_url,
         roles=roles,
+        pending_roles=pending_roles,
         email_verified=current_user.email_verified,
         kyc_status=current_user.kyc_status,
         deactivated_at=current_user.deactivated_at,

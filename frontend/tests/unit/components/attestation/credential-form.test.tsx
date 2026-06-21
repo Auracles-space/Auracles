@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CredentialForm } from "@/components/modules/attestation/credential-form";
@@ -68,5 +68,33 @@ describe("CredentialForm evidence uploader", () => {
     const input = screen.getByLabelText("Upload evidence");
     expect(input).toBeInTheDocument();
     expect(input).toHaveAttribute("type", "file");
+  });
+
+  it("rejects files larger than 10 MB before upload starts", async () => {
+    render(
+      <CredentialForm
+        initial={existing}
+        mode="edit"
+        onSubmit={vi.fn()}
+        submitting={false}
+      />,
+    );
+
+    const input = screen.getByLabelText("Upload evidence");
+    const oversizedFile = new File(["x"], "evidence.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(oversizedFile, "size", {
+      configurable: true,
+      value: 10 * 1024 * 1024 + 1,
+    });
+
+    fireEvent.change(input, { target: { files: [oversizedFile] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Evidence files must be 10 MB or smaller."),
+      ).toBeInTheDocument();
+    });
   });
 });

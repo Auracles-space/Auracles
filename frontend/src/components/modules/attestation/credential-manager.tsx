@@ -60,10 +60,10 @@ export function CredentialManager() {
   }, []);
 
   /**
-   * Persist a new user-owned Credential through the generated SDK.
-   *
-   * @param values - Normalised form values from the create form.
-   */
+ * Persist a new user-owned Credential through the generated SDK.
+ *
+ * @param values - Normalised form values from the create form.
+ */
   async function handleCreateCredential(values: CredentialFormValues) {
     setError(null);
     setSubmitting(true);
@@ -80,6 +80,7 @@ export function CredentialManager() {
     }
 
     setCredentials((current) => [result.data, ...current]);
+    setEditing(result.data);
   }
 
   /**
@@ -205,16 +206,27 @@ export function CredentialManager() {
         {editing ? (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-heading text-xl font-bold text-foreground">
-                Edit credential
-              </h2>
-              <button
-                className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
-                onClick={() => setEditing(null)}
-                type="button"
-              >
-                Cancel
-              </button>
+              <div className="grid gap-1">
+                <h2 className="font-heading text-xl font-bold text-foreground">
+                  Edit credential
+                </h2>
+                <p className="text-sm text-foreground-muted">
+                  Upload supporting PDF, Word, or image evidence before you
+                  submit this credential for verification.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <p className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs font-semibold text-success">
+                  Credential saved. You can add evidence now.
+                </p>
+                <button
+                  className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={() => setEditing(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
             <div className="mt-4">
               <CredentialForm

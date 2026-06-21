@@ -30,6 +30,9 @@ import type {
 const EVIDENCE_ACCEPT =
   ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*";
 
+/** Maximum credential evidence size enforced by the backend upload session. */
+const MAX_EVIDENCE_SIZE_BYTES = 10 * 1024 * 1024;
+
 /** Display the human-readable file name from an S3 object key. */
 function keyDisplayName(key: string): string {
   const segments = key.split("/");
@@ -139,6 +142,10 @@ export function CredentialForm({
    */
   async function handleEvidenceUpload(file: File) {
     if (!initial) {
+      return;
+    }
+    if (file.size > MAX_EVIDENCE_SIZE_BYTES) {
+      setEvidenceError("Evidence files must be 10 MB or smaller.");
       return;
     }
     setEvidenceError(null);
@@ -342,6 +349,9 @@ export function CredentialForm({
                 Uploading evidence…
               </p>
             ) : null}
+            <p className="text-xs text-foreground-muted">
+              PDF, Word, and image files up to 10 MB.
+            </p>
             {evidenceError ? (
               <p className="rounded-xl border border-error/30 bg-error/10 p-3 text-sm text-error">
                 {evidenceError}
