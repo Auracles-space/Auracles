@@ -11,7 +11,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
-import type { CurrentUserResponse } from "@/lib/generated/types.gen";
 
 type SettingsWorkspaceShellProps = {
   children: ReactNode;
@@ -72,15 +71,17 @@ const settingsLinks: SettingsLink[] = [
 export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
   const [isAttestor, setIsAttestor] = useState(false);
+  const [isPendingAttestor, setIsPendingAttestor] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     async function fetchUserRole() {
       const user = await loadCurrentUserSession();
       if (!mounted) return;
-      if (user?.roles?.includes("attestor")) {
-        setIsAttestor(true);
-      }
+      setIsAttestor(user?.roles?.includes("attestor") ?? false);
+      // A pending attestor has no active role yet; it sits in pending_roles.
+      // They still need the Attestor link to complete/track their application.
+      setIsPendingAttestor(user?.pending_roles?.includes("attestor") ?? false);
     }
     void fetchUserRole();
     return () => {
@@ -91,11 +92,11 @@ export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps
   const visibleLinks = useMemo(() => {
     return settingsLinks.filter((link) => {
       if (link.href === "/settings/attestor") {
-        return isAttestor;
+        return isAttestor || isPendingAttestor;
       }
       return true;
     });
-  }, [isAttestor]);
+  }, [isAttestor, isPendingAttestor]);
 
   return (
     <section className="px-4 py-6 text-foreground md:px-8 md:py-8">
