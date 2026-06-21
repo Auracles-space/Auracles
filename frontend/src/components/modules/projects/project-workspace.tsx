@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -142,6 +143,12 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
     description: string;
     name: string;
   }>({ budget: "", description: "", name: "" });
+  const [fundingInFlight, setFundingInFlight] = useState(false);
+  const [fundingSession, setFundingSession] = useState<{
+    milestoneId: string;
+    clientSecret: string;
+    transactionId: string;
+  } | null>(null);
   const deliverableName = "Final playbook";
   const deliverableDescription = "Approved implementation playbook and rollout guide.";
   const [messageBody, setMessageBody] = useState("");
@@ -467,16 +474,24 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   }
 
   async function fundProjectMilestone(milestoneId: string) {
+    setError(null);
+    setFundingInFlight(true);
     const result = await fundMilestone({
       headers,
       path: { milestone_id: milestoneId, project_id: projectId },
     });
+    setFundingInFlight(false);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
     }
-    setNotice("Milestone funding started.");
-    void loadWorkspace();
+    // Open the Stripe payment panel with the returned PaymentIntent secret;
+    // escrow funds only after the Operator completes payment.
+    setFundingSession({
+      milestoneId,
+      clientSecret: result.data.client_secret,
+      transactionId: result.data.transaction_id,
+    });
   }
 
   async function submitMilestoneDeliverable(milestoneId: string) {
@@ -948,13 +963,17 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       </p>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {isProjectOwner && milestone.status === "pending" && project?.milestone_plan_status === "finalized" ? (
+                      {isProjectOwner &&
+                      milestone.status === "pending" &&
+                      project?.milestone_plan_status === "finalized" &&
+                      fundingSession?.milestoneId !== milestone.id ? (
                         <button
-                          className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
+                          className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={fundingInFlight || fundingSession !== null}
                           onClick={() => void fundProjectMilestone(milestone.id)}
                           type="button"
                         >
-                          Fund milestone
+                          {fundingInFlight ? "Preparing payment" : "Fund milestone"}
                         </button>
                       ) : null}
                       {isAssignedContributor && milestone.status === "funded" ? (
@@ -1003,6 +1022,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         </>
                       ) : null}
                     </div>
+                    {fundingSession?.milestoneId === milestone.id ? (
+                      <MilestoneFundingPanel
+                        clientSecret={fundingSession.clientSecret}
+                        onCancel={() => setFundingSession(null)}
+                        projectId={projectId}
+                        transactionId={fundingSession.transactionId}
+                      />
+                    ) : null}
                   </div>
                 );
               })

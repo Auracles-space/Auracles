@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -1299,6 +1299,77 @@ async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     assert payment_intent["metadata"]["transaction_id"] == str(transaction.id)
     assert payment_intent["metadata"]["project_id"] == project_id
     assert payment_intent["metadata"]["milestone_id"] == milestone_id
+
+
+async def test_fund_milestone_resumes_existing_pending_payment(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-funding a Milestone with a pending PaymentIntent resumes, not 409s.
+
+    A second Fund click returns the same transaction and client secret instead
+    of "already has active funding", and no duplicate transaction is created.
+    """
+
+    async def fake_create_customer(
+        *, email: str, name: str | None = None, idempotency_key: str | None = None
+    ) -> FakeStripeCustomer:
+        return FakeStripeCustomer("cus_resume_123")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        idempotency_key: str | None = None,
+    ) -> FakeStripePaymentIntent:
+        # Same idempotency key -> Stripe returns the same intent; mirror that.
+        return FakeStripePaymentIntent("pi_resume_123", "pi_resume_secret")
+
+    monkeypatch.setattr(milestone_service.stripe, "create_customer", fake_create_customer)
+    monkeypatch.setattr(
+        milestone_service.stripe, "create_payment_intent", fake_create_payment_intent
+    )
+
+    operator_id = await create_user("resume-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "resume-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = await _accept_project_for_milestones(
+        client, operator_headers, contributor_headers
+    )
+    milestone_id = await _finalize_single_milestone_plan(
+        client, project_id, contributor_headers
+    )
+
+    first = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+    )
+    second = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+    )
+
+    async with async_session_factory() as session:
+        transaction_count = await session.scalar(
+            select(func.count(Transaction.id)).where(
+                Transaction.ref_id == UUID(milestone_id),
+                Transaction.ref_type == "project_milestone",
+            )
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["transaction_id"] == first.json()["transaction_id"]
+    assert second.json()["client_secret"] == "pi_resume_secret"
+    assert transaction_count == 1
 
 
 async def create_funded_project_milestone(

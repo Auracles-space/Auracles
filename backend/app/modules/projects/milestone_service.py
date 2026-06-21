@@ -296,8 +296,8 @@ async def _create_pending_milestone_transaction(
             milestone_id=milestone_id,
             operator_id=operator_id,
         )
-        existing_transaction_id = await db.scalar(
-            select(Transaction.id)
+        existing = await db.scalar(
+            select(Transaction)
             .where(
                 Transaction.ref_id == milestone.id,
                 Transaction.ref_type == "project_milestone",
@@ -305,10 +305,20 @@ async def _create_pending_milestone_transaction(
             )
             .limit(1)
         )
-        if existing_transaction_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Milestone already has active funding.",
+        if existing is not None:
+            if existing.status == "completed":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Milestone is already funded.",
+                )
+            # A pending PaymentIntent from an abandoned attempt is resumable:
+            # reusing its id keeps the Stripe idempotency key stable, so the
+            # caller gets back the same intent and client secret to complete.
+            return (
+                existing.id,
+                proposal.contributor_id,
+                _normalise_money(milestone.budget),
+                milestone.currency,
             )
 
         operator = await db.get(User, operator_id, with_for_update=True)
