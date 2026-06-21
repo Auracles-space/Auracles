@@ -13657,6 +13657,11 @@ components:
           type: string
           format: uuid
           title: Operator Id
+        operator_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Operator Name
         title:
           type: string
           title: Title
@@ -13884,6 +13889,11 @@ components:
           type: string
           format: uuid
           title: Contributor Id
+        contributor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Contributor Name
         scope:
           type: string
           title: Scope

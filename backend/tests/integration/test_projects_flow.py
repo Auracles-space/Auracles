@@ -1090,6 +1090,91 @@ async def test_contributor_can_rebid_after_cancelled_acceptance(
     assert rebid.json()["status"] == "pending"
 
 
+async def test_project_listings_include_operator_name(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Project listings carry the posting Operator's display name for cards."""
+    operator_id = await create_user("poster-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "feed-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+
+    operator_view = await client.get(
+        "/v1/projects",
+        params={"role": "operator"},
+        headers=operator_headers,
+    )
+    open_feed = await client.get(
+        "/v1/projects",
+        params={"role": "contributor", "scope": "open"},
+        headers=contributor_headers,
+    )
+
+    assert operator_view.status_code == 200
+    assert operator_view.json()["projects"][0]["operator_name"] == "poster-operator"
+    assert open_feed.status_code == 200
+    assert open_feed.json()["projects"][0]["operator_name"] == "poster-operator"
+
+
+async def test_proposal_listings_include_proposer_name(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Proposal listings expose the proposer's display name to both sides.
+
+    The Operator's view of bids and the Contributor's own list both carry
+    ``contributor_name`` so the UI can label who proposed.
+    """
+    operator_id = await create_user("names-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "names-bidder@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+
+    operator_view = await client.get(
+        f"/v1/projects/{project_id}/proposals",
+        headers=operator_headers,
+    )
+    contributor_view = await client.get(
+        f"/v1/projects/{project_id}/proposals/mine",
+        headers=contributor_headers,
+    )
+
+    assert operator_view.status_code == 200
+    assert operator_view.json()["proposals"][0]["contributor_name"] == "names-bidder"
+    assert contributor_view.status_code == 200
+    assert (
+        contributor_view.json()["proposals"][0]["contributor_name"] == "names-bidder"
+    )
+
+
 async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     client: AsyncClient,
     migrated_database: None,

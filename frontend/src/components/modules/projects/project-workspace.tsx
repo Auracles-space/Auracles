@@ -699,9 +699,14 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   key={proposal.id}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-foreground">
-                      ${proposal.budget} · {proposal.timeline_days} days
-                    </p>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {proposal.contributor_name ?? "Contributor"}
+                      </p>
+                      <p className="text-xs text-foreground-muted">
+                        ${proposal.budget} · {proposal.timeline_days} days
+                      </p>
+                    </div>
                     <StatusBadge status={proposal.status} />
                   </div>
                   <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
@@ -803,7 +808,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   Add milestone
                 </button>
                 <button
-                  className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
+                  className="min-h-12 rounded-xl bg-[#16A34A] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#16A34A]/90 focus-visible:ring-2 focus-visible:ring-[#16A34A]"
                   onClick={() => void finalizePlan()}
                   type="button"
                 >

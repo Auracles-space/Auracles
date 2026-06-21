@@ -47,6 +47,11 @@ function ProjectCard({ project }: { project: ProjectResponse }) {
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground-muted">
             {project.description}
           </p>
+          {project.operator_name ? (
+            <p className="mt-2 text-xs text-foreground-subtle">
+              Posted by {project.operator_name}
+            </p>
+          ) : null}
         </div>
         <span className="rounded-md border border-[#2563EB]/30 bg-[#2563EB]/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#2563EB]">
           {statusLabel(project.status)}

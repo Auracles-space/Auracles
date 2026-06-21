@@ -29,9 +29,11 @@ from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     DeliverableSpec,
     ProjectCreateRequest,
+    ProjectResponse,
     ProjectsResponse,
     ProjectUpdateRequest,
     ProposalCreateRequest,
+    ProposalResponse,
     ProposalsResponse,
 )
 from app.modules.workspace.models import WorkspaceMessage
@@ -227,6 +229,15 @@ async def create_project(
     return project
 
 
+def _project_with_operator_name(
+    project: Project, operator_name: str | None
+) -> ProjectResponse:
+    """Build a ProjectResponse carrying the posting Operator's display name."""
+    response = ProjectResponse.model_validate(project)
+    response.operator_name = operator_name
+    return response
+
+
 async def list_projects(
     *,
     db: AsyncSession,
@@ -271,12 +282,18 @@ async def list_projects(
 
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
     rows = await db.execute(
-        query.order_by(Project.created_at.desc())
+        query.add_columns(User.display_name)
+        .join(User, User.id == Project.operator_id)
+        .order_by(Project.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
+    projects = [
+        _project_with_operator_name(project, operator_name)
+        for project, operator_name in rows.all()
+    ]
     return ProjectsResponse(
-        projects=list(rows.scalars()),
+        projects=projects,
         total=int(total or 0),
         page=page,
         page_size=page_size,
@@ -434,13 +451,22 @@ async def submit_proposal(
     return proposal
 
 
+def _proposal_with_name(
+    proposal: Proposal, contributor_name: str | None
+) -> ProposalResponse:
+    """Build a ProposalResponse carrying the proposer's display name."""
+    response = ProposalResponse.model_validate(proposal)
+    response.contributor_name = contributor_name
+    return response
+
+
 async def list_project_proposals(
     *,
     db: AsyncSession,
     operator: User,
     project_id: UUID,
 ) -> ProposalsResponse:
-    """List Proposals for an Operator-owned Project."""
+    """List Proposals for an Operator-owned Project, with proposer names."""
     project = await db.scalar(
         select(Project).where(
             Project.id == project_id,
@@ -452,18 +478,14 @@ async def list_project_proposals(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found.",
         )
-    proposals = (
-        (
-            await db.execute(
-                select(Proposal)
-                .where(Proposal.project_id == project_id)
-                .order_by(Proposal.created_at.desc())
-            )
-        )
-        .scalars()
-        .all()
+    rows = await db.execute(
+        select(Proposal, User.display_name)
+        .join(User, User.id == Proposal.contributor_id)
+        .where(Proposal.project_id == project_id)
+        .order_by(Proposal.created_at.desc())
     )
-    return ProposalsResponse(proposals=list(proposals))
+    proposals = [_proposal_with_name(proposal, name) for proposal, name in rows.all()]
+    return ProposalsResponse(proposals=proposals)
 
 
 async def list_my_project_proposals(
@@ -472,22 +494,18 @@ async def list_my_project_proposals(
     contributor: User,
     project_id: UUID,
 ) -> ProposalsResponse:
-    """List the current Contributor's Proposals for one Project."""
-    proposals = (
-        (
-            await db.execute(
-                select(Proposal)
-                .where(
-                    Proposal.project_id == project_id,
-                    Proposal.contributor_id == contributor.id,
-                )
-                .order_by(Proposal.created_at.desc())
-            )
+    """List the current Contributor's Proposals for one Project, with name."""
+    rows = await db.execute(
+        select(Proposal, User.display_name)
+        .join(User, User.id == Proposal.contributor_id)
+        .where(
+            Proposal.project_id == project_id,
+            Proposal.contributor_id == contributor.id,
         )
-        .scalars()
-        .all()
+        .order_by(Proposal.created_at.desc())
     )
-    return ProposalsResponse(proposals=list(proposals))
+    proposals = [_proposal_with_name(proposal, name) for proposal, name in rows.all()]
+    return ProposalsResponse(proposals=proposals)
 
 
 async def withdraw_proposal(

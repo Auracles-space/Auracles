@@ -287,6 +287,7 @@ class ProjectResponse(BaseModel):
 
     id: UUID
     operator_id: UUID
+    operator_name: str | None = None
     title: str
     description: str
     category: str
@@ -323,6 +324,7 @@ class ProposalResponse(BaseModel):
     id: UUID
     project_id: UUID
     contributor_id: UUID
+    contributor_name: str | None = None
     scope: str
     budget: Decimal
     currency: str

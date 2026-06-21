@@ -2294,6 +2294,7 @@ export type ProjectCreateRequest = {
 export type ProjectResponse = {
     id: string;
     operator_id: string;
+    operator_name?: (string | null);
     title: string;
     description: string;
     category: string;
@@ -2356,6 +2357,7 @@ export type ProposalResponse = {
     id: string;
     project_id: string;
     contributor_id: string;
+    contributor_name?: (string | null);
     scope: string;
     budget: string;
     currency: string;
