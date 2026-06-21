@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import { CredentialStatusBadge } from "@/components/modules/attestation/credential-status-badge";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { Button } from "@/components/ui/button";
 import {
   downloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGet,
   listCredentialReviewQueueV1AdminCredentialsGet,
@@ -217,10 +218,9 @@ export function AdminCredentialReviewPanel() {
 
       <ErrorMessage message={error} />
 
-      <div
+      <nav
         aria-label="Filter credentials by status"
-        className="flex flex-wrap gap-2"
-        role="group"
+        className="flex flex-wrap gap-1 rounded-2xl border border-border-default bg-surface-1 p-1.5 shadow-sm max-w-lg"
       >
         {STATUS_FILTERS.map((filter) => {
           const isActive = filter.value === statusFilter;
@@ -228,10 +228,10 @@ export function AdminCredentialReviewPanel() {
             <button
               aria-pressed={isActive}
               className={[
-                "min-h-12 rounded-xl border px-4 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                "flex-1 min-h-11 rounded-xl px-4 text-sm font-semibold transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 isActive
-                  ? "border-accent/40 bg-accent/10 text-foreground"
-                  : "border-border-default bg-surface-1 text-foreground-muted hover:bg-surface-2 hover:text-foreground",
+                  ? "bg-foreground text-background shadow-sm"
+                  : "text-foreground-muted hover:bg-surface-2 hover:text-foreground",
               ].join(" ")}
               key={filter.value}
               onClick={() => setStatusFilter(filter.value)}
@@ -241,7 +241,7 @@ export function AdminCredentialReviewPanel() {
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {loading ? (
         <TableSkeleton />
@@ -250,7 +250,7 @@ export function AdminCredentialReviewPanel() {
           No credentials in this status.
         </p>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           {credentials.map((credential) => {
             const isPending = credential.verification_status === "pending";
             const isBusy = busyId === credential.id;
@@ -259,12 +259,12 @@ export function AdminCredentialReviewPanel() {
                 className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
                 key={credential.id}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-default/45 pb-4">
                   <div className="min-w-0">
                     <h2 className="font-heading text-lg font-bold text-foreground">
                       {credential.title}
                     </h2>
-                    <p className="mt-1 break-words text-sm text-foreground-muted">
+                    <p className="mt-1 break-words text-xs font-mono text-foreground-muted">
                       Owner {credential.user_id}
                     </p>
                   </div>
@@ -336,7 +336,7 @@ export function AdminCredentialReviewPanel() {
                   </div>
                 </dl>
 
-                <div className="mt-4">
+                <div className="mt-4 border-t border-border-default/45 pt-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
                     Evidence
                   </p>
@@ -351,21 +351,21 @@ export function AdminCredentialReviewPanel() {
                           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-default bg-surface-2 px-3 py-2"
                           key={key}
                         >
-                          <span className="min-w-0 break-words text-sm text-foreground">
+                          <span className="min-w-0 break-words text-sm text-foreground font-medium">
                             {evidenceFileName(key)}
                           </span>
-                          <button
-                            className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+                          <Button
                             disabled={
                               downloadBusyKey === `${credential.id}:${key}`
                             }
                             onClick={() =>
                               handleViewEvidence(credential.id, key)
                             }
-                            type="button"
+                            size="sm"
+                            variant="secondary"
                           >
                             View
-                          </button>
+                          </Button>
                         </li>
                       ))}
                     </ul>
@@ -373,24 +373,21 @@ export function AdminCredentialReviewPanel() {
                 </div>
 
                 {credential.rejection_reason ? (
-                  <p className="mt-4 rounded-xl border border-error/30 bg-error/10 p-3 text-sm text-error">
+                  <p className="mt-4 rounded-xl border border-error/30 bg-error/10 p-3 text-sm text-error font-medium">
                     Rejection reason: {credential.rejection_reason}
                   </p>
                 ) : null}
 
                 {isPending ? (
-                  <div className="mt-4 grid gap-3">
+                  <div className="mt-4 border-t border-border-default/45 pt-4 grid gap-3">
                     <div className="flex flex-wrap gap-3">
-                      <button
-                        className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+                      <Button
                         disabled={isBusy}
                         onClick={() => handleVerify(credential.id)}
-                        type="button"
                       >
                         Verify
-                      </button>
-                      <button
-                        className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:opacity-60"
+                      </Button>
+                      <Button
                         disabled={isBusy}
                         onClick={() => {
                           setRejectReason("");
@@ -400,13 +397,13 @@ export function AdminCredentialReviewPanel() {
                               : credential.id,
                           );
                         }}
-                        type="button"
+                        variant="destructive"
                       >
                         Reject
-                      </button>
+                      </Button>
                     </div>
                     {rejectOpenId === credential.id ? (
-                      <div className="grid gap-3">
+                      <div className="grid gap-3 rounded-xl bg-surface-2 p-4 border border-border-default">
                         <label className="grid gap-2 text-sm font-semibold text-foreground">
                           Rejection reason
                           <textarea
@@ -417,14 +414,13 @@ export function AdminCredentialReviewPanel() {
                             value={rejectReason}
                           />
                         </label>
-                        <button
-                          className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:opacity-60"
-                          disabled={isBusy}
+                        <Button
+                          disabled={isBusy || !rejectReason.trim()}
                           onClick={() => handleReject(credential.id)}
-                          type="button"
+                          variant="destructive"
                         >
                           Confirm reject
-                        </button>
+                        </Button>
                       </div>
                     ) : null}
                   </div>

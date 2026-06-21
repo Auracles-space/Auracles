@@ -109,8 +109,8 @@ describe("AdminAnalyticsPanel", () => {
     expect(screen.getByText("$350")).toBeInTheDocument();
     expect(screen.getByText("$775")).toBeInTheDocument();
     expect(screen.getByText("$2,075")).toBeInTheDocument();
-    expect(screen.getByText("2026-06-10")).toBeInTheDocument();
-    expect(screen.getByText("2026-06-11")).toBeInTheDocument();
+    expect(screen.getByText("10/06/26")).toBeInTheDocument();
+    expect(screen.getByText("11/06/26")).toBeInTheDocument();
     expect(screen.getByText(/framework purchase/i)).toBeInTheDocument();
     expect(screen.getByText(/open disputes/i)).toBeInTheDocument();
   });

@@ -15,6 +15,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { Button } from "@/components/ui/button";
 import {
   acceptAttestationOffer,
   acceptAttestationReport,
@@ -839,46 +840,156 @@ export function AdminAttestationPanel() {
         title="Review and resolution"
         summary="Review Attestor applications, manually assign exhausted requests, refund needs-admin requests, or resolve disputes."
       />
+      
       <ErrorMessage message={error} />
+      
+      {/* Step 1: Security & Audit parameters card */}
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2">
+        <h3 className="font-heading text-lg font-bold text-foreground mb-4">
+          Audit & Security Context
+        </h3>
+        <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Admin 2FA code
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setTotpCode(event.target.value)} value={totpCode} />
+            <input 
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+              onChange={(event) => setTotpCode(event.target.value)} 
+              placeholder="Enter 6-digit code"
+              value={totpCode} 
+            />
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Reason or notes
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setManualReason(event.target.value)} value={manualReason} />
+            <input 
+              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+              onChange={(event) => setManualReason(event.target.value)} 
+              placeholder="Explain this action for audit logs..."
+              value={manualReason} 
+            />
           </label>
         </div>
       </div>
+
+      {/* Applications List */}
       <ApplicationList applications={applications} onReview={handleReview} />
-      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <h2 className="font-heading text-xl font-bold text-foreground">
-          Needs-admin action
-        </h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestationId(event.target.value)} placeholder="Attestation ID" value={assignAttestationId} />
-          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setAssignAttestorId(event.target.value)} placeholder="Attestor ID" value={assignAttestorId} />
-          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setDisputeId(event.target.value)} placeholder="Dispute ID" value={disputeId} />
-          <select className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} value={resolutionType}>
-            <option value="release">Release</option>
-            <option value="refund">Refund</option>
-            <option value="split">Split</option>
-          </select>
-          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setReleaseAmount(event.target.value)} placeholder="Release amount for split" value={releaseAmount} />
-          <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setRefundAmount(event.target.value)} placeholder="Refund amount for split" value={refundAmount} />
+
+      {/* Step 2: Action Panels Bento Grid */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Panel A: Attestation Controls */}
+        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="font-heading text-xl font-bold text-foreground mb-2">
+              Attestation Controls
+            </h3>
+            <p className="text-xs text-foreground-muted mb-4 leading-relaxed">
+              Manually assign pending requests to qualified attestors, or cancel the request and refund operators.
+            </p>
+            <div className="grid gap-4 mb-6">
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Attestation ID
+                <input 
+                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                  onChange={(event) => setAssignAttestationId(event.target.value)} 
+                  placeholder="e.g. att-93f8e" 
+                  value={assignAttestationId} 
+                />
+              </label>
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Target Attestor ID
+                <input 
+                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                  onChange={(event) => setAssignAttestorId(event.target.value)} 
+                  placeholder="Required for manual assignment" 
+                  value={assignAttestorId} 
+                />
+              </label>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 pt-4 border-t border-border-default/40">
+            <Button 
+              disabled={!canAssign} 
+              onClick={handleManualAssign} 
+              type="button"
+            >
+              Manual assign
+            </Button>
+            <Button 
+              disabled={!canRefund} 
+              onClick={handleAdminRefund} 
+              type="button"
+              variant="destructive"
+            >
+              Refund request
+            </Button>
+          </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canAssign} onClick={handleManualAssign} type="button">
-            Manual assign
-          </button>
-          <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60" disabled={!canRefund} onClick={handleAdminRefund} type="button">
-            Refund request
-          </button>
-          <button className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canResolveDispute} onClick={handleResolveDispute} type="button">
-            Resolve dispute
-          </button>
+
+        {/* Panel B: Dispute Resolution */}
+        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="font-heading text-xl font-bold text-foreground mb-2">
+              Dispute Resolution
+            </h3>
+            <p className="text-xs text-foreground-muted mb-4 leading-relaxed">
+              Resolve formal quality or service disputes by releasing funds to the contributor, refunding the operator, or dividing the escrow.
+            </p>
+            <div className="grid gap-4 mb-6">
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Dispute ID
+                <input 
+                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                  onChange={(event) => setDisputeId(event.target.value)} 
+                  placeholder="e.g. dsp-18a7b" 
+                  value={disputeId} 
+                />
+              </label>
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Resolution Strategy
+                <select 
+                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                  onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} 
+                  value={resolutionType}
+                >
+                  <option value="release">Release (Pay Contributor)</option>
+                  <option value="refund">Refund (Pay Operator)</option>
+                  <option value="split">Split Escrow Funds</option>
+                </select>
+              </label>
+              
+              {resolutionType === "split" && (
+                <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-surface-2 p-3 border border-border-default">
+                  <label className="grid gap-1.5 text-xs font-semibold text-foreground">
+                    Release to Contributor ($)
+                    <input 
+                      className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
+                      onChange={(event) => setReleaseAmount(event.target.value)} 
+                      placeholder="Amount" 
+                      value={releaseAmount} 
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-semibold text-foreground">
+                    Refund to Operator ($)
+                    <input 
+                      className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
+                      onChange={(event) => setRefundAmount(event.target.value)} 
+                      placeholder="Amount" 
+                      value={refundAmount} 
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="pt-4 border-t border-border-default/40">
+            <Button 
+              className="w-full sm:w-auto"
+              disabled={!canResolveDispute} 
+              onClick={handleResolveDispute} 
+              type="button"
+            >
+              Resolve dispute
+            </Button>
+          </div>
         </div>
       </div>
     </section>

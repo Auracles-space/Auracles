@@ -5,11 +5,13 @@
  *
  * Allows administrators to search users, filter by suspension state, and run
  * the suspend or unsuspend mutations with TOTP confirmation.
+ * Styled as a responsive grid directory that functions as a table on desktop.
  */
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
+import { authTokenStore } from "@/lib/auth/token-store";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -80,6 +82,11 @@ export function AdminUserDirectoryPanel() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const [totpCode, setTotpCode] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrentUserId(authTokenStore.getState().userId);
+  }, []);
 
   const selectedUser = useMemo(
     () =>
@@ -241,29 +248,74 @@ export function AdminUserDirectoryPanel() {
         </div>
       ) : null}
 
-      <div className="grid gap-4">
+      <div className="grid gap-4 md:gap-0 md:divide-y md:divide-border-default/40 md:rounded-2xl md:border md:border-border-default md:bg-surface-1 md:shadow-sm overflow-hidden">
+        {/* Table Header - Only visible on desktop/tablet */}
+        <div className="hidden md:grid md:grid-cols-[1.5fr_1fr_1.2fr_0.8fr_1fr] md:gap-4 md:bg-surface-2/40 md:p-4 md:pl-6 md:pr-6 text-xs font-semibold uppercase tracking-wider text-foreground-muted select-none">
+          <div>User</div>
+          <div>Joined</div>
+          <div>Roles</div>
+          <div>Status</div>
+          <div className="text-right">Actions</div>
+        </div>
+
         {(directory?.items ?? []).map((item) => {
           const isSelected = selectedUserId === item.user_id;
+          const isSelf = item.user_id === currentUserId;
           return (
             <article
               aria-label={item.display_name}
-              className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
+              className={`
+                transition-colors flex flex-col
+                /* Mobile Card styles */
+                rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm gap-3
+                /* Desktop/Tablet Table row styles */
+                md:grid md:grid-cols-[1.5fr_1fr_1.2fr_0.8fr_1fr] md:items-center md:gap-4
+                md:rounded-none md:border-none md:bg-transparent md:p-4 md:pl-6 md:pr-6 md:shadow-none
+                ${isSelected ? "md:bg-surface-2/50" : "md:hover:bg-surface-2/30"}
+              `}
               key={item.user_id}
               role="article"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-heading text-xl font-bold text-foreground">
-                    {item.display_name}
-                  </h3>
-                  <p className="mt-1 text-sm text-foreground">{item.email}</p>
-                  <p className="mt-1 text-sm text-foreground-muted">
-                    Joined {formatTimestamp(item.created_at)}
-                  </p>
+              {/* User Identity cell */}
+              <div className="grid gap-0.5 md:col-span-1">
+                <h3 className="font-heading text-lg font-bold text-foreground md:text-sm md:font-semibold flex items-center gap-1.5">
+                  {item.display_name}
+                  {isSelf ? (
+                    <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-bold text-accent uppercase tracking-wide">
+                      You
+                    </span>
+                  ) : null}
+                </h3>
+                <p className="text-sm text-foreground-muted md:text-xs">{item.email}</p>
+              </div>
+
+              {/* Joined Date cell */}
+              <div className="text-sm text-foreground md:text-xs">
+                <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Joined</span>
+                <span>{formatTimestamp(item.created_at)}</span>
+              </div>
+
+              {/* Roles Badge List cell */}
+              <div>
+                <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Roles</span>
+                <div className="flex flex-wrap gap-1">
+                  {item.roles.map((role) => (
+                    <span
+                      className="inline-flex items-center rounded-md border border-border-default bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-foreground-muted uppercase tracking-wide"
+                      key={`${item.user_id}:${role}`}
+                    >
+                      {formatLabel(role)}
+                    </span>
+                  ))}
                 </div>
+              </div>
+
+              {/* Status Pill cell */}
+              <div>
+                <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">Status</span>
                 <span
                   className={[
-                    "rounded-md border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.05em]",
+                    "inline-flex items-center rounded-badge border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
                     item.suspended
                       ? "border-warning/30 bg-warning/10 text-warning"
                       : "border-success/30 bg-success/10 text-success",
@@ -273,31 +325,32 @@ export function AdminUserDirectoryPanel() {
                 </span>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {item.roles.map((role) => (
-                  <span
-                    className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-xs text-foreground"
-                    key={`${item.user_id}:${role}`}
-                  >
-                    {formatLabel(role)}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-3">
+              {/* Action Buttons cell */}
+              <div className="md:text-right">
                 {item.suspended ? (
-                  <Button onClick={() => setSelectedUserId(item.user_id)} variant="secondary">
+                  <Button
+                    onClick={() => setSelectedUserId(item.user_id)}
+                    disabled={isSelf}
+                    size="sm"
+                    variant="secondary"
+                  >
                     Unsuspend
                   </Button>
                 ) : (
-                  <Button onClick={() => setSelectedUserId(item.user_id)} variant="destructive">
+                  <Button
+                    onClick={() => setSelectedUserId(item.user_id)}
+                    disabled={isSelf}
+                    size="sm"
+                    variant="destructive"
+                  >
                     Suspend
                   </Button>
                 )}
               </div>
 
+              {/* Expandable Suspension Form overlay (spans full width of the grid on desktop) */}
               {isSelected ? (
-                <div className="mt-5 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4">
+                <div className="mt-4 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4 col-span-full text-left">
                   {!item.suspended ? (
                     <label className="grid gap-2 text-sm font-semibold text-foreground">
                       Reason
