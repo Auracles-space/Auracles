@@ -8,10 +8,8 @@ import { CredentialManager } from "@/components/modules/attestation/credential-m
  */
 export default function CredentialsPage() {
   return (
-    <main className="px-4 py-8 text-foreground md:px-8">
-      <div className="mx-auto max-w-3xl">
-        <CredentialManager />
-      </div>
-    </main>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <CredentialManager />
+    </div>
   );
 }
