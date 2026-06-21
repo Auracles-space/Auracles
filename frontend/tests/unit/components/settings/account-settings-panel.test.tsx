@@ -16,6 +16,7 @@ import {
   requestAccountDeletion,
   requestDataExportV1GdprExportsPost,
   requestEmailChange,
+  totpStatus,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -33,6 +34,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   requestAccountDeletion: vi.fn(),
   requestDataExportV1GdprExportsPost: vi.fn(),
   requestEmailChange: vi.fn(),
+  totpStatus: vi.fn(),
 }));
 
 const emptyDeletionStatus = {
@@ -63,9 +65,40 @@ describe("AccountSettingsPanel", () => {
       error: { detail: "No data export request found." },
       response: new Response(null, { status: 404 }),
     });
+    vi.mocked(totpStatus).mockReset();
+    vi.mocked(totpStatus).mockResolvedValue({
+      data: { totp_enabled: false },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
     vi.stubGlobal("location", {
       assign: vi.fn(),
     });
+  });
+
+  it("hides the deletion confirmation code field when 2FA is disabled", async () => {
+    render(<AccountSettingsPanel />);
+
+    // Password is required for everyone; the 2FA code field must not appear for
+    // accounts without 2FA enabled.
+    await screen.findByLabelText(/current password/i);
+    expect(
+      screen.queryByLabelText(/confirmation code/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the deletion confirmation code field when 2FA is enabled", async () => {
+    vi.mocked(totpStatus).mockResolvedValue({
+      data: { totp_enabled: true },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AccountSettingsPanel />);
+
+    expect(
+      await screen.findByLabelText(/confirmation code/i),
+    ).toBeInTheDocument();
   });
 
   it("keeps email change disabled until a 2FA code is entered", async () => {
@@ -113,6 +146,11 @@ describe("AccountSettingsPanel", () => {
   });
 
   it("submits a delete-account request and shows blocked reasons from the GDPR endpoint", async () => {
+    vi.mocked(totpStatus).mockResolvedValue({
+      data: { totp_enabled: true },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
     const blockedResponse = {
       blocked_reasons: [
         {

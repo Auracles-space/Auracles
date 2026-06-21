@@ -25,6 +25,7 @@ import {
   requestAccountDeletion,
   requestDataExportV1GdprExportsPost,
   requestEmailChange,
+  totpStatus,
 } from "@/lib/generated/sdk.gen";
 import type {
   AccountDeletionStatusResponse,
@@ -143,6 +144,7 @@ export function AccountSettingsPanel() {
   const [newEmail, setNewEmail] = useState("");
   const [statusLoading, setStatusLoading] = useState(true);
   const [totpCode, setTotpCode] = useState("");
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -150,17 +152,23 @@ export function AccountSettingsPanel() {
     async function loadSettingsState(): Promise<void> {
       configureBrowserClient();
       const headers = getAccessTokenHeaders();
-      const [deletionResult, exportResult] = await Promise.all([
+      const [deletionResult, exportResult, totpResult] = await Promise.all([
         getAccountDeletionStatus({
           headers,
         }),
         getLatestDataExportStatusV1GdprExportsLatestGet({
           headers,
         }),
+        totpStatus({ headers }),
       ]);
 
       if (!mounted) {
         return;
+      }
+
+      // Only accounts with 2FA enabled need to confirm GDPR actions with a code.
+      if (totpResult.response.ok && totpResult.data) {
+        setTwoFactorEnabled(totpResult.data.totp_enabled);
       }
 
       setStatusLoading(false);
@@ -211,7 +219,9 @@ export function AccountSettingsPanel() {
     isEmail(newEmail),
     totpCode.trim().length >= 6,
   );
-  const canSubmitDeletion = isNonEmpty(deletionPassword);
+  const canSubmitDeletion =
+    isNonEmpty(deletionPassword) &&
+    (!twoFactorEnabled || deletionTotp.trim().length >= 6);
 
   async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -570,14 +580,16 @@ export function AccountSettingsPanel() {
               type="password"
               value={deletionPassword}
             />
-            <FormField
-              autoComplete="one-time-code"
-              helper="Required when 2FA is enabled on your account."
-              label="Confirmation code"
-              name="deletion_totp_code"
-              onChange={(event) => setDeletionTotp(event.target.value)}
-              value={deletionTotp}
-            />
+            {twoFactorEnabled ? (
+              <FormField
+                autoComplete="one-time-code"
+                helper="Enter the 6-digit code from your authenticator app."
+                label="Confirmation code"
+                name="deletion_totp_code"
+                onChange={(event) => setDeletionTotp(event.target.value)}
+                value={deletionTotp}
+              />
+            ) : null}
             <Button
               disabled={
                 deletionPending === "request" ||
