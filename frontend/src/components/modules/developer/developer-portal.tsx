@@ -6,6 +6,7 @@
  * Provides the Phase 5a Partner Developer dashboard layout. Data loading and
  * mutations live in the companion hook so this component stays presentation-led.
  */
+import { DeveloperApiUsage } from "@/components/modules/developer/developer-api-usage";
 import { ApplicationPanel } from "@/components/modules/developer/developer-portal-application";
 import {
   ApiKeysPanel,
@@ -106,6 +107,7 @@ export function DeveloperPortal() {
                   onRevoke={handleApiKeyRevoke}
                   rawApiKey={rawApiKey}
                 />
+                <DeveloperApiUsage apiKey={rawApiKey} />
               </>
             ) : null}
           </div>

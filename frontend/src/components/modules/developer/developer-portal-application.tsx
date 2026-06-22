@@ -10,7 +10,7 @@ import type { FormEvent } from "react";
 import { useId, useState } from "react";
 
 import type { DeveloperApplicationResponse } from "@/lib/generated/types.gen";
-import { allValid, isHttpUrl, isNonEmpty } from "@/lib/forms/validators";
+import { allValid, isHttpUrl } from "@/lib/forms/validators";
 import { formatLabel } from "@/lib/marketplace/format";
 
 export type ApplicationPayload = Pick<
@@ -45,9 +45,12 @@ export function ApplicationPanel({
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const approved = latestApplication?.status === "approved";
 
+  // Mirror the backend constraints so a valid-looking form never 422s:
+  // company_name >= 2 chars, use_case >= 20 chars, website optional but a URL.
+  const useCaseRemaining = 20 - useCase.trim().length;
   const canSubmit = allValid(
-    isNonEmpty(companyName),
-    isNonEmpty(useCase),
+    companyName.trim().length >= 2,
+    useCase.trim().length >= 20,
     website.trim() === "" || isHttpUrl(website),
   ) && !isSubmitting;
 
@@ -150,6 +153,11 @@ export function ApplicationPanel({
               placeholder="Describe your integration use case..."
             />
           </label>
+          <span className="-mt-1 text-xs font-normal text-foreground-muted">
+            {useCaseRemaining > 0
+              ? `At least ${useCaseRemaining} more character${useCaseRemaining === 1 ? "" : "s"} needed.`
+              : "Looks good."}
+          </span>
           <button
             className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!canSubmit}

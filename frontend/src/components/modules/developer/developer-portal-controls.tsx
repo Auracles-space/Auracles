@@ -22,6 +22,47 @@ const webhookEvents = [
   "framework.updated",
 ];
 
+/**
+ * One-time secret reveal with a copy-to-clipboard control.
+ *
+ * Used for the raw API key and webhook signing secret, which the backend
+ * returns exactly once — the user must copy them before navigating away.
+ *
+ * @param props.label - What the secret is, shown above the value.
+ * @param props.value - The secret string to display and copy.
+ */
+function SecretReveal({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3">
+      <p className="text-xs font-semibold text-warning">{label}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+          {value}
+        </code>
+        <button
+          className="min-h-9 shrink-0 rounded-lg border border-warning/40 bg-surface-1 px-3 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+          onClick={() => void handleCopy()}
+          type="button"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type ApiKeysPanelProps = {
   apiKeys: ApiKeyResponse[];
   onCreate: (name: string, scopes: string[]) => Promise<void>;
@@ -45,7 +86,12 @@ export function ApiKeysPanel({
     event.preventDefault();
     setIsCreating(true);
     try {
-      await onCreate(name, ["catalog:read", "preview:read", "purchase:write"]);
+      await onCreate(name, [
+        "catalog:read",
+        "preview:read",
+        "attestations:read",
+        "purchase:write",
+      ]);
       setName("");
     } finally {
       setIsCreating(false);
@@ -59,9 +105,7 @@ export function ApiKeysPanel({
       </p>
       <h2 className="mt-1 font-heading text-xl font-bold">Partner API access</h2>
       {rawApiKey ? (
-        <p className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          Save this API key now: {rawApiKey}
-        </p>
+        <SecretReveal label="Save this API key now — shown only once" value={rawApiKey} />
       ) : null}
       <form
         className="mt-5 flex flex-col gap-3 sm:flex-row"
@@ -112,6 +156,14 @@ export function ApiKeysPanel({
           </div>
         ))}
       </div>
+
+      <p className="mt-4 text-xs text-foreground-muted">
+        Keys are scoped (<code className="font-mono text-foreground">catalog:read</code>,{" "}
+        <code className="font-mono text-foreground">preview:read</code>,{" "}
+        <code className="font-mono text-foreground">attestations:read</code>,{" "}
+        <code className="font-mono text-foreground">purchase:write</code>) and
+        rate-limited. See usage examples below.
+      </p>
     </section>
   );
 }
@@ -174,9 +226,10 @@ export function WebhooksPanel({
       </p>
       <h2 className="mt-1 font-heading text-xl font-bold">Outbound events</h2>
       {oneTimeSecret ? (
-        <p className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          Save this webhook secret now: {oneTimeSecret}
-        </p>
+        <SecretReveal
+          label="Save this webhook secret now — shown only once"
+          value={oneTimeSecret}
+        />
       ) : null}
       <form className="mt-5 grid gap-3" onSubmit={handleSubmit}>
         <label className="grid gap-2 text-sm font-semibold" htmlFor={urlId}>
