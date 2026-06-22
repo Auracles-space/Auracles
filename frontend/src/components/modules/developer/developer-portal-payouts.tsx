@@ -10,6 +10,7 @@ import type { FormEvent } from "react";
 import { useId, useState } from "react";
 
 import type {
+  DeveloperSalesAnalyticsResponse,
   PartnerPayoutResponse,
   PayoutAccountResponse,
 } from "@/lib/generated/types.gen";
@@ -29,17 +30,19 @@ type PayoutPanelProps = {
   ) => Promise<void>;
   payouts: PartnerPayoutResponse[];
   verifiedAccounts: PayoutAccountResponse[];
+  sales?: DeveloperSalesAnalyticsResponse | null;
 };
 
 /**
  * Render Partner payout request form and payout history.
  *
- * @param props - Verified payout accounts, existing payouts, and request callback.
+ * @param props - Verified payout accounts, existing payouts, sales metrics, and request callback.
  */
 export function PayoutPanel({
   onRequest,
   payouts,
   verifiedAccounts,
+  sales,
 }: PayoutPanelProps) {
   const amountId = useId();
   const accountId = useId();
@@ -53,18 +56,29 @@ export function PayoutPanel({
   const [amountError, setAmountError] = useState<string | null>(null);
   const [totpError, setTotpError] = useState<string | null>(null);
 
+  const parsedAmount = Number(amount);
+  const clearedLimit = sales ? Number(sales.cleared_commission_amount) : Infinity;
+
   const canSubmit = allValid(
     isPositiveNumber(amount),
+    parsedAmount <= clearedLimit,
     isNonEmpty(payoutAccountId),
     isLengthBetween(totpCode, 6, 6),
   ) && !isSubmitting;
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
-    if (value.trim() === "" || isPositiveNumber(value)) {
+    const num = Number(value);
+    const limit = sales ? Number(sales.cleared_commission_amount) : Infinity;
+
+    if (value.trim() === "") {
       setAmountError(null);
-    } else {
+    } else if (!isPositiveNumber(value)) {
       setAmountError("Please enter a positive amount");
+    } else if (num > limit) {
+      setAmountError(`Amount exceeds cleared balance of ${formatMoney(sales!.cleared_commission_amount)}`);
+    } else {
+      setAmountError(null);
     }
   };
 
@@ -81,6 +95,11 @@ export function PayoutPanel({
     event.preventDefault();
     if (!isPositiveNumber(amount)) {
       setAmountError("Please enter a positive amount");
+      return;
+    }
+    const limit = sales ? Number(sales.cleared_commission_amount) : Infinity;
+    if (Number(amount) > limit) {
+      setAmountError(`Amount exceeds cleared balance of ${formatMoney(sales!.cleared_commission_amount)}`);
       return;
     }
     if (!isLengthBetween(totpCode, 6, 6)) {
@@ -105,10 +124,51 @@ export function PayoutPanel({
         Payouts
       </p>
       <h2 className="mt-1 font-heading text-xl font-bold">Partner payouts</h2>
+
+      {sales && (
+        <div className="mt-4 grid grid-cols-1 min-[400px]:grid-cols-3 gap-3 rounded-xl border border-border-default bg-surface-2 p-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+              Cleared Balance
+            </p>
+            <p className="mt-0.5 text-base font-bold text-success">
+              {formatMoney(sales.cleared_commission_amount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+              Pending Clear
+            </p>
+            <p className="mt-0.5 text-base font-bold text-warning">
+              {formatMoney(sales.pending_commission_amount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+              Paid Out
+            </p>
+            <p className="mt-0.5 text-base font-bold text-foreground">
+              {formatMoney(sales.paid_commission_amount)}
+            </p>
+          </div>
+        </div>
+      )}
+
       {verifiedAccounts.length > 0 ? (
         <form className="mt-5 grid gap-3" onSubmit={handleSubmit}>
           <label className="grid gap-2 text-sm font-semibold" htmlFor={amountId}>
-            Amount
+            <div className="flex items-center justify-between">
+              <span>Amount</span>
+              {sales && Number(sales.cleared_commission_amount) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleAmountChange(sales.cleared_commission_amount)}
+                  className="text-xs font-semibold text-accent hover:underline outline-none focus-visible:ring-1 focus-visible:ring-accent rounded px-1"
+                >
+                  Use Max Available ({formatMoney(sales.cleared_commission_amount)})
+                </button>
+              )}
+            </div>
             <input
               className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
                 amountError ? "border-error focus-visible:ring-error" : "border-border-default"

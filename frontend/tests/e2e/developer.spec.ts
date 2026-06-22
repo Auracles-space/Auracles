@@ -359,6 +359,7 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
   await page.getByLabel("Key name").fill("Sandbox embed");
   await page.getByRole("button", { name: "Create key" }).click();
   await expect(page.getByText("ak_live_raw_once_for_e2e", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "I've saved it" }).click();
 
   await page.getByLabel("Endpoint URL").fill("https://partners.example.com/new-hook");
   await page.getByRole("button", { name: "Register webhook" }).click();
@@ -366,7 +367,7 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
 
   await page.getByRole("button", { name: "Payouts & Tier" }).click();
   await expect(page.getByText("payout_1")).toBeVisible();
-  await page.getByLabel("Amount").fill("75.00");
+  await page.getByLabel("Amount").fill("10.00");
   await page.getByLabel("Authenticator code").fill("123456");
   await page.getByRole("button", { name: "Request payout" }).click();
   await expect(page.getByText("payout_2")).toBeVisible();

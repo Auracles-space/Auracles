@@ -270,6 +270,7 @@ export function DeveloperPortal() {
                 onRequest={handlePayoutRequest}
                 payouts={data.payouts}
                 verifiedAccounts={verifiedPayoutAccounts}
+                sales={data.sales}
               />
               <TierPanel tier={data.tier} />
             </div>
