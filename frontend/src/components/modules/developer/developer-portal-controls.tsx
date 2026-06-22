@@ -25,10 +25,16 @@ const webhookEvents = [
 type ApiKeysPanelProps = {
   apiKeys: ApiKeyResponse[];
   onCreate: (name: string, scopes: string[]) => Promise<void>;
+  onRevoke: (apiKeyId: string) => Promise<void>;
   rawApiKey: string | null;
 };
 
-export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps) {
+export function ApiKeysPanel({
+  apiKeys,
+  onCreate,
+  onRevoke,
+  rawApiKey,
+}: ApiKeysPanelProps) {
   const nameId = useId();
   const [name, setName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -84,14 +90,25 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
       <div className="mt-5 grid gap-2">
         {apiKeys.map((apiKey) => (
           <div
-            className="rounded-xl border border-border-default bg-surface-2 p-3"
+            className="flex items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
             key={apiKey.id}
           >
-            <p className="text-sm font-semibold">{apiKey.name}</p>
-            <p className="mt-1 text-sm text-foreground-muted">
-              {apiKey.key_prefix} · {formatLabel(apiKey.status)} ·{" "}
-              {apiKey.scopes.join(", ")}
-            </p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{apiKey.name}</p>
+              <p className="mt-1 text-sm text-foreground-muted break-words">
+                {apiKey.key_prefix} · {formatLabel(apiKey.status)} ·{" "}
+                {apiKey.scopes.join(", ")}
+              </p>
+            </div>
+            {apiKey.status === "active" ? (
+              <button
+                className="min-h-9 shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                onClick={() => void onRevoke(apiKey.id)}
+                type="button"
+              >
+                Revoke
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -101,6 +118,7 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
 
 type WebhooksPanelProps = {
   onCreate: (url: string, events: string[]) => Promise<void>;
+  onDelete: (webhookId: string) => Promise<void>;
   oneTimeSecret: string | null;
   webhooks: PartnerWebhookResponse[];
 };
@@ -108,10 +126,11 @@ type WebhooksPanelProps = {
 /**
  * Render outbound webhook registration and endpoint list.
  *
- * @param props - Webhook rows, create callback, and one-time raw secret.
+ * @param props - Webhook rows, create/delete callbacks, and one-time raw secret.
  */
 export function WebhooksPanel({
   onCreate,
+  onDelete,
   oneTimeSecret,
   webhooks,
 }: WebhooksPanelProps) {
@@ -211,13 +230,23 @@ export function WebhooksPanel({
       <div className="mt-5 grid gap-2">
         {webhooks.map((webhook) => (
           <div
-            className="rounded-xl border border-border-default bg-surface-2 p-3"
+            className="flex items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
             key={webhook.id}
           >
-            <p className="break-all text-sm font-semibold">{webhook.url}</p>
-            <p className="mt-1 text-sm text-foreground-muted">
-              {webhook.events.join(", ")} · {webhook.active ? "Active" : "Inactive"}
-            </p>
+            <div className="min-w-0">
+              <p className="break-all text-sm font-semibold">{webhook.url}</p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                {webhook.events.join(", ")} ·{" "}
+                {webhook.active ? "Active" : "Inactive"}
+              </p>
+            </div>
+            <button
+              className="min-h-9 shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+              onClick={() => void onDelete(webhook.id)}
+              type="button"
+            >
+              Delete
+            </button>
           </div>
         ))}
       </div>

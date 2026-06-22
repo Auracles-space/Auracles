@@ -46,6 +46,11 @@ const adminLinks = [
     summary: "Review evidence and verify or reject submitted credentials.",
   },
   {
+    href: "/admin/developer",
+    label: "Developer",
+    summary: "Approve or reject Developer Platform applications.",
+  },
+  {
     href: "/admin/configuration",
     label: "Configuration",
     summary: "Commission, fees, SLAs, and reputation tuning (super-admin).",

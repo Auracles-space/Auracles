@@ -21,6 +21,7 @@ import {
 import {
   createApiKeyV1DeveloperApiKeysPost,
   createPartnerWebhookV1DeveloperWebhooksPost,
+  deletePartnerWebhookV1DeveloperWebhooksWebhookIdDelete,
   getDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGet,
   getDeveloperTierProgressV1DeveloperTierGet,
   getDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGet,
@@ -30,6 +31,7 @@ import {
   listPartnerWebhooksV1DeveloperWebhooksGet,
   listPayoutAccounts,
   requestPartnerPayoutV1DeveloperPayoutsPost,
+  revokeApiKeyV1DeveloperApiKeysApiKeyIdDelete,
   submitDeveloperApplicationV1DeveloperApplicationsPost,
 } from "@/lib/generated/sdk.gen";
 
@@ -160,6 +162,40 @@ export function useDeveloperPortal() {
     }));
   }
 
+  async function handleApiKeyRevoke(apiKeyId: string) {
+    configureBrowserClient();
+    const result = await revokeApiKeyV1DeveloperApiKeysApiKeyIdDelete({
+      headers: getAccessTokenHeaders(),
+      path: { api_key_id: apiKeyId },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      apiKeys: current.apiKeys.map((key) =>
+        key.id === apiKeyId ? result.data : key,
+      ),
+    }));
+  }
+
+  async function handleWebhookDelete(webhookId: string) {
+    configureBrowserClient();
+    const result = await deletePartnerWebhookV1DeveloperWebhooksWebhookIdDelete({
+      headers: getAccessTokenHeaders(),
+      path: { webhook_id: webhookId },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      webhooks: current.webhooks.filter((webhook) => webhook.id !== webhookId),
+    }));
+  }
+
   async function handleWebhookCreate(url: string, events: string[]) {
     configureBrowserClient();
     const result = await createPartnerWebhookV1DeveloperWebhooksPost({
@@ -207,9 +243,11 @@ export function useDeveloperPortal() {
     data,
     error,
     handleApiKeyCreate,
+    handleApiKeyRevoke,
     handleApplicationSubmit,
     handlePayoutRequest,
     handleWebhookCreate,
+    handleWebhookDelete,
     latestApplication,
     loading,
     oneTimeSecret,

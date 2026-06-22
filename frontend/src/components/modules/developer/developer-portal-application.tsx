@@ -36,6 +36,7 @@ export function ApplicationPanel({
 }: ApplicationPanelProps) {
   const companyId = useId();
   const websiteId = useId();
+  const websiteErrorId = useId();
   const useCaseId = useId();
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
@@ -123,16 +124,20 @@ export function ApplicationPanel({
                 websiteError ? "border-error focus-visible:ring-error" : "border-border-default"
               }`}
               id={websiteId}
+              aria-describedby={websiteError ? websiteErrorId : undefined}
+              aria-invalid={websiteError ? true : undefined}
               onChange={(event) => handleWebsiteChange(event.target.value)}
               type="url"
               disabled={isSubmitting}
               value={website}
               placeholder="https://example.com"
             />
-            {websiteError ? (
-              <span className="text-xs text-error font-normal">{websiteError}</span>
-            ) : null}
           </label>
+          {websiteError ? (
+            <span className="-mt-1 text-xs text-error font-normal" id={websiteErrorId}>
+              {websiteError}
+            </span>
+          ) : null}
           <label className="grid gap-2 text-sm font-semibold" htmlFor={useCaseId}>
             Use case
             <textarea

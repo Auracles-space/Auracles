@@ -29,9 +29,11 @@ export function DeveloperPortal() {
     data,
     error,
     handleApiKeyCreate,
+    handleApiKeyRevoke,
     handleApplicationSubmit,
     handlePayoutRequest,
     handleWebhookCreate,
+    handleWebhookDelete,
     latestApplication,
     loading,
     oneTimeSecret,
@@ -101,6 +103,7 @@ export function DeveloperPortal() {
                 <ApiKeysPanel
                   apiKeys={data.apiKeys}
                   onCreate={handleApiKeyCreate}
+                  onRevoke={handleApiKeyRevoke}
                   rawApiKey={rawApiKey}
                 />
               </>
@@ -112,6 +115,7 @@ export function DeveloperPortal() {
               <TierPanel tier={data.tier} />
               <WebhooksPanel
                 onCreate={handleWebhookCreate}
+                onDelete={handleWebhookDelete}
                 oneTimeSecret={oneTimeSecret}
                 webhooks={data.webhooks}
               />
