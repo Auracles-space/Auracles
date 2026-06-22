@@ -63,20 +63,20 @@ export function AnalyticsPanel({ sales, usage }: AnalyticsPanelProps) {
           <div className="mt-3 overflow-hidden rounded-xl border border-border-default bg-surface-2">
             {(sales?.by_framework ?? []).map((framework, index) => (
               <div
-                className={`group flex items-center justify-between p-4 transition-colors hover:bg-surface-1 ${
+                className={`group flex items-center justify-between gap-3 p-4 transition-colors hover:bg-surface-1 ${
                   index !== 0 ? "border-t border-border-default" : ""
                 }`}
                 key={framework.framework_id}
               >
-                <div>
-                  <p className="text-sm font-semibold transition-colors group-hover:text-accent">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold transition-colors group-hover:text-accent">
                     {framework.framework_title}
                   </p>
                   <p className="text-xs text-foreground-muted">
                     {framework.sale_count} sales
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="font-heading text-sm font-bold text-foreground">
                     {formatMoney(framework.commission_amount)}
                   </p>
@@ -96,12 +96,12 @@ export function AnalyticsPanel({ sales, usage }: AnalyticsPanelProps) {
           <div className="mt-3 overflow-hidden rounded-xl border border-border-default bg-surface-2">
             {(usage?.by_endpoint ?? []).map((endpoint, index) => (
               <div
-                className={`group flex items-center justify-between p-4 transition-colors hover:bg-surface-1 ${
+                className={`group flex items-center justify-between gap-3 p-4 transition-colors hover:bg-surface-1 ${
                   index !== 0 ? "border-t border-border-default" : ""
                 }`}
                 key={`${endpoint.method}:${endpoint.endpoint}`}
               >
-                <div className="max-w-[180px]">
+                <div className="min-w-0">
                   <p className="truncate text-sm font-semibold transition-colors group-hover:text-accent">
                     {endpoint.endpoint}
                   </p>
@@ -109,7 +109,7 @@ export function AnalyticsPanel({ sales, usage }: AnalyticsPanelProps) {
                     {endpoint.method}
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="font-heading text-sm font-bold text-foreground">
                     {endpoint.request_count} reqs
                   </p>

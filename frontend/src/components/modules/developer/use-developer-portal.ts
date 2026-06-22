@@ -240,6 +240,7 @@ export function useDeveloperPortal() {
 
   return {
     approved,
+    clearRawApiKey: () => setRawApiKey(null),
     data,
     error,
     handleApiKeyCreate,

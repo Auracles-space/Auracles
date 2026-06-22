@@ -42,7 +42,7 @@ function DeveloperOnboarding({
   onSubmit,
 }: DeveloperOnboardingProps) {
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-[1fr_1.2fr]">
       {/* Left side: Program benefits bento block */}
       <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
         <div>
@@ -104,6 +104,7 @@ function DeveloperOnboarding({
 export function DeveloperPortal() {
   const {
     approved,
+    clearRawApiKey,
     data,
     error,
     handleApiKeyCreate,
@@ -125,7 +126,7 @@ export function DeveloperPortal() {
     return (
       <div className="px-4 py-6 md:px-8 md:py-8 space-y-6 animate-pulse">
         <div className="h-40 rounded-2xl bg-surface-2 border border-border-default" />
-        <div className="grid gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="h-28 rounded-2xl bg-surface-2 border border-border-default" />
           <div className="h-28 rounded-2xl bg-surface-2 border border-border-default" />
           <div className="h-28 rounded-2xl bg-surface-2 border border-border-default" />
@@ -214,7 +215,7 @@ export function DeveloperPortal() {
           {activeTab === "overview" && (
             <div className="space-y-6">
               {/* Metrics Grid */}
-              <div className="grid gap-4 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <MetricCard
                   label="Partner commission"
                   value={formatMoney(data.sales?.total_commission_amount ?? "0.00")}
@@ -247,6 +248,7 @@ export function DeveloperPortal() {
               <div className="space-y-6">
                 <ApiKeysPanel
                   apiKeys={data.apiKeys}
+                  onClearRawKey={clearRawApiKey}
                   onCreate={handleApiKeyCreate}
                   onRevoke={handleApiKeyRevoke}
                   rawApiKey={rawApiKey}

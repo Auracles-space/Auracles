@@ -8,6 +8,7 @@
  */
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   ApiKeyResponse,
@@ -63,10 +64,88 @@ function SecretReveal({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * Full-screen modal revealing a freshly created key with a copy control.
+ *
+ * The backend returns the raw API key exactly once, so this blocks the rest of
+ * the UI until the user confirms they have copied it — it can't be missed.
+ *
+ * @param props.value - The one-time key to reveal.
+ * @param props.onDismiss - Called when the user confirms they have saved it.
+ */
+function OneTimeKeyModal({
+  value,
+  onDismiss,
+}: {
+  value: string;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  // Portal to <body> so the overlay escapes any ancestor stacking context
+  // (transforms, backdrop-blur) that would otherwise trap it under the header.
+  return createPortal(
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4"
+      role="dialog"
+    >
+      <div className="w-full max-w-lg rounded-2xl border border-border-default bg-surface-1 p-6 shadow-bento">
+        <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
+          New API key
+        </p>
+        <h3 className="mt-1 font-heading text-xl font-bold text-foreground">
+          Copy your key now
+        </h3>
+        <p className="mt-2 text-sm text-foreground-muted">
+          This is the only time the full key is shown. Store it somewhere safe —
+          you can&apos;t see it again.
+        </p>
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3">
+          <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+            {value}
+          </code>
+          <button
+            className="min-h-10 shrink-0 rounded-lg bg-foreground px-3 text-xs font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={() => void handleCopy()}
+            type="button"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="mt-5 flex justify-end">
+          <button
+            className="min-h-11 rounded-xl border border-border-default px-5 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={onDismiss}
+            type="button"
+          >
+            I&apos;ve saved it
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 type ApiKeysPanelProps = {
   apiKeys: ApiKeyResponse[];
   onCreate: (name: string, scopes: string[]) => Promise<void>;
   onRevoke: (apiKeyId: string) => Promise<void>;
+  onClearRawKey: () => void;
   rawApiKey: string | null;
 };
 
@@ -74,6 +153,7 @@ export function ApiKeysPanel({
   apiKeys,
   onCreate,
   onRevoke,
+  onClearRawKey,
   rawApiKey,
 }: ApiKeysPanelProps) {
   const nameId = useId();
@@ -105,7 +185,7 @@ export function ApiKeysPanel({
       </p>
       <h2 className="mt-1 font-heading text-xl font-bold">Partner API access</h2>
       {rawApiKey ? (
-        <SecretReveal label="Save this API key now — shown only once" value={rawApiKey} />
+        <OneTimeKeyModal onDismiss={onClearRawKey} value={rawApiKey} />
       ) : null}
       <form
         className="mt-5 flex flex-col gap-3 sm:flex-row"
