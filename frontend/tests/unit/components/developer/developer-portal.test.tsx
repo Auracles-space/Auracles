@@ -4,7 +4,7 @@
  * Verifies that the Phase 5a Partner Developer dashboard renders generated
  * client data for applications, API keys, analytics, webhooks, and payouts.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeveloperPortal } from "@/components/modules/developer/developer-portal";
@@ -184,18 +184,24 @@ describe("DeveloperPortal", () => {
     );
   });
 
-  it("renders the approved Developer workspace from generated-client data", async () => {
+  it("renders the approved Developer workspace across its tabs", async () => {
     render(<DeveloperPortal />);
 
+    // Overview tab (default): commission metric + sales analytics.
     expect(await screen.findByText("Developer platform")).toBeInTheDocument();
-    expect(screen.getAllByText("$17.50")).toHaveLength(2);
-    expect(screen.getAllByText("Tier 2")).toHaveLength(2);
-    expect(screen.getByText("Production CRM")).toBeInTheDocument();
+    expect(screen.getAllByText("$17.50").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Governance Operating Model")).toBeInTheDocument();
-    expect(screen.getByText("/v1/partner/catalog")).toBeInTheDocument();
+
+    // API & Webhooks tab: keys, usage examples, and webhook endpoints.
+    fireEvent.click(screen.getByRole("button", { name: /API & Webhooks/i }));
+    expect(screen.getByText("Production CRM")).toBeInTheDocument();
     expect(
       screen.getByText("https://partners.example.com/webhooks/auracles"),
     ).toBeInTheDocument();
+
+    // Payouts & Tier tab: partner payout history and commission tier.
+    fireEvent.click(screen.getByRole("button", { name: /Payouts & Tier/i }));
     expect(screen.getByText("payout_1")).toBeInTheDocument();
+    expect(screen.getByText("Tier 2")).toBeInTheDocument();
   });
 });

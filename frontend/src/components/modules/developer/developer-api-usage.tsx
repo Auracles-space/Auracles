@@ -118,15 +118,15 @@ function UsageCard({ example }: { example: UsageExample }) {
 
   return (
     <div className="rounded-xl border border-border-default bg-surface-2 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">{example.title}</p>
           <p className="mt-0.5 text-xs text-foreground-muted">
             {example.description}
           </p>
         </div>
         <button
-          className="min-h-9 shrink-0 rounded-lg border border-border-default bg-surface-1 px-3 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-12 sm:min-h-9 w-full sm:w-auto shrink-0 rounded-lg border border-border-default bg-surface-1 px-3 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
           onClick={() => void handleCopy()}
           type="button"
         >

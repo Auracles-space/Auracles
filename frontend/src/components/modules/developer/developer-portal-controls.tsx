@@ -47,12 +47,12 @@ function SecretReveal({ label, value }: { label: string; value: string }) {
   return (
     <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3">
       <p className="text-xs font-semibold text-warning">{label}</p>
-      <div className="mt-1 flex items-center gap-2">
-        <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground bg-surface-3 p-2 rounded-lg border border-border-default">
           {value}
         </code>
         <button
-          className="min-h-9 shrink-0 rounded-lg border border-warning/40 bg-surface-1 px-3 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-h-12 sm:min-h-9 w-full sm:w-auto shrink-0 rounded-lg border border-warning/40 bg-surface-1 px-4 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
           onClick={() => void handleCopy()}
           type="button"
         >
@@ -124,7 +124,7 @@ export function ApiKeysPanel({
           />
         </label>
         <button
-          className="min-h-12 self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 w-full sm:w-auto sm:self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!canSubmit}
           type="submit"
         >
@@ -134,19 +134,37 @@ export function ApiKeysPanel({
       <div className="mt-5 grid gap-2">
         {apiKeys.map((apiKey) => (
           <div
-            className="flex items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
+            className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
             key={apiKey.id}
           >
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{apiKey.name}</p>
-              <p className="mt-1 text-sm text-foreground-muted break-words">
-                {apiKey.key_prefix} · {formatLabel(apiKey.status)} ·{" "}
-                {apiKey.scopes.join(", ")}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <code className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-xs text-foreground border border-border-default">
+                  {apiKey.key_prefix}
+                </code>
+                {apiKey.scopes.map((scope) => (
+                  <span
+                    key={scope}
+                    className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-foreground-muted border border-border-default"
+                  >
+                    {scope}
+                  </span>
+                ))}
+                <span
+                  className={`rounded-badge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] border ${
+                    apiKey.status === "active"
+                      ? "bg-success/10 text-success border-success/30"
+                      : "bg-error/10 text-error border-error/30"
+                  }`}
+                >
+                  {formatLabel(apiKey.status)}
+                </span>
+              </div>
             </div>
             {apiKey.status === "active" ? (
               <button
-                className="min-h-9 shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                className="min-h-12 sm:min-h-9 w-full sm:w-auto shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
                 onClick={() => void onRevoke(apiKey.id)}
                 type="button"
               >
@@ -273,7 +291,7 @@ export function WebhooksPanel({
           ))}
         </div>
         <button
-          className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 w-full sm:w-fit sm:px-6 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!canSubmit}
           type="submit"
         >
@@ -283,18 +301,33 @@ export function WebhooksPanel({
       <div className="mt-5 grid gap-2">
         {webhooks.map((webhook) => (
           <div
-            className="flex items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
+            className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 rounded-xl border border-border-default bg-surface-2 p-3"
             key={webhook.id}
           >
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="break-all text-sm font-semibold">{webhook.url}</p>
-              <p className="mt-1 text-sm text-foreground-muted">
-                {webhook.events.join(", ")} ·{" "}
-                {webhook.active ? "Active" : "Inactive"}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {webhook.events.map((event) => (
+                  <span
+                    key={event}
+                    className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-foreground-muted border border-border-default font-mono"
+                  >
+                    {event}
+                  </span>
+                ))}
+                <span
+                  className={`rounded-badge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] border ${
+                    webhook.active
+                      ? "bg-success/10 text-success border-success/30"
+                      : "bg-error/10 text-error border-error/30"
+                  }`}
+                >
+                  {webhook.active ? "Active" : "Inactive"}
+                </span>
+              </div>
             </div>
             <button
-              className="min-h-9 shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+              className="min-h-12 sm:min-h-9 w-full sm:w-auto shrink-0 rounded-lg border border-error/50 bg-error/5 px-3 text-xs font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
               onClick={() => void onDelete(webhook.id)}
               type="button"
             >
@@ -306,3 +339,4 @@ export function WebhooksPanel({
     </section>
   );
 }
+

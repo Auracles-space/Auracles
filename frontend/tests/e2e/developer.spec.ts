@@ -347,24 +347,29 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
 
   await expect(page.getByRole("heading", { name: "Developer platform" })).toBeVisible();
   await expect(page.getByText("$17.50").first()).toBeVisible();
-  await expect(page.getByText("Production CRM")).toBeVisible();
   await expect(page.getByText("Governance Operating Model")).toBeVisible();
-  await expect(page.getByText("/v1/partner/catalog")).toBeVisible();
+
+  await page.getByRole("button", { name: "API & Webhooks" }).click();
+  await expect(page.getByText("Production CRM")).toBeVisible();
+  await expect(page.getByText("GET /catalog", { exact: false }).first()).toBeVisible();
   await expect(
     page.getByText("https://partners.example.com/webhooks/auracles"),
   ).toBeVisible();
-  await expect(page.getByText("payout_1")).toBeVisible();
 
   await page.getByLabel("Key name").fill("Sandbox embed");
   await page.getByRole("button", { name: "Create key" }).click();
-  await expect(page.getByText("ak_live_raw_once_for_e2e")).toBeVisible();
+  await expect(page.getByText("ak_live_raw_once_for_e2e", { exact: true })).toBeVisible();
 
   await page.getByLabel("Endpoint URL").fill("https://partners.example.com/new-hook");
   await page.getByRole("button", { name: "Register webhook" }).click();
-  await expect(page.getByText("whsec_raw_once_for_e2e")).toBeVisible();
+  await expect(page.getByText("whsec_raw_once_for_e2e", { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "Payouts & Tier" }).click();
+  await expect(page.getByText("payout_1")).toBeVisible();
   await page.getByLabel("Amount").fill("75.00");
   await page.getByLabel("Authenticator code").fill("123456");
   await page.getByRole("button", { name: "Request payout" }).click();
   await expect(page.getByText("payout_2")).toBeVisible();
 });
+
+
