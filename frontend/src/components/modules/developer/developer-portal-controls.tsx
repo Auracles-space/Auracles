@@ -28,20 +28,22 @@ type ApiKeysPanelProps = {
   rawApiKey: string | null;
 };
 
-/**
- * Render Partner API key list and creation form.
- *
- * @param props - Current API keys, create callback, and one-time raw key.
- */
 export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps) {
   const nameId = useId();
   const [name, setName] = useState("");
-  const canSubmit = isNonEmpty(name);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const canSubmit = isNonEmpty(name) && !isCreating;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onCreate(name, ["catalog:read", "preview:read", "purchase:write"]);
-    setName("");
+    setIsCreating(true);
+    try {
+      await onCreate(name, ["catalog:read", "preview:read", "purchase:write"]);
+      setName("");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   return (
@@ -62,11 +64,13 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
         <label className="grid flex-1 gap-2 text-sm font-semibold" htmlFor={nameId}>
           Key name
           <input
-            className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+            className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
             id={nameId}
             onChange={(event) => setName(event.target.value)}
             required
+            disabled={isCreating}
             value={name}
+            placeholder="e.g. Staging Integration Key"
           />
         </label>
         <button
@@ -74,7 +78,7 @@ export function ApiKeysPanel({ apiKeys, onCreate, rawApiKey }: ApiKeysPanelProps
           disabled={!canSubmit}
           type="submit"
         >
-          Create key
+          {isCreating ? "Creating..." : "Create key"}
         </button>
       </form>
       <div className="mt-5 grid gap-2">
@@ -114,12 +118,34 @@ export function WebhooksPanel({
   const urlId = useId();
   const [selectedEvents, setSelectedEvents] = useState(["purchase.confirmed"]);
   const [url, setUrl] = useState("");
-  const canSubmit = allValid(isHttpUrl(url), selectedEvents.length > 0);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  const canSubmit = allValid(isHttpUrl(url), selectedEvents.length > 0) && !isRegistering;
+
+  const handleUrlChange = (value: string) => {
+    setUrl(value);
+    if (value.trim() === "" || isHttpUrl(value)) {
+      setUrlError(null);
+    } else {
+      setUrlError("Please enter a valid URL starting with http:// or https://");
+    }
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onCreate(url, selectedEvents);
-    setUrl("");
+    if (!isHttpUrl(url)) {
+      setUrlError("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+    setIsRegistering(true);
+    try {
+      await onCreate(url, selectedEvents);
+      setUrl("");
+      setUrlError(null);
+    } finally {
+      setIsRegistering(false);
+    }
   }
 
   return (
@@ -137,13 +163,20 @@ export function WebhooksPanel({
         <label className="grid gap-2 text-sm font-semibold" htmlFor={urlId}>
           Endpoint URL
           <input
-            className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+            className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+              urlError ? "border-error focus-visible:ring-error" : "border-border-default"
+            }`}
             id={urlId}
-            onChange={(event) => setUrl(event.target.value)}
+            onChange={(event) => handleUrlChange(event.target.value)}
             required
             type="url"
+            disabled={isRegistering}
             value={url}
+            placeholder="https://yourdomain.com/webhooks"
           />
+          {urlError ? (
+            <span className="text-xs text-error font-normal">{urlError}</span>
+          ) : null}
         </label>
         <div className="grid gap-2">
           {webhookEvents.map((eventName) => (
@@ -153,6 +186,7 @@ export function WebhooksPanel({
             >
               <input
                 checked={selectedEvents.includes(eventName)}
+                disabled={isRegistering}
                 onChange={(event) => {
                   setSelectedEvents((current) =>
                     event.target.checked
@@ -171,7 +205,7 @@ export function WebhooksPanel({
           disabled={!canSubmit}
           type="submit"
         >
-          Register webhook
+          {isRegistering ? "Registering..." : "Register webhook"}
         </button>
       </form>
       <div className="mt-5 grid gap-2">

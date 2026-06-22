@@ -40,23 +40,45 @@ export function ApplicationPanel({
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [useCase, setUseCase] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
   const approved = latestApplication?.status === "approved";
+
   const canSubmit = allValid(
     isNonEmpty(companyName),
     isNonEmpty(useCase),
     website.trim() === "" || isHttpUrl(website),
-  );
+  ) && !isSubmitting;
+
+  const handleWebsiteChange = (value: string) => {
+    setWebsite(value);
+    if (value.trim() === "" || isHttpUrl(value)) {
+      setWebsiteError(null);
+    } else {
+      setWebsiteError("Please enter a valid URL starting with http:// or https://");
+    }
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSubmit({
-      company_name: companyName,
-      use_case: useCase,
-      website: website || null,
-    });
-    setCompanyName("");
-    setWebsite("");
-    setUseCase("");
+    if (website && !isHttpUrl(website)) {
+      setWebsiteError("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        company_name: companyName,
+        use_case: useCase,
+        website: website || null,
+      });
+      setCompanyName("");
+      setWebsite("");
+      setUseCase("");
+      setWebsiteError(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -85,31 +107,42 @@ export function ApplicationPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={companyId}>
             Company
             <input
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               id={companyId}
               onChange={(event) => setCompanyName(event.target.value)}
               required
+              disabled={isSubmitting}
               value={companyName}
+              placeholder="e.g. Auracles Corp"
             />
           </label>
           <label className="grid gap-2 text-sm font-semibold" htmlFor={websiteId}>
             Website
             <input
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                websiteError ? "border-error focus-visible:ring-error" : "border-border-default"
+              }`}
               id={websiteId}
-              onChange={(event) => setWebsite(event.target.value)}
+              onChange={(event) => handleWebsiteChange(event.target.value)}
               type="url"
+              disabled={isSubmitting}
               value={website}
+              placeholder="https://example.com"
             />
+            {websiteError ? (
+              <span className="text-xs text-error font-normal">{websiteError}</span>
+            ) : null}
           </label>
           <label className="grid gap-2 text-sm font-semibold" htmlFor={useCaseId}>
             Use case
             <textarea
-              className="min-h-28 rounded-xl border border-border-default bg-surface-2 px-3 py-2 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-28 rounded-xl border border-border-default bg-surface-2 px-3 py-2 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               id={useCaseId}
               onChange={(event) => setUseCase(event.target.value)}
               required
+              disabled={isSubmitting}
               value={useCase}
+              placeholder="Describe your integration use case..."
             />
           </label>
           <button
@@ -117,7 +150,7 @@ export function ApplicationPanel({
             disabled={!canSubmit}
             type="submit"
           >
-            Submit application
+            {isSubmitting ? "Submitting application..." : "Submit application"}
           </button>
         </form>
       ) : null}

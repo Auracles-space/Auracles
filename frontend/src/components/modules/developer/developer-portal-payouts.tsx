@@ -49,17 +49,54 @@ export function PayoutPanel({
     verifiedAccounts[0]?.id ?? "",
   );
   const [totpCode, setTotpCode] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [totpError, setTotpError] = useState<string | null>(null);
+
   const canSubmit = allValid(
     isPositiveNumber(amount),
     isNonEmpty(payoutAccountId),
     isLengthBetween(totpCode, 6, 6),
-  );
+  ) && !isSubmitting;
+
+  const handleAmountChange = (value: string) => {
+    setAmount(value);
+    if (value.trim() === "" || isPositiveNumber(value)) {
+      setAmountError(null);
+    } else {
+      setAmountError("Please enter a positive amount");
+    }
+  };
+
+  const handleTotpChange = (value: string) => {
+    setTotpCode(value);
+    if (value.trim() === "" || isLengthBetween(value, 6, 6)) {
+      setTotpError(null);
+    } else {
+      setTotpError("Code must be exactly 6 characters");
+    }
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onRequest(amount, payoutAccountId, totpCode);
-    setAmount("");
-    setTotpCode("");
+    if (!isPositiveNumber(amount)) {
+      setAmountError("Please enter a positive amount");
+      return;
+    }
+    if (!isLengthBetween(totpCode, 6, 6)) {
+      setTotpError("Code must be exactly 6 characters");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onRequest(amount, payoutAccountId, totpCode);
+      setAmount("");
+      setTotpCode("");
+      setAmountError(null);
+      setTotpError(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -73,20 +110,28 @@ export function PayoutPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={amountId}>
             Amount
             <input
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                amountError ? "border-error focus-visible:ring-error" : "border-border-default"
+              }`}
               id={amountId}
               inputMode="decimal"
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => handleAmountChange(event.target.value)}
               required
+              disabled={isSubmitting}
               value={amount}
+              placeholder="e.g. 100.00"
             />
+            {amountError ? (
+              <span className="text-xs text-error font-normal">{amountError}</span>
+            ) : null}
           </label>
           <label className="grid gap-2 text-sm font-semibold" htmlFor={accountId}>
             Payout account
             <select
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               id={accountId}
               onChange={(event) => setPayoutAccountId(event.target.value)}
+              disabled={isSubmitting}
               value={payoutAccountId}
             >
               {verifiedAccounts.map((account) => (
@@ -99,22 +144,29 @@ export function PayoutPanel({
           <label className="grid gap-2 text-sm font-semibold" htmlFor={totpId}>
             Authenticator code
             <input
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+              className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                totpError ? "border-error focus-visible:ring-error" : "border-border-default"
+              }`}
               id={totpId}
               inputMode="numeric"
               maxLength={6}
-              onChange={(event) => setTotpCode(event.target.value)}
+              onChange={(event) => handleTotpChange(event.target.value)}
               pattern="[0-9]{6}"
               required
+              disabled={isSubmitting}
               value={totpCode}
+              placeholder="000000"
             />
+            {totpError ? (
+              <span className="text-xs text-error font-normal">{totpError}</span>
+            ) : null}
           </label>
           <button
             className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!canSubmit}
             type="submit"
           >
-            Request payout
+            {isSubmitting ? "Requesting payout..." : "Request payout"}
           </button>
         </form>
       ) : (
