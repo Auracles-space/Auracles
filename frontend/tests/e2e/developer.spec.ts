@@ -367,7 +367,7 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
 
   await page.getByRole("button", { name: "Payouts & Tier" }).click();
   await expect(page.getByText("payout_1")).toBeVisible();
-  await page.getByLabel("Amount").fill("10.00");
+  await page.getByPlaceholder("e.g. 100.00").fill("10.00");
   await page.getByLabel("Authenticator code").fill("123456");
   await page.getByRole("button", { name: "Request payout" }).click();
   await expect(page.getByText("payout_2")).toBeVisible();
