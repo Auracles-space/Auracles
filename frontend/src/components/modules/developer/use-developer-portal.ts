@@ -33,6 +33,7 @@ import {
   requestPartnerPayoutV1DeveloperPayoutsPost,
   revokeApiKeyV1DeveloperApiKeysApiKeyIdDelete,
   submitDeveloperApplicationV1DeveloperApplicationsPost,
+  totpStatus,
 } from "@/lib/generated/sdk.gen";
 
 /**
@@ -46,6 +47,7 @@ export function useDeveloperPortal() {
   const [loading, setLoading] = useState(true);
   const [oneTimeSecret, setOneTimeSecret] = useState<string | null>(null);
   const [rawApiKey, setRawApiKey] = useState<string | null>(null);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
   async function loadPortal() {
     configureBrowserClient();
@@ -73,6 +75,7 @@ export function useDeveloperPortal() {
         webhooks,
         payouts,
         payoutAccounts,
+        totp,
       ] = await Promise.all([
         listApiKeysV1DeveloperApiKeysGet({ headers }),
         getDeveloperTierProgressV1DeveloperTierGet({ headers }),
@@ -87,7 +90,12 @@ export function useDeveloperPortal() {
         listPartnerWebhooksV1DeveloperWebhooksGet({ headers }),
         listPartnerPayoutsV1DeveloperPayoutsGet({ headers }),
         listPayoutAccounts({ headers }),
+        totpStatus({ headers }),
       ]);
+
+      setTwoFactorEnabled(
+        totp.response.ok && totp.data ? totp.data.totp_enabled : false,
+      );
 
       setData({
         applications: appList,
@@ -253,6 +261,7 @@ export function useDeveloperPortal() {
     loading,
     oneTimeSecret,
     rawApiKey,
+    twoFactorEnabled,
     verifiedPayoutAccounts,
   };
 }

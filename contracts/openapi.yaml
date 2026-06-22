@@ -13531,6 +13531,9 @@ components:
           type: string
           format: date-time
           title: Created At
+        secret_hint:
+          type: string
+          title: Secret Hint
       type: object
       required:
       - id
@@ -13538,8 +13541,9 @@ components:
       - events
       - active
       - created_at
+      - secret_hint
       title: PartnerWebhookResponse
-      description: Partner webhook endpoint metadata without the raw signing secret.
+      description: Partner webhook endpoint metadata with a masked signing-secret hint.
     PartnerWebhooksResponse:
       properties:
         webhooks:

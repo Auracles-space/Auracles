@@ -31,6 +31,7 @@ type PayoutPanelProps = {
   payouts: PartnerPayoutResponse[];
   verifiedAccounts: PayoutAccountResponse[];
   sales?: DeveloperSalesAnalyticsResponse | null;
+  twoFactorEnabled: boolean;
 };
 
 /**
@@ -43,6 +44,7 @@ export function PayoutPanel({
   payouts,
   verifiedAccounts,
   sales,
+  twoFactorEnabled,
 }: PayoutPanelProps) {
   const amountId = useId();
   const accountId = useId();
@@ -154,7 +156,15 @@ export function PayoutPanel({
         </div>
       )}
 
-      {verifiedAccounts.length > 0 ? (
+      {!twoFactorEnabled ? (
+        <div className="mt-5 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+          Payouts require two-factor authentication.{" "}
+          <a className="font-semibold underline" href="/2fa-setup">
+            Set up 2FA
+          </a>{" "}
+          to request a payout.
+        </div>
+      ) : verifiedAccounts.length > 0 ? (
         <form className="mt-5 grid gap-3" onSubmit={handleSubmit}>
           <label className="grid gap-2 text-sm font-semibold" htmlFor={amountId}>
             <div className="flex items-center justify-between">

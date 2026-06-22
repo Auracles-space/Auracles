@@ -989,9 +989,11 @@ async def test_developer_registers_webhook_secret_raw_once_and_lists_metadata(
             "events": ["purchase.confirmed", "commission.cleared"],
             "active": True,
             "created_at": created_body["created_at"],
+            "secret_hint": f"whsec_••••{raw_secret[-4:]}",
         }
     ]
-    assert "secret" not in listed.text
+    # The masked hint may appear, but the full raw secret must never leak.
+    assert raw_secret not in listed.text
 
     async with async_session_factory() as session:
         webhook = await session.get(PartnerWebhook, UUID(created_body["id"]))

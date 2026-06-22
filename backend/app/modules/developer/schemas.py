@@ -190,13 +190,19 @@ class PartnerWebhookCreateRequest(BaseModel):
 
 
 class PartnerWebhookResponse(BaseModel):
-    """Partner webhook endpoint metadata without the raw signing secret."""
+    """Partner webhook endpoint metadata with a masked signing-secret hint.
+
+    The full secret is only returned once on creation; ``secret_hint`` is a
+    non-sensitive masked form (prefix + last four characters) shown in the list
+    so the partner can recognize which secret is configured.
+    """
 
     id: UUID
     url: str
     events: list[str]
     active: bool
     created_at: datetime
+    secret_hint: str
 
     model_config = ConfigDict(from_attributes=True)
 

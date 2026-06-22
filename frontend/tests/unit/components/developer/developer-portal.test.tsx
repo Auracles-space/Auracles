@@ -17,6 +17,7 @@ import {
   listPartnerPayoutsV1DeveloperPayoutsGet,
   listPartnerWebhooksV1DeveloperWebhooksGet,
   listPayoutAccounts,
+  totpStatus,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -38,6 +39,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listPayoutAccounts: vi.fn(),
   requestPartnerPayoutV1DeveloperPayoutsPost: vi.fn(),
   submitDeveloperApplicationV1DeveloperApplicationsPost: vi.fn(),
+  totpStatus: vi.fn(),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -182,6 +184,7 @@ describe("DeveloperPortal", () => {
         ],
       }),
     );
+    vi.mocked(totpStatus).mockResolvedValue(ok({ totp_enabled: true }));
   });
 
   it("renders the approved Developer workspace across its tabs", async () => {

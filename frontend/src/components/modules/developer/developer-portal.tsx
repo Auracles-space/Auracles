@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { DeveloperApiUsage } from "@/components/modules/developer/developer-api-usage";
+import { DeveloperWebhookUsage } from "@/components/modules/developer/developer-webhook-usage";
 import {
   ApplicationPanel,
   type ApplicationPayload,
@@ -117,6 +118,7 @@ export function DeveloperPortal() {
     loading,
     oneTimeSecret,
     rawApiKey,
+    twoFactorEnabled,
     verifiedPayoutAccounts,
   } = useDeveloperPortal();
 
@@ -255,12 +257,15 @@ export function DeveloperPortal() {
                 />
                 <DeveloperApiUsage apiKey={rawApiKey} />
               </div>
-              <WebhooksPanel
-                onCreate={handleWebhookCreate}
-                onDelete={handleWebhookDelete}
-                oneTimeSecret={oneTimeSecret}
-                webhooks={data.webhooks}
-              />
+              <div className="space-y-6">
+                <WebhooksPanel
+                  onCreate={handleWebhookCreate}
+                  onDelete={handleWebhookDelete}
+                  oneTimeSecret={oneTimeSecret}
+                  webhooks={data.webhooks}
+                />
+                <DeveloperWebhookUsage secret={oneTimeSecret} />
+              </div>
             </div>
           )}
 
@@ -271,6 +276,7 @@ export function DeveloperPortal() {
                 payouts={data.payouts}
                 verifiedAccounts={verifiedPayoutAccounts}
                 sales={data.sales}
+                twoFactorEnabled={twoFactorEnabled}
               />
               <TierPanel tier={data.tier} />
             </div>

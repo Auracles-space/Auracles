@@ -2167,7 +2167,7 @@ export type PartnerWebhookDeliveryResponse = {
 };
 
 /**
- * Partner webhook endpoint metadata without the raw signing secret.
+ * Partner webhook endpoint metadata with a masked signing-secret hint.
  */
 export type PartnerWebhookResponse = {
     id: string;
@@ -2175,6 +2175,7 @@ export type PartnerWebhookResponse = {
     events: Array<(string)>;
     active: boolean;
     created_at: string;
+    secret_hint: string;
 };
 
 /**

@@ -386,6 +386,9 @@ export function WebhooksPanel({
           >
             <div className="min-w-0 flex-1">
               <p className="break-all text-sm font-semibold">{webhook.url}</p>
+              <p className="mt-1 font-mono text-xs text-foreground-muted">
+                Signing secret {webhook.secret_hint}
+              </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {webhook.events.map((event) => (
                   <span

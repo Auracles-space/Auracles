@@ -17,7 +17,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.security import encrypt_partner_webhook_secret
+from app.core.security import (
+    decrypt_partner_webhook_secret,
+    encrypt_partner_webhook_secret,
+)
 from app.modules.developer.constants import VALID_PARTNER_WEBHOOK_EVENTS
 from app.modules.developer.models import (
     DeveloperAccount,
@@ -29,6 +32,16 @@ from app.workers.tasks.partner_webhooks import deliver_partner_webhook
 
 WEBHOOK_SECRET_PREFIX = "whsec_"
 WEBHOOK_SECRET_RANDOM_BYTES = 32
+
+
+def webhook_secret_hint(webhook: PartnerWebhook) -> str:
+    """Return a masked signing-secret hint (prefix + last four characters).
+
+    Non-sensitive: reveals only the four trailing characters so a partner can
+    tell which secret is configured without exposing a usable value.
+    """
+    secret = decrypt_partner_webhook_secret(webhook.secret_encrypted)
+    return f"{WEBHOOK_SECRET_PREFIX}••••{secret[-4:]}"
 
 
 def _generate_raw_webhook_secret() -> str:

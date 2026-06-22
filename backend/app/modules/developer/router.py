@@ -21,7 +21,7 @@ from app.modules.developer import (
     webhooks_service,
 )
 from app.modules.developer.dependencies import require_active_developer_account
-from app.modules.developer.models import DeveloperAccount
+from app.modules.developer.models import DeveloperAccount, PartnerWebhook
 from app.modules.developer.schemas import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
@@ -55,6 +55,18 @@ ActiveDeveloperAccount = Annotated[
     DeveloperAccount,
     Depends(require_active_developer_account),
 ]
+
+
+def _webhook_response(webhook: PartnerWebhook) -> PartnerWebhookResponse:
+    """Build a webhook response with a masked signing-secret hint."""
+    return PartnerWebhookResponse(
+        id=webhook.id,
+        url=webhook.url,
+        events=list(webhook.events),
+        active=webhook.active,
+        created_at=webhook.created_at,
+        secret_hint=webhooks_service.webhook_secret_hint(webhook),
+    )
 
 
 @router.post(
@@ -294,7 +306,7 @@ async def create_partner_webhook(
         payload=payload,
     )
     return PartnerWebhookCreateResponse(
-        **PartnerWebhookResponse.model_validate(webhook).model_dump(),
+        **_webhook_response(webhook).model_dump(),
         secret=raw_secret,
     )
 
@@ -310,9 +322,7 @@ async def list_partner_webhooks(
         developer_account=developer_account,
     )
     return PartnerWebhooksResponse(
-        webhooks=[
-            PartnerWebhookResponse.model_validate(webhook) for webhook in webhooks
-        ]
+        webhooks=[_webhook_response(webhook) for webhook in webhooks]
     )
 
 
@@ -331,7 +341,7 @@ async def delete_partner_webhook(
         developer_account=developer_account,
         webhook_id=webhook_id,
     )
-    return PartnerWebhookResponse.model_validate(webhook)
+    return _webhook_response(webhook)
 
 
 @router.post(
