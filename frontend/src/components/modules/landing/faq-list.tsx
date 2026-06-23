@@ -8,27 +8,27 @@
 const faqs = [
   {
     q: "What is a Framework?",
-    a: "A licensable knowledge product — a set of documents (PDF, DOCX, XLSX, PPTX, ZIP) packaged with metadata, pricing, and a license type. Operators license, download, and run them.",
+    a: "A Framework is a repeatable methodology, playbook, process, template, or operating model that helps solve a specific problem.",
   },
   {
-    q: "How does originality scoring work?",
-    a: "Every uploaded artifact runs through a MinHash + LSH pipeline (internal duplicate detection) and a quoted-phrase web search (external rarity). Both signals plus metadata blend into a single rarity score, and the audit row is explainable.",
+    q: "Who can become a contributor?",
+    a: "Operators, investors, consultants, analysts, compliance professionals, researchers, and domain experts with proven experience.",
   },
   {
-    q: "Why is KYC required to download?",
-    a: "Auracles is a high-trust marketplace. KYC on both sides — Contributors verify before publishing, Operators verify before downloading — keeps the floor consistent and protects sellers.",
+    q: "How does framework scoring work?",
+    a: "Auracles analyzes submissions for uniqueness and overlap before publication.",
   },
   {
-    q: "Who reviews submitted Frameworks?",
-    a: "The pipeline reviews them. Virus scan, PII detection, originality, and rarity must all pass before the Publish button enables. Admins moderate after publish, on abuse reports or spot-checks.",
+    q: "Why is verification required?",
+    a: "Verification helps ensure every Framework is connected to a real contributor.",
   },
   {
-    q: "Can I version a published Framework?",
-    a: "Yes. Pick a change type — fix, improvement, or major — and the platform auto-computes the semver. Prior version stays accessible to existing licensees.",
+    q: "Can I update a published Framework?",
+    a: "Yes. Frameworks are versioned so contributors can improve them over time.",
   },
   {
-    q: "What about my data?",
-    a: "Artifact text never leaves your own infrastructure for PII or originality checks. The only external call is a gated, quoted-phrase web search for external rarity, with phrase-level caching to minimize calls.",
+    q: "What happens to my data?",
+    a: "Contributors retain ownership of their intellectual property while granting marketplace licensing rights under selected terms.",
   },
 ];
 
@@ -41,7 +41,7 @@ export function FaqList() {
       <div className="mx-auto w-full max-w-[1280px]">
         <div className="max-w-2xl">
           <p className="text-xs font-medium uppercase tracking-[0.08em] text-foreground-subtle">
-            Frequently asked
+            Frequently asked questions
           </p>
           <h2 className="mt-3 font-heading text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
             Answers, before you ask.
@@ -74,3 +74,5 @@ export function FaqList() {
     </section>
   );
 }
+
+

@@ -6,11 +6,14 @@
  */
 import Link from "next/link";
 
-const trustedBy = [
-  "McKinsey alumni",
-  "Stripe ops",
-  "Y Combinator partners",
-  "Bain associates",
+const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
+
+const targetAudiences = [
+  "Professionals",
+  "Operators",
+  "Investors",
+  "Consultants",
+  "Domain experts",
 ];
 
 /**
@@ -21,42 +24,63 @@ export function LandingHero() {
     <section className="relative overflow-hidden px-5 pb-16 pt-12 md:px-10 md:pt-20 lg:pt-24">
       <div className="mx-auto w-full max-w-[1280px]">
 
-
         <h1 className="mx-auto mt-6 max-w-3xl text-balance text-center font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-6xl lg:text-7xl">
-          License professional knowledge that{" "}
-          <span className="brand-text-gradient">actually works.</span>
+          Build your reputation around what you've created
         </h1>
 
         <p className="mx-auto mt-5 max-w-xl text-balance text-center text-base leading-7 text-foreground-muted md:text-lg">
-          Buy, run, and verify expert Frameworks built by operators who have
-          shipped them. Skip the trial and error.
+          Turn your proven playbooks into licensed assets. Build reputation, earn recurring revenue, and help teams move faster
         </p>
 
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link
-            className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
-            href="/explore"
-          >
-            Browse Frameworks
-          </Link>
-          <Link
-            className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
-            href="/register"
-          >
-            Become a Contributor
-          </Link>
+          {isWaitlistMode ? (
+            <>
+              <Link
+                className="inline-flex h-12 min-w-[220px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                href="#waitlist-form"
+              >
+                Join the Contributor Waitlist
+              </Link>
+              <Link
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
+                href="#how-it-works"
+              >
+                See How It Works
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                href="/explore"
+              >
+                Browse the catalog
+              </Link>
+              <Link
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
+                href="/register"
+              >
+                Become a Contributor
+              </Link>
+            </>
+          )}
         </div>
 
-        <p className="mt-10 text-center text-xs font-medium uppercase tracking-[0.08em] text-foreground-subtle">
-          Trusted by operators from
+        <p className="mt-10 text-center text-xs font-semibold uppercase tracking-[0.08em] text-foreground-subtle">
+          Built for and used by:
         </p>
-        <ul className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-foreground-muted">
-          {trustedBy.map((name) => (
-            <li className="font-medium" key={name}>
-              {name}
-            </li>
+        <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-sm font-medium text-foreground-muted">
+          {targetAudiences.map((audience, idx) => (
+            <div key={audience} className="flex items-center gap-3">
+              <span>{audience}</span>
+              {idx < targetAudiences.length - 1 && (
+                <span className="text-foreground-subtle/50" aria-hidden="true">|</span>
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
+
+
 
         <div className="relative mx-auto mt-16 max-w-5xl md:mt-24">
           <div className="absolute inset-0 -z-10 mx-auto max-w-4xl opacity-80 blur-3xl brand-gradient" />

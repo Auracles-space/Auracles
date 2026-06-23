@@ -120,6 +120,13 @@ async function mockDeveloperPlatformApi(page: Page): Promise<void> {
       return;
     }
 
+    if (path === "/v1/auth/2fa/status") {
+      await fulfillJson(route, {
+        totp_enabled: true,
+      });
+      return;
+    }
+
     if (path === "/v1/developer/applications/mine") {
       await fulfillJson(route, {
         applications: [

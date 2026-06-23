@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Footer CTA strip + site footer.
  *
@@ -6,70 +8,131 @@
  * legal + contact links.
  */
 import Link from "next/link";
+import { useState } from "react";
 
-const footerGroups = [
-  {
-    title: "Platform",
-    links: [
-      { href: "/explore", label: "Explore" },
-      { href: "/register?role=contributor", label: "Become a Contributor" },
-      { href: "/register?role=attestor", label: "Apply to attest" },
-      { href: "/login", label: "Sign in" },
-    ],
-  },
-  {
-    title: "Resources",
-    links: [
-      { href: "#how-it-works", label: "How it works" },
-      { href: "#trust", label: "Trust" },
-      { href: "#pricing", label: "License options" },
-      { href: "#faq", label: "FAQ" },
-    ],
-  },
-  {
-    title: "Company",
-    links: [
-      { href: "mailto:hello@auracles.space", label: "Contact" },
-      { href: "/terms", label: "Terms" },
-      { href: "/privacy", label: "Privacy" },
-      { href: "/security", label: "Security" },
-    ],
-  },
-];
+const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
+
+
 
 /**
  * Render the closing gradient CTA and the site footer.
  */
 export function FooterCta() {
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setSubmitted(true);
+  };
+
+  const activeFooterGroups = [
+    {
+      title: "Platform",
+      links: [
+        { href: "/explore", label: "Explore" },
+        { href: "/register?role=contributor", label: "Become a Contributor" },
+        { href: "/register?role=attestor", label: "Apply to attest" },
+        { href: "/login", label: "Sign in" },
+      ],
+    },
+    {
+      title: "Resources",
+      links: isWaitlistMode
+        ? [
+            { href: "#how-it-works", label: "How it works" },
+            { href: "#roles", label: "For Contributors" },
+            { href: "#trust", label: "Trust" },
+          ]
+        : [
+            { href: "#how-it-works", label: "How it works" },
+            { href: "#roles", label: "For Contributors" },
+            { href: "#trust", label: "Trust" },
+            { href: "#pricing", label: "License options" },
+          ],
+    },
+    {
+      title: "Company",
+      links: [
+        { href: "mailto:hello@auracles.space", label: "Contact" },
+        { href: "/terms", label: "Terms" },
+        { href: "/privacy", label: "Privacy" },
+        { href: "/security", label: "Security" },
+      ],
+    },
+  ];
+
   return (
     <>
-      <section className="w-full">
-        <div className="brand-gradient flex w-full flex-col items-center px-5 py-24 text-center md:py-32">
-          <h2 className="max-w-3xl font-heading text-4xl font-bold leading-tight tracking-tight text-white md:text-5xl lg:text-6xl">
-            Stop reinventing what someone already shipped.
-          </h2>
-          <p className="mt-6 max-w-xl text-base leading-7 text-white/90 md:text-lg">
-            License a Framework, run it tomorrow, and verify it landed. Your
-            first download is one signup away.
-          </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              className="inline-flex h-14 min-w-[200px] items-center justify-center rounded-control bg-foreground px-8 text-base font-bold text-background shadow-lg transition hover:bg-foreground/90"
-              href="/register"
-            >
-              Create an account
-            </Link>
-            <Link
-              className="inline-flex h-14 min-w-[200px] items-center justify-center rounded-control border-2 border-white bg-transparent px-8 text-base font-bold text-white transition hover:bg-white hover:text-foreground"
-              href="/explore"
-            >
-              Browse the catalog
-            </Link>
+      <section className="w-full" id="waitlist-form">
+        <div className="bg-background px-5 py-20 text-center md:py-28">
+          <div className="mx-auto max-w-[1280px]">
+            <h2 className="font-heading text-4xl font-bold tracking-tight text-foreground md:text-5xl lg:text-6xl">
+              Be known for what you've built
+            </h2>
+            <p className="mt-4 text-base text-foreground-muted md:text-lg">
+              {isWaitlistMode
+                ? "Join the waitlist and help build the Framework Economy."
+                : "Register today and help build the Framework Economy."}
+            </p>
+
+            {isWaitlistMode ? (
+              submitted ? (
+                <div className="mt-10 flex flex-col items-center justify-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-6 max-w-md mx-auto animate-fade-in">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success text-lg font-bold">
+                    ✓
+                  </span>
+                  <p className="text-sm font-semibold text-foreground">
+                    You've been added to the waitlist!
+                  </p>
+                  <p className="text-xs text-foreground-muted text-center">
+                    We've reserved a spot for <strong className="text-foreground">{email}</strong>. We'll reach out as soon as slots open up.
+                  </p>
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleSubmit}
+                  className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row items-stretch"
+                >
+                  <input
+                    type="email"
+                    required
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="flex-1 h-12 rounded-control border border-border-strong bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98]"
+                  >
+                    Join waitlist
+                  </button>
+                </form>
+              )
+            ) : (
+              <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <Link
+                  className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                  href="/register"
+                >
+                  Create an account
+                </Link>
+                <Link
+                  className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
+                  href="/explore"
+                >
+                  Browse the catalog
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      <footer className="bg-background">
+
+      <footer className="bg-background border-t border-border-default">
         <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 py-16 md:grid-cols-[1.4fr_1fr_1fr_1fr] md:px-10">
           <div>
             <div className="flex items-center gap-2">
@@ -83,7 +146,7 @@ export function FooterCta() {
               and audit-ready.
             </p>
           </div>
-          {footerGroups.map((group) => (
+          {activeFooterGroups.map((group) => (
             <div key={group.title}>
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-foreground-subtle">
                 {group.title}
@@ -91,12 +154,21 @@ export function FooterCta() {
               <ul className="mt-6 space-y-4 text-sm font-medium text-foreground-muted">
                 {group.links.map((link) => (
                   <li key={link.href}>
-                    <Link
-                      className="transition hover:text-accent"
-                      href={link.href}
-                    >
-                      {link.label}
-                    </Link>
+                    {link.href.startsWith("#") ? (
+                      <a
+                        className="transition hover:text-accent"
+                        href={link.href}
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        className="transition hover:text-accent"
+                        href={link.href}
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -117,3 +189,4 @@ export function FooterCta() {
     </>
   );
 }
+

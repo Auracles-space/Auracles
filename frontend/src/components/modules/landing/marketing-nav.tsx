@@ -9,17 +9,25 @@ import Link from "next/link";
 
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
-const links = [
-  { href: "#how-it-works", label: "How it works" },
+// Waitlist mode defaults to true in production/unspecified environments to gate entry.
+// Set NEXT_PUBLIC_WAITLIST_MODE=false locally to bypass the waitlist controls.
+const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
+
+const navLinks = [
+  { href: "#how-it-works", label: "How It Works" },
   { href: "#roles", label: "For Contributors" },
   { href: "#trust", label: "Trust" },
-  { href: "#pricing", label: "Pricing" },
+  ...(!isWaitlistMode ? [{ href: "#pricing", label: "Pricing" }] : []),
+  { href: "#faq", label: "FAQ" },
 ];
 
 /**
  * Render the marketing site top navigation.
  */
 export function MarketingNav() {
+  const activeLinks = navLinks;
+
+
   return (
     <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 md:px-10">
@@ -30,7 +38,7 @@ export function MarketingNav() {
           Auracles
         </Link>
         <nav className="hidden items-center gap-8 md:flex">
-          {links.map((link) => (
+          {activeLinks.map((link) => (
             <Link
               className="text-sm font-medium text-foreground-muted transition hover:text-foreground"
               href={link.href}
@@ -42,20 +50,32 @@ export function MarketingNav() {
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link
-            className="hidden h-10 items-center rounded-control px-4 text-sm font-medium text-foreground-muted transition hover:text-foreground md:inline-flex"
-            href="/login"
-          >
-            Sign in
-          </Link>
-          <Link
-            className="inline-flex h-10 items-center rounded-control bg-foreground px-4 text-sm font-medium text-background transition hover:opacity-90"
-            href="/register"
-          >
-            Get started
-          </Link>
+          {isWaitlistMode ? (
+            <Link
+              className="inline-flex h-10 items-center rounded-control bg-accent px-4 text-sm font-medium text-white transition hover:opacity-90"
+              href="#waitlist-form"
+            >
+              Join Waitlist
+            </Link>
+          ) : (
+            <>
+              <Link
+                className="hidden h-10 items-center rounded-control px-4 text-sm font-medium text-foreground-muted transition hover:text-foreground md:inline-flex"
+                href="/login"
+              >
+                Sign in
+              </Link>
+              <Link
+                className="inline-flex h-10 items-center rounded-control bg-foreground px-4 text-sm font-medium text-background transition hover:opacity-90"
+                href="/register"
+              >
+                Get started
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>
   );
 }
+
