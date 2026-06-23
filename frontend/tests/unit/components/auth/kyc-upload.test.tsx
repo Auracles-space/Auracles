@@ -6,6 +6,7 @@ import {
   getKycStatusV1SettingsKycGet,
   requestKycUploadUrl,
 } from "@/lib/generated/sdk.gen";
+import type { GetKycStatusV1SettingsKycGetResponse } from "@/lib/generated/types.gen";
 
 vi.mock("@/lib/auth/token-store", () => ({
   authTokenStore: {
@@ -28,14 +29,20 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 }));
 
 describe("KycUpload", () => {
+  function ok(data: GetKycStatusV1SettingsKycGetResponse) {
+    return {
+      data,
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    };
+  }
+
   beforeEach(() => {
     vi.mocked(requestKycUploadUrl).mockReset();
     vi.mocked(getKycStatusV1SettingsKycGet).mockReset();
-    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue({
-      data: { kyc_status: "unverified", documents: [] },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as any);
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
+      ok({ kyc_status: "unverified", documents: [] }),
+    );
   });
 
   it("keeps the submit disabled until a document file is selected", async () => {
@@ -75,16 +82,8 @@ describe("KycUpload", () => {
     // Pending on mount, verified by the time the user tabs back — the admin
     // approved in the meantime. Focus must re-read without a manual refresh.
     vi.mocked(getKycStatusV1SettingsKycGet)
-      .mockResolvedValueOnce({
-        data: { kyc_status: "pending", documents: [] },
-        error: undefined,
-        response: new Response(null, { status: 200 }),
-      } as any)
-      .mockResolvedValue({
-        data: { kyc_status: "verified", documents: [] },
-        error: undefined,
-        response: new Response(null, { status: 200 }),
-      } as any);
+      .mockResolvedValueOnce(ok({ kyc_status: "pending", documents: [] }))
+      .mockResolvedValue(ok({ kyc_status: "verified", documents: [] }));
 
     render(<KycUpload />);
 
@@ -100,11 +99,9 @@ describe("KycUpload", () => {
   });
 
   it("shows the verified state and hides the form when KYC is verified", async () => {
-    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue({
-      data: { kyc_status: "verified", documents: [] },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as any);
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
+      ok({ kyc_status: "verified", documents: [] }),
+    );
 
     render(<KycUpload />);
 

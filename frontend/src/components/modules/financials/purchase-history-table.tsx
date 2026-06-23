@@ -122,7 +122,7 @@ export function PurchaseHistoryTable() {
         setGeneratingInvoiceId(null);
         setInvoiceMessage(null);
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred while fetching the invoice.");
       setGeneratingInvoiceId(null);
       setInvoiceMessage(null);

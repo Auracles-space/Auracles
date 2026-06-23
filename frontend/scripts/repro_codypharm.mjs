@@ -47,8 +47,8 @@ import { chromium } from "@playwright/test";
 
   console.log("Final URL:", page.url());
 
-  const proposalsHtml = await page.locator('section:has-text("Proposals")').first().innerHTML().catch(e => "No proposals selector found");
-  const milestonesHtml = await page.locator('section:has-text("Milestones")').first().innerHTML().catch(e => "No milestones selector found");
+  const proposalsHtml = await page.locator('section:has-text("Proposals")').first().innerHTML().catch(() => "No proposals selector found");
+  const milestonesHtml = await page.locator('section:has-text("Milestones")').first().innerHTML().catch(() => "No milestones selector found");
   
   console.log("--- PROPOSALS HTML ---");
   console.log(proposalsHtml);

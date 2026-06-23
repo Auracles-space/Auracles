@@ -327,7 +327,7 @@ export function AdminModerationPanel() {
                                   className="flex justify-between items-center rounded-xl bg-surface-3 px-3 py-2"
                                 >
                                   <span className="font-mono text-xs text-foreground truncate max-w-[200px] sm:max-w-md">
-                                    "{phrase}"
+                                    &quot;{phrase}&quot;
                                   </span>
                                   <span className="rounded-badge bg-foreground/10 px-2 py-0.5 text-xs font-bold text-foreground">
                                     {hitCount} hit{hitCount !== 1 ? "s" : ""}

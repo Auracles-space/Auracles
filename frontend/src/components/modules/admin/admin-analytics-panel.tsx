@@ -23,7 +23,7 @@ import type {
   AdminAnalyticsGmvResponse,
   AdminAnalyticsTrendPoint,
 } from "@/lib/generated/types.gen";
-import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { formatMoney } from "@/lib/marketplace/format";
 
 type MiniSparklineProps = {
   values: number[];
@@ -64,16 +64,6 @@ type TrendChartProps = {
 function formatSnapshotDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year.slice(2)}`;
-}
-
-/**
- * Format counts for dense metrics display.
- */
-function formatCompactCount(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 0,
-    notation: value >= 1000 ? "compact" : "standard",
-  }).format(value);
 }
 
 /**
@@ -820,11 +810,11 @@ export function AdminAnalyticsPanel() {
       date.setDate(baseDate.getDate() - (i + 1));
       const dateStr = date.toISOString().split("T")[0];
 
-      let gmvVal = 100 + i * 80 + Math.sin(i) * 50;
-      let usersVal = 15 + i * 6 + Math.cos(i) * 3;
-      let regVal = 2 + (i % 3) * 2;
-      let fwVal = 3 + Math.floor(i / 2) * 2;
-      let dispVal = (i + 1) % 2;
+      const gmvVal = 100 + i * 80 + Math.sin(i) * 50;
+      const usersVal = 15 + i * 6 + Math.cos(i) * 3;
+      const regVal = 2 + (i % 3) * 2;
+      const fwVal = 3 + Math.floor(i / 2) * 2;
+      const dispVal = (i + 1) % 2;
 
       mockPoints.push({
         snapshot_date: dateStr,

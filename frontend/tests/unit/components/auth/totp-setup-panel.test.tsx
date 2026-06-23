@@ -9,9 +9,10 @@ import {
   totpStatus,
   verifyTotp,
 } from "@/lib/generated/sdk.gen";
+import type { TotpStatusResponse } from "@/lib/generated/types.gen";
 
 vi.mock("next/image", () => ({
-  default: (props: { alt: string }) => <img alt={props.alt} />,
+  default: (props: { alt: string }) => <span aria-label={props.alt} />,
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -41,7 +42,11 @@ function mockStatus(totp_enabled: boolean, backup_codes_remaining = 0) {
     data: { totp_enabled, backup_codes_remaining },
     error: undefined,
     response: new Response(null, { status: 200 }),
-  } as any);
+  } satisfies {
+    data: TotpStatusResponse;
+    error: undefined;
+    response: Response;
+  });
 }
 
 async function waitForLoaded() {
