@@ -60,7 +60,7 @@ export function FooterCta() {
     {
       title: "Company",
       links: [
-        { href: "mailto:hello@auracles.space", label: "Contact" },
+        { href: "mailto:admin@auracles.space", label: "Contact" },
         { href: "/terms", label: "Terms" },
         { href: "/privacy", label: "Privacy" },
         { href: "/security", label: "Security" },
@@ -71,7 +71,6 @@ export function FooterCta() {
       links: [
         { href: "https://www.linkedin.com/company/auraclespace", label: "LinkedIn" },
         { href: "https://x.com/Auraclespace", label: "X" },
-        { href: "https://github.com", label: "Github" },
       ],
     },
   ];
