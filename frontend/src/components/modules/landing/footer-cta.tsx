@@ -69,8 +69,8 @@ export function FooterCta() {
     {
       title: "Social",
       links: [
-        { href: "https://linkedin.com", label: "LinkedIn" },
-        { href: "https://x.com", label: "X" },
+        { href: "https://www.linkedin.com/company/auraclespace", label: "LinkedIn" },
+        { href: "https://x.com/Auraclespace", label: "X" },
         { href: "https://github.com", label: "Github" },
       ],
     },
