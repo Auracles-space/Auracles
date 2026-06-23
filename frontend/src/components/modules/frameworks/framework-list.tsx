@@ -7,7 +7,6 @@
  * in-memory access token.
  */
 import Link from "next/link";
-import { SearchInput } from "../explore/search-input";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { useEffect, useState } from "react";
 

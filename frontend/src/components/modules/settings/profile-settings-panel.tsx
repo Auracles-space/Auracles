@@ -23,26 +23,6 @@ import type { CurrentUserResponse } from "@/lib/generated/types.gen";
 import { FormMessage } from "../auth/form-message";
 
 /**
- * Convert backend role slugs into UI-ready labels.
- *
- * @param role - Raw role identifier from auth state.
- */
-function formatRoleLabel(role: string): string {
-  switch (role) {
-    case "admin":
-      return "Admin";
-    case "attestor":
-      return "Attestor";
-    case "contributor":
-      return "Contributor";
-    case "operator":
-      return "Operator";
-    default:
-      return role;
-  }
-}
-
-/**
  * Derive a concise KYC status label for the private profile page.
  *
  * @param status - Raw KYC status from `/v1/auth/me`.

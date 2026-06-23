@@ -4,9 +4,6 @@
  * Maps to the three platform roles: Contributor publishes, Operator licenses,
  * Attestor verifies.
  */
-
-const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
-
 type StepItem = {
   eyebrow?: string;
   title: string;
@@ -86,4 +83,3 @@ export function HowItWorks() {
     </section>
   );
 }
-

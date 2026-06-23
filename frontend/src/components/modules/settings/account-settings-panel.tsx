@@ -344,7 +344,7 @@ export function AccountSettingsPanel() {
       }
 
       setExportMessage("Download started.");
-    } catch (err) {
+    } catch {
       setExportPending(null);
       setExportError("An unexpected error occurred while fetching the export.");
     }

@@ -25,7 +25,7 @@ export function LandingHero() {
       <div className="mx-auto w-full max-w-[1280px]">
 
         <h1 className="mx-auto mt-6 max-w-3xl text-balance text-center font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-6xl lg:text-7xl">
-          Build your reputation around what you've created
+          Build your reputation around what you&apos;ve created
         </h1>
 
         <p className="mx-auto mt-5 max-w-xl text-balance text-center text-base leading-7 text-foreground-muted md:text-lg">
