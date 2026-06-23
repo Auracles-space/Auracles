@@ -126,14 +126,23 @@ export function FooterCta() {
                     <input
                       type="email"
                       required
+                      autoComplete="email"
+                      spellCheck={false}
                       disabled={isSubmitting}
                       placeholder="Email address"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full h-12 rounded-control border border-border-strong bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-60"
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (error) setError(null);
+                      }}
+                      className={`w-full h-12 rounded-control border bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none transition-colors disabled:opacity-60 ${
+                        error
+                          ? "border-warning/60 focus:border-warning focus:ring-1 focus:ring-warning"
+                          : "border-border-strong focus:border-accent focus:ring-1 focus:ring-accent"
+                      }`}
                     />
                     {error ? (
-                      <p className="mt-2 text-left text-xs text-error">{error}</p>
+                      <p className="mt-2 text-left text-xs font-semibold text-warning">{error}</p>
                     ) : null}
                   </div>
                   <button
@@ -141,7 +150,17 @@ export function FooterCta() {
                     disabled={isSubmitting}
                     className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSubmitting ? "Joining..." : "Join waitlist"}
+                    {isSubmitting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Joining...
+                      </>
+                    ) : (
+                      "Join waitlist"
+                    )}
                   </button>
                 </form>
               )
