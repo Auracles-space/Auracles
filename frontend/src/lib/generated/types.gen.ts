@@ -2739,6 +2739,25 @@ export type VerifyEmailRequest = {
 };
 
 /**
+ * Request body for joining the pre-launch waitlist.
+ */
+export type WaitlistJoinRequest = {
+    email: string;
+    /**
+     * Optional origin hint for the signup (e.g. 'hero', 'footer').
+     */
+    source?: (string | null);
+};
+
+/**
+ * Result of a waitlist join attempt.
+ */
+export type WaitlistJoinResponse = {
+    already_joined: boolean;
+    message: string;
+};
+
+/**
  * Small acknowledgement returned to payment providers.
  */
 export type WebhookIngestResponse = {
@@ -4772,6 +4791,14 @@ export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetError = (HTTPVali
 export type GetHealthV1HealthGetResponse = (HealthResponse);
 
 export type GetHealthV1HealthGetError = (HealthResponse);
+
+export type JoinWaitlistV1WaitlistPostData = {
+    body: WaitlistJoinRequest;
+};
+
+export type JoinWaitlistV1WaitlistPostResponse = (WaitlistJoinResponse);
+
+export type JoinWaitlistV1WaitlistPostError = (HTTPValidationError);
 
 // Compatibility aliases used by application code.
 export type ExploreAttestationStatus = ListFrameworksV1ExploreFrameworksGetData["query"] extends infer Query ? NonNullable<Query extends { attestation_status?: infer Value } ? Value : never> : never;

@@ -10,6 +10,12 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import {
+  configureBrowserClient,
+  describeGeneratedError,
+} from "@/lib/auth/form-client";
+import { joinWaitlistV1WaitlistPost } from "@/lib/generated/sdk.gen";
+
 const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 
 
@@ -20,37 +26,36 @@ const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 export function FooterCta() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [alreadyJoined, setAlreadyJoined] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    if (!email || isSubmitting) return;
+    setIsSubmitting(true);
+    setError(null);
+    configureBrowserClient();
+    const result = await joinWaitlistV1WaitlistPost({
+      body: { email, source: "footer" },
+    });
+    setIsSubmitting(false);
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setAlreadyJoined(result.data.already_joined);
     setSubmitted(true);
   };
 
-  const activeFooterGroups = [
+  const footerGroups = [
     {
       title: "Platform",
       links: [
-        { href: "/explore", label: "Explore" },
-        { href: "/register?role=contributor", label: "Become a Contributor" },
-        { href: "/register?role=attestor", label: "Apply to attest" },
-        { href: "/login", label: "Sign in" },
+        { href: "#roles", label: "For Contributors" },
+        { href: "#how-it-works", label: "How it Works" },
+        { href: "#faq", label: "FAQ" },
       ],
-    },
-    {
-      title: "Resources",
-      links: isWaitlistMode
-        ? [
-            { href: "#how-it-works", label: "How it works" },
-            { href: "#roles", label: "For Contributors" },
-            { href: "#trust", label: "Trust" },
-          ]
-        : [
-            { href: "#how-it-works", label: "How it works" },
-            { href: "#roles", label: "For Contributors" },
-            { href: "#trust", label: "Trust" },
-            { href: "#pricing", label: "License options" },
-          ],
     },
     {
       title: "Company",
@@ -61,6 +66,14 @@ export function FooterCta() {
         { href: "/security", label: "Security" },
       ],
     },
+    {
+      title: "Social",
+      links: [
+        { href: "https://linkedin.com", label: "LinkedIn" },
+        { href: "https://x.com", label: "X" },
+        { href: "https://github.com", label: "Github" },
+      ],
+    },
   ];
 
   return (
@@ -69,7 +82,7 @@ export function FooterCta() {
         <div className="bg-background px-5 py-20 text-center md:py-28">
           <div className="mx-auto max-w-[1280px]">
             <h2 className="font-heading text-4xl font-bold tracking-tight text-foreground md:text-5xl lg:text-6xl">
-              Be known for what you've built
+              Be known for what you&apos;ve built
             </h2>
             <p className="mt-4 text-base text-foreground-muted md:text-lg">
               {isWaitlistMode
@@ -84,10 +97,24 @@ export function FooterCta() {
                     ✓
                   </span>
                   <p className="text-sm font-semibold text-foreground">
-                    You've been added to the waitlist!
+                    {alreadyJoined
+                      ? "You're already on the waitlist!"
+                      : "You've been added to the waitlist!"}
                   </p>
                   <p className="text-xs text-foreground-muted text-center">
-                    We've reserved a spot for <strong className="text-foreground">{email}</strong>. We'll reach out as soon as slots open up.
+                    {alreadyJoined ? (
+                      <>
+                        <strong className="text-foreground">{email}</strong> is
+                        already reserved. We&apos;ll reach out as soon as slots
+                        open up.
+                      </>
+                    ) : (
+                      <>
+                        We&apos;ve reserved a spot for{" "}
+                        <strong className="text-foreground">{email}</strong>.
+                        We&apos;ll reach out as soon as slots open up.
+                      </>
+                    )}
                   </p>
                 </div>
               ) : (
@@ -95,19 +122,26 @@ export function FooterCta() {
                   onSubmit={handleSubmit}
                   className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row items-stretch"
                 >
-                  <input
-                    type="email"
-                    required
-                    placeholder="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="flex-1 h-12 rounded-control border border-border-strong bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-                  />
+                  <div className="flex-1">
+                    <input
+                      type="email"
+                      required
+                      disabled={isSubmitting}
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full h-12 rounded-control border border-border-strong bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-60"
+                    />
+                    {error ? (
+                      <p className="mt-2 text-left text-xs text-error">{error}</p>
+                    ) : null}
+                  </div>
                   <button
                     type="submit"
-                    className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98]"
+                    disabled={isSubmitting}
+                    className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Join waitlist
+                    {isSubmitting ? "Joining..." : "Join waitlist"}
                   </button>
                 </form>
               )
@@ -135,25 +169,21 @@ export function FooterCta() {
       <footer className="bg-background border-t border-border-default">
         <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 py-16 md:grid-cols-[1.4fr_1fr_1fr_1fr] md:px-10">
           <div>
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-md bg-accent"></div>
-              <div className="font-heading text-xl font-bold text-foreground">
-                Auracles
-              </div>
+            <div className="font-heading text-xl font-bold text-foreground">
+              Auracles
             </div>
-            <p className="mt-4 max-w-xs text-sm leading-7 text-foreground-muted">
-              The marketplace for professional knowledge — licensed, attested,
-              and audit-ready.
+            <p className="mt-4 max-w-xs text-sm leading-6 text-foreground-muted">
+              The marketplace for professional frameworks and reusable knowledge assets.
             </p>
           </div>
-          {activeFooterGroups.map((group) => (
+          {footerGroups.map((group) => (
             <div key={group.title}>
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-foreground-subtle">
                 {group.title}
               </p>
               <ul className="mt-6 space-y-4 text-sm font-medium text-foreground-muted">
                 {group.links.map((link) => (
-                  <li key={link.href}>
+                  <li key={link.label}>
                     {link.href.startsWith("#") ? (
                       <a
                         className="transition hover:text-accent"
@@ -175,18 +205,14 @@ export function FooterCta() {
             </div>
           ))}
         </div>
-        <div className="border-t border-border-default">
+        <div className="border-t border-border-default bg-surface-2">
           <div className="mx-auto flex w-full max-w-[1280px] flex-col justify-between gap-4 px-5 py-8 text-xs font-medium text-foreground-subtle md:flex-row md:px-10">
             <p>© {new Date().getFullYear()} Auracles. All rights reserved.</p>
-            <div className="flex gap-6">
-              <Link href="#" className="hover:text-foreground">Twitter</Link>
-              <Link href="#" className="hover:text-foreground">LinkedIn</Link>
-              <Link href="#" className="hover:text-foreground">GitHub</Link>
-            </div>
           </div>
         </div>
       </footer>
     </>
   );
 }
+
 

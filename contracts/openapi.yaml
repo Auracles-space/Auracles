@@ -6858,6 +6858,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /v1/waitlist:
+    post:
+      tags:
+      - Waitlist
+      summary: Join the pre-launch waitlist
+      description: 'Record a marketing waitlist email. Public and unauthenticated.
+        Idempotent: an already-recorded email returns 200 with already_joined=true
+        instead of creating a duplicate.'
+      operationId: join_waitlist_v1_waitlist_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WaitlistJoinRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitlistJoinResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AccountDeletionBlockedReason:
@@ -15043,6 +15071,38 @@ components:
       - token
       title: VerifyEmailRequest
       description: Request body for email verification.
+    WaitlistJoinRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        source:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Source
+          description: Optional origin hint for the signup (e.g. 'hero', 'footer').
+      type: object
+      required:
+      - email
+      title: WaitlistJoinRequest
+      description: Request body for joining the pre-launch waitlist.
+    WaitlistJoinResponse:
+      properties:
+        already_joined:
+          type: boolean
+          title: Already Joined
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - already_joined
+      - message
+      title: WaitlistJoinResponse
+      description: Result of a waitlist join attempt.
     WebhookIngestResponse:
       properties:
         received:
