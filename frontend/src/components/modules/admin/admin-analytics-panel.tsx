@@ -789,9 +789,16 @@ export function AdminAnalyticsPanel() {
     return <TableSkeleton />;
   }
 
-  // Generate mock history if trend is empty or single-point in local environments.
+  // Generate mock history when the real series is sparse, but ONLY in local
+  // development. Never fabricate analytics in production (or tests) — an admin
+  // reporting dashboard must show real snapshot data, even when there are few
+  // points yet.
   let trend = dashboard?.trend ?? [];
-  if (dashboard && trend.length < 3) {
+  if (
+    process.env.NODE_ENV === "development" &&
+    dashboard &&
+    trend.length < 3
+  ) {
     const mockPoints: AdminAnalyticsTrendPoint[] = [];
     const oldestPoint = trend[0] ?? {
       active_users: 12,

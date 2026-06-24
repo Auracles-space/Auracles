@@ -106,12 +106,13 @@ describe("AdminAnalyticsPanel", () => {
     expect(
       await screen.findByRole("heading", { name: /platform analytics/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("$350")).toBeInTheDocument();
-    expect(screen.getByText("$775")).toBeInTheDocument();
-    expect(screen.getByText("$2,075")).toBeInTheDocument();
+    // GMV totals appear in both a summary card and the period-comparison bars.
+    expect(screen.getAllByText("$350").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$775").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$2,075").length).toBeGreaterThan(0);
     expect(screen.getByText("10/06/26")).toBeInTheDocument();
     expect(screen.getByText("11/06/26")).toBeInTheDocument();
     expect(screen.getByText(/framework purchase/i)).toBeInTheDocument();
-    expect(screen.getByText(/open disputes/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/open disputes/i).length).toBeGreaterThan(0);
   });
 });
