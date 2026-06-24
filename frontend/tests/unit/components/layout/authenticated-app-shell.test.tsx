@@ -19,6 +19,16 @@ vi.mock("@/components/modules/layout/notification-dropdown", () => ({
   NotificationDropdown: () => <div>Notifications dropdown</div>,
 }));
 
+// The shell bootstraps the session on mount (BrowserSessionGate +
+// AttestorApplicationPrompt). Stub it so the render never makes a real
+// /auth/refresh fetch — otherwise the request escapes to localhost:8000 and
+// surfaces as an unhandled rejection that can mask real failures.
+vi.mock("@/lib/auth/current-user-session", () => ({
+  clearBrowserSessionHintCookie: vi.fn(),
+  ensureBrowserAccessToken: vi.fn(async () => true),
+  loadCurrentUserSession: vi.fn(async () => null),
+}));
+
 describe("AuthenticatedAppShell", () => {
   it("renders persistent product navigation around app pages", () => {
     mockPathname = "/explore";
