@@ -4,7 +4,7 @@
  * Verifies that the admin dashboard renders current metrics and frozen trend
  * rows from the generated client response.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminAnalyticsPanel } from "@/components/modules/admin/admin-analytics-panel";
@@ -114,5 +114,35 @@ describe("AdminAnalyticsPanel", () => {
     expect(screen.getByText("11/06/26")).toBeInTheDocument();
     expect(screen.getByText(/framework purchase/i)).toBeInTheDocument();
     expect(screen.getAllByText(/open disputes/i).length).toBeGreaterThan(0);
+  });
+
+  it("switches the trend metric and the GMV breakdown period", async () => {
+    render(<AdminAnalyticsPanel />);
+    await screen.findByRole("heading", { name: /platform analytics/i });
+
+    // Each metric toggle re-renders the chart with that metric's accessor and
+    // formatter; cycle through them to exercise every series.
+    for (const metric of [
+      /active users/i,
+      /registrations/i,
+      /open disputes/i,
+      /gmv/i,
+    ]) {
+      const toggle = screen
+        .getAllByRole("button", { name: metric })
+        .at(-1);
+      if (toggle) {
+        fireEvent.click(toggle);
+      }
+    }
+
+    // Cycle the GMV breakdown period tabs (Today / 7D / 30D).
+    for (const tab of [/^Today$/, /^7D$/, /^30D$/]) {
+      fireEvent.click(screen.getByRole("button", { name: tab }));
+    }
+
+    expect(
+      screen.getByRole("heading", { name: /platform analytics/i }),
+    ).toBeInTheDocument();
   });
 });

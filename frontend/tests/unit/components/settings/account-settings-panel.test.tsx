@@ -421,8 +421,13 @@ describe("AccountSettingsPanel", () => {
       name: /delete account/i,
     });
 
+    // The "delete account" region renders in both the default and scheduled
+    // states, so wait for the scheduled copy itself rather than asserting
+    // synchronously against the still-pending status fetch.
     expect(
-      within(deletionSection).getByText(/your account is scheduled for deletion/i),
+      await within(deletionSection).findByText(
+        /your account is scheduled for deletion/i,
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(
