@@ -443,6 +443,25 @@ export type AdminRoleAssignmentResponse = {
 };
 
 /**
+ * One suspended Framework awaiting possible reinstatement.
+ */
+export type AdminSuspendedFrameworkItem = {
+    framework_id: string;
+    title: string;
+    contributor_id: string;
+    contributor_name: string;
+    reason?: (string | null);
+    suspended_at?: (string | null);
+};
+
+/**
+ * Listing of Frameworks currently suspended from the marketplace.
+ */
+export type AdminSuspendedFrameworksResponse = {
+    items: Array<AdminSuspendedFrameworkItem>;
+};
+
+/**
  * One user row visible in the admin account directory.
  */
 export type AdminUserDirectoryItem = {
@@ -2962,6 +2981,20 @@ export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetD
 export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
 
 export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
+
+export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
+
+export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetError = unknown;
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostResponse = (AdminFrameworkStatusResponse);
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostError = (HTTPValidationError);
 
 export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
     body: AdminFrameworkSuspendRequest;

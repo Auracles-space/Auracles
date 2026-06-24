@@ -41,11 +41,13 @@ from app.modules.frameworks.pipeline_gate import (
     NEAR_DUPLICATE_JACCARD_THRESHOLD,
     evaluate_framework_pipeline,
 )
+from app.modules.frameworks.service import current_artifacts_block_publish
 from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks.processing.minhash_index import (
+    index_framework_artifacts,
     remove_framework_artifacts_from_index,
 )
 
@@ -1280,6 +1282,64 @@ async def review_user_kyc(
     return document
 
 
+async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
+    """List every Framework currently suspended from the marketplace.
+
+    Joins each suspended Framework to its owning Contributor and the timestamp
+    of its most recent ``framework_suspended`` audit entry so the admin UI can
+    show who is affected and when the takedown happened.
+
+    Args:
+        db: Async database session.
+
+    Returns:
+        A dict with an ``items`` list of suspended-Framework summaries, newest
+        suspension first.
+    """
+    suspended_at_subquery = (
+        select(
+            AuditLog.target_id.label("target_id"),
+            func.max(AuditLog.created_at).label("suspended_at"),
+        )
+        .where(
+            AuditLog.action == "framework_suspended",
+            AuditLog.target_type == "framework",
+        )
+        .group_by(AuditLog.target_id)
+        .subquery()
+    )
+
+    rows = (
+        await db.execute(
+            select(Framework, User, suspended_at_subquery.c.suspended_at)
+            .join(User, User.id == Framework.contributor_id)
+            .outerjoin(
+                suspended_at_subquery,
+                suspended_at_subquery.c.target_id == Framework.id,
+            )
+            .where(Framework.status == "suspended")
+            .order_by(
+                suspended_at_subquery.c.suspended_at.desc().nullslast(),
+                Framework.title,
+            )
+        )
+    ).all()
+
+    return {
+        "items": [
+            {
+                "framework_id": framework.id,
+                "title": framework.title,
+                "contributor_id": contributor.id,
+                "contributor_name": contributor.display_name,
+                "reason": framework.rejection_reason,
+                "suspended_at": suspended_at,
+            }
+            for framework, contributor, suspended_at in rows
+        ]
+    }
+
+
 async def suspend_framework(
     db: AsyncSession,
     admin: User,
@@ -1321,6 +1381,77 @@ async def suspend_framework(
             user_id=admin.id,
             framework_id=framework.id,
         ).error("artifact_lsh_remove_failed", error=str(exc))
+    return framework
+
+
+async def reinstate_framework(
+    db: AsyncSession,
+    admin: User,
+    framework_id: UUID,
+) -> Framework:
+    """Reverse an admin takedown, returning a suspended Framework to the catalog.
+
+    The inverse of :func:`suspend_framework`. Re-runs the safety-critical trust
+    gates (virus, scan error, unfinished processing, PII) against the live
+    Artifact state before republishing, so a Framework that drifted while
+    suspended can never silently re-enter the public catalog. Refuses anything
+    that is not currently suspended.
+
+    Args:
+        db: Async database session.
+        admin: Acting admin user (RBAC enforced at the router).
+        framework_id: UUID of the suspended Framework to reinstate.
+
+    Returns:
+        The reinstated Framework with status ``published``.
+
+    Raises:
+        HTTPException(404): If the Framework does not exist.
+        HTTPException(409): If the Framework is not suspended, or an Artifact
+            now fails a trust gate.
+    """
+    framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    if framework.status != "suspended":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only suspended Frameworks can be reinstated.",
+        )
+    if await current_artifacts_block_publish(db, framework.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This framework can't be reinstated because an artifact failed a "
+                "trust check (virus or PII). The Contributor must resolve it with "
+                "a new version."
+            ),
+        )
+
+    framework.status = "published"
+    framework.rejection_reason = None
+    framework.published_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=admin.id,
+        action="framework_reinstated",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={},
+    )
+    await db.commit()
+    try:
+        await index_framework_artifacts(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="admin",
+            action="reindex_framework_on_reinstate",
+            user_id=admin.id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_index_failed", error=str(exc))
     return framework
 
 

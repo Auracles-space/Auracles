@@ -33,6 +33,7 @@ from app.modules.admin.schemas import (
     AdminReputationRecomputeResponse,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
+    AdminSuspendedFrameworksResponse,
     AdminUserDirectoryResponse,
     AdminUserSuspendRequest,
     AdminUserSuspensionResponse,
@@ -422,6 +423,20 @@ async def download_credential_evidence(
     return CredentialEvidenceDownloadResponse(url=url)
 
 
+@router.get(
+    "/frameworks/suspended",
+    response_model=AdminSuspendedFrameworksResponse,
+)
+async def list_suspended_frameworks(
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminSuspendedFrameworksResponse:
+    """List Frameworks suspended from the marketplace for reinstatement review."""
+    return AdminSuspendedFrameworksResponse.model_validate(
+        await service.list_suspended_frameworks(db=db)
+    )
+
+
 @router.post(
     "/frameworks/{framework_id}/suspend",
     response_model=AdminFrameworkStatusResponse,
@@ -438,6 +453,28 @@ async def suspend_framework(
         admin=admin,
         framework_id=framework_id,
         reason=payload.reason,
+    )
+    return AdminFrameworkStatusResponse(
+        framework_id=framework.id,
+        status=framework.status,
+        reason=framework.rejection_reason,
+    )
+
+
+@router.post(
+    "/frameworks/{framework_id}/reinstate",
+    response_model=AdminFrameworkStatusResponse,
+)
+async def reinstate_framework(
+    framework_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminFrameworkStatusResponse:
+    """Reverse a takedown, returning a suspended Framework to the marketplace."""
+    framework = await service.reinstate_framework(
+        db=db,
+        admin=admin,
+        framework_id=framework_id,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,

@@ -2459,6 +2459,161 @@ async def test_admin_can_suspend_published_framework(
     assert removed_frameworks == [framework_id]
 
 
+async def test_admin_suspended_frameworks_list_surfaces_takedowns(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """The suspended-frameworks listing returns each takedown for review."""
+
+    async def fake_remove(framework_id: UUID) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "app.modules.admin.service.remove_framework_artifacts_from_index",
+        fake_remove,
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "suspended-list-owner@auracles.space",
+        ["contributor"],
+        display_name="Listed Owner",
+    )
+    admin_id = await create_user_with_roles(
+        "suspended-list-admin@auracles.space", ["admin"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+    await client.post(
+        f"/v1/admin/frameworks/{framework_id}/suspend",
+        json={"reason": "Listed for review."},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    response = await client.get(
+        "/v1/admin/frameworks/suspended",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["framework_id"] == framework_id
+    assert items[0]["contributor_name"] == "Listed Owner"
+    assert items[0]["reason"] == "Listed for review."
+    assert items[0]["suspended_at"] is not None
+
+
+async def test_admin_can_reinstate_suspended_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Admins can reverse a takedown, returning the Framework to the catalog."""
+    contributor_id = await create_user_with_roles(
+        "reinstate-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles(
+        "reinstate-admin@auracles.space", ["admin"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "suspended"
+        framework.rejection_reason = "Earlier moderation hit."
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/reinstate",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        # Reinstatement clears the takedown reason and republishes.
+        assert framework.status == "published"
+        assert framework.rejection_reason is None
+
+
+async def test_admin_reinstate_rejects_non_suspended_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Reinstate only applies to suspended Frameworks; published returns 409."""
+    contributor_id = await create_user_with_roles(
+        "reinstate-noop-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles(
+        "reinstate-noop-admin@auracles.space", ["admin"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/reinstate",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 409
+
+
+async def test_contributor_cannot_republish_suspended_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A suspended Framework is a dead end for its owner — publish is refused.
+
+    Locks the moderation guarantee: only an admin reinstate can return a
+    suspended Framework to the catalog.
+    """
+    contributor_id = await create_user_with_roles(
+        "suspended-republish@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "suspended"
+        await session.commit()
+
+    publish = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert publish.status_code == 409
+
+    # The version-bump escape hatch is closed too.
+    version = await client.post(
+        f"/v1/frameworks/{framework_id}/versions",
+        json={"change_type": "patch", "artifact_inheritance": {}},
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert version.status_code in {409, 422}
+
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status == "suspended"
+
+
 async def test_unauthenticated_create_returns_401_and_creates_no_draft(
     client: AsyncClient,
     migrated_database: None,

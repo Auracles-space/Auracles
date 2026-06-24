@@ -55,6 +55,23 @@ class AdminFrameworkStatusResponse(BaseModel):
     reason: str | None = None
 
 
+class AdminSuspendedFrameworkItem(BaseModel):
+    """One suspended Framework awaiting possible reinstatement."""
+
+    framework_id: UUID
+    title: str
+    contributor_id: UUID
+    contributor_name: str
+    reason: str | None = None
+    suspended_at: datetime | None = None
+
+
+class AdminSuspendedFrameworksResponse(BaseModel):
+    """Listing of Frameworks currently suspended from the marketplace."""
+
+    items: list[AdminSuspendedFrameworkItem]
+
+
 class AdminUserSuspendRequest(BaseModel):
     """Request body for suspending a user account."""
 

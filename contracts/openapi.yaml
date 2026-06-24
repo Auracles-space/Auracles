@@ -497,6 +497,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/frameworks/suspended:
+    get:
+      tags:
+      - Admin
+      summary: List Suspended Frameworks
+      description: List Frameworks suspended from the marketplace for reinstatement
+        review.
+      operationId: list_suspended_frameworks_v1_admin_frameworks_suspended_get
+      security:
+      - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSuspendedFrameworksResponse'
+  /v1/admin/frameworks/{framework_id}/reinstate:
+    post:
+      tags:
+      - Admin
+      summary: Reinstate Framework
+      description: Reverse a takedown, returning a suspended Framework to the marketplace.
+      operationId: reinstate_framework_v1_admin_frameworks__framework_id__reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFrameworkStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/frameworks/{framework_id}/suspend:
     post:
       tags:
@@ -7627,6 +7674,53 @@ components:
       - reason
       title: AdminFrameworkSuspendRequest
       description: Request body for post-publish Framework suspension.
+    AdminSuspendedFrameworkItem:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+      type: object
+      required:
+      - framework_id
+      - title
+      - contributor_id
+      - contributor_name
+      title: AdminSuspendedFrameworkItem
+      description: One suspended Framework awaiting possible reinstatement.
+    AdminSuspendedFrameworksResponse:
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSuspendedFrameworkItem'
+          title: Items
+      type: object
+      required:
+      - items
+      title: AdminSuspendedFrameworksResponse
+      description: Listing of Frameworks currently suspended from the marketplace.
     AdminKycReviewRequest:
       properties:
         status:

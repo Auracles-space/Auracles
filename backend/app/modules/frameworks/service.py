@@ -309,7 +309,10 @@ def _require_editable_artifacts(framework: Framework) -> None:
     if framework.status not in {"draft", "pipeline_failed", "pipeline_passed"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only draft, failed, or passed pre-publish Frameworks can change artifacts.",
+            detail=(
+                "Only draft, failed, or passed pre-publish Frameworks can "
+                "change artifacts."
+            ),
         )
 
 
@@ -750,7 +753,7 @@ async def unpublish_framework(
     return framework_to_response(framework)
 
 
-async def _current_artifacts_block_publish(
+async def current_artifacts_block_publish(
     db: AsyncSession,
     framework_id: UUID,
 ) -> bool:
@@ -818,7 +821,7 @@ async def relist_framework(
     # critical trust gates before flipping it back to public so relist can never
     # leak a flagged artifact into the catalog. The status stays unpublished on
     # refusal; the Contributor resolves the artifact via a new version.
-    if await _current_artifacts_block_publish(db, framework.id):
+    if await current_artifacts_block_publish(db, framework.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
