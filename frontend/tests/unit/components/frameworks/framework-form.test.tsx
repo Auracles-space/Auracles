@@ -96,7 +96,7 @@ describe("FrameworkForm", () => {
     });
   });
 
-  it("submits the default license types when none are toggled", async () => {
+  it("defaults to single-user licensing only", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
@@ -112,40 +112,27 @@ describe("FrameworkForm", () => {
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({
           pricing: expect.objectContaining({
-            license_types: ["single_user", "team"],
+            license_types: ["single_user"],
           }),
         }),
       );
     });
   });
 
-  it("submits the contributor's selected license types", async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FrameworkForm onSubmit={onSubmit} />);
+  it("hides the non-single-user license tiers while only single-user is supported", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
-    // Drop the default Team tier, add Enterprise.
-    fireEvent.click(screen.getByRole("checkbox", { name: /team/i }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /enterprise/i }));
-    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
-
-    await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          pricing: expect.objectContaining({
-            license_types: ["single_user", "enterprise"],
-          }),
-        }),
-      );
-    });
+    expect(
+      screen.getByRole("checkbox", { name: /single user/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /team/i })).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: /organizational/i }),
+    ).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /enterprise/i })).toBeNull();
   });
 
-  it("disables submit when every license type is deselected", () => {
+  it("disables submit when the single-user tier is deselected", () => {
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
     fireEvent.change(screen.getByLabelText(/framework title/i), {
@@ -158,7 +145,6 @@ describe("FrameworkForm", () => {
     expect(submit).toBeEnabled();
 
     fireEvent.click(screen.getByRole("checkbox", { name: /single user/i }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /team/i }));
 
     expect(submit).toBeDisabled();
   });

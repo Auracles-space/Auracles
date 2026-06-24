@@ -25,13 +25,20 @@ import {
 
 type LicenseTypeValue = "single_user" | "team" | "organizational" | "enterprise";
 
-/** Selectable license tiers, in canonical display + serialization order. */
+/**
+ * Selectable license tiers, in canonical display + serialization order.
+ *
+ * The platform currently only supports single-user licensing. The team,
+ * organizational, and enterprise tiers are intentionally commented out until
+ * multi-seat licensing is ready — re-enable them here (and restore the
+ * default selection in `coerceLicenseTypes`) to bring them back.
+ */
 const LICENSE_TYPE_OPTIONS: readonly { value: LicenseTypeValue; label: string }[] =
   [
     { value: "single_user", label: "Single user" },
-    { value: "team", label: "Team" },
-    { value: "organizational", label: "Organizational" },
-    { value: "enterprise", label: "Enterprise" },
+    // { value: "team", label: "Team" },
+    // { value: "organizational", label: "Organizational" },
+    // { value: "enterprise", label: "Enterprise" },
   ];
 
 /**
@@ -113,15 +120,16 @@ function coerceTaxonomyValue<TValue extends string>(
 /**
  * Normalize persisted license types into known tiers in canonical order.
  *
- * Falls back to the default single-user + team selection for new drafts so the
- * pricing contract always has at least one tier.
+ * Falls back to single-user for new drafts so the pricing contract always has
+ * at least one tier. Restore the multi-tier default when the other license
+ * tiers are re-enabled in `LICENSE_TYPE_OPTIONS`.
  *
  * @param values - Persisted license types from an existing Framework.
  */
 function coerceLicenseTypes(
   values: string[] | null | undefined,
 ): LicenseTypeValue[] {
-  const selected = new Set(values ?? ["single_user", "team"]);
+  const selected = new Set(values ?? ["single_user"]);
   return LICENSE_TYPE_OPTIONS.map((option) => option.value).filter((value) =>
     selected.has(value),
   );

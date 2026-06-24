@@ -31,6 +31,23 @@ describe("visibleNavLinks", () => {
     expect(visible.some((link) => link.href === "/projects")).toBe(true);
   });
 
+  it("hides saved searches from non-operators", () => {
+    // Saved searches calls an operator-only API; showing the link to admins
+    // or other roles bounces them into the onboarding redirect on the 403.
+    expect(visibleNavLinks(appLinks, ["admin"]).some(
+      (link) => link.href === "/settings/saved-searches",
+    )).toBe(false);
+    expect(visibleNavLinks(appLinks, ["contributor"]).some(
+      (link) => link.href === "/settings/saved-searches",
+    )).toBe(false);
+  });
+
+  it("shows saved searches to operators", () => {
+    expect(visibleNavLinks(appLinks, ["operator"]).some(
+      (link) => link.href === "/settings/saved-searches",
+    )).toBe(true);
+  });
+
   it("shows the Developer link for developer users", () => {
     const visible = visibleNavLinks(appLinks, ["developer"]);
 
