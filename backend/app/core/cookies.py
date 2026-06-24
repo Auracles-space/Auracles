@@ -16,7 +16,11 @@ from app.core.config import Settings, get_settings
 REFRESH_COOKIE_NAME = "refresh_token"
 SESSION_HINT_COOKIE_NAME = "session_hint"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 2_592_000
-REFRESH_COOKIE_PATH = "/v1/auth"
+# Root path so the cookie is sent under the frontend `/api` proxy prefix
+# (`/api/v1/auth/refresh`) as well as direct `/v1/auth/refresh` in local dev.
+# A narrower path scoped the cookie out of the proxied request and broke
+# refresh in production (401 -> session bounce).
+REFRESH_COOKIE_PATH = "/"
 SESSION_HINT_COOKIE_PATH = "/"
 
 
