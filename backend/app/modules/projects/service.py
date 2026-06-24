@@ -557,8 +557,18 @@ async def withdraw_proposal(
             target_id=proposal.id,
             metadata={"project_id": str(project_id)},
         )
+        withdrawn_operator_id = await db.scalar(
+            select(Project.operator_id).where(Project.id == project_id)
+        )
         await db.flush()
         await db.refresh(proposal)
+
+    if withdrawn_operator_id is not None:
+        project_notifications.notify_proposal_withdrawn(
+            operator_id=withdrawn_operator_id,
+            project_id=project_id,
+            proposal_id=proposal.id,
+        )
     return proposal
 
 

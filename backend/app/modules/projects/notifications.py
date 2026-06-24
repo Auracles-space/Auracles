@@ -73,6 +73,24 @@ def notify_proposal_submitted(*, operator_id: UUID, proposal: Proposal) -> None:
     )
 
 
+def notify_proposal_withdrawn(
+    *,
+    operator_id: UUID,
+    project_id: UUID,
+    proposal_id: UUID,
+) -> None:
+    """Notify the Operator that a Contributor withdrew their pending Proposal."""
+    _dispatch(
+        user_id=operator_id,
+        notification_type="proposal_withdrawn",
+        title="Proposal withdrawn",
+        body="A Contributor withdrew their proposal on your Project.",
+        project_id=project_id,
+        dedupe_key=f"proposal_withdrawn:{proposal_id}",
+        extra_payload={"proposal_id": str(proposal_id)},
+    )
+
+
 def notify_proposal_rejected(
     *,
     contributor_id: UUID,

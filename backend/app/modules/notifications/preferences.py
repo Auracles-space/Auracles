@@ -106,6 +106,32 @@ NOTIFICATION_CATEGORY_LABELS: Final[dict[str, str]] = {
     for category in NOTIFICATION_CATEGORY_ENUM.enums
 }
 
+# Event types kept in the enum for internal/audit use but hidden from the user
+# preference matrix: each either notifies the actor about their own action
+# (project_created), is workspace-timeline noise rather than inbox-worthy
+# (milestone_created/updated), or duplicates an event the user is already
+# notified about (attestation_published/rejected are covered by
+# attestation_report_submitted). Showing toggles for these would be dead
+# controls, so they are excluded from the displayed matrix.
+HIDDEN_NOTIFICATION_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "project_created",
+        "milestone_created",
+        "milestone_updated",
+        "attestation_published",
+        "attestation_rejected",
+    }
+)
+
+
+def displayed_notification_types() -> list[str]:
+    """Return user-facing notification types in enum order, hiding dead toggles."""
+    return [
+        notification_type
+        for notification_type in NOTIFICATION_TYPE_ENUM.enums
+        if notification_type not in HIDDEN_NOTIFICATION_TYPES
+    ]
+
 
 def category_for_notification_type(notification_type: str) -> str:
     """Return the display category for one notification type.
@@ -174,7 +200,7 @@ async def build_preference_matrix(
     }
     grouped_preferences: dict[str, list[NotificationPreferenceItem]] = defaultdict(list)
 
-    for notification_type in NOTIFICATION_TYPE_ENUM.enums:
+    for notification_type in displayed_notification_types():
         category = category_for_notification_type(notification_type)
         grouped_preferences[category].append(
             NotificationPreferenceItem(

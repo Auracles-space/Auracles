@@ -873,6 +873,54 @@ async def test_amendment_withdrawal_notifies_counterparty(
     assert withdraw_calls[0]["user_id"] == str(operator_id)
 
 
+async def test_proposal_withdrawal_notifies_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Withdrawing a pending Proposal notifies the Operator the bid is gone."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("pwd-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "pwd-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = (
+        await client.post(
+            "/v1/projects", headers=operator_headers, json=project_payload()
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+
+    withdrawn = await client.patch(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/withdraw",
+        headers=contributor_headers,
+    )
+
+    assert withdrawn.status_code == 200
+    withdraw_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "proposal_withdrawn"
+    ]
+    assert len(withdraw_calls) == 1
+    assert withdraw_calls[0]["user_id"] == str(operator_id)
+
+
 async def test_contributor_assigned_scope_lists_accepted_project(
     client: AsyncClient,
     migrated_database: None,

@@ -39,6 +39,27 @@ def test_every_notification_type_maps_to_a_display_category() -> None:
     assert mapped_types == notification_types
 
 
+def test_displayed_notification_types_hide_non_actionable_events() -> None:
+    """Self-action and redundant event types are hidden from the settings matrix.
+
+    These events either notify the actor about their own action or duplicate an
+    event the user is already notified about, so their toggles would be dead.
+    """
+    displayed = set(preferences.displayed_notification_types())
+
+    hidden = {
+        "project_created",
+        "milestone_created",
+        "milestone_updated",
+        "attestation_rejected",
+        "attestation_published",
+    }
+    assert displayed.isdisjoint(hidden)
+    # Real, user-facing events stay visible.
+    assert "proposal_submitted" in displayed
+    assert "deliverable_approved" in displayed
+
+
 @pytest.mark.asyncio
 async def test_should_deliver_defaults_to_enabled_when_no_row_exists() -> None:
     """Missing preference rows are opt-out and therefore still deliver."""
