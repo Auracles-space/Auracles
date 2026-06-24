@@ -497,6 +497,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/frameworks:
+    get:
+      tags:
+      - Admin
+      summary: List published Frameworks for admin delist control
+      description: Return published Frameworks with their owning Contributor so an
+        admin can find and delist an arbitrary Framework, not only signal-flagged
+        ones.
+      operationId: list_admin_frameworks_v1_admin_frameworks_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 255
+          - type: 'null'
+          title: Query
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFrameworkDirectoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/frameworks/suspended:
     get:
       tags:
@@ -7721,6 +7756,52 @@ components:
       - items
       title: AdminSuspendedFrameworksResponse
       description: Listing of Frameworks currently suspended from the marketplace.
+    AdminFrameworkDirectoryItem:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        status:
+          type: string
+          title: Status
+        published_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Published At
+      type: object
+      required:
+      - framework_id
+      - title
+      - contributor_id
+      - contributor_name
+      - status
+      title: AdminFrameworkDirectoryItem
+      description: One Framework in the admin directory used to pick a delist target.
+    AdminFrameworkDirectoryResponse:
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFrameworkDirectoryItem'
+          title: Items
+      type: object
+      required:
+      - items
+      title: AdminFrameworkDirectoryResponse
+      description: Paginated admin listing of Frameworks for post-publish state control.
     AdminKycReviewRequest:
       properties:
         status:

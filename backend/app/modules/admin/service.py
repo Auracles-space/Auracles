@@ -1282,6 +1282,51 @@ async def review_user_kyc(
     return document
 
 
+async def list_admin_frameworks(
+    db: AsyncSession,
+    query: str | None = None,
+) -> dict[str, Any]:
+    """List published Frameworks with their owners for admin delist control.
+
+    Surfaces arbitrary published Frameworks — not just signal-flagged ones —
+    so an admin can take down any Framework on request. Joined to the owning
+    Contributor so the UI can show who is affected.
+
+    Args:
+        db: Async database session.
+        query: Optional case-insensitive title substring to narrow the list.
+
+    Returns:
+        A dict with an ``items`` list of published-Framework summaries, newest
+        publication first.
+    """
+    statement = (
+        select(Framework, User)
+        .join(User, User.id == Framework.contributor_id)
+        .where(Framework.status == "published")
+    )
+    if query:
+        statement = statement.where(Framework.title.ilike(f"%{query.strip()}%"))
+    statement = statement.order_by(
+        Framework.published_at.desc().nullslast(), Framework.title
+    )
+    rows = (await db.execute(statement)).all()
+
+    return {
+        "items": [
+            {
+                "framework_id": framework.id,
+                "title": framework.title,
+                "contributor_id": contributor.id,
+                "contributor_name": contributor.display_name,
+                "status": framework.status,
+                "published_at": framework.published_at,
+            }
+            for framework, contributor in rows
+        ]
+    }
+
+
 async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
     """List every Framework currently suspended from the marketplace.
 

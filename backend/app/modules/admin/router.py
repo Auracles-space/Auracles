@@ -21,6 +21,7 @@ from app.modules.admin.schemas import (
     AdminDisputeResolveRequest,
     AdminEscrowOverrideRequest,
     AdminEscrowResponse,
+    AdminFrameworkDirectoryResponse,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
     AdminKycReviewRequest,
@@ -421,6 +422,27 @@ async def download_credential_evidence(
         is_admin=True,
     )
     return CredentialEvidenceDownloadResponse(url=url)
+
+
+@router.get(
+    "/frameworks",
+    response_model=AdminFrameworkDirectoryResponse,
+    summary="List published Frameworks for admin delist control",
+    description=(
+        "Return published Frameworks with their owning Contributor so an admin "
+        "can find and delist an arbitrary Framework, not only signal-flagged ones."
+    ),
+)
+async def list_admin_frameworks(
+    admin: AdminUser,
+    db: DatabaseSession,
+    query: Annotated[str | None, Query(min_length=1, max_length=255)] = None,
+) -> AdminFrameworkDirectoryResponse:
+    """List published Frameworks available for post-publish delisting."""
+    del admin
+    return AdminFrameworkDirectoryResponse.model_validate(
+        await service.list_admin_frameworks(db=db, query=query)
+    )
 
 
 @router.get(

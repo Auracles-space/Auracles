@@ -72,6 +72,23 @@ class AdminSuspendedFrameworksResponse(BaseModel):
     items: list[AdminSuspendedFrameworkItem]
 
 
+class AdminFrameworkDirectoryItem(BaseModel):
+    """One Framework in the admin directory used to pick a delist target."""
+
+    framework_id: UUID
+    title: str
+    contributor_id: UUID
+    contributor_name: str
+    status: str
+    published_at: datetime | None = None
+
+
+class AdminFrameworkDirectoryResponse(BaseModel):
+    """Paginated admin listing of Frameworks for post-publish state control."""
+
+    items: list[AdminFrameworkDirectoryItem]
+
+
 class AdminUserSuspendRequest(BaseModel):
     """Request body for suspending a user account."""
 

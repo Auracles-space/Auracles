@@ -291,6 +291,25 @@ export type AdminEscrowResponse = {
 };
 
 /**
+ * One Framework in the admin directory used to pick a delist target.
+ */
+export type AdminFrameworkDirectoryItem = {
+    framework_id: string;
+    title: string;
+    contributor_id: string;
+    contributor_name: string;
+    status: string;
+    published_at?: (string | null);
+};
+
+/**
+ * Paginated admin listing of Frameworks for post-publish state control.
+ */
+export type AdminFrameworkDirectoryResponse = {
+    items: Array<AdminFrameworkDirectoryItem>;
+};
+
+/**
  * Response body for admin Framework state changes.
  */
 export type AdminFrameworkStatusResponse = {
@@ -2981,6 +3000,16 @@ export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetD
 export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
 
 export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
+
+export type ListAdminFrameworksV1AdminFrameworksGetData = {
+    query?: {
+        query?: (string | null);
+    };
+};
+
+export type ListAdminFrameworksV1AdminFrameworksGetResponse = (AdminFrameworkDirectoryResponse);
+
+export type ListAdminFrameworksV1AdminFrameworksGetError = (HTTPValidationError);
 
 export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
 

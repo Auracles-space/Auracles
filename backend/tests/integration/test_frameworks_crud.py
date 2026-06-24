@@ -2509,6 +2509,136 @@ async def test_admin_suspended_frameworks_list_surfaces_takedowns(
     assert items[0]["suspended_at"] is not None
 
 
+async def test_admin_framework_directory_lists_published_with_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """The admin Framework directory surfaces any published Framework for delisting.
+
+    Unlike the moderation queue (signal-flagged only) and the suspended list
+    (already taken down), this directory lets an admin find an arbitrary
+    published Framework — and its owning Contributor — to delist on request.
+    """
+    contributor_id = await create_user_with_roles(
+        "fw-directory-owner@auracles.space",
+        ["contributor"],
+        display_name="Directory Owner",
+    )
+    admin_id = await create_user_with_roles(
+        "fw-directory-admin@auracles.space", ["admin"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        framework_title = framework.title
+        await session.commit()
+
+    response = await client.get(
+        "/v1/admin/frameworks",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    matching = [item for item in items if item["framework_id"] == framework_id]
+    assert len(matching) == 1
+    assert matching[0]["title"] == framework_title
+    assert matching[0]["contributor_id"] == str(contributor_id)
+    assert matching[0]["contributor_name"] == "Directory Owner"
+    assert matching[0]["status"] == "published"
+
+
+async def test_admin_framework_directory_filters_by_query(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A title search narrows the directory so admins can find one Framework."""
+    contributor_id = await create_user_with_roles(
+        "fw-directory-search-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles(
+        "fw-directory-search-admin@auracles.space", ["admin"]
+    )
+    wanted_id = await create_draft_framework(client, contributor_id)
+    other_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        for fid in (wanted_id, other_id):
+            framework = await session.get(Framework, UUID(fid))
+            assert framework is not None
+            framework.status = "published"
+        wanted = await session.get(Framework, UUID(wanted_id))
+        assert wanted is not None
+        wanted.title = "Quantum Risk Ledger"
+        await session.commit()
+
+    response = await client.get(
+        "/v1/admin/frameworks",
+        params={"query": "quantum risk"},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {item["framework_id"] for item in response.json()["items"]}
+    assert wanted_id in returned_ids
+    assert other_id not in returned_ids
+
+
+async def test_admin_framework_directory_rejects_non_admin(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A non-admin caller is denied the admin Framework directory (403)."""
+    contributor_id = await create_user_with_roles(
+        "fw-directory-intruder@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.get(
+        "/v1/admin/frameworks",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_admin_framework_directory_excludes_non_published(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Draft and suspended Frameworks never appear in the delist directory."""
+    contributor_id = await create_user_with_roles(
+        "fw-directory-states-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles(
+        "fw-directory-states-admin@auracles.space", ["admin"]
+    )
+    draft_id = await create_draft_framework(client, contributor_id)
+    suspended_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        suspended = await session.get(Framework, UUID(suspended_id))
+        assert suspended is not None
+        suspended.status = "suspended"
+        await session.commit()
+
+    response = await client.get(
+        "/v1/admin/frameworks",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {item["framework_id"] for item in response.json()["items"]}
+    assert draft_id not in returned_ids
+    assert suspended_id not in returned_ids
+
+
 async def test_admin_can_reinstate_suspended_framework(
     client: AsyncClient,
     migrated_database: None,
