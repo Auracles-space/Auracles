@@ -51,6 +51,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy app
       - run: uv run openapi-spec-validator ../contracts/openapi.yaml
+      # conftest pins the suite at a dedicated `auracles_test` DB so fixtures can
+      # truncate freely. The Postgres service only seeds `auracles`, so create the
+      # test DB here; the `migrated_database` fixtures run the Alembic upgrade.
+      - name: Create test database
+        run: PGPASSWORD=secret psql -h localhost -U auracles -d auracles -c "CREATE DATABASE auracles_test OWNER auracles;"
       - run: uv run pytest --cov=app.modules --cov=app.workers --cov-fail-under=80
       - run: uv run alembic upgrade head
       - run: uv run alembic downgrade -1
