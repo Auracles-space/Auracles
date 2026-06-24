@@ -10,7 +10,7 @@ describe("visibleNavLinks", () => {
     const visible = visibleNavLinks(appLinks, []);
 
     expect(visible.some((link) => link.href === "/explore")).toBe(true);
-    expect(visible.some((link) => link.href === "/settings/notifications")).toBe(
+    expect(visible.some((link) => link.href === "/settings/profile")).toBe(
       true,
     );
   });

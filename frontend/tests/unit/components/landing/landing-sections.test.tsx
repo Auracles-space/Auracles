@@ -23,7 +23,7 @@ describe("landing sections render", () => {
   it("renders the role strip with contributor framing", () => {
     render(<RoleStrip />);
     expect(
-      screen.getByText(/earn from the playbooks you already run/i),
+      screen.getByText(/create recurring value from existing work/i),
     ).toBeInTheDocument();
   });
 
@@ -37,9 +37,9 @@ describe("landing sections render", () => {
     expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
   });
 
-  it("renders the trust grid enforcement seams", () => {
+  it("renders the trust grid contributor pillars", () => {
     render(<TrustGrid />);
-    expect(screen.getByText(/kyc at the boundary/i)).toBeInTheDocument();
+    expect(screen.getByText(/publish your framework/i)).toBeInTheDocument();
   });
 
   it("renders the FAQ list", () => {

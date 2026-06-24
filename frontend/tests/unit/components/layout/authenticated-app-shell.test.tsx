@@ -45,9 +45,6 @@ describe("AuthenticatedAppShell", () => {
       "href",
       "/library",
     );
-    expect(
-      within(appNav).getByRole("link", { name: /notifications/i }),
-    ).toHaveAttribute("href", "/settings/notifications");
     expect(within(appNav).getByRole("link", { name: /projects/i })).toHaveAttribute(
       "href",
       "/projects",
