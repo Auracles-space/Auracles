@@ -39,6 +39,7 @@ async def _create_user(
     roles: list[str],
     created_at: datetime,
     suspended_at: datetime | None = None,
+    kyc_status: str = "verified",
 ) -> User:
     """Create a verified user with approved roles for admin-directory tests."""
     user = User(
@@ -46,7 +47,7 @@ async def _create_user(
         password_hash=hash_password("CorrectHorse9"),
         display_name=display_name,
         email_verified=True,
-        kyc_status="verified",
+        kyc_status=kyc_status,
         suspended_at=suspended_at,
         suspension_reason=(
             "Policy review hold." if suspended_at is not None else None
@@ -91,6 +92,63 @@ def migrated_database() -> Iterator[None]:
     finally:
         command.upgrade(config, "head")
         sync_engine.dispose()
+
+
+async def test_admin_user_directory_filters_pending_kyc(
+    client: AsyncClient,
+    migrated_database: None,
+) -> None:
+    """The kyc_pending filter returns only users awaiting KYC review.
+
+    Backs the admin KYC approval flow: admins narrow the directory to pending
+    submissions and see each user's kyc_status to act on.
+    """
+    del migrated_database
+    now = datetime.now(UTC)
+    await engine.dispose()
+    await _cleanup_admin_user_directory_state()
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                admin = await _create_user(
+                    session,
+                    email=f"admin-kyc-{uuid4()}@auracles.space",
+                    display_name="Admin Reviewer",
+                    roles=["admin"],
+                    created_at=now - timedelta(days=60),
+                )
+                pending = await _create_user(
+                    session,
+                    email=f"pending-kyc-{uuid4()}@auracles.space",
+                    display_name="Pending Person",
+                    roles=["contributor"],
+                    created_at=now - timedelta(days=2),
+                    kyc_status="pending",
+                )
+                await _create_user(
+                    session,
+                    email=f"verified-kyc-{uuid4()}@auracles.space",
+                    display_name="Verified Person",
+                    roles=["contributor"],
+                    created_at=now - timedelta(days=1),
+                    kyc_status="verified",
+                )
+
+        response = await client.get(
+            "/v1/admin/users",
+            headers=auth_headers(admin.id),
+            params={"status": "kyc_pending", "page": 1, "page_size": 10},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["user_id"] == str(pending.id)
+        assert body["items"][0]["kyc_status"] == "pending"
+    finally:
+        await _cleanup_admin_user_directory_state()
+        await engine.dispose()
 
 
 async def test_admin_can_search_and_filter_user_directory(
@@ -156,6 +214,7 @@ async def test_admin_can_search_and_filter_user_directory(
             "suspended_at": suspended.suspended_at.isoformat().replace("+00:00", "Z"),
             "user_id": str(suspended.id),
             "is_superadmin": False,
+            "kyc_status": "verified",
         }
     finally:
         await _cleanup_admin_user_directory_state()

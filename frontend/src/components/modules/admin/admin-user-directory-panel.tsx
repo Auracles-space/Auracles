@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import {
   listAdminUsersV1AdminUsersGet,
+  reviewKycV1AdminUsersUserIdKycPatch,
   suspendUserV1AdminUsersUserIdSuspendPost,
   unsuspendUserV1AdminUsersUserIdUnsuspendPost,
 } from "@/lib/generated/sdk.gen";
@@ -29,7 +30,7 @@ import type {
 } from "@/lib/generated/types.gen";
 import { formatLabel } from "@/lib/marketplace/format";
 
-type UserStatusFilter = "all" | "active" | "suspended";
+type UserStatusFilter = "all" | "active" | "suspended" | "kyc_pending";
 type PendingAction = "suspend" | "unsuspend" | null;
 
 /**
@@ -83,6 +84,9 @@ export function AdminUserDirectoryPanel() {
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const [totpCode, setTotpCode] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [kycReviewUserId, setKycReviewUserId] = useState<string | null>(null);
+  const [kycNotes, setKycNotes] = useState("");
+  const [kycBusy, setKycBusy] = useState(false);
 
   useEffect(() => {
     setCurrentUserId(authTokenStore.getState().userId);
@@ -197,6 +201,47 @@ export function AdminUserDirectoryPanel() {
     setSelectedUserId(null);
   }
 
+  async function handleKycReview(
+    userId: string,
+    decision: "verified" | "rejected",
+  ): Promise<void> {
+    setKycBusy(true);
+    setError(null);
+    configureBrowserClient();
+    const result = await reviewKycV1AdminUsersUserIdKycPatch({
+      body: { status: decision, notes: kycNotes.trim() || null },
+      headers: getAccessTokenHeaders(),
+      path: { user_id: userId },
+    });
+    setKycBusy(false);
+
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+
+    setDirectory((current) => {
+      if (!current) {
+        return current;
+      }
+      // On the KYC-pending view the reviewed user no longer belongs; drop it.
+      if (statusFilter === "kyc_pending") {
+        return {
+          ...current,
+          items: current.items.filter((item) => item.user_id !== userId),
+        };
+      }
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.user_id === userId ? { ...item, kyc_status: decision } : item,
+        ),
+      };
+    });
+    setKycNotes("");
+    setKycReviewUserId(null);
+  }
+
   if (loading) {
     return <TableSkeleton />;
   }
@@ -238,6 +283,7 @@ export function AdminUserDirectoryPanel() {
             <option value="all">All users</option>
             <option value="active">Active only</option>
             <option value="suspended">Suspended only</option>
+            <option value="kyc_pending">KYC pending</option>
           </select>
         </label>
       </section>
@@ -287,6 +333,18 @@ export function AdminUserDirectoryPanel() {
                   ) : null}
                 </h3>
                 <p className="text-sm text-foreground-muted md:text-xs">{item.email}</p>
+                <span
+                  className={[
+                    "mt-1 inline-flex w-fit items-center rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                    item.kyc_status === "verified"
+                      ? "border-success/30 bg-success/10 text-success"
+                      : item.kyc_status === "pending"
+                        ? "border-warning/30 bg-warning/10 text-warning"
+                        : "border-border-default bg-surface-2 text-foreground-muted",
+                  ].join(" ")}
+                >
+                  KYC: {item.kyc_status}
+                </span>
               </div>
 
               {/* Joined Date cell */}
@@ -326,7 +384,19 @@ export function AdminUserDirectoryPanel() {
               </div>
 
               {/* Action Buttons cell */}
-              <div className="md:text-right">
+              <div className="flex flex-wrap gap-2 md:justify-end">
+                {item.kyc_status === "pending" ? (
+                  <Button
+                    onClick={() => {
+                      setKycNotes("");
+                      setKycReviewUserId(item.user_id);
+                    }}
+                    className="min-h-10 px-4"
+                    variant="secondary"
+                  >
+                    Review KYC
+                  </Button>
+                ) : null}
                 {item.is_superadmin ? (
                   <span className="inline-flex items-center rounded-badge border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
                     Super admin
@@ -351,6 +421,49 @@ export function AdminUserDirectoryPanel() {
                   </Button>
                 )}
               </div>
+
+              {/* Expandable KYC review form */}
+              {kycReviewUserId === item.user_id ? (
+                <div className="mt-4 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4 col-span-full text-left">
+                  <label className="grid gap-2 text-sm font-semibold text-foreground">
+                    Notes (optional)
+                    <textarea
+                      className="min-h-24 rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                      onChange={(event) => setKycNotes(event.target.value)}
+                      placeholder="Reason for rejection, or a note on approval"
+                      value={kycNotes}
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      disabled={kycBusy}
+                      onClick={() =>
+                        void handleKycReview(item.user_id, "verified")
+                      }
+                    >
+                      Approve KYC
+                    </Button>
+                    <Button
+                      disabled={kycBusy}
+                      onClick={() =>
+                        void handleKycReview(item.user_id, "rejected")
+                      }
+                      variant="destructive"
+                    >
+                      Reject KYC
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setKycNotes("");
+                        setKycReviewUserId(null);
+                      }}
+                      variant="secondary"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Expandable Suspension Form overlay (spans full width of the grid on desktop) */}
               {isSelected ? (

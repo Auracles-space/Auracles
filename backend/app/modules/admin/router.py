@@ -249,7 +249,7 @@ async def list_admin_users(
     query: Annotated[str | None, Query(min_length=1, max_length=255)] = None,
     status_filter: Annotated[
         str,
-        Query(alias="status", pattern="^(all|active|suspended)$"),
+        Query(alias="status", pattern="^(all|active|suspended|kyc_pending)$"),
     ] = "all",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,

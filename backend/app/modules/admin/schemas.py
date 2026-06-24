@@ -123,6 +123,7 @@ class AdminUserDirectoryItem(BaseModel):
     suspended: bool
     suspended_at: datetime | None
     is_superadmin: bool = False
+    kyc_status: str
 
 
 class AdminUserDirectoryResponse(BaseModel):

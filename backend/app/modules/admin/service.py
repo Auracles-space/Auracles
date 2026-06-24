@@ -137,7 +137,7 @@ MODERATION_QUEUE_SORT_PRIORITY = {
     "near_duplicate_block": 1,
     "rarity_review": 2,
 }
-ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended")
+ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended", "kyc_pending")
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -1130,6 +1130,8 @@ async def list_admin_users(
         filters.append(User.suspended_at.is_(None))
     elif status_filter == "suspended":
         filters.append(User.suspended_at.is_not(None))
+    elif status_filter == "kyc_pending":
+        filters.append(User.kyc_status == "pending")
 
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -1163,6 +1165,7 @@ async def list_admin_users(
                 "suspended": user.suspended_at is not None,
                 "suspended_at": user.suspended_at,
                 "is_superadmin": user.is_superadmin,
+                "kyc_status": user.kyc_status,
             }
             for user in users
         ],

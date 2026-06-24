@@ -492,6 +492,7 @@ export type AdminUserDirectoryItem = {
     suspended: boolean;
     suspended_at: (string | null);
     is_superadmin?: boolean;
+    kyc_status: string;
 };
 
 /**

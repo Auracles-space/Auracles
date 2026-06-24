@@ -216,7 +216,7 @@ paths:
         required: false
         schema:
           type: string
-          pattern: ^(all|active|suspended)$
+          pattern: ^(all|active|suspended|kyc_pending)$
           default: all
           title: Status
       - name: page
@@ -8172,6 +8172,9 @@ components:
           type: boolean
           title: Is Superadmin
           default: false
+        kyc_status:
+          type: string
+          title: Kyc Status
       type: object
       required:
       - user_id
@@ -8181,6 +8184,7 @@ components:
       - created_at
       - suspended
       - suspended_at
+      - kyc_status
       title: AdminUserDirectoryItem
       description: One user row visible in the admin account directory.
     AdminUserDirectoryResponse:
