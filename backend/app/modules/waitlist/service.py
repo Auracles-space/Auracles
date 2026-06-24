@@ -6,9 +6,10 @@ waitlist exactly once. Re-submission is idempotent, never a duplicate or error.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
+from redis.asyncio import Redis
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +29,7 @@ def normalize_email(email: str) -> str:
 async def join_waitlist(
     *,
     db: AsyncSession,
-    redis: RedisCounter,
+    redis: Redis,
     request: WaitlistJoinRequest,
     ip: str | None,
 ) -> WaitlistJoinResponse:
@@ -48,7 +49,7 @@ async def join_waitlist(
         WaitlistJoinResponse with `already_joined` False on first insert and
         True when the email was already present.
     """
-    await WAITLIST_IP_LIMITER.check(redis, ip or "unknown")
+    await WAITLIST_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
 
     email = normalize_email(str(request.email))
     log = logger.bind(module="waitlist", action="join_waitlist")
