@@ -194,7 +194,7 @@ def test_verification_email_logs_magic_link_when_delivery_disabled(
 def test_password_reset_email_renders_magic_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The sent email links to /reset-password?token=<token> so users click, not type."""
+    """Sent email links to /reset-password?token=<token> so users click, not type."""
     captured: dict[str, Any] = {}
     monkeypatch.setattr(resend_adapter, "_dispatch", captured.update)
     monkeypatch.setattr(

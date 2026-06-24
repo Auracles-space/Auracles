@@ -279,7 +279,8 @@ INVOICE_TEMPLATE = Template(
         </div>
         <div class="meta-column">
           <h3>DETAILS</h3>
-          <p><strong>Transaction:</strong> <span class="mono-id">{{ transaction_id }}</span></p>
+          <p><strong>Transaction:</strong>
+            <span class="mono-id">{{ transaction_id }}</span></p>
           <p><strong>Status:</strong> {{ status | upper }}</p>
         </div>
       </div>
@@ -366,7 +367,9 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
         operator_name=operator.display_name,
         operator_email=operator.email,
         framework_title=framework.title,
-        license_type=_format_license_type(license_row.license_type if license_row else ""),
+        license_type=_format_license_type(
+            license_row.license_type if license_row else ""
+        ),
         amount_display=_money_display(transaction.amount, transaction.currency),
         status=transaction.status,
         logo_url=f"{_frontend_url()}/images/logo-text-black.png",

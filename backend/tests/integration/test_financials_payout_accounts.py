@@ -354,7 +354,7 @@ async def test_payout_account_onboarding_reuses_existing_account(
     migrated_database: None,
     payout_account_context: dict[str, Any],
 ) -> None:
-    """Initiating onboarding twice for the same contributor reuses the existing payout account."""
+    """Onboarding twice for the same contributor reuses the existing payout account."""
     contributor_id, _ = await create_user_with_roles(
         "stripe-contributor-reuse@auracles.space",
         ["contributor"],
@@ -390,7 +390,7 @@ async def test_payout_account_onboarding_reuses_existing_account(
     # Assertions
     assert account_id_1 == account_id_2
 
-    # Verify Stripe account creation was only called once, but link creation was called twice
+    # Stripe account creation called once; link creation called twice
     assert len(payout_account_context["calls"]["stripe_accounts"]) == 1
     assert len(payout_account_context["calls"]["stripe_links"]) == 2
 

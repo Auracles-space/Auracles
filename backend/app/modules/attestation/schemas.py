@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
-
-import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

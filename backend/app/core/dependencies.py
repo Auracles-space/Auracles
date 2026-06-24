@@ -27,7 +27,9 @@ BearerCredentials = Annotated[
 
 async def get_token_string(
     credentials: BearerCredentials,
-    token: str | None = Query(None, description="Access token via query parameter for links"),
+    token: str | None = Query(
+        None, description="Access token via query parameter for links"
+    ),
 ) -> str:
     """Extract raw token string from Authorization header or token query parameter."""
     if credentials is not None:

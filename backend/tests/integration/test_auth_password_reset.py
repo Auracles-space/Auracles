@@ -208,8 +208,12 @@ async def test_forgot_password_is_no_enumeration_and_sends_reset_for_known_email
 
     assert known.status_code == 200
     assert unknown.status_code == 200
-    assert known.json() == {"message": "We've sent a password reset link to your email. Please check your inbox to reset your password."}
-    assert unknown.json() == {"message": "We've sent a password reset link to your email. Please check your inbox to reset your password."}
+    expected_message = (
+        "We've sent a password reset link to your email. "
+        "Please check your inbox to reset your password."
+    )
+    assert known.json() == {"message": expected_message}
+    assert unknown.json() == {"message": expected_message}
     assert sent_emails.reset_calls == [
         {"email": "reset@auracles.space", "token": sent_emails.reset_calls[0]["token"]}
     ]

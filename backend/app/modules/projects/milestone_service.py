@@ -573,7 +573,9 @@ async def _ensure_within_proposal_budget(
     if existing_total + new_budget > proposal.budget:
         raise HTTPException(
             status_code=422,
-            detail="Milestone budget total may not exceed the accepted Proposal budget.",
+            detail=(
+                "Milestone budget total may not exceed the accepted Proposal budget."
+            ),
         )
 
 

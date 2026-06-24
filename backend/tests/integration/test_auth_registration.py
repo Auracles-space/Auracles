@@ -124,7 +124,12 @@ async def test_register_creates_user_roles_verification_token_and_audit(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "We've sent a verification link to your email. Please check your inbox to activate your account."}
+    assert response.json() == {
+        "message": (
+            "We've sent a verification link to your email. "
+            "Please check your inbox to activate your account."
+        )
+    }
 
     async with async_session_factory() as session:
         user = await session.scalar(
@@ -238,7 +243,12 @@ async def test_duplicate_register_returns_generic_success_without_second_user(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert second_response.json() == {"message": "We've sent a verification link to your email. Please check your inbox to activate your account."}
+    assert second_response.json() == {
+        "message": (
+            "We've sent a verification link to your email. "
+            "Please check your inbox to activate your account."
+        )
+    }
     assert len(users) == 1
     assert duplicate_audit is not None
 
@@ -314,7 +324,12 @@ async def test_resend_verification_sends_new_token_for_unverified_user(
     sent_emails = auth_test_context["sent_emails"]
 
     assert response.status_code == 200
-    assert response.json() == {"message": "We've sent a verification link to your email. Please check your inbox to activate your account."}
+    assert response.json() == {
+        "message": (
+            "We've sent a verification link to your email. "
+            "Please check your inbox to activate your account."
+        )
+    }
     assert len(sent_emails.calls) == 2
     assert sent_emails.calls[0]["token"] != sent_emails.calls[1]["token"]
 
@@ -331,7 +346,12 @@ async def test_resend_verification_for_unknown_email_does_not_send(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "We've sent a verification link to your email. Please check your inbox to activate your account."}
+    assert response.json() == {
+        "message": (
+            "We've sent a verification link to your email. "
+            "Please check your inbox to activate your account."
+        )
+    }
     assert auth_test_context["sent_emails"].calls == []
 
 

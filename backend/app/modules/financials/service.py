@@ -1425,7 +1425,7 @@ async def onboard_payout_account(
     """Create a provider-held payout destination for a KYC-verified Contributor."""
     contributor_id = contributor.id
 
-    # Reuse the existing active Stripe account to avoid orphan express accounts on Stripe
+    # Reuse the existing active Stripe account to avoid orphan express accounts
     existing_account = await db.scalar(
         select(PayoutAccount).where(
             PayoutAccount.user_id == contributor_id,

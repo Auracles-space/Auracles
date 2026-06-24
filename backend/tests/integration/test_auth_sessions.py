@@ -203,7 +203,6 @@ async def test_me_exposes_pending_attestor_role(
     from active ``roles`` but surfaced in ``pending_roles`` so the UI can prompt
     the user to complete (or track) their attestor application.
     """
-    from datetime import UTC, datetime
 
     async with async_session_factory() as session:
         async with session.begin():

@@ -1151,11 +1151,15 @@ async def test_explore_delisted_framework_accessible_to_licensed_operator(
     migrated_database: None,
     explore_test_context: dict[str, Any],
 ) -> None:
-    """Delisted (unpublished) frameworks must return 200 for licensed operators and 404 for others."""
+    """Delisted frameworks return 200 for licensed operators and 404 for others."""
     del migrated_database, explore_test_context
-    contributor_id = await create_user("delisted-seller@auracles.space", ["contributor"])
+    contributor_id = await create_user(
+        "delisted-seller@auracles.space", ["contributor"]
+    )
     operator_id = await create_user("delisted-buyer@auracles.space", ["operator"])
-    unlicensed_operator_id = await create_user("unlicensed-buyer-delisted@auracles.space", ["operator"])
+    unlicensed_operator_id = await create_user(
+        "unlicensed-buyer-delisted@auracles.space", ["operator"]
+    )
 
     # Create an unpublished/delisted framework
     framework_id, _ = await create_framework(
@@ -1177,7 +1181,7 @@ async def test_explore_delisted_framework_accessible_to_licensed_operator(
             )
             session.add(license_row)
 
-    # 1. Licensed operator requests details -> Should succeed and return 200 and owned=True
+    # 1. Licensed operator requests details -> 200 with owned=True
     response = await client.get(
         f"/v1/explore/frameworks/{framework_id}",
         headers=auth_headers(operator_id, ["operator"]),

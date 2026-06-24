@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import sys
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 

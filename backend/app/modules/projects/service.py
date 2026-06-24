@@ -599,7 +599,9 @@ async def cancel_acceptance(
         if project.status != "assigned" or project.accepted_proposal_id is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Only an assigned, unfunded Project acceptance can be cancelled.",
+                detail=(
+                    "Only an assigned, unfunded Project acceptance can be cancelled."
+                ),
             )
         proposal = await db.scalar(
             select(Proposal)

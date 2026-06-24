@@ -958,9 +958,12 @@ async def test_reopen_milestone_plan_while_unfunded_returns_to_draft(
         f"/v1/projects/{project_id}/milestones/reopen",
         headers=operator_headers,
     )
+    reopened_milestones = await client.get(
+        f"/v1/projects/{project_id}/milestones", headers=contributor_headers
+    )
+    reopened_milestone_id = reopened_milestones.json()["milestones"][0]["id"]
     edit_after_reopen = await client.patch(
-        f"/v1/projects/{project_id}/milestones/"
-        f"{(await client.get(f'/v1/projects/{project_id}/milestones', headers=contributor_headers)).json()['milestones'][0]['id']}",
+        f"/v1/projects/{project_id}/milestones/{reopened_milestone_id}",
         headers=contributor_headers,
         json={"budget": "1200.00"},
     )
@@ -1519,7 +1522,9 @@ async def test_fund_milestone_resumes_existing_pending_payment(
         # Same idempotency key -> Stripe returns the same intent; mirror that.
         return FakeStripePaymentIntent("pi_resume_123", "pi_resume_secret")
 
-    monkeypatch.setattr(milestone_service.stripe, "create_customer", fake_create_customer)
+    monkeypatch.setattr(
+        milestone_service.stripe, "create_customer", fake_create_customer
+    )
     monkeypatch.setattr(
         milestone_service.stripe, "create_payment_intent", fake_create_payment_intent
     )

@@ -7,11 +7,12 @@ Usage:
 from __future__ import annotations
 
 import sys
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.modules.auth.models import User, KycDocument, UserRole
+from app.modules.auth.models import KycDocument, User, UserRole
 
 
 def check_user(query_str: str) -> int:
@@ -21,7 +22,8 @@ def check_user(query_str: str) -> int:
     try:
         with Session(engine) as session:
             stmt = select(User).where(
-                (User.email.ilike(f"%{query_str}%")) | (User.display_name.ilike(f"%{query_str}%"))
+                (User.email.ilike(f"%{query_str}%"))
+                | (User.display_name.ilike(f"%{query_str}%"))
             )
             users = list(session.scalars(stmt))
 
@@ -31,7 +33,7 @@ def check_user(query_str: str) -> int:
 
             for user in users:
                 print("=" * 60)
-                print(f"USER RECORD:")
+                print("USER RECORD:")
                 print(f"  ID:           {user.id}")
                 print(f"  Email:        {user.email}")
                 print(f"  Display Name: {user.display_name}")

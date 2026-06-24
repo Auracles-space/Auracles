@@ -192,7 +192,7 @@ def test_stripe_webhook_signature_matrix_accepts_only_valid_raw_payload() -> Non
 
 
 def test_stripe_webhook_multiple_secrets() -> None:
-    """Webhook verification accepts signatures matching any of the comma-separated secrets."""
+    """Webhook verification accepts signatures matching any comma-separated secret."""
     payload = json.dumps(
         {"id": "evt_123", "type": "payment_intent.succeeded"},
         separators=(",", ":"),
