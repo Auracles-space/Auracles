@@ -168,10 +168,14 @@ export function RegisterForm() {
       {success ? <FormMessage kind="success" message={success} /> : null}
 
       <FormField
+        autoFocus
         autoComplete="name"
         label="Display name"
         name="display_name"
-        onChange={(event) => setDisplayName(event.target.value)}
+        onChange={(event) => {
+          setDisplayName(event.target.value);
+          if (error) setError(null);
+        }}
         required
         value={displayName}
         isValid={isNonEmpty(displayName)}
@@ -180,7 +184,10 @@ export function RegisterForm() {
         autoComplete="email"
         label="Email"
         name="email"
-        onChange={(event) => setEmail(event.target.value)}
+        onChange={(event) => {
+          setEmail(event.target.value);
+          if (error) setError(null);
+        }}
         required
         type="email"
         value={email}
@@ -191,7 +198,10 @@ export function RegisterForm() {
         helper="Use at least 12 characters with a mix of letters, numbers, and symbols."
         label="Password"
         name="password"
-        onChange={(event) => setPassword(event.target.value)}
+        onChange={(event) => {
+          setPassword(event.target.value);
+          if (error) setError(null);
+        }}
         required
         type="password"
         value={password}
@@ -207,11 +217,14 @@ export function RegisterForm() {
         }
         label="Confirm password"
         name="confirm_password"
-        onChange={(event) => setConfirmPassword(event.target.value)}
+        onChange={(event) => {
+          setConfirmPassword(event.target.value);
+          if (error) setError(null);
+        }}
         required
         type="password"
         value={confirmPassword}
-        isValid={passwordsMatch(password, confirmPassword)}
+        isValid={confirmPassword.length > 0 && passwordsMatch(password, confirmPassword)}
       />
 
       <fieldset className="space-y-3">
@@ -227,29 +240,39 @@ export function RegisterForm() {
           Operator and Contributor can be combined. Attestor is a standalone
           role and requires admin approval.
         </p>
-        {roleOptions.map((role) => (
-          <label
-            className="flex min-h-12 cursor-pointer gap-3 rounded-card border border-border-strong bg-surface-2 p-4 transition hover:border-accent/40 shadow-sm"
-            htmlFor={`role-${role.value}`}
-            key={role.value}
-          >
-            <input
-              checked={roles.includes(role.value)}
-              className="mt-1 h-4 w-4 accent-accent"
-              id={`role-${role.value}`}
-              onChange={() => toggleRole(role.value)}
-              type="checkbox"
-            />
-            <span>
-              <span className="block text-sm font-semibold text-foreground">
-                {role.label}
+        {roleOptions.map((role) => {
+          const isSelected = roles.includes(role.value);
+          return (
+            <label
+              className={`flex min-h-12 cursor-pointer gap-3 rounded-card border p-4 transition shadow-sm ${
+                isSelected
+                  ? "border-accent bg-surface-1"
+                  : "border-border-strong bg-surface-2 hover:border-accent/40"
+              }`}
+              htmlFor={`role-${role.value}`}
+              key={role.value}
+            >
+              <input
+                checked={isSelected}
+                className="mt-1 h-4 w-4 accent-accent"
+                id={`role-${role.value}`}
+                onChange={() => {
+                  toggleRole(role.value);
+                  if (error) setError(null);
+                }}
+                type="checkbox"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-foreground">
+                  {role.label}
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-foreground-muted">
+                  {role.description}
+                </span>
               </span>
-              <span className="mt-1 block text-xs leading-5 text-foreground-muted">
-                {role.description}
-              </span>
-            </span>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </fieldset>
 
       <div className="flex items-start gap-3 py-2">
@@ -257,7 +280,10 @@ export function RegisterForm() {
           checked={agreedToTerms}
           className="mt-0.5 h-4 w-4 accent-accent"
           id="terms-agreement"
-          onChange={(e) => setAgreedToTerms(e.target.checked)}
+          onChange={(e) => {
+            setAgreedToTerms(e.target.checked);
+            if (error) setError(null);
+          }}
           type="checkbox"
         />
         <label className="flex items-center gap-1.5 text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
@@ -285,9 +311,20 @@ export function RegisterForm() {
           Already have an account? Log in
         </a>
         <Button className="w-full sm:w-auto" disabled={isSubmitting || !canSubmit} type="submit">
-          {isSubmitting ? "Creating account" : "Create account"}
+          {isSubmitting ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-background" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Creating account
+            </>
+          ) : (
+            "Create account"
+          )}
         </Button>
       </div>
     </form>
   );
 }
+

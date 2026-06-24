@@ -10,6 +10,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { BrandLogo } from "@/components/ui/brand-logo";
+
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -187,9 +189,7 @@ export function FooterCta() {
       <footer className="bg-background border-t border-border-default">
         <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 py-16 md:grid-cols-[1.4fr_1fr_1fr_1fr] md:px-10">
           <div>
-            <div className="font-heading text-xl font-bold text-foreground">
-              Auracles
-            </div>
+            <BrandLogo className="h-8 w-32" />
             <p className="mt-4 max-w-xs text-sm leading-6 text-foreground-muted">
               The marketplace for professional frameworks and reusable knowledge assets.
             </p>

@@ -6,6 +6,7 @@
  * pill. Anchors target landing-page sections.
  */
 import Link from "next/link";
+import { BrandLogo } from "@/components/ui/brand-logo";
 
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -31,12 +32,7 @@ export function MarketingNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 md:px-10">
-        <Link
-          className="font-heading text-lg font-semibold tracking-tight text-foreground"
-          href="/"
-        >
-          Auracles
-        </Link>
+        <BrandLogo className="h-6 w-24" />
         <nav className="hidden items-center gap-8 md:flex">
           {activeLinks.map((link) => (
             <Link
