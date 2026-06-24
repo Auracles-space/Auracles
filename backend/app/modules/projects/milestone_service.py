@@ -20,6 +20,7 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
+from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -1101,11 +1102,18 @@ async def submit_deliverable(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
+        operator_id = project.operator_id
         await db.flush()
         await db.refresh(deliverable)
     # Dispatch the virus scan after commit so the worker can read the row; the
     # Deliverable stays pending_scan and approval is blocked until it is clean.
     scan_deliverable_upload.delay(str(deliverable.id))
+    project_notifications.notify_deliverable_submitted(
+        operator_id=operator_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable.id,
+    )
     return deliverable
 
 
@@ -1170,8 +1178,16 @@ async def request_deliverable_revision(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
+        revision_contributor_id = deliverable.contributor_id
         await db.flush()
         await db.refresh(deliverable)
+
+    project_notifications.notify_deliverable_revision_requested(
+        contributor_id=revision_contributor_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable.id,
+    )
     return deliverable
 
 
@@ -1257,8 +1273,16 @@ async def approve_deliverable(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
+        approved_contributor_id = deliverable.contributor_id
         await db.flush()
         await db.refresh(deliverable)
+
+    project_notifications.notify_deliverable_approved(
+        contributor_id=approved_contributor_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable.id,
+    )
     return deliverable
 
 

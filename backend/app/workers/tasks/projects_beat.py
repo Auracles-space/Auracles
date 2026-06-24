@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.core.database import async_session_factory
 from app.modules.auth.models import UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow
+from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -191,6 +193,9 @@ async def _auto_approve_deliverables() -> int:
     now = datetime.now(UTC)
     cutoff = now - timedelta(days=14)
     auto_approved_count = 0
+    # Collect recipients during the transaction; notify after it commits so the
+    # Contributor only hears about a durable auto-approval.
+    auto_approved_notifications: list[tuple[UUID, UUID, UUID, UUID]] = []
     async with async_session_factory() as db:
         async with db.begin():
             rows = (
@@ -253,6 +258,14 @@ async def _auto_approve_deliverables() -> int:
                     )
                 )
                 auto_approved_count += 1
+                auto_approved_notifications.append(
+                    (
+                        deliverable.contributor_id,
+                        project.id,
+                        milestone.id,
+                        deliverable.id,
+                    )
+                )
                 await write_audit(
                     db=db,
                     actor_id=None,
@@ -264,6 +277,16 @@ async def _auto_approve_deliverables() -> int:
                         "milestone_id": str(milestone.id),
                     },
                 )
+
+    for contributor_id, project_id, milestone_id, deliverable_id in (
+        auto_approved_notifications
+    ):
+        project_notifications.notify_deliverable_auto_approved(
+            contributor_id=contributor_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            deliverable_id=deliverable_id,
+        )
     return auto_approved_count
 
 

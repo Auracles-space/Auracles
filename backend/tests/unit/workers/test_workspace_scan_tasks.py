@@ -146,6 +146,68 @@ def create_pending_scan_message(session_factory: sessionmaker) -> UUID:
         return message.id
 
 
+def test_scan_workspace_upload_notifies_uploader_on_quarantine(
+    migrated_database: None,
+    workspace_scan_context: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An infected workspace attachment notifies its uploader of the quarantine."""
+    from app.modules.projects import notifications as project_notifications
+
+    message_id = create_pending_scan_message(workspace_scan_context)
+    with workspace_scan_context() as session:
+        message = session.get(WorkspaceMessage, message_id)
+        assert message is not None
+        uploader_id = message.sender_id
+
+    calls: list[dict[str, object]] = []
+
+    class _Recorder:
+        """Capture notification dispatches without Celery or Redis."""
+
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    def fake_download_file(bucket: str, key: str, destination: str) -> None:
+        """Write scan input without contacting S3."""
+        del bucket, key
+        with open(destination, "wb") as local_file:
+            local_file.write(b"infected")
+
+    def fake_scan_file(path: str) -> str:
+        """Return an infected scan result."""
+        del path
+        return "infected"
+
+    async def fake_publish(
+        channel: str,
+        event_type: str,
+        payload: dict[str, object],
+    ) -> None:
+        """Swallow realtime publishes in the quarantine path."""
+        del channel, event_type, payload
+
+    monkeypatch.setattr(workspace_scan.s3.storage, "download_file", fake_download_file)
+    monkeypatch.setattr(workspace_scan, "scan_file_with_clamav", fake_scan_file)
+    monkeypatch.setattr(workspace_scan, "publish_to_channel", fake_publish)
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        _Recorder(),
+    )
+
+    result = workspace_scan.scan_workspace_upload.apply(args=[str(message_id)]).get()
+
+    assert result == "quarantined"
+    quarantine_calls = [
+        call
+        for call in calls
+        if call["notification_type"] == "workspace_file_quarantined"
+    ]
+    assert len(quarantine_calls) == 1
+    assert quarantine_calls[0]["user_id"] == str(uploader_id)
+
+
 def test_scan_workspace_upload_marks_clean_message_visible(
     migrated_database: None,
     workspace_scan_context: sessionmaker,

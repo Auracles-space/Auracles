@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
+from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import (
     Milestone,
     Project,
@@ -448,6 +449,12 @@ async def submit_proposal(
         )
         await db.flush()
         await db.refresh(proposal)
+
+    # Fanout runs after commit so the Operator only hears about a durable bid.
+    project_notifications.notify_proposal_submitted(
+        operator_id=project.operator_id,
+        proposal=proposal,
+    )
     return proposal
 
 
@@ -704,6 +711,17 @@ async def accept_proposal(
         project.status = "assigned"
         project.accepted_proposal_id = proposal.id
         project.milestone_plan_status = "draft"
+        # Capture the losing bidders before the bulk reject so each can be
+        # notified of the outcome after commit.
+        rejected_proposals = (
+            await db.execute(
+                select(Proposal.id, Proposal.contributor_id).where(
+                    Proposal.project_id == project_id,
+                    Proposal.id != proposal.id,
+                    Proposal.status == "pending",
+                )
+            )
+        ).all()
         await db.execute(
             update(Proposal)
             .where(
@@ -724,8 +742,20 @@ async def accept_proposal(
                 "contributor_id": str(proposal.contributor_id),
             },
         )
+        accepted_contributor_id = proposal.contributor_id
         await db.flush()
         await db.refresh(project)
+
+    project_notifications.notify_proposal_accepted(
+        contributor_id=accepted_contributor_id,
+        proposal=proposal,
+    )
+    for rejected_id, rejected_contributor_id in rejected_proposals:
+        project_notifications.notify_proposal_rejected(
+            contributor_id=rejected_contributor_id,
+            project_id=project_id,
+            proposal_id=rejected_id,
+        )
     return project
 
 
@@ -819,8 +849,20 @@ async def propose_amendment(
             target_id=amendment.id,
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
+        # The counterparty is the accepted member who did not propose the change.
+        counterparty_id = (
+            {project.operator_id, proposal.contributor_id} - {actor_id}
+        ).pop()
+        amendment_project_id = project.id
         await db.flush()
         await db.refresh(amendment)
+
+    project_notifications.notify_amendment_proposed(
+        counterparty_id=counterparty_id,
+        project_id=amendment_project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment.id,
+    )
     return amendment
 
 
@@ -880,8 +922,17 @@ async def accept_amendment(
             target_id=amendment.id,
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
+        amendment_proposer_id = amendment.proposed_by
+        accepted_project_id = project.id
         await db.flush()
         await db.refresh(amendment)
+
+    project_notifications.notify_amendment_accepted(
+        proposer_id=amendment_proposer_id,
+        project_id=accepted_project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment.id,
+    )
     return amendment
 
 
@@ -932,8 +983,17 @@ async def reject_amendment(
             target_id=amendment.id,
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
+        rejected_proposer_id = amendment.proposed_by
+        rejected_project_id = project.id
         await db.flush()
         await db.refresh(amendment)
+
+    project_notifications.notify_amendment_rejected(
+        proposer_id=rejected_proposer_id,
+        project_id=rejected_project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment.id,
+    )
     return amendment
 
 
@@ -984,8 +1044,20 @@ async def withdraw_amendment(
             target_id=amendment.id,
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
+        # Notify the counterparty who was awaiting a response, not the proposer.
+        withdraw_counterparty_id = (
+            {project.operator_id, proposal.contributor_id} - {actor_id}
+        ).pop()
+        withdrawn_project_id = project.id
         await db.flush()
         await db.refresh(amendment)
+
+    project_notifications.notify_amendment_withdrawn(
+        counterparty_id=withdraw_counterparty_id,
+        project_id=withdrawn_project_id,
+        proposal_id=proposal_id,
+        amendment_id=amendment.id,
+    )
     return amendment
 
 

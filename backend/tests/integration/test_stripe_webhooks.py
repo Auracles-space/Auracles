@@ -1484,6 +1484,78 @@ async def test_stripe_escrow_webhook_marks_project_milestone_funded(
     assert audit.actor_id == operator_id
 
 
+async def test_milestone_funding_webhook_notifies_contributor(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Funding a Project Milestone notifies the assigned Contributor.
+
+    The Contributor only starts billable work once escrow is funded, so the
+    funding webhook fans a milestone_funded notification to them.
+    """
+    from app.modules.projects import notifications as project_notifications
+
+    calls: list[dict[str, Any]] = []
+
+    class _Recorder:
+        """Capture notification dispatches without using Celery or Redis."""
+
+        def delay(self, **kwargs: Any) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        _Recorder(),
+    )
+
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        operator_id,
+    ) = await create_pending_project_milestone_transaction()
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        assert transaction is not None
+        contributor_id = transaction.payee_id
+
+    webhook_context["event"] = payment_intent_event(
+        "evt_project_escrow_notify",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=milestone_id,
+        kind="escrow",
+        provider_ref="pi_project_escrow_123",
+        extra_metadata={
+            "project_id": str(project_id),
+            "milestone_id": str(milestone_id),
+            "release_conditions": (
+                "{"
+                '"kind":"project_milestone",'
+                f'"project_id":"{project_id}",'
+                f'"milestone_id":"{milestone_id}",'
+                f'"approver_user_id":"{operator_id}"'
+                "}"
+            ),
+        },
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    assert response.status_code == 200
+    funded_calls = [
+        call for call in calls if call["notification_type"] == "milestone_funded"
+    ]
+    assert len(funded_calls) == 1
+    assert funded_calls[0]["user_id"] == str(contributor_id)
+
+
 async def test_stripe_webhook_rejects_bad_signature_before_event_storage(
     client: AsyncClient,
     webhook_context: dict[str, Any],

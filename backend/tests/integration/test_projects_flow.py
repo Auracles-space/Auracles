@@ -24,6 +24,7 @@ from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.projects import dispute_service, milestone_service
+from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -305,6 +306,571 @@ async def test_operator_creates_project_contributor_proposes_and_operator_accept
     assert project.accepted_proposal_id == UUID(proposal_id)
     assert proposal is not None
     assert proposal.status == "accepted"
+
+
+async def test_proposal_submission_notifies_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submitting a Proposal notifies the Project Operator.
+
+    The Operator owns the inbound-bid decision, so a new Proposal must reach
+    them through the notification fanout used by every other Project event.
+    """
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("notify-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "notify-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+
+    assert proposed.status_code == 201
+    submitted = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "proposal_submitted"
+    ]
+    assert len(submitted) == 1
+    assert submitted[0]["user_id"] == str(operator_id)
+
+
+async def test_proposal_acceptance_notifies_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting a Proposal notifies the winning Contributor.
+
+    The Contributor needs to know their bid won so they can start the assigned
+    Project, so acceptance fans a proposal_accepted notification to them.
+    """
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("accept-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "accept-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects", headers=operator_headers, json=project_payload()
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    accepted = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+
+    assert accepted.status_code == 200
+    accept_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "proposal_accepted"
+    ]
+    assert len(accept_calls) == 1
+    assert accept_calls[0]["user_id"] == str(contributor_id)
+
+
+async def test_accepting_one_proposal_notifies_rejected_contributors(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting a Proposal notifies the other bidders their Proposal was rejected.
+
+    Acceptance auto-rejects every other pending Proposal, so each losing
+    Contributor must hear that outcome rather than silently losing the bid.
+    """
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("reject-operator@auracles.space", ["operator"])
+    winner_id = await create_user("reject-winner@auracles.space", ["contributor"])
+    loser_id = await create_user("reject-loser@auracles.space", ["contributor"])
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects", headers=operator_headers, json=project_payload()
+        )
+    ).json()["id"]
+    winning_proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=auth_headers(winner_id, ["contributor"]),
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=auth_headers(loser_id, ["contributor"]),
+        json=proposal_payload(),
+    )
+
+    accepted = await client.post(
+        f"/v1/projects/{project_id}/proposals/{winning_proposal_id}/accept",
+        headers=operator_headers,
+    )
+
+    assert accepted.status_code == 200
+    rejected_recipients = {
+        call["user_id"]
+        for call in notification_calls
+        if call["notification_type"] == "proposal_rejected"
+    }
+    assert rejected_recipients == {str(loser_id)}
+
+
+async def test_deliverable_submission_notifies_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submitting a Deliverable notifies the Operator that review is due."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("dsubmit-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "dsubmit-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+
+    submitted = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Final playbook",
+            "description": "Implementation playbook.",
+            "file_keys": ["workspace/project/final.pdf"],
+        },
+    )
+
+    assert submitted.status_code == 201
+    submit_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "deliverable_submitted"
+    ]
+    assert len(submit_calls) == 1
+    assert submit_calls[0]["user_id"] == str(operator_id)
+
+
+async def test_deliverable_revision_request_notifies_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requesting a Deliverable revision notifies the Contributor."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("drev-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "drev-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    deliverable_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+            headers=contributor_headers,
+            json={
+                "name": "Draft playbook",
+                "description": "First pass.",
+                "file_keys": ["workspace/project/draft.pdf"],
+            },
+        )
+    ).json()["id"]
+
+    revision = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/request-revision",
+        headers=operator_headers,
+        json={"revision_notes": "Please expand the rollout section with timelines."},
+    )
+
+    assert revision.status_code == 200
+    revision_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "deliverable_revision_requested"
+    ]
+    assert len(revision_calls) == 1
+    assert revision_calls[0]["user_id"] == str(contributor_id)
+
+
+async def test_deliverable_approval_notifies_contributor(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Approving a Deliverable notifies the Contributor that escrow released."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("dappr-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "dappr-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id, milestone_id = await create_funded_project_milestone(
+        client,
+        operator_headers=operator_headers,
+        contributor_headers=contributor_headers,
+        operator_id=operator_id,
+        contributor_id=contributor_id,
+    )
+    deliverable_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+            headers=contributor_headers,
+            json={
+                "name": "Final playbook",
+                "description": "Implementation playbook.",
+                "file_keys": ["workspace/project/final.pdf"],
+            },
+        )
+    ).json()["id"]
+    await _mark_deliverable_scanned(deliverable_id)
+
+    approved = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+        f"{deliverable_id}/approve",
+        headers=operator_headers,
+    )
+
+    assert approved.status_code == 200
+    approve_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "deliverable_approved"
+    ]
+    assert len(approve_calls) == 1
+    assert approve_calls[0]["user_id"] == str(contributor_id)
+
+
+async def _accepted_amendment_setup(
+    client: AsyncClient,
+    *,
+    slug: str,
+) -> tuple[UUID, UUID, str, str, str]:
+    """Create an assigned Project ready for amendment, returning ids and headers."""
+    operator_id = await create_user(f"{slug}-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        f"{slug}-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    project_id = (
+        await client.post(
+            "/v1/projects", headers=operator_headers, json=project_payload()
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    async with async_session_factory() as session:
+        project = await session.scalar(select(Project).where(Project.id == project_id))
+        assert project is not None
+        project.milestone_plan_status = "finalized"
+        await session.commit()
+    return (
+        operator_id,
+        contributor_id,
+        project_id,
+        contributor_headers,
+        operator_headers,
+    )
+
+
+async def test_amendment_proposal_notifies_counterparty(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proposing an amendment notifies the counterparty whose consent is required."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    (
+        operator_id,
+        _contributor_id,
+        project_id,
+        contributor_headers,
+        _operator_headers,
+    ) = await _accepted_amendment_setup(client, slug="amendprop")
+    proposal_id = (
+        await client.get(
+            f"/v1/projects/{project_id}/proposals",
+            headers=_operator_headers,
+        )
+    ).json()["proposals"][0]["id"]
+
+    amendment = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+        headers=contributor_headers,
+        json={
+            "change_type": "budget",
+            "after": {"budget": "1750.00"},
+            "reason": "Scope needs deeper implementation support.",
+        },
+    )
+
+    assert amendment.status_code == 201
+    proposed_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "amendment_proposed"
+    ]
+    assert len(proposed_calls) == 1
+    assert proposed_calls[0]["user_id"] == str(operator_id)
+
+
+async def test_amendment_acceptance_notifies_proposer(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting an amendment notifies the Contributor who proposed it."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    (
+        _operator_id,
+        contributor_id,
+        project_id,
+        contributor_headers,
+        operator_headers,
+    ) = await _accepted_amendment_setup(client, slug="amendacc")
+    proposal_id = (
+        await client.get(
+            f"/v1/projects/{project_id}/proposals", headers=operator_headers
+        )
+    ).json()["proposals"][0]["id"]
+    amendment_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+            headers=contributor_headers,
+            json={
+                "change_type": "budget",
+                "after": {"budget": "1750.00"},
+                "reason": "Scope needs deeper implementation support.",
+            },
+        )
+    ).json()["id"]
+
+    accepted = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/"
+        f"{amendment_id}/accept",
+        headers=operator_headers,
+    )
+
+    assert accepted.status_code == 200
+    accept_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "amendment_accepted"
+    ]
+    assert len(accept_calls) == 1
+    assert accept_calls[0]["user_id"] == str(contributor_id)
+
+
+async def test_amendment_rejection_notifies_proposer(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rejecting an amendment notifies the Contributor who proposed it."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    (
+        _operator_id,
+        contributor_id,
+        project_id,
+        contributor_headers,
+        operator_headers,
+    ) = await _accepted_amendment_setup(client, slug="amendrej")
+    proposal_id = (
+        await client.get(
+            f"/v1/projects/{project_id}/proposals", headers=operator_headers
+        )
+    ).json()["proposals"][0]["id"]
+    amendment_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+            headers=contributor_headers,
+            json={
+                "change_type": "budget",
+                "after": {"budget": "1750.00"},
+                "reason": "Scope needs deeper implementation support.",
+            },
+        )
+    ).json()["id"]
+
+    rejected = await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/"
+        f"{amendment_id}/reject",
+        headers=operator_headers,
+    )
+
+    assert rejected.status_code == 200
+    reject_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "amendment_rejected"
+    ]
+    assert len(reject_calls) == 1
+    assert reject_calls[0]["user_id"] == str(contributor_id)
+
+
+async def test_amendment_withdrawal_notifies_counterparty(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Withdrawing an amendment notifies the counterparty awaiting the response."""
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    (
+        operator_id,
+        _contributor_id,
+        project_id,
+        contributor_headers,
+        operator_headers,
+    ) = await _accepted_amendment_setup(client, slug="amendwith")
+    proposal_id = (
+        await client.get(
+            f"/v1/projects/{project_id}/proposals", headers=operator_headers
+        )
+    ).json()["proposals"][0]["id"]
+    amendment_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments",
+            headers=contributor_headers,
+            json={
+                "change_type": "budget",
+                "after": {"budget": "1750.00"},
+                "reason": "Scope needs deeper implementation support.",
+            },
+        )
+    ).json()["id"]
+
+    withdrawn = await client.patch(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/amendments/"
+        f"{amendment_id}/withdraw",
+        headers=contributor_headers,
+    )
+
+    assert withdrawn.status_code == 200
+    withdraw_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "amendment_withdrawn"
+    ]
+    assert len(withdraw_calls) == 1
+    assert withdraw_calls[0]["user_id"] == str(operator_id)
 
 
 async def test_contributor_assigned_scope_lists_accepted_project(

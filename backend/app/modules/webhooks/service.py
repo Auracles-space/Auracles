@@ -38,6 +38,7 @@ from app.modules.developer.models import (
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import Milestone, Project
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.webhooks.schemas import WebhookIngestResponse
@@ -610,6 +611,12 @@ async def _mark_project_milestone_funded(
             "escrow_id": str(escrow.id),
             "transaction_id": str(transaction.id),
         },
+    )
+    # The payee is the assigned Contributor, who starts work once escrow holds.
+    project_notifications.notify_milestone_funded(
+        contributor_id=transaction.payee_id,
+        project_id=project.id,
+        milestone_id=milestone.id,
     )
 
 

@@ -540,6 +540,47 @@ def test_auto_approve_deliverables_releases_escrow_and_marks_project_delivered(
     ]
 
 
+def test_auto_approve_deliverables_notifies_contributor(
+    migrated_database: None,
+    projects_beat_context: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Auto-approving an idle Deliverable notifies the Contributor of release."""
+    from app.modules.projects import notifications as project_notifications
+
+    calls: list[dict[str, object]] = []
+
+    class _Recorder:
+        """Capture notification dispatches without Celery or Redis."""
+
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        _Recorder(),
+    )
+
+    _, _, deliverable_id, _ = create_submitted_deliverable_for_auto_approval(
+        projects_beat_context
+    )
+    with projects_beat_context() as session:
+        deliverable = session.get(Deliverable, deliverable_id)
+        assert deliverable is not None
+        contributor_id = deliverable.contributor_id
+
+    projects_beat.auto_approve_deliverables.apply().get()
+
+    auto_calls = [
+        call
+        for call in calls
+        if call["notification_type"] == "deliverable_auto_approved"
+    ]
+    assert len(auto_calls) == 1
+    assert auto_calls[0]["user_id"] == str(contributor_id)
+
+
 def test_auto_close_delivered_projects_archives_after_delay(
     migrated_database: None,
     projects_beat_context: sessionmaker,

@@ -12,6 +12,7 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.integrations import s3
+from app.modules.projects import notifications as project_notifications
 from app.modules.realtime.pubsub import publish_to_channel
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.async_runner import run_async
@@ -52,8 +53,19 @@ async def _set_workspace_scan_result(
                     "scan_status": scan_status,
                 },
             )
+            quarantine_uploader_id = message.sender_id
+            quarantine_project_id = message.project_id
+            quarantine_message_id = message.id
         if scan_status == "visible":
             await _publish_message_visible(message)
+        elif scan_status == "quarantined" and quarantine_uploader_id is not None:
+            # Tell the uploader their file was rejected; system messages have no
+            # sender, so only notify when a real uploader is on the record.
+            project_notifications.notify_workspace_file_quarantined(
+                uploader_id=quarantine_uploader_id,
+                project_id=quarantine_project_id,
+                message_id=quarantine_message_id,
+            )
     return scan_status
 
 
