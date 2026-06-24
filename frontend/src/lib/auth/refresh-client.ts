@@ -1,3 +1,4 @@
+import { resolveApiBaseUrl } from "@/lib/api-base";
 import {
   client,
   refreshToken as generatedRefreshToken,
@@ -5,7 +6,7 @@ import {
 
 import { clearAuthToken, setAccessTokenFromJwt } from "./token-store";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE_URL = resolveApiBaseUrl();
 
 // Single-flight guard. The refresh cookie is rotated server-side on every use,
 // and reusing a rotated token trips reuse-detection (the backend revokes the

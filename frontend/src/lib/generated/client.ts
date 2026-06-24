@@ -9,6 +9,7 @@
  * Maps to: pre-scale infra design Section 4 (frontend env vars) and
  * CLAUDE.md Frontend Code Standards (generated client only).
  */
+import { resolveApiBaseUrl } from "@/lib/api-base";
 import {
   client,
   getHealth as generatedGetHealth,
@@ -23,7 +24,7 @@ export type HealthResult = {
   data: HealthResponse;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Fetch platform readiness from the backend `/v1/health` endpoint.

@@ -4,13 +4,14 @@
  * Centralises API base URL and credential mode so components call generated
  * SDK functions without duplicating transport setup.
  */
+import { resolveApiBaseUrl } from "@/lib/api-base";
 import { client } from "@/lib/generated/sdk.gen";
 
 import { installIncompleteUserInterceptor } from "./incomplete-user-interceptor";
 import { authTokenStore } from "./token-store";
 import { installUnauthorizedRefreshInterceptor } from "./unauthorized-refresh-interceptor";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Configure the generated client for browser calls that need cookies.

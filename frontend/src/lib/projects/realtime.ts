@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 
+import { resolveWebsocketUrl } from "@/lib/api-base";
 import { authTokenStore } from "@/lib/auth/token-store";
 
 type RealtimeEvent = {
@@ -22,19 +23,6 @@ type UseProjectRealtimeResult = {
   connected: boolean;
   lastEvent: RealtimeEvent | null;
 };
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-/**
- * Convert the configured HTTP API URL to the matching WebSocket URL.
- */
-function websocketUrl(): string {
-  const url = new URL(API_BASE_URL);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = "/v1/ws";
-  url.search = "";
-  return url.toString();
-}
 
 /**
  * Subscribe to realtime updates for one Project workspace.
@@ -55,7 +43,7 @@ export function useProjectRealtime(projectId: string): UseProjectRealtimeResult 
         return;
       }
 
-      socket = new WebSocket(websocketUrl());
+      socket = new WebSocket(resolveWebsocketUrl());
       socket.addEventListener("open", () => {
         const token = authTokenStore.getState().accessToken;
         socket?.send(JSON.stringify({ token, type: "auth" }));

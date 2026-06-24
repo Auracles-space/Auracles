@@ -10,9 +10,10 @@
  * mutable global config carries no request-scoped secrets. Per-user tokens are
  * passed per call as headers by browser code, never stored on the singleton.
  */
+import { resolveApiBaseUrl } from "@/lib/api-base";
 import { client } from "@/lib/generated/sdk.gen";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Configure generated API calls for server-rendered marketplace reads.
