@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminUserDirectoryPanel } from "@/components/modules/admin/admin-user-directory-panel";
 import {
   listAdminUsersV1AdminUsersGet,
+  reviewKycV1AdminUsersUserIdKycPatch,
   suspendUserV1AdminUsersUserIdSuspendPost,
 } from "@/lib/generated/sdk.gen";
 
@@ -21,6 +22,7 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listAdminUsersV1AdminUsersGet: vi.fn(),
+  reviewKycV1AdminUsersUserIdKycPatch: vi.fn(),
   suspendUserV1AdminUsersUserIdSuspendPost: vi.fn(),
   unsuspendUserV1AdminUsersUserIdUnsuspendPost: vi.fn(),
 }));
@@ -40,6 +42,7 @@ describe("AdminUserDirectoryPanel", () => {
             suspended: false,
             suspended_at: null,
             user_id: "user-1",
+            kyc_status: "pending",
           },
         ],
         page: 1,
@@ -90,5 +93,40 @@ describe("AdminUserDirectoryPanel", () => {
     });
 
     expect(await within(userCard).findByText(/suspended/i)).toBeInTheDocument();
+  });
+
+  it("approves a pending KYC submission with notes", async () => {
+    vi.mocked(reviewKycV1AdminUsersUserIdKycPatch).mockResolvedValue({
+      data: {
+        user_id: "user-1",
+        kyc_status: "verified",
+        document_status: "approved",
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AdminUserDirectoryPanel />);
+    const userCard = await screen.findByRole("article", {
+      name: /ada contributor/i,
+    });
+
+    fireEvent.click(within(userCard).getByRole("button", { name: /review kyc/i }));
+    fireEvent.change(within(userCard).getByLabelText(/notes/i), {
+      target: { value: "Docs verified" },
+    });
+    fireEvent.click(within(userCard).getByRole("button", { name: /approve kyc/i }));
+
+    await waitFor(() => {
+      expect(reviewKycV1AdminUsersUserIdKycPatch).toHaveBeenCalledWith({
+        body: { status: "verified", notes: "Docs verified" },
+        headers: { Authorization: "Bearer admin-token" },
+        path: { user_id: "user-1" },
+      });
+    });
+
+    expect(
+      await within(userCard).findByText(/KYC: verified/i),
+    ).toBeInTheDocument();
   });
 });
