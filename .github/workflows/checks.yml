@@ -41,6 +41,12 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://auracles:secret@localhost:5432/auracles
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-only-secret
+      # Presigned-POST/GET signing is offline (no S3 call), but botocore still
+      # needs non-null credentials to build the signature. Dummy values satisfy
+      # the signer; no real AWS resource is contacted in the test suite.
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_DEFAULT_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
