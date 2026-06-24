@@ -24,12 +24,18 @@ const bodyFont = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Auracles | Knowledge Marketplace",
+  title: "Institutional Intelligence Infrastructure",
   description: "Marketplace infrastructure for trusted frameworks.",
   icons: {
     icon: [
-      { url: "/images/favicon-black.png", media: "(prefers-color-scheme: light)" },
-      { url: "/images/favicon-white.png", media: "(prefers-color-scheme: dark)" },
+      {
+        url: "/images/favicon-black.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/images/favicon-white.png",
+        media: "(prefers-color-scheme: dark)",
+      },
     ],
   },
 };
