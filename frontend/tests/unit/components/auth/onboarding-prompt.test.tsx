@@ -8,7 +8,7 @@ describe("OnboardingPrompt", () => {
     render(<OnboardingPrompt />);
 
     expect(screen.getByText(/complete your profile/i)).toBeInTheDocument();
-    expect(screen.getByText(/submit identity verification/i)).toBeInTheDocument();
+    expect(screen.getByText(/verify your identity/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /browse frameworks/i })).toHaveAttribute(
       "href",
       "/explore",

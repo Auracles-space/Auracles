@@ -336,12 +336,11 @@ export type AdminKycReviewRequest = {
 export type status = 'verified' | 'rejected';
 
 /**
- * Response body for admin KYC review.
+ * Response body for an admin identity-verification override.
  */
 export type AdminKycReviewResponse = {
     user_id: string;
     kyc_status: string;
-    document_status: string;
 };
 
 /**
@@ -1808,34 +1807,11 @@ export type KycStatusResponse = {
 };
 
 /**
- * Request body for confirming a KYC object upload.
+ * Hosted Persona verification link for the authenticated user.
  */
-export type KycSubmitRequest = {
-    s3_key: string;
-};
-
-/**
- * Request body for creating a constrained KYC upload target.
- */
-export type KycUploadUrlRequest = {
-    doc_type: 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
-    mime_type: string;
-    file_size: number;
-};
-
-export type doc_type = 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
-
-/**
- * Response body for an S3 presigned POST KYC upload target.
- */
-export type KycUploadUrlResponse = {
-    upload_url: string;
-    fields: {
-        [key: string]: (string);
-    };
-    s3_key: string;
-    max_size: number;
-    expires_in: number;
+export type KycVerificationSessionResponse = {
+    hosted_url: string;
+    inquiry_id: string;
 };
 
 /**
@@ -4739,21 +4715,9 @@ export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteResponse = (void)
 
 export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPValidationError);
 
-export type RequestKycUploadUrlV1SettingsKycUploadUrlPostData = {
-    body: KycUploadUrlRequest;
-};
+export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
 
-export type RequestKycUploadUrlV1SettingsKycUploadUrlPostResponse = (KycUploadUrlResponse);
-
-export type RequestKycUploadUrlV1SettingsKycUploadUrlPostError = (HTTPValidationError);
-
-export type SubmitKycUploadV1SettingsKycSubmitPostData = {
-    body: KycSubmitRequest;
-};
-
-export type SubmitKycUploadV1SettingsKycSubmitPostResponse = (KycStatusResponse);
-
-export type SubmitKycUploadV1SettingsKycSubmitPostError = (HTTPValidationError);
+export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
 
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
@@ -4814,6 +4778,16 @@ export type IngestStripeWebhookV1WebhooksStripePostData = {
 export type IngestStripeWebhookV1WebhooksStripePostResponse = (WebhookIngestResponse);
 
 export type IngestStripeWebhookV1WebhooksStripePostError = (HTTPValidationError);
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostData = {
+    headers?: {
+        'Persona-Signature'?: (string | null);
+    };
+};
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostResponse = (WebhookIngestResponse);
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostError = (HTTPValidationError);
 
 export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostData = {
     body: WorkspaceUploadCreateRequest;

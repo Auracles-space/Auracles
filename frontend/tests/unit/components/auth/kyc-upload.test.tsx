@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KycUpload } from "@/components/modules/auth/kyc-upload";
 import {
   getKycStatusV1SettingsKycGet,
-  requestKycUploadUrl,
+  startIdentityVerificationV1SettingsKycSessionPost,
 } from "@/lib/generated/sdk.gen";
 import type { GetKycStatusV1SettingsKycGetResponse } from "@/lib/generated/types.gen";
 
@@ -23,9 +23,8 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
     interceptors: { response: { use: vi.fn() } },
     setConfig: vi.fn(),
   },
-  requestKycUploadUrl: vi.fn(),
-  submitKycUpload: vi.fn(),
   getKycStatusV1SettingsKycGet: vi.fn(),
+  startIdentityVerificationV1SettingsKycSessionPost: vi.fn(),
 }));
 
 describe("KycUpload", () => {
@@ -38,49 +37,43 @@ describe("KycUpload", () => {
   }
 
   beforeEach(() => {
-    vi.mocked(requestKycUploadUrl).mockReset();
+    vi.mocked(startIdentityVerificationV1SettingsKycSessionPost).mockReset();
     vi.mocked(getKycStatusV1SettingsKycGet).mockReset();
     vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
       ok({ kyc_status: "unverified", documents: [] }),
     );
   });
 
-  it("keeps the submit disabled until a document file is selected", async () => {
-    const { container } = render(<KycUpload />);
-
-    // Wait for initial load to finish
-    await waitFor(() => {
-      expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+  it("launches the Persona hosted flow when the user starts verification", async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign },
+    });
+    vi.mocked(startIdentityVerificationV1SettingsKycSessionPost).mockResolvedValue({
+      data: { hosted_url: "https://withpersona.com/verify?inquiry-id=inq_1", inquiry_id: "inq_1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
     });
 
-    const submit = screen.getByRole("button", { name: /submit document/i });
-    expect(submit).toBeDisabled();
-
-    const fileInput = container.querySelector(
-      "#doc-upload",
-    ) as HTMLInputElement;
-    const file = new File(["id-bytes"], "passport.png", { type: "image/png" });
-    fireEvent.change(fileInput, { target: { files: [file] } });
-
-    expect(submit).toBeEnabled();
-  });
-
-  it("does not request an upload URL while no file is selected", async () => {
     render(<KycUpload />);
 
-    // Wait for initial load to finish
     await waitFor(() => {
       expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /submit document/i }));
+    fireEvent.click(screen.getByRole("button", { name: /verify identity/i }));
 
-    expect(requestKycUploadUrl).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        "https://withpersona.com/verify?inquiry-id=inq_1",
+      );
+    });
   });
 
   it("refetches the KYC status when the window regains focus", async () => {
-    // Pending on mount, verified by the time the user tabs back — the admin
-    // approved in the meantime. Focus must re-read without a manual refresh.
+    // Pending on mount, verified by the time the user tabs back — the webhook
+    // landed in the meantime. Focus must re-read without a manual refresh.
     vi.mocked(getKycStatusV1SettingsKycGet)
       .mockResolvedValueOnce(ok({ kyc_status: "pending", documents: [] }))
       .mockResolvedValue(ok({ kyc_status: "verified", documents: [] }));
@@ -98,7 +91,7 @@ describe("KycUpload", () => {
     });
   });
 
-  it("shows the verified state and hides the form when KYC is verified", async () => {
+  it("shows the verified state and hides the CTA when KYC is verified", async () => {
     vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
       ok({ kyc_status: "verified", documents: [] }),
     );
@@ -111,7 +104,7 @@ describe("KycUpload", () => {
 
     expect(screen.getByText(/identity verified/i)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /submit document/i }),
+      screen.queryByRole("button", { name: /verify identity/i }),
     ).not.toBeInTheDocument();
   });
 });

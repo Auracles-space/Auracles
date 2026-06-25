@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import HTTPException, status
+from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
+from app.core.rate_limit import RateLimiter
 from app.core.security import generate_opaque_token, hash_token, verify_password
-from app.integrations import s3
+from app.integrations import persona
+from app.integrations.persona import PersonaProviderError
 from app.modules.auth import service as auth_service
-from app.modules.auth.models import KycDocument, User
+from app.modules.auth.models import IdentityVerification, KycDocument, User
 from app.modules.settings.schemas import (
     KycStatusResponse,
-    KycUploadUrlResponse,
+    KycVerificationSessionResponse,
     SessionResponse,
     SessionsResponse,
 )
@@ -28,11 +30,12 @@ from app.workers.tasks.notifications import (
     send_email_change_verification,
 )
 
-ALLOWED_KYC_MIME_TYPES = {"image/jpeg", "image/png", "application/pdf"}
-KYC_MAX_FILE_SIZE = 10 * 1024 * 1024
-KYC_UPLOAD_URL_TTL_SECONDS = 900
 EMAIL_CHANGE_PREFIX = "ec_"
 EMAIL_CHANGE_TTL_SECONDS = 86_400
+
+# Cap identity-verification session starts to limit per-check provider cost
+# from a single account: five new Persona inquiries per hour per user.
+_kyc_session_limiter = RateLimiter("kyc_session", limit=5, window=3600)
 
 
 def _email_change_key(token: str) -> str:
@@ -47,101 +50,76 @@ def _redis_text(value: object) -> str:
     return str(value)
 
 
-def _extension_for_mime(mime_type: str) -> str:
-    """Return a stable filename extension for supported KYC MIME types."""
-    return {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "application/pdf": "pdf",
-    }[mime_type]
-
-
-async def request_kyc_upload_url(
+async def start_identity_verification(
     db: AsyncSession,
+    redis: Redis,
     user: User,
-    doc_type: str,
-    mime_type: str,
-    file_size: int,
-) -> KycUploadUrlResponse:
-    """Create a KYC document record and presigned POST upload target."""
-    if mime_type not in ALLOWED_KYC_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported KYC document type.",
-        )
-    if file_size > KYC_MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="KYC document exceeds the 10MB limit.",
-        )
+) -> KycVerificationSessionResponse:
+    """Start a Persona identity-verification inquiry for the current user.
 
-    settings = get_settings()
-    key = f"kyc/{user.id}/{uuid4()}.{_extension_for_mime(mime_type)}"
-    document = KycDocument(
-        user_id=user.id,
-        doc_type=doc_type,
-        s3_key=key,
-        mime_type=mime_type,
-        file_size=file_size,
-    )
-    db.add(document)
-    upload_target = s3.storage.presigned_post(
-        bucket=settings.s3_artifacts_bucket,
-        key=key,
-        mime_type=mime_type,
-        max_size=KYC_MAX_FILE_SIZE,
-        expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
-    )
-    await db.commit()
-    return KycUploadUrlResponse(
-        upload_url=str(upload_target["url"]),
-        fields={
-            str(field_name): str(field_value)
-            for field_name, field_value in upload_target["fields"].items()
-        },
-        s3_key=key,
-        max_size=KYC_MAX_FILE_SIZE,
-        expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
-    )
+    Creates a Persona inquiry tagged with the user id, persists the mapping so
+    the signed webhook can resolve the decision, marks the user ``pending``, and
+    returns the hosted link the user opens to verify. Rate-limited to cap the
+    per-check provider cost a single account can incur.
 
+    Args:
+        db: Async DB session.
+        redis: Redis client for the rate-limit window.
+        user: The authenticated user starting verification.
 
-async def confirm_kyc_upload(
-    db: AsyncSession,
-    user: User,
-    s3_key: str,
-) -> KycStatusResponse:
-    """Submit a previously requested KYC upload for review."""
-    document = await db.scalar(
-        select(KycDocument).where(
-            KycDocument.user_id == user.id,
-            KycDocument.s3_key == s3_key,
-        )
-    )
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="KYC document not found.",
-        )
+    Returns:
+        The hosted Persona verification URL and inquiry id.
 
-    settings = get_settings()
-    if not s3.storage.object_exists(settings.s3_artifacts_bucket, s3_key):
+    Raises:
+        HTTPException(409): If the user is already verified.
+        HTTPException(429): If the per-user session window is exceeded.
+        HTTPException(502): If Persona cannot create the inquiry.
+    """
+    if user.kyc_status == "verified":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="KYC document has not been uploaded.",
+            detail="Identity is already verified.",
         )
 
+    await _kyc_session_limiter.check(redis, str(user.id))
+
+    log = logger.bind(
+        module="kyc",
+        action="verification_started",
+        user_id=user.id,
+    )
+    try:
+        inquiry = await persona.create_inquiry(reference_id=str(user.id))
+    except PersonaProviderError as exc:
+        log.error("persona_inquiry_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Identity verification provider is unavailable.",
+        ) from exc
+
+    db.add(
+        IdentityVerification(
+            user_id=user.id,
+            provider="persona",
+            inquiry_id=inquiry.inquiry_id,
+            status="created",
+        )
+    )
     user.kyc_status = "pending"
-    document.status = "pending"
     await write_audit(
         db=db,
         actor_id=user.id,
         action="kyc_status_change",
         target_type="user",
         target_id=user.id,
-        metadata={"status": "pending", "s3_key": s3_key},
+        metadata={"status": "pending", "provider": "persona"},
     )
     await db.commit()
-    return await get_kyc_status(db=db, user=user)
+    log.info("verification_started")
+    return KycVerificationSessionResponse(
+        hosted_url=inquiry.hosted_url,
+        inquiry_id=inquiry.inquiry_id,
+    )
 
 
 async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:

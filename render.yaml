@@ -59,6 +59,13 @@ envVarGroups:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # --- Identity verification (Persona KYC) ---
+      - key: PERSONA_API_KEY
+        sync: false
+      - key: PERSONA_WEBHOOK_SECRET
+        sync: false
+      - key: PERSONA_INQUIRY_TEMPLATE_ID
+        sync: false
       # --- Search (Brave) ---
       - key: BRAVE_SEARCH_API_KEY
         sync: false

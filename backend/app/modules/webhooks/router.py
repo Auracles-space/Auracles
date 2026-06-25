@@ -26,3 +26,18 @@ async def ingest_stripe_webhook(
         payload=raw_body,
         signature_header=stripe_signature,
     )
+
+
+@router.post("/persona", response_model=WebhookIngestResponse)
+async def ingest_persona_webhook(
+    request: Request,
+    db: DatabaseSession,
+    persona_signature: str | None = Header(default=None, alias="Persona-Signature"),
+) -> WebhookIngestResponse:
+    """Verify and apply a Persona identity-verification webhook event."""
+    raw_body = await request.body()
+    return await service.handle_persona_webhook(
+        db=db,
+        payload=raw_body,
+        signature_header=persona_signature,
+    )

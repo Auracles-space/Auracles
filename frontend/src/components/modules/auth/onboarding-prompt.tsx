@@ -13,8 +13,8 @@ const steps = [
     title: "Complete your profile",
   },
   {
-    body: "Upload a private identity document so the account is ready for marketplace actions that require verification.",
-    title: "Submit identity verification",
+    body: "A quick, secure check with our verification partner — about two minutes with a government ID. Your documents stay with Persona, never stored on Auracles.",
+    title: "Verify your identity",
   },
 ];
 
@@ -70,7 +70,7 @@ export function OnboardingPrompt({ returnTo }: OnboardingPromptProps = {}) {
           className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-transparent bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground active:scale-[0.98] shadow-md"
           href={kycHref}
         >
-          Start KYC
+          Verify identity
         </Link>
         <Link
           className="inline-flex min-h-12 w-full items-center justify-center rounded-control border-2 border-foreground bg-transparent px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-foreground hover:text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"

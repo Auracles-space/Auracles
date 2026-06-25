@@ -326,7 +326,7 @@ paths:
       tags:
       - Admin
       summary: Review Kyc
-      description: Review a user's latest KYC document.
+      description: Manually override a user's identity-verification status.
       operationId: review_kyc_v1_admin_users__user_id__kyc_patch
       security:
       - HTTPBearer: []
@@ -6541,60 +6541,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/settings/kyc/upload-url:
+  /v1/settings/kyc/session:
     post:
       tags:
       - Settings
-      summary: Request Kyc Upload Url
-      description: Create a presigned KYC upload target for the authenticated user.
-      operationId: request_kyc_upload_url_v1_settings_kyc_upload_url_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/KycUploadUrlRequest'
-        required: true
+      summary: Start Identity Verification
+      description: Start a Persona identity-verification session for the current user.
+      operationId: start_identity_verification_v1_settings_kyc_session_post
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/KycUploadUrlResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /v1/settings/kyc/submit:
-    post:
-      tags:
-      - Settings
-      summary: Submit Kyc Upload
-      description: Submit a previously uploaded KYC document for review.
-      operationId: submit_kyc_upload_v1_settings_kyc_submit_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/KycSubmitRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/KycStatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/KycVerificationSessionResponse'
       security:
       - HTTPBearer: []
   /v1/settings/kyc:
@@ -6787,6 +6747,35 @@ paths:
           - type: string
           - type: 'null'
           title: Stripe-Signature
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookIngestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/webhooks/persona:
+    post:
+      tags:
+      - Webhooks
+      summary: Ingest Persona Webhook
+      description: Verify and apply a Persona identity-verification webhook event.
+      operationId: ingest_persona_webhook_v1_webhooks_persona_post
+      parameters:
+      - name: Persona-Signature
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona-Signature
       responses:
         '200':
           description: Successful Response
@@ -7829,16 +7818,12 @@ components:
         kyc_status:
           type: string
           title: Kyc Status
-        document_status:
-          type: string
-          title: Document Status
       type: object
       required:
       - user_id
       - kyc_status
-      - document_status
       title: AdminKycReviewResponse
-      description: Response body for admin KYC review.
+      description: Response body for an admin identity-verification override.
     AdminLicenseGrantRequest:
       properties:
         framework_id:
@@ -12581,69 +12566,20 @@ components:
       - documents
       title: KycStatusResponse
       description: Authenticated user's KYC status and document metadata.
-    KycSubmitRequest:
+    KycVerificationSessionResponse:
       properties:
-        s3_key:
+        hosted_url:
           type: string
-          minLength: 1
-          title: S3 Key
+          title: Hosted Url
+        inquiry_id:
+          type: string
+          title: Inquiry Id
       type: object
       required:
-      - s3_key
-      title: KycSubmitRequest
-      description: Request body for confirming a KYC object upload.
-    KycUploadUrlRequest:
-      properties:
-        doc_type:
-          type: string
-          enum:
-          - passport
-          - drivers_license
-          - national_id
-          - proof_of_address
-          title: Doc Type
-        mime_type:
-          type: string
-          title: Mime Type
-        file_size:
-          type: integer
-          exclusiveMinimum: 0.0
-          title: File Size
-      type: object
-      required:
-      - doc_type
-      - mime_type
-      - file_size
-      title: KycUploadUrlRequest
-      description: Request body for creating a constrained KYC upload target.
-    KycUploadUrlResponse:
-      properties:
-        upload_url:
-          type: string
-          title: Upload Url
-        fields:
-          additionalProperties:
-            type: string
-          type: object
-          title: Fields
-        s3_key:
-          type: string
-          title: S3 Key
-        max_size:
-          type: integer
-          title: Max Size
-        expires_in:
-          type: integer
-          title: Expires In
-      type: object
-      required:
-      - upload_url
-      - fields
-      - s3_key
-      - max_size
-      - expires_in
-      title: KycUploadUrlResponse
-      description: Response body for an S3 presigned POST KYC upload target.
+      - hosted_url
+      - inquiry_id
+      title: KycVerificationSessionResponse
+      description: Hosted Persona verification link for the authenticated user.
     LibraryItem:
       properties:
         license_id:

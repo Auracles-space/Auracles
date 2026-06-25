@@ -63,8 +63,8 @@ const settingsLinks: SettingsLink[] = [
   },
   {
     href: "/settings/kyc",
-    label: "KYC Verification",
-    getSummary: () => "Submit identity verification documents.",
+    label: "Identity Verification",
+    getSummary: () => "Verify your identity to unlock payouts and publishing.",
   },
 ];
 
