@@ -616,6 +616,8 @@ async def _mark_project_milestone_funded(
         },
     )
     # The payee is the assigned Contributor, who starts work once escrow holds.
+    if transaction.payee_id is None:
+        raise WebhookProcessingError("milestone escrow transaction missing payee")
     project_notifications.notify_milestone_funded(
         contributor_id=transaction.payee_id,
         project_id=project.id,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -13,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.rate_limit import RateLimiter
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import generate_opaque_token, hash_token, verify_password
 from app.integrations import persona
 from app.integrations.persona import PersonaProviderError
@@ -81,7 +82,7 @@ async def start_identity_verification(
             detail="Identity is already verified.",
         )
 
-    await _kyc_session_limiter.check(redis, str(user.id))
+    await _kyc_session_limiter.check(cast(RedisCounter, redis), str(user.id))
 
     log = logger.bind(
         module="kyc",
