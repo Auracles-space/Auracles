@@ -271,3 +271,42 @@ class KycDocument(CreatedAtMixin, Base):
         back_populates="kyc_documents",
         foreign_keys=[user_id],
     )
+
+
+class IdentityVerification(CreatedAtMixin, Base):
+    """Third-party identity-verification inquiry (Persona).
+
+    Maps a Persona inquiry back to a user so the signed webhook decision can
+    update ``users.kyc_status``. We store only the inquiry id, status, and
+    decision time — never the underlying documents, which Persona custodies.
+
+    Maps to: identity verification design (2026-06-24).
+    """
+
+    __tablename__ = "identity_verifications"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="persona",
+    )
+    inquiry_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        server_default="created",
+    )
+    decision_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )

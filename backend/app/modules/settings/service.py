@@ -6,6 +6,7 @@ import json
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
@@ -13,13 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.rate_limit import RateLimiter
 from app.core.security import generate_opaque_token, hash_token, verify_password
-from app.integrations import s3
+from app.integrations import persona, s3
+from app.integrations.persona import PersonaProviderError
 from app.modules.auth import service as auth_service
-from app.modules.auth.models import KycDocument, User
+from app.modules.auth.models import IdentityVerification, KycDocument, User
 from app.modules.settings.schemas import (
     KycStatusResponse,
     KycUploadUrlResponse,
+    KycVerificationSessionResponse,
     SessionResponse,
     SessionsResponse,
 )
@@ -33,6 +37,10 @@ KYC_MAX_FILE_SIZE = 10 * 1024 * 1024
 KYC_UPLOAD_URL_TTL_SECONDS = 900
 EMAIL_CHANGE_PREFIX = "ec_"
 EMAIL_CHANGE_TTL_SECONDS = 86_400
+
+# Cap identity-verification session starts to limit per-check provider cost
+# from a single account: five new Persona inquiries per hour per user.
+_kyc_session_limiter = RateLimiter("kyc_session", limit=5, window=3600)
 
 
 def _email_change_key(token: str) -> str:
@@ -142,6 +150,78 @@ async def confirm_kyc_upload(
     )
     await db.commit()
     return await get_kyc_status(db=db, user=user)
+
+
+async def start_identity_verification(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+) -> KycVerificationSessionResponse:
+    """Start a Persona identity-verification inquiry for the current user.
+
+    Creates a Persona inquiry tagged with the user id, persists the mapping so
+    the signed webhook can resolve the decision, marks the user ``pending``, and
+    returns the hosted link the user opens to verify. Rate-limited to cap the
+    per-check provider cost a single account can incur.
+
+    Args:
+        db: Async DB session.
+        redis: Redis client for the rate-limit window.
+        user: The authenticated user starting verification.
+
+    Returns:
+        The hosted Persona verification URL and inquiry id.
+
+    Raises:
+        HTTPException(409): If the user is already verified.
+        HTTPException(429): If the per-user session window is exceeded.
+        HTTPException(502): If Persona cannot create the inquiry.
+    """
+    if user.kyc_status == "verified":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Identity is already verified.",
+        )
+
+    await _kyc_session_limiter.check(redis, str(user.id))
+
+    log = logger.bind(
+        module="kyc",
+        action="verification_started",
+        user_id=user.id,
+    )
+    try:
+        inquiry = await persona.create_inquiry(reference_id=str(user.id))
+    except PersonaProviderError as exc:
+        log.error("persona_inquiry_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Identity verification provider is unavailable.",
+        ) from exc
+
+    db.add(
+        IdentityVerification(
+            user_id=user.id,
+            provider="persona",
+            inquiry_id=inquiry.inquiry_id,
+            status="created",
+        )
+    )
+    user.kyc_status = "pending"
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="kyc_status_change",
+        target_type="user",
+        target_id=user.id,
+        metadata={"status": "pending", "provider": "persona"},
+    )
+    await db.commit()
+    log.info("verification_started")
+    return KycVerificationSessionResponse(
+        hosted_url=inquiry.hosted_url,
+        inquiry_id=inquiry.inquiry_id,
+    )
 
 
 async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:

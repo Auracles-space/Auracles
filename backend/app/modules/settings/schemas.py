@@ -61,6 +61,17 @@ class KycStatusResponse(BaseModel):
     documents: list[KycDocumentResponse]
 
 
+class KycVerificationSessionResponse(BaseModel):
+    """Hosted Persona verification link for the authenticated user.
+
+    The frontend redirects the user to ``hosted_url`` to complete identity
+    verification; the Persona webhook later flips ``kyc_status``.
+    """
+
+    hosted_url: str
+    inquiry_id: str
+
+
 class SessionResponse(BaseModel):
     """Public metadata for one active refresh-token session."""
 

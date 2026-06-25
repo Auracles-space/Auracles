@@ -11,7 +11,12 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.auth.models import (
+    IdentityVerification,
+    KycDocument,
+    User,
+    UserRole,
+)
 from app.modules.notifications.models import (
     Notification,
     NotificationDeliveryMarker,
@@ -24,6 +29,7 @@ async def clear_identity_state_async(session: AsyncSession) -> None:
     await session.execute(delete(NotificationDeliveryMarker))
     await session.execute(delete(Notification))
     await session.execute(delete(AuditLog))
+    await session.execute(delete(IdentityVerification))
     await session.execute(delete(KycDocument))
     await session.execute(delete(UserRole))
     await session.execute(delete(User))
@@ -34,6 +40,7 @@ def clear_identity_state_sync(session: Session) -> None:
     session.execute(delete(NotificationDeliveryMarker))
     session.execute(delete(Notification))
     session.execute(delete(AuditLog))
+    session.execute(delete(IdentityVerification))
     session.execute(delete(KycDocument))
     session.execute(delete(UserRole))
     session.execute(delete(User))

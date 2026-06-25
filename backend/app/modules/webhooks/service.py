@@ -23,11 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
-from app.integrations import stripe
+from app.integrations import persona, stripe
+from app.integrations.persona import PersonaProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
+from app.modules.auth.models import IdentityVerification, User
 from app.modules.collections.purchase import confirm_collection_purchase
 from app.modules.developer import webhooks_service as developer_webhooks_service
 from app.modules.developer.models import (
@@ -38,6 +40,7 @@ from app.modules.developer.models import (
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
+from app.modules.notifications.service import create_notification
 from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import Milestone, Project
 from app.modules.webhooks.models import WebhookEvent
@@ -884,3 +887,194 @@ async def handle_stripe_webhook(
         provider_event_id=event_id,
     ).info("webhook_processed")
     return WebhookIngestResponse(received=True, status=event_status)
+
+
+# Persona inquiry statuses that close out an inquiry. A terminal row is final:
+# later deliveries for the same inquiry are treated as replays.
+_PERSONA_VERIFIED_STATUSES = frozenset({"approved", "completed"})
+_PERSONA_REJECTED_STATUSES = frozenset({"declined", "failed", "expired"})
+_PERSONA_TERMINAL_STATUSES = _PERSONA_VERIFIED_STATUSES | _PERSONA_REJECTED_STATUSES
+
+
+def _persona_inquiry_resource(event: dict[str, Any]) -> dict[str, Any]:
+    """Return the inquiry resource carried by a Persona webhook event.
+
+    Persona nests the changed resource at
+    ``data.attributes.payload.data`` (a JSON:API resource object).
+    """
+    data = event.get("data")
+    attributes = data.get("attributes") if isinstance(data, dict) else None
+    payload = attributes.get("payload") if isinstance(attributes, dict) else None
+    resource = payload.get("data") if isinstance(payload, dict) else None
+    return resource if isinstance(resource, dict) else {}
+
+
+async def _audit_persona_invalid_signature(db: AsyncSession) -> None:
+    """Persist a minimal audit row for a rejected Persona signature."""
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="webhook_signature_invalid",
+            target_type="webhook",
+            metadata={"provider": "persona"},
+        )
+
+
+async def _apply_persona_decision(
+    db: AsyncSession,
+    *,
+    inquiry_id: str,
+    inquiry_status: str,
+) -> str:
+    """Apply one Persona inquiry decision to identity + KYC state.
+
+    Returns the webhook ingest status: ``processed`` when a decision is applied,
+    ``duplicate`` when the inquiry already reached a terminal state, or
+    ``received`` when the status is non-terminal or the inquiry is unknown.
+    """
+    record = await db.scalar(
+        select(IdentityVerification)
+        .where(IdentityVerification.inquiry_id == inquiry_id)
+        .with_for_update()
+    )
+    if record is None:
+        logger.bind(
+            module="webhooks",
+            action="persona_webhook",
+        ).warning("unknown_inquiry", provider="persona")
+        return "received"
+
+    if record.status in _PERSONA_TERMINAL_STATUSES:
+        return "duplicate"
+
+    if inquiry_status not in _PERSONA_TERMINAL_STATUSES:
+        # Non-terminal progress (created/pending/needs_review): track only.
+        record.status = inquiry_status
+        return "received"
+
+    verified = inquiry_status in _PERSONA_VERIFIED_STATUSES
+    kyc_status = "verified" if verified else "rejected"
+    record.status = inquiry_status
+    record.decision_at = datetime.now(UTC)
+
+    user = await db.get(User, record.user_id)
+    if user is None:
+        raise WebhookProcessingError("identity verification user not found")
+    user.kyc_status = kyc_status
+
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="kyc_status_change",
+        target_type="user",
+        target_id=user.id,
+        metadata={
+            "status": kyc_status,
+            "provider": "persona",
+            "inquiry_id": inquiry_id,
+        },
+    )
+    await create_notification(
+        db=db,
+        user_id=user.id,
+        notification_type="kyc_verified" if verified else "kyc_rejected",
+        title=(
+            "Identity verified"
+            if verified
+            else "Identity verification needs attention"
+        ),
+        body=(
+            "Your identity verification is complete."
+            if verified
+            else "Your identity verification was not approved. Start a new "
+            "verification to try again."
+        ),
+        link="/settings/kyc",
+        payload={"inquiry_id": inquiry_id, "status": kyc_status},
+        dedupe_key=f"persona-decision:{inquiry_id}:{kyc_status}",
+    )
+    return "processed"
+
+
+async def handle_persona_webhook(
+    db: AsyncSession,
+    *,
+    payload: bytes,
+    signature_header: str | None,
+) -> WebhookIngestResponse:
+    """Verify and apply a Persona identity-verification webhook.
+
+    The signature is verified over the raw body before any parsing. A verified
+    inquiry decision drives ``users.kyc_status``; replays of a terminal inquiry
+    are reported as duplicates.
+
+    Args:
+        db: Async DB session.
+        payload: Raw request body bytes.
+        signature_header: The ``Persona-Signature`` header value.
+
+    Returns:
+        A small acknowledgement with the processing status.
+
+    Raises:
+        HTTPException(400): If the signature is invalid.
+        HTTPException(500): If a verified event cannot be applied.
+    """
+    try:
+        event = persona.verify_webhook(payload, signature_header)
+    except PersonaProviderError as exc:
+        await _audit_persona_invalid_signature(db)
+        logger.bind(module="webhooks", action="verify_persona_webhook").warning(
+            "signature_invalid",
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Persona signature.",
+        ) from exc
+
+    resource = _persona_inquiry_resource(event)
+    inquiry_id = resource.get("id")
+    inquiry_attributes = resource.get("attributes")
+    inquiry_status = (
+        inquiry_attributes.get("status")
+        if isinstance(inquiry_attributes, dict)
+        else None
+    )
+    if not isinstance(inquiry_id, str) or not isinstance(inquiry_status, str):
+        logger.bind(module="webhooks", action="persona_webhook").warning(
+            "unknown_event_type", provider="persona"
+        )
+        return WebhookIngestResponse(received=True, status="received")
+
+    try:
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            ingest_status = await _apply_persona_decision(
+                db,
+                inquiry_id=inquiry_id,
+                inquiry_status=inquiry_status,
+            )
+    except Exception as exc:
+        if db.in_transaction():
+            await db.rollback()
+        logger.bind(
+            module="webhooks",
+            action="dispatch_persona_webhook",
+            inquiry_id=inquiry_id,
+        ).error("webhook_dispatch_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed.",
+        ) from exc
+
+    logger.bind(
+        module="webhooks",
+        action="dispatch_persona_webhook",
+        inquiry_id=inquiry_id,
+    ).info("webhook_processed")
+    return WebhookIngestResponse(received=True, status=ingest_status)

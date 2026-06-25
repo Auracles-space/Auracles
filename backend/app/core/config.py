@@ -164,6 +164,15 @@ class Settings(BaseSettings):
     paystack_webhook_secret: SecretStr | None = Field(
         default=None, alias="PAYSTACK_WEBHOOK_SECRET"
     )
+    persona_api_key: SecretStr | None = Field(
+        default=None, alias="PERSONA_API_KEY"
+    )
+    persona_webhook_secret: SecretStr | None = Field(
+        default=None, alias="PERSONA_WEBHOOK_SECRET"
+    )
+    persona_inquiry_template_id: str | None = Field(
+        default=None, alias="PERSONA_INQUIRY_TEMPLATE_ID"
+    )
     brave_search_api_key: SecretStr | None = Field(
         default=None, alias="BRAVE_SEARCH_API_KEY"
     )

@@ -29,6 +29,7 @@ from app.modules.settings.schemas import (
     KycSubmitRequest,
     KycUploadUrlRequest,
     KycUploadUrlResponse,
+    KycVerificationSessionResponse,
     SessionsResponse,
 )
 
@@ -65,6 +66,20 @@ async def submit_kyc_upload(
         db=db,
         user=current_user,
         s3_key=payload.s3_key,
+    )
+
+
+@router.post("/kyc/session", response_model=KycVerificationSessionResponse)
+async def start_identity_verification(
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> KycVerificationSessionResponse:
+    """Start a Persona identity-verification session for the current user."""
+    return await service.start_identity_verification(
+        db=db,
+        redis=redis,
+        user=current_user,
     )
 
 
