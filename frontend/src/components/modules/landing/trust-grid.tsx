@@ -1,9 +1,30 @@
-// Red flat archive box icon matching the screenshot wireframes
-const BoxIcon = (
-  <svg className="h-6 w-6 text-accent" viewBox="0 0 24 24" fill="currentColor">
-    <rect x="3" y="5" width="18" height="4" rx="1" />
-    <rect x="4" y="10" width="16" height="10" rx="1" />
-    <rect x="10" y="13" width="4" height="2" rx="0.5" fill="var(--background)" />
+const PublishIcon = (
+  <svg className="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+const CredibleIcon = (
+  <svg className="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="m9 12 2 2 4-4" />
+  </svg>
+);
+
+const DiscoverIcon = (
+  <svg className="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+  </svg>
+);
+
+const EarnIcon = (
+  <svg className="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <circle cx="12" cy="12" r="2" />
+    <path d="M6 12h.01M18 12h.01" />
   </svg>
 );
 
@@ -11,22 +32,22 @@ const waitlistPillars = [
   {
     label: "Publish your Framework",
     body: "Upload the playbooks, templates, and operating systems you've developed through real-world experience.",
-    icon: BoxIcon,
+    icon: PublishIcon,
   },
   {
     label: "Build credibility",
     body: "Auracles verifies contributors and reviews submissions before publication.",
-    icon: BoxIcon,
+    icon: CredibleIcon,
   },
   {
     label: "Get discovered",
     body: "Organizations browse the marketplace to find trusted Frameworks for specific challenges.",
-    icon: BoxIcon,
+    icon: DiscoverIcon,
   },
   {
     label: "Earn and grow",
     body: "Generate licensing revenue, build reputation, and expand your professional portfolio.",
-    icon: BoxIcon,
+    icon: EarnIcon,
   },
 ];
 
