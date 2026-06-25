@@ -18,7 +18,6 @@ const navLinks = [
   { href: "#how-it-works", label: "How It Works" },
   { href: "#roles", label: "For Contributors" },
   { href: "#trust", label: "Trust" },
-  ...(!isWaitlistMode ? [{ href: "#pricing", label: "Pricing" }] : []),
   { href: "#faq", label: "FAQ" },
 ];
 

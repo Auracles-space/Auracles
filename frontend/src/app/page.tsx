@@ -11,7 +11,6 @@ import { FooterCta } from "@/components/modules/landing/footer-cta";
 import { HowItWorks } from "@/components/modules/landing/how-it-works";
 import { LandingHero } from "@/components/modules/landing/landing-hero";
 import { MarketingNav } from "@/components/modules/landing/marketing-nav";
-import { PricingStrip } from "@/components/modules/landing/pricing-strip";
 import { RoleStrip } from "@/components/modules/landing/role-strip";
 import { TrustGrid } from "@/components/modules/landing/trust-grid";
 
@@ -25,7 +24,6 @@ export default function Home() {
       <HowItWorks />
       <RoleStrip />
       <TrustGrid />
-      {!isWaitlistMode && <PricingStrip />}
       <FaqList />
       <FooterCta />
     </div>
