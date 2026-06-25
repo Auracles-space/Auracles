@@ -1045,8 +1045,23 @@ async def handle_persona_webhook(
         else None
     )
     if not isinstance(inquiry_id, str) or not isinstance(inquiry_status, str):
+        # Could not locate the inquiry id/status at the expected envelope path.
+        # Log structure only (event name + resource type/keys) so a real-world
+        # shape mismatch is diagnosable without leaking PII from the payload.
+        event_attributes = event.get("data", {})
+        event_attributes = (
+            event_attributes.get("attributes", {})
+            if isinstance(event_attributes, dict)
+            else {}
+        )
         logger.bind(module="webhooks", action="persona_webhook").warning(
-            "unknown_event_type", provider="persona"
+            "unparseable_event",
+            provider="persona",
+            event_name=event_attributes.get("name")
+            if isinstance(event_attributes, dict)
+            else None,
+            resource_type=resource.get("type"),
+            resource_keys=sorted(resource.keys()),
         )
         return WebhookIngestResponse(received=True, status="received")
 
