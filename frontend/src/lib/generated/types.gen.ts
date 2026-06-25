@@ -1839,6 +1839,14 @@ export type KycUploadUrlResponse = {
 };
 
 /**
+ * Hosted Persona verification link for the authenticated user.
+ */
+export type KycVerificationSessionResponse = {
+    hosted_url: string;
+    inquiry_id: string;
+};
+
+/**
  * One Framework license shown in an Operator's library.
  */
 export type LibraryItem = {
@@ -4755,6 +4763,10 @@ export type SubmitKycUploadV1SettingsKycSubmitPostResponse = (KycStatusResponse)
 
 export type SubmitKycUploadV1SettingsKycSubmitPostError = (HTTPValidationError);
 
+export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
+
+export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
+
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
 export type GetKycStatusV1SettingsKycGetError = unknown;
@@ -4814,6 +4826,16 @@ export type IngestStripeWebhookV1WebhooksStripePostData = {
 export type IngestStripeWebhookV1WebhooksStripePostResponse = (WebhookIngestResponse);
 
 export type IngestStripeWebhookV1WebhooksStripePostError = (HTTPValidationError);
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostData = {
+    headers?: {
+        'Persona-Signature'?: (string | null);
+    };
+};
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostResponse = (WebhookIngestResponse);
+
+export type IngestPersonaWebhookV1WebhooksPersonaPostError = (HTTPValidationError);
 
 export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostData = {
     body: WorkspaceUploadCreateRequest;

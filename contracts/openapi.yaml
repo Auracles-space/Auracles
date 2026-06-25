@@ -6597,6 +6597,22 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/settings/kyc/session:
+    post:
+      tags:
+      - Settings
+      summary: Start Identity Verification
+      description: Start a Persona identity-verification session for the current user.
+      operationId: start_identity_verification_v1_settings_kyc_session_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycVerificationSessionResponse'
+      security:
+      - HTTPBearer: []
   /v1/settings/kyc:
     get:
       tags:
@@ -6787,6 +6803,35 @@ paths:
           - type: string
           - type: 'null'
           title: Stripe-Signature
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookIngestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/webhooks/persona:
+    post:
+      tags:
+      - Webhooks
+      summary: Ingest Persona Webhook
+      description: Verify and apply a Persona identity-verification webhook event.
+      operationId: ingest_persona_webhook_v1_webhooks_persona_post
+      parameters:
+      - name: Persona-Signature
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona-Signature
       responses:
         '200':
           description: Successful Response
@@ -12592,6 +12637,20 @@ components:
       - s3_key
       title: KycSubmitRequest
       description: Request body for confirming a KYC object upload.
+    KycVerificationSessionResponse:
+      properties:
+        hosted_url:
+          type: string
+          title: Hosted Url
+        inquiry_id:
+          type: string
+          title: Inquiry Id
+      type: object
+      required:
+      - hosted_url
+      - inquiry_id
+      title: KycVerificationSessionResponse
+      description: Hosted Persona verification link for the authenticated user.
     KycUploadUrlRequest:
       properties:
         doc_type:

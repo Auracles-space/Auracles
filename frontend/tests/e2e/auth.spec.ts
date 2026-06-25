@@ -407,8 +407,8 @@ test("onboarding page navigation to KYC settings renders the dashboard shell", a
   // Verify the layout shell is NOT visible on onboarding
   await expect(page.locator("aside")).toHaveCount(0);
 
-  // Click the Start KYC button
-  await page.getByRole("link", { name: /start kyc/i }).click();
+  // Click the Verify identity button
+  await page.getByRole("link", { name: /verify identity/i }).click();
 
   // Verify we are on /settings/kyc
   await expect(page).toHaveURL(/\/settings\/kyc$/);
