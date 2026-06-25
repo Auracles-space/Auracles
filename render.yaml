@@ -66,6 +66,9 @@ envVarGroups:
         sync: false
       - key: PERSONA_INQUIRY_TEMPLATE_ID
         sync: false
+      # Frontend page Persona redirects back to after the hosted flow.
+      - key: PERSONA_REDIRECT_URL
+        value: https://auracles.space/settings/kyc
       # --- Search (Brave) ---
       - key: BRAVE_SEARCH_API_KEY
         sync: false

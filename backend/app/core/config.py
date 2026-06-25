@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     persona_inquiry_template_id: str | None = Field(
         default=None, alias="PERSONA_INQUIRY_TEMPLATE_ID"
     )
+    persona_redirect_url: str | None = Field(
+        default=None, alias="PERSONA_REDIRECT_URL"
+    )
     brave_search_api_key: SecretStr | None = Field(
         default=None, alias="BRAVE_SEARCH_API_KEY"
     )

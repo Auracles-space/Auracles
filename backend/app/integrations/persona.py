@@ -20,6 +20,7 @@ import hmac
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -102,6 +103,19 @@ async def _post_json(
         raise PersonaProviderError("Persona request failed.") from exc
 
 
+def _append_redirect(hosted_url: str, redirect_url: str | None) -> str:
+    """Append a ``redirect-uri`` query param to a hosted-flow link.
+
+    Persona returns the user to this URL (with ``inquiry-id``/``reference-id``)
+    once the hosted flow completes. Without it, the user lands on Persona's own
+    completion screen. No-op when no redirect URL is configured.
+    """
+    if not redirect_url:
+        return hosted_url
+    separator = "&" if "?" in hosted_url else "?"
+    return f"{hosted_url}{separator}{urlencode({'redirect-uri': redirect_url})}"
+
+
 def _extract_one_time_link(payload: dict[str, Any]) -> str:
     """Pull the one-time link from a generate-one-time-link response.
 
@@ -176,7 +190,10 @@ async def create_inquiry(
         )
         return PersonaInquiry(
             inquiry_id=inquiry_id,
-            hosted_url=_extract_one_time_link(link_payload),
+            hosted_url=_append_redirect(
+                _extract_one_time_link(link_payload),
+                resolved_settings.persona_redirect_url,
+            ),
         )
     finally:
         if owns_client:
