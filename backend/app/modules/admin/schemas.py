@@ -34,11 +34,10 @@ class AdminKycReviewRequest(BaseModel):
 
 
 class AdminKycReviewResponse(BaseModel):
-    """Response body for admin KYC review."""
+    """Response body for an admin identity-verification override."""
 
     user_id: UUID
     kyc_status: str
-    document_status: str
 
 
 class AdminFrameworkSuspendRequest(BaseModel):

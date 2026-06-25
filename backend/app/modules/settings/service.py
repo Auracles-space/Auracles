@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
@@ -13,16 +13,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.rate_limit import RateLimiter
 from app.core.security import generate_opaque_token, hash_token, verify_password
-from app.integrations import persona, s3
+from app.integrations import persona
 from app.integrations.persona import PersonaProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import IdentityVerification, KycDocument, User
 from app.modules.settings.schemas import (
     KycStatusResponse,
-    KycUploadUrlResponse,
     KycVerificationSessionResponse,
     SessionResponse,
     SessionsResponse,
@@ -32,9 +30,6 @@ from app.workers.tasks.notifications import (
     send_email_change_verification,
 )
 
-ALLOWED_KYC_MIME_TYPES = {"image/jpeg", "image/png", "application/pdf"}
-KYC_MAX_FILE_SIZE = 10 * 1024 * 1024
-KYC_UPLOAD_URL_TTL_SECONDS = 900
 EMAIL_CHANGE_PREFIX = "ec_"
 EMAIL_CHANGE_TTL_SECONDS = 86_400
 
@@ -53,103 +48,6 @@ def _redis_text(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
-
-
-def _extension_for_mime(mime_type: str) -> str:
-    """Return a stable filename extension for supported KYC MIME types."""
-    return {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "application/pdf": "pdf",
-    }[mime_type]
-
-
-async def request_kyc_upload_url(
-    db: AsyncSession,
-    user: User,
-    doc_type: str,
-    mime_type: str,
-    file_size: int,
-) -> KycUploadUrlResponse:
-    """Create a KYC document record and presigned POST upload target."""
-    if mime_type not in ALLOWED_KYC_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported KYC document type.",
-        )
-    if file_size > KYC_MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="KYC document exceeds the 10MB limit.",
-        )
-
-    settings = get_settings()
-    key = f"kyc/{user.id}/{uuid4()}.{_extension_for_mime(mime_type)}"
-    document = KycDocument(
-        user_id=user.id,
-        doc_type=doc_type,
-        s3_key=key,
-        mime_type=mime_type,
-        file_size=file_size,
-    )
-    db.add(document)
-    upload_target = s3.storage.presigned_post(
-        bucket=settings.s3_artifacts_bucket,
-        key=key,
-        mime_type=mime_type,
-        max_size=KYC_MAX_FILE_SIZE,
-        expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
-    )
-    await db.commit()
-    return KycUploadUrlResponse(
-        upload_url=str(upload_target["url"]),
-        fields={
-            str(field_name): str(field_value)
-            for field_name, field_value in upload_target["fields"].items()
-        },
-        s3_key=key,
-        max_size=KYC_MAX_FILE_SIZE,
-        expires_in=KYC_UPLOAD_URL_TTL_SECONDS,
-    )
-
-
-async def confirm_kyc_upload(
-    db: AsyncSession,
-    user: User,
-    s3_key: str,
-) -> KycStatusResponse:
-    """Submit a previously requested KYC upload for review."""
-    document = await db.scalar(
-        select(KycDocument).where(
-            KycDocument.user_id == user.id,
-            KycDocument.s3_key == s3_key,
-        )
-    )
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="KYC document not found.",
-        )
-
-    settings = get_settings()
-    if not s3.storage.object_exists(settings.s3_artifacts_bucket, s3_key):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="KYC document has not been uploaded.",
-        )
-
-    user.kyc_status = "pending"
-    document.status = "pending"
-    await write_audit(
-        db=db,
-        actor_id=user.id,
-        action="kyc_status_change",
-        target_type="user",
-        target_id=user.id,
-        metadata={"status": "pending", "s3_key": s3_key},
-    )
-    await db.commit()
-    return await get_kyc_status(db=db, user=user)
 
 
 async def start_identity_verification(

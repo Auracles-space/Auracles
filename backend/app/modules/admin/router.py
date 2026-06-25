@@ -330,8 +330,8 @@ async def review_kyc(
     admin: AdminUser,
     db: DatabaseSession,
 ) -> AdminKycReviewResponse:
-    """Review a user's latest KYC document."""
-    document = await service.review_user_kyc(
+    """Manually override a user's identity-verification status."""
+    user = await service.review_user_kyc(
         db=db,
         admin=admin,
         target_user_id=user_id,
@@ -340,8 +340,7 @@ async def review_kyc(
     )
     return AdminKycReviewResponse(
         user_id=user_id,
-        kyc_status=document.status,
-        document_status=document.status,
+        kyc_status=user.kyc_status,
     )
 
 

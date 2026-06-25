@@ -27,7 +27,7 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
-from app.modules.auth.models import KycDocument, User, UserRole
+from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -1220,8 +1220,27 @@ async def review_user_kyc(
     target_user_id: UUID,
     review_status: str,
     notes: str | None,
-) -> KycDocument:
-    """Review the latest KYC document and update the user's KYC status."""
+) -> User:
+    """Manually override a user's identity-verification status.
+
+    Identity verification is normally automated via Persona; this admin path is
+    the override for appeals and cases Persona cannot resolve. It sets the user's
+    KYC status directly — there is no document to review — audits the action, and
+    notifies the user of the verdict.
+
+    Args:
+        db: Async DB session.
+        admin: The acting admin (audited as actor).
+        target_user_id: The user whose status is overridden.
+        review_status: ``verified`` or ``rejected``.
+        notes: Optional reason recorded in the audit metadata.
+
+    Returns:
+        The updated User.
+
+    Raises:
+        HTTPException(404): If the target user does not exist.
+    """
     target = await db.scalar(select(User).where(User.id == target_user_id))
     if target is None:
         raise HTTPException(
@@ -1229,21 +1248,6 @@ async def review_user_kyc(
             detail="User not found.",
         )
 
-    document = await db.scalar(
-        select(KycDocument)
-        .where(KycDocument.user_id == target_user_id)
-        .order_by(desc(KycDocument.created_at))
-    )
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="KYC document not found.",
-        )
-
-    document.status = review_status
-    document.reviewed_by = admin.id
-    document.reviewed_at = datetime.now(UTC)
-    document.notes = notes
     target.kyc_status = review_status
     await write_audit(
         db=db,
@@ -1251,38 +1255,37 @@ async def review_user_kyc(
         action="kyc_status_change",
         target_type="user",
         target_id=target_user_id,
-        metadata={"status": review_status, "document_id": str(document.id)},
+        metadata={
+            "status": review_status,
+            "source": "admin_override",
+            "notes": notes,
+        },
     )
-    # Notify the user of the review outcome so they learn the verdict of the
-    # asynchronous review without polling. Only the terminal verdicts produce a
-    # notification; "pending" is a no-op. Dedupe on the document + verdict so a
-    # repeated review of the same outcome collapses to one notification.
+    # Notify the user of the verdict so an override surfaces without polling.
+    # Dedupe on the user + verdict so a repeated override collapses to one.
     if review_status in ("verified", "rejected"):
         verified = review_status == "verified"
         await create_notification(
             db=db,
             user_id=target_user_id,
-            notification_type=(
-                "kyc_verified" if verified else "kyc_rejected"
-            ),
+            notification_type="kyc_verified" if verified else "kyc_rejected",
             title=(
                 "Identity verified"
                 if verified
                 else "Identity verification needs attention"
             ),
             body=(
-                "Your identity verification is complete. You can now request "
-                "payouts."
+                "Your identity is verified. You can now request payouts."
                 if verified
-                else "Your identity document was not approved. Review the "
-                "feedback and submit an updated document."
+                else "Your identity could not be verified. Start a new "
+                "verification from settings to try again."
             ),
             link="/settings/kyc",
-            payload={"document_id": str(document.id), "status": review_status},
-            dedupe_key=f"kyc-review:{document.id}:{review_status}",
+            payload={"status": review_status, "source": "admin_override"},
+            dedupe_key=f"kyc-override:{target_user_id}:{review_status}",
         )
     await db.commit()
-    return document
+    return target
 
 
 async def list_admin_frameworks(

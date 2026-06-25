@@ -1,41 +1,9 @@
 """Pydantic schemas for authenticated settings endpoints."""
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
-
-KycDocType = Literal[
-    "passport",
-    "drivers_license",
-    "national_id",
-    "proof_of_address",
-]
-
-
-class KycUploadUrlRequest(BaseModel):
-    """Request body for creating a constrained KYC upload target."""
-
-    doc_type: KycDocType
-    mime_type: str
-    file_size: int = Field(gt=0)
-
-
-class KycUploadUrlResponse(BaseModel):
-    """Response body for an S3 presigned POST KYC upload target."""
-
-    upload_url: str
-    fields: dict[str, str]
-    s3_key: str
-    max_size: int
-    expires_in: int
-
-
-class KycSubmitRequest(BaseModel):
-    """Request body for confirming a KYC object upload."""
-
-    s3_key: str = Field(min_length=1)
 
 
 class KycDocumentResponse(BaseModel):

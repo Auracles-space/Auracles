@@ -26,9 +26,6 @@ from app.modules.settings.schemas import (
     EmailChangeConfirmRequest,
     EmailChangeRequest,
     KycStatusResponse,
-    KycSubmitRequest,
-    KycUploadUrlRequest,
-    KycUploadUrlResponse,
     KycVerificationSessionResponse,
     SessionsResponse,
 )
@@ -37,36 +34,6 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
-
-
-@router.post("/kyc/upload-url", response_model=KycUploadUrlResponse)
-async def request_kyc_upload_url(
-    payload: KycUploadUrlRequest,
-    current_user: CurrentUser,
-    db: DatabaseSession,
-) -> KycUploadUrlResponse:
-    """Create a presigned KYC upload target for the authenticated user."""
-    return await service.request_kyc_upload_url(
-        db=db,
-        user=current_user,
-        doc_type=payload.doc_type,
-        mime_type=payload.mime_type,
-        file_size=payload.file_size,
-    )
-
-
-@router.post("/kyc/submit", response_model=KycStatusResponse)
-async def submit_kyc_upload(
-    payload: KycSubmitRequest,
-    current_user: CurrentUser,
-    db: DatabaseSession,
-) -> KycStatusResponse:
-    """Submit a previously uploaded KYC document for review."""
-    return await service.confirm_kyc_upload(
-        db=db,
-        user=current_user,
-        s3_key=payload.s3_key,
-    )
 
 
 @router.post("/kyc/session", response_model=KycVerificationSessionResponse)
