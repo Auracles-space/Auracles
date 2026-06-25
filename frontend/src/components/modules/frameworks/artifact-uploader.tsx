@@ -113,10 +113,23 @@ export function ArtifactUploader({
     }
     formData.append("file", file);
 
-    const uploadResponse = await fetch(requestResult.data.upload_url, {
-      body: formData,
-      method: "POST",
-    });
+    // The browser PUT/POST goes straight to S3, not our API. If the bucket is
+    // missing a CORS rule for this origin the browser blocks the response and
+    // `fetch` rejects — so this must be guarded, or the control hangs on
+    // "Uploading..." forever with the real failure swallowed.
+    let uploadResponse: Response;
+    try {
+      uploadResponse = await fetch(requestResult.data.upload_url, {
+        body: formData,
+        method: "POST",
+      });
+    } catch {
+      setMessage(
+        "Artifact upload failed — couldn't reach storage. Try again in a moment.",
+      );
+      setUploading(false);
+      return;
+    }
 
     if (!uploadResponse.ok) {
       setMessage("Artifact upload failed before confirmation.");
@@ -124,11 +137,18 @@ export function ArtifactUploader({
       return;
     }
 
-    const confirmResult = await confirmArtifactUpload({
-      body: { artifact_id: requestResult.data.artifact_id },
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
+    let confirmResult: Awaited<ReturnType<typeof confirmArtifactUpload>>;
+    try {
+      confirmResult = await confirmArtifactUpload({
+        body: { artifact_id: requestResult.data.artifact_id },
+        headers: getAccessTokenHeaders(),
+        path: { framework_id: frameworkId },
+      });
+    } catch {
+      setMessage("Artifact upload failed before confirmation.");
+      setUploading(false);
+      return;
+    }
 
     setUploading(false);
     if (!confirmResult.response.ok || !confirmResult.data) {
