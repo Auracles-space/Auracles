@@ -96,6 +96,58 @@ describe("FrameworkForm", () => {
     });
   });
 
+  it("submits complexity, lifecycle stage, and jurisdiction when chosen", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+    fireEvent.change(screen.getByLabelText(/complexity/i), {
+      target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText(/lifecycle stage/i), {
+      target: { value: "growth" },
+    });
+    fireEvent.change(screen.getByLabelText(/jurisdiction/i), {
+      target: { value: "united_states" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          complexity: 4,
+          jurisdiction: "united_states",
+          lifecycle_stage: "growth",
+        }),
+      );
+    });
+  });
+
+  it("omits optional complexity, lifecycle, and jurisdiction when left unset", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/framework title/i), {
+      target: { value: "Healthcare Engineering Toolkit" },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: "A healthcare software engineering delivery system." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      const payload = onSubmit.mock.calls[0][0];
+      expect(payload).not.toHaveProperty("complexity");
+      expect(payload).not.toHaveProperty("lifecycle_stage");
+      expect(payload).not.toHaveProperty("jurisdiction");
+    });
+  });
+
   it("defaults to single-user licensing only", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);

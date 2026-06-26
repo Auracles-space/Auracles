@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.core.logging import RequestLoggingMiddleware, configure_logging
 from app.core.redis import close_redis
+from app.integrations.s3 import verify_object_storage
 from app.modules.admin.router import router as admin_router
 from app.modules.attestation.router import router as attestation_router
 from app.modules.auth.router import router as auth_router
@@ -34,8 +35,11 @@ from app.modules.workspace.router import router as workspace_router
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Close shared async clients when the API process shuts down."""
+    """Verify storage credentials at boot, then close clients on shutdown."""
     del application
+    # Fail the deploy loudly if AWS creds are a mismatched pair, rather than
+    # silently 403-ing every presigned artifact upload. Skipped in local.
+    verify_object_storage(get_settings())
     try:
         yield
     finally:

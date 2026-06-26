@@ -87,3 +87,54 @@ export const ORG_SIZE_OPTIONS = [
   { label: "Mid Market", value: "mid_market" },
   { label: "Enterprise", value: "enterprise" },
 ] as const satisfies readonly MarketplaceOption<OrgSize>[];
+
+/**
+ * Framework complexity tiers (L1–L5). Values are the stringified integers the
+ * backend stores as `complexity` (SMALLINT 1–5) and accepts as an Explore
+ * filter query param. Source: Full Spec taxonomy — Complexity L1 Foundational
+ * through L5 Enterprise Grade.
+ */
+export const COMPLEXITY_OPTIONS = [
+  { label: "L1 — Foundational", value: "1" },
+  { label: "L2 — Developing", value: "2" },
+  { label: "L3 — Established", value: "3" },
+  { label: "L4 — Advanced", value: "4" },
+  { label: "L5 — Enterprise Grade", value: "5" },
+] as const satisfies readonly MarketplaceOption[];
+
+/**
+ * Framework lifecycle stages. Values are stable snake_case slugs stored on the
+ * Framework row (`lifecycle_stage` VARCHAR) and matched exactly by the Explore
+ * facet, so create and filter must share this list. Source: Full Spec taxonomy.
+ */
+export const LIFECYCLE_STAGE_OPTIONS = [
+  { label: "Formation", value: "formation" },
+  { label: "Early Operations", value: "early_operations" },
+  { label: "Growth", value: "growth" },
+  { label: "Maturity", value: "maturity" },
+  { label: "Optimization", value: "optimization" },
+  { label: "Digital Transformation", value: "digital_transformation" },
+  { label: "Institutionalization", value: "institutionalization" },
+  { label: "Expansion", value: "expansion" },
+  { label: "Transformation", value: "transformation" },
+  { label: "Exit / Transition", value: "exit_transition" },
+  { label: "Legacy & Continuity", value: "legacy_continuity" },
+] as const satisfies readonly MarketplaceOption[];
+
+/**
+ * Jurisdictions a Framework can be scoped to. Stored as `jurisdiction` VARCHAR
+ * and matched exactly by the Explore facet, so create and filter share this
+ * canonical list rather than free text (faceted filtering, FR-EXP-004).
+ */
+export const JURISDICTION_OPTIONS = [
+  { label: "Global", value: "global" },
+  { label: "United States", value: "united_states" },
+  { label: "European Union", value: "european_union" },
+  { label: "United Kingdom", value: "united_kingdom" },
+  { label: "Nigeria", value: "nigeria" },
+  { label: "Canada", value: "canada" },
+  { label: "Australia", value: "australia" },
+  { label: "Singapore", value: "singapore" },
+  { label: "United Arab Emirates", value: "united_arab_emirates" },
+  { label: "South Africa", value: "south_africa" },
+] as const satisfies readonly MarketplaceOption[];

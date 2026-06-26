@@ -7,9 +7,12 @@
 import Link from "next/link";
 
 import {
+  COMPLEXITY_OPTIONS,
   FRAMEWORK_CATEGORY_OPTIONS,
   FUNCTION_OPTIONS,
   INDUSTRY_OPTIONS,
+  JURISDICTION_OPTIONS,
+  LIFECYCLE_STAGE_OPTIONS,
   ORG_SIZE_OPTIONS,
   SECTOR_OPTIONS,
 } from "@/lib/marketplace/taxonomy";
@@ -62,6 +65,21 @@ const filterGroups = [
     key: "org_size",
     label: "Organization",
     values: ORG_SIZE_OPTIONS,
+  },
+  {
+    key: "complexity",
+    label: "Complexity",
+    values: COMPLEXITY_OPTIONS,
+  },
+  {
+    key: "lifecycle_stage",
+    label: "Lifecycle Stage",
+    values: LIFECYCLE_STAGE_OPTIONS,
+  },
+  {
+    key: "jurisdiction",
+    label: "Jurisdiction",
+    values: JURISDICTION_OPTIONS,
   },
 ] as const;
 

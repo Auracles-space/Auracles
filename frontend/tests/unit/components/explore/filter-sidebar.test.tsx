@@ -39,6 +39,38 @@ describe("FilterSidebar", () => {
     ).toContain("/explore?org_size=small_business&page=1");
   });
 
+  it("exposes complexity, lifecycle stage, and jurisdiction filters", () => {
+    render(<FilterSidebar active={{}} />);
+
+    const complexitySection = screen.getByText("Complexity").closest("details");
+    const lifecycleSection = screen
+      .getByText("Lifecycle Stage")
+      .closest("details");
+    const jurisdictionSection = screen
+      .getByText("Jurisdiction")
+      .closest("details");
+
+    expect(complexitySection).not.toBeNull();
+    expect(lifecycleSection).not.toBeNull();
+    expect(jurisdictionSection).not.toBeNull();
+
+    expect(
+      within(complexitySection as HTMLElement)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/explore?complexity=1&page=1");
+    expect(
+      within(lifecycleSection as HTMLElement)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/explore?lifecycle_stage=growth&page=1");
+    expect(
+      within(jurisdictionSection as HTMLElement)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/explore?jurisdiction=united_states&page=1");
+  });
+
   it("preserves active filters when adding another taxonomy filter", () => {
     render(<FilterSidebar active={{ q: "health", sector: "healthcare" }} />);
 

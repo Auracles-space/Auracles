@@ -15,9 +15,12 @@ import type {
   PricingConfig,
 } from "@/lib/generated/types.gen";
 import {
+  COMPLEXITY_OPTIONS,
   FRAMEWORK_CATEGORY_OPTIONS,
   FUNCTION_OPTIONS,
   INDUSTRY_OPTIONS,
+  JURISDICTION_OPTIONS,
+  LIFECYCLE_STAGE_OPTIONS,
   ORG_SIZE_OPTIONS,
   SECTOR_OPTIONS,
   type MarketplaceOption,
@@ -89,10 +92,13 @@ export type FrameworkDraftPrefill = {
 
 type FrameworkFormState = {
   category: FrameworkCreate["category"];
+  complexity: string;
   description: string;
   function: NonNullable<FrameworkCreate["function"]>;
   industry: NonNullable<FrameworkCreate["industry"]>;
+  jurisdiction: string;
   licenseTypes: LicenseTypeValue[];
+  lifecycleStage: string;
   orgSize: NonNullable<FrameworkCreate["org_size"]>;
   price: string;
   sector: NonNullable<FrameworkCreate["sector"]>;
@@ -115,6 +121,23 @@ function coerceTaxonomyValue<TValue extends string>(
 ): TValue {
   const match = options.find((option) => option.value === value);
   return match?.value ?? options[0].value;
+}
+
+/**
+ * Return a known value for an optional select, or "" when unset/unknown.
+ *
+ * Unlike `coerceTaxonomyValue`, optional metadata (complexity, lifecycle,
+ * jurisdiction) has no required default — an empty string means "unspecified"
+ * and is omitted from the submitted payload.
+ *
+ * @param value - Persisted value from an existing Framework.
+ * @param options - Allowed canonical values for the select.
+ */
+function coerceOptionalValue(
+  value: string | null | undefined,
+  options: readonly MarketplaceOption[],
+): string {
+  return options.find((option) => option.value === value)?.value ?? "";
 }
 
 /**
@@ -153,10 +176,17 @@ export function FrameworkForm({
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FrameworkFormState>({
     category: coerceTaxonomyValue(framework?.category, FRAMEWORK_CATEGORY_OPTIONS),
+    complexity:
+      framework?.complexity != null ? String(framework.complexity) : "",
     description: framework?.description ?? prefill?.description ?? "",
     function: coerceTaxonomyValue(framework?.function, FUNCTION_OPTIONS),
     industry: coerceTaxonomyValue(framework?.industry, INDUSTRY_OPTIONS),
+    jurisdiction: coerceOptionalValue(framework?.jurisdiction, JURISDICTION_OPTIONS),
     licenseTypes: coerceLicenseTypes(framework?.pricing.license_types),
+    lifecycleStage: coerceOptionalValue(
+      framework?.lifecycle_stage,
+      LIFECYCLE_STAGE_OPTIONS,
+    ),
     orgSize: coerceTaxonomyValue(framework?.org_size, ORG_SIZE_OPTIONS),
     price: framework?.pricing.price ?? "250",
     sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
@@ -211,6 +241,12 @@ export function FrameworkForm({
         sector: form.sector,
         tags: form.tags.map((tag) => tag.trim()).filter(Boolean),
         title: form.title,
+        // Optional metadata is only sent when chosen so unset selects stay null.
+        ...(form.complexity ? { complexity: Number(form.complexity) } : {}),
+        ...(form.lifecycleStage
+          ? { lifecycle_stage: form.lifecycleStage }
+          : {}),
+        ...(form.jurisdiction ? { jurisdiction: form.jurisdiction } : {}),
       });
     } catch (submitError) {
       setError(
@@ -297,7 +333,34 @@ export function FrameworkForm({
           required
           value={form.orgSize}
         />
-        
+        <FormOptionalSelectInput
+          label="Complexity"
+          emptyLabel="Any complexity"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, complexity: value }))
+          }
+          options={COMPLEXITY_OPTIONS}
+          value={form.complexity}
+        />
+        <FormOptionalSelectInput
+          label="Lifecycle Stage"
+          emptyLabel="Any stage"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, lifecycleStage: value }))
+          }
+          options={LIFECYCLE_STAGE_OPTIONS}
+          value={form.lifecycleStage}
+        />
+        <FormOptionalSelectInput
+          label="Jurisdiction"
+          emptyLabel="Any jurisdiction"
+          onChange={(value) =>
+            setForm((current) => ({ ...current, jurisdiction: value }))
+          }
+          options={JURISDICTION_OPTIONS}
+          value={form.jurisdiction}
+        />
+
         <label className="block">
           <span className="mb-1.5 block text-sm font-semibold text-foreground">
             Base Price
@@ -475,6 +538,63 @@ function FormSelectInput<TValue extends string>({
         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-foreground-muted">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type FormOptionalSelectInputProps = {
+  label: string;
+  emptyLabel: string;
+  onChange: (value: string) => void;
+  options: readonly MarketplaceOption[];
+  value: string;
+};
+
+/**
+ * Render an optional taxonomy select with a leading "unspecified" choice.
+ *
+ * The empty option carries value "" so the parent can omit the field from the
+ * submitted payload, keeping complexity/lifecycle/jurisdiction nullable.
+ *
+ * @param props - Label, empty-choice label, options, value, and change handler.
+ */
+function FormOptionalSelectInput({
+  label,
+  emptyLabel,
+  onChange,
+  options,
+  value,
+}: FormOptionalSelectInputProps) {
+  const inputId = `framework-${label.toLowerCase().replaceAll(" ", "-")}`;
+
+  return (
+    <div className="block">
+      <label
+        className="mb-1.5 block text-sm font-semibold text-foreground"
+        htmlFor={inputId}
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          className="min-h-12 w-full appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0"
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
+        >
+          <option value="">{emptyLabel}</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-foreground-muted">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
       </div>

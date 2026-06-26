@@ -4,9 +4,81 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+from botocore.exceptions import (  # type: ignore[import-untyped]
+    BotoCoreError,
+    ClientError,
+)
+from loguru import logger
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
+
+
+def _aws_client_kwargs(settings: Settings) -> dict[str, Any]:
+    """Assemble boto3 client kwargs (region, credentials, endpoint) from settings.
+
+    Shared by the S3 client and the startup STS credential check so both sign
+    with the exact same key pair and endpoint.
+
+    Args:
+        settings: Application settings holding AWS credentials and region.
+
+    Returns:
+        Keyword arguments suitable for ``boto3.client``.
+    """
+    kwargs: dict[str, Any] = {"region_name": settings.aws_default_region}
+    if settings.aws_access_key_id is not None:
+        kwargs["aws_access_key_id"] = settings.aws_access_key_id.get_secret_value()
+    if settings.aws_secret_access_key is not None:
+        kwargs["aws_secret_access_key"] = (
+            settings.aws_secret_access_key.get_secret_value()
+        )
+    if settings.aws_endpoint_url is not None:
+        kwargs["endpoint_url"] = settings.aws_endpoint_url
+    return kwargs
+
+
+def verify_object_storage(
+    settings: Settings,
+    *,
+    sts_client: Any | None = None,
+) -> None:
+    """Fail the boot fast if AWS credentials are not a valid signing pair.
+
+    A rotated secret left paired with a stale access key id (or vice versa)
+    produces ``SignatureDoesNotMatch`` on every presigned upload, silently
+    breaking artifact ingestion in production. STS ``get_caller_identity``
+    requires no IAM permission, so it isolates credential validity from bucket
+    authorization and surfaces the mismatch at startup instead.
+
+    Skipped entirely in the ``local`` environment (dev/LocalStack/tests).
+
+    Args:
+        settings: Application settings (environment + AWS credentials).
+        sts_client: Optional pre-built STS client, for testing.
+
+    Raises:
+        RuntimeError: If the credentials cannot sign an STS request.
+    """
+    if settings.environment == "local":
+        return
+
+    if sts_client is None:
+        import boto3  # type: ignore[import-untyped]
+
+        sts_client = boto3.client("sts", **_aws_client_kwargs(settings))
+
+    try:
+        sts_client.get_caller_identity()
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(
+            "AWS credential check failed at startup: "
+            f"{exc}. Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are a "
+            "matching pair (a rotated secret needs its own access key id)."
+        ) from exc
+
+    logger.bind(module="integrations", action="verify_object_storage").info(
+        "aws_credentials_verified"
+    )
 
 
 class S3Storage:
@@ -15,20 +87,9 @@ class S3Storage:
     def __init__(self) -> None:
         """Create an S3 client from application settings."""
         settings = get_settings()
-        import boto3  # type: ignore[import-untyped]
+        import boto3
 
-        kwargs: dict[str, Any] = {"region_name": settings.aws_default_region}
-        if settings.aws_access_key_id is not None:
-            kwargs["aws_access_key_id"] = (
-                settings.aws_access_key_id.get_secret_value()
-            )
-        if settings.aws_secret_access_key is not None:
-            kwargs["aws_secret_access_key"] = (
-                settings.aws_secret_access_key.get_secret_value()
-            )
-        if settings.aws_endpoint_url is not None:
-            kwargs["endpoint_url"] = settings.aws_endpoint_url
-        self._client = boto3.client("s3", **kwargs)
+        self._client = boto3.client("s3", **_aws_client_kwargs(settings))
 
     def presigned_post(
         self,
