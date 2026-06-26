@@ -1,4 +1,9 @@
 import Link from "next/link";
+import {
+  CheckCircledIcon,
+  DotFilledIcon,
+  ArrowDownIcon,
+} from "@radix-ui/react-icons";
 
 const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 
@@ -8,26 +13,291 @@ type RolePanelProps = {
   body: string;
   cta: { href: string; label: string };
   reverse?: boolean;
-  visual?: { title: string; lines: string[] };
+  visual?: React.ReactNode;
 };
 
+/**
+ * Visual mockup representing the framework publishing workspace.
+ * Recreates the form layout from the user's sample screenshot.
+ */
+function ContributorProfileVisual() {
+  const Dot = () => (
+    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+  );
+  const ChevronDown = () => (
+    <svg className="h-3 w-3 text-foreground-subtle shrink-0" viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+    </svg>
+  );
 
-function VisualPlaceholder() {
   return (
-    <div className="flex min-h-[260px] w-full items-center justify-center rounded-card border border-border-default bg-surface-2 md:min-h-[320px]">
-      <svg
-        className="h-12 w-12 text-foreground-subtle/50"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={1.5}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375 0 11-.75 0 .375 0 01.75 0z"
-        />
-      </svg>
+    <div className="relative overflow-hidden rounded-2xl border border-border-default bg-surface-2 p-5 md:min-h-[340px] shadow-[0_0_25px_rgba(199,70,52,0.02)] transition duration-300 group-hover:shadow-[0_0_35px_rgba(199,70,52,0.06)] flex flex-col justify-between text-xs select-none">
+      {/* Header/Workspace indicator */}
+      <div className="flex items-center justify-between border-b border-border-default pb-3 mb-3">
+        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-foreground-subtle font-mono">
+          Workspace / New Framework
+        </span>
+        <span className="rounded-badge bg-accent/10 border border-accent/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.05em] text-accent">
+          Drafting Mode
+        </span>
+      </div>
+
+      <div className="space-y-3.5">
+        {/* Framework Title */}
+        <div>
+          <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+            <Dot /> Framework Title
+          </label>
+          <div className="w-full bg-surface-3 border border-border-strong rounded-lg px-3 py-2 text-[11px] text-foreground-muted font-medium font-sans">
+            E.g. Enterprise React Architecture Template
+          </div>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+            <Dot /> Description
+          </label>
+          <div className="w-full bg-surface-3 border border-border-strong rounded-lg px-3 py-2 text-[11px] text-foreground-subtle font-sans min-h-[52px]">
+            Describe your framework, methodology, or operational template...
+          </div>
+        </div>
+
+        {/* Sector */}
+        <div>
+          <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+            <Dot /> Sector
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-muted font-sans">
+              <span>Private Equity</span>
+              <ChevronDown />
+            </div>
+            <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-subtle font-sans">
+              <span>Industry</span>
+              <ChevronDown />
+            </div>
+            <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-muted font-sans">
+              <span>Fund Management</span>
+              <ChevronDown />
+            </div>
+            <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-subtle font-sans">
+              <span>Governance</span>
+              <ChevronDown />
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Row - Category & Org Size */}
+        <div className="grid grid-cols-2 gap-3.5">
+          {/* Category */}
+          <div>
+            <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+              <Dot /> Category
+            </label>
+            <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-muted font-sans">
+              <span>Framework</span>
+              <ChevronDown />
+            </div>
+          </div>
+
+          {/* Org Size */}
+          <div>
+            <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+              <Dot /> Organization Size
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-surface-3 border border-border-strong rounded-lg px-2.5 py-2 flex items-center justify-between text-[11px] text-foreground-muted font-sans">
+                <span>(Startup)</span>
+                <ChevronDown />
+              </div>
+              <div className="bg-surface-3 border border-border-strong rounded-lg px-2.5 py-2 flex items-center justify-between text-[11px] text-foreground-muted font-sans">
+                <span>$250</span>
+                <ChevronDown />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* License Types */}
+        <div>
+          <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-1.5">
+            <Dot /> License types
+          </label>
+          <div className="bg-surface-3 border border-border-strong rounded-lg px-3 py-2 flex items-center justify-between text-[11px] text-foreground-subtle font-sans">
+            <span>License Price</span>
+            <ChevronDown />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Visual mockup representing active licensing MRR as a Minted Ticket with trend details.
+ */
+function LicensingRecurringRevenueVisual() {
+  const Dot = () => (
+    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+  );
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border-default bg-surface-2 p-5 md:min-h-[340px] shadow-[0_0_25px_rgba(0,0,0,0.01)] flex flex-col justify-between text-xs select-none">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-dashed border-border-default pb-3 mb-3">
+        <span className="font-mono text-[9px] tracking-widest text-foreground-subtle uppercase">
+          MINTED ASSET REGISTRY
+        </span>
+        <span className="font-mono text-[9px] text-accent font-bold">
+          #AR-4820-OS
+        </span>
+      </div>
+
+      {/* Barcode Mockup */}
+      <div className="flex justify-center items-center gap-[3px] h-6 opacity-35 my-2">
+        {[2, 4, 1, 3, 2, 1, 4, 2, 1, 3, 1, 4, 2, 3, 1, 2, 3, 1, 4, 2].map((width, idx) => (
+          <div
+            key={idx}
+            className="h-full bg-foreground"
+            style={{ width: `${width}px` }}
+          />
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {/* Chart Label */}
+        <div>
+          <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-2">
+            <Dot /> Recurring Revenue Trend
+          </label>
+          {/* Mini Bar Chart */}
+          <div className="h-20 w-full bg-surface-3 border border-border-strong rounded-xl p-3 flex items-end justify-between gap-2">
+            {[
+              { label: "JAN", val: "35%", active: false },
+              { label: "FEB", val: "45%", active: false },
+              { label: "MAR", val: "50%", active: false },
+              { label: "APR", val: "68%", active: false },
+              { label: "MAY", val: "78%", active: false },
+              { label: "JUN", val: "94%", active: true },
+            ].map((item, idx) => (
+              <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                <div 
+                  className={`w-full rounded-t-sm transition-all duration-500 ${
+                    item.active 
+                      ? "bg-accent shadow-[0_0_10px_rgba(199,70,52,0.3)]" 
+                      : "bg-accent/40 group-hover:bg-accent/60"
+                  }`} 
+                  style={{ height: item.val }} 
+                />
+                <span className="text-[7px] font-mono font-bold text-foreground-subtle">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Deployments & Yield Info Row */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Active Deployments */}
+          <div className="rounded-xl border border-border-strong bg-surface-1 p-3 flex flex-col justify-between min-h-[64px]">
+            <span className="text-[8px] font-bold uppercase tracking-[0.05em] text-foreground-subtle">
+              OPERATORS
+            </span>
+            <span className="font-heading text-lg font-bold text-foreground mt-1">
+              128 Active
+            </span>
+          </div>
+
+          {/* Revenue yield */}
+          <div className="rounded-xl border border-border-strong bg-surface-1 p-3 flex flex-col justify-between min-h-[64px]">
+            <span className="text-[8px] font-bold uppercase tracking-[0.05em] text-foreground-subtle">
+              MONTHLY YIELD
+            </span>
+            <span className="font-heading text-lg font-bold text-foreground mt-1">
+              $4,820.00
+            </span>
+          </div>
+        </div>
+
+        {/* Growth badge */}
+        <div className="rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between">
+          <span className="text-[9px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
+            Performance Index
+          </span>
+          <span className="rounded-badge bg-[#16A34A]/10 border border-[#16A34A]/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.05em] text-[#16A34A] flex items-center gap-1">
+            <CheckCircledIcon className="h-3 w-3" />
+            +18.4% MRR
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Visual mockup showing the playbook workflow verification pipeline.
+ */
+function ProfessionalLegacyVisual() {
+  const Dot = () => (
+    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+  );
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border-default bg-surface-2 p-5 md:min-h-[340px] shadow-[0_0_25px_rgba(0,0,0,0.01)] flex flex-col justify-between text-xs select-none">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border-default pb-3 mb-3">
+        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-foreground-subtle font-mono">
+          OPERATIONAL LIFECYCLE
+        </span>
+        <span className="rounded-badge bg-foreground-subtle/10 border border-foreground-subtle/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.05em] text-foreground-subtle font-mono">
+          v1.4.0
+        </span>
+      </div>
+
+      <label className="flex items-center text-[10px] font-bold uppercase tracking-[0.05em] text-foreground mb-3">
+        <Dot /> Verification Pipeline
+      </label>
+
+      {/* Vertical Steps Stacks */}
+      <div className="space-y-3 relative pl-3.5 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-[1px] before:bg-border-strong">
+        
+        {/* Step 1: Draft Published */}
+        <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between">
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-[#16A34A] ring-4 ring-surface-2" />
+          <div>
+            <h5 className="text-[11px] font-bold text-foreground">1. Refine Raw Expertise</h5>
+            <p className="text-[9px] text-foreground-muted mt-0.5">Package methodologies into SOP playbooks</p>
+          </div>
+          <span className="rounded-badge bg-[#16A34A]/10 border border-[#16A34A]/30 px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.05em] text-[#16A34A]">
+            Published
+          </span>
+        </div>
+
+        {/* Step 2: Attestation Verified */}
+        <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between">
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-[#F59E0B] ring-4 ring-surface-2" />
+          <div>
+            <h5 className="text-[11px] font-bold text-foreground">2. Peer Attestation</h5>
+            <p className="text-[9px] text-foreground-muted mt-0.5">Attestors verify compliance & quality</p>
+          </div>
+          <span className="rounded-badge bg-[#F59E0B]/10 border border-[#F59E0B]/30 px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.05em] text-[#F59E0B]">
+            In Review
+          </span>
+        </div>
+
+        {/* Step 3: Global Deployment */}
+        <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between opacity-60">
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-foreground-subtle ring-4 ring-surface-2" />
+          <div>
+            <h5 className="text-[11px] font-bold text-foreground">3. Global Implementation</h5>
+            <p className="text-[9px] text-foreground-muted mt-0.5">Operators license & launch workspace</p>
+          </div>
+          <span className="rounded-badge bg-foreground-subtle/10 border border-foreground-subtle/30 px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.05em] text-foreground-subtle">
+            Escrow
+          </span>
+        </div>
+
+      </div>
     </div>
   );
 }
@@ -39,26 +309,9 @@ function RolePanel({ body, cta, eyebrow, reverse, title, visual }: RolePanelProp
         reverse ? "md:[&>*:first-child]:order-2" : ""
       }`}
     >
-      {isWaitlistMode || !visual ? (
-        <VisualPlaceholder />
-      ) : (
-        <div className="brand-gradient-soft flex min-h-[260px] flex-col justify-between rounded-card p-6 md:min-h-[320px]">
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-foreground/80">
-            {visual.title}
-          </p>
-          <ul className="space-y-2 text-sm font-medium text-foreground">
-            {visual.lines.map((line) => (
-              <li
-                className="flex items-center gap-2 rounded-control bg-surface-1/85 px-3 py-2 backdrop-blur"
-                key={line}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="w-full">
+        {visual}
+      </div>
 
       <div className="flex flex-col justify-center">
         {eyebrow && (
@@ -99,6 +352,7 @@ const panels = [
     cta: isWaitlistMode
       ? { href: "#waitlist-form", label: "Join the Waitlist" }
       : { href: "/register?role=contributor", label: "Start publishing" },
+    visual: <ContributorProfileVisual />,
   },
   {
     title: "Create recurring value from existing work",
@@ -106,6 +360,7 @@ const panels = [
     cta: isWaitlistMode
       ? { href: "#waitlist-form", label: "See Contributor Benefits" }
       : { href: "/explore", label: "Explore the catalog" },
+    visual: <LicensingRecurringRevenueVisual />,
   },
   {
     title: "Build a professional legacy",
@@ -113,6 +368,7 @@ const panels = [
     cta: isWaitlistMode
       ? { href: "#waitlist-form", label: "Learn More" }
       : { href: "/register", label: "Become a Contributor" },
+    visual: <ProfessionalLegacyVisual />,
   },
 ];
 
@@ -130,5 +386,3 @@ export function RoleStrip() {
     </section>
   );
 }
-
-

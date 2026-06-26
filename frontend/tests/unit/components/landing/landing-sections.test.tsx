@@ -17,7 +17,7 @@ vi.mock("@/components/ui/theme-toggle", () => ({
 describe("landing sections render", () => {
   it("renders the hero with its headline copy", () => {
     render(<LandingHero />);
-    expect(screen.getByText(/performance across frameworks/i)).toBeInTheDocument();
+    expect(screen.getByText(/marketplace for operational frameworks/i)).toBeInTheDocument();
   });
 
   it("renders the role strip with contributor framing", () => {
