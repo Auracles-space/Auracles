@@ -75,36 +75,47 @@ export default async function ContributorProfilePage({
                   style={{ backgroundImage: `url(${profile.avatar_url})` }}
                 />
               ) : (
-                <span className="font-heading text-4xl font-extrabold text-accent">
-                  {profile.display_name.slice(0, 1).toUpperCase()}
+                <span className="font-heading text-3xl font-extrabold text-accent tracking-tighter">
+                  {profile.display_name
+                    .trim()
+                    .split(/\s+/)
+                    .map((word) => word[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase() || "C"}
                 </span>
               )}
             </div>
 
             <div className="min-w-0 flex-1 w-full">
               {/* Header and website button row */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-border-default/50 pb-5">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    {profile.reputation ? (
-                      <ReputationBadge
-                        score={profile.reputation.score ?? null}
-                        isProvisional={profile.reputation.is_provisional ?? true}
-                        factors={profile.reputation.factors ?? []}
-                      />
-                    ) : null}
-                    {profile.attestation_badge ? (
-                      <AttestationBadge badge={profile.attestation_badge} />
-                    ) : null}
-                    {profile.is_deactivated ? (
-                      <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-                        Read-only profile
-                      </span>
-                    ) : null}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-border-default pb-5">
+                <div className="space-y-2">
+                  <div className="flex flex-col md:flex-row md:items-center gap-2.5 md:gap-3.5">
+                    <h1 className="font-heading text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
+                      {profile.display_name}
+                    </h1>
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                      {profile.reputation ? (
+                        <ReputationBadge
+                          score={profile.reputation.score ?? null}
+                          isProvisional={profile.reputation.is_provisional ?? true}
+                          factors={profile.reputation.factors ?? []}
+                        />
+                      ) : null}
+                      {profile.attestation_badge ? (
+                        <AttestationBadge badge={profile.attestation_badge} />
+                      ) : null}
+                      {profile.is_deactivated ? (
+                        <span className="rounded-md border border-border-default bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
+                          Read-only
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                  <h1 className="font-heading text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
-                    {profile.display_name}
-                  </h1>
+                  <p className="text-xs text-foreground-subtle font-medium">
+                    Verified Contributor / Platform Domain Expert
+                  </p>
                 </div>
 
                 {safeHref(profile.website) ? (
@@ -128,35 +139,35 @@ export default async function ContributorProfilePage({
               {/* Bento Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
                 {/* Frameworks Stat Box */}
-                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
-                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                <div className="rounded-xl border border-border-default/60 bg-surface-2 p-4 flex items-center gap-4 transition-all duration-300 hover:border-accent/25 hover:bg-surface-3/30 hover:shadow-sm select-none">
+                  <div className="p-2.5 bg-surface-3 text-accent rounded-xl shrink-0 flex items-center justify-center border border-border-strong shadow-sm">
                     <ArchiveIcon className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Frameworks</span>
-                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{profile.published_framework_count} published</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-subtle block">Frameworks</span>
+                    <span className="text-sm font-bold text-foreground mt-0.5 block">{profile.published_framework_count} published</span>
                   </div>
                 </div>
 
                 {/* Attestations Stat Box */}
-                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
-                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                <div className="rounded-xl border border-border-default/60 bg-surface-2 p-4 flex items-center gap-4 transition-all duration-300 hover:border-accent/25 hover:bg-surface-3/30 hover:shadow-sm select-none">
+                  <div className="p-2.5 bg-surface-3 text-accent rounded-xl shrink-0 flex items-center justify-center border border-border-strong shadow-sm">
                     <CheckCircledIcon className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Attestations</span>
-                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{reportLabel}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-subtle block">Attestations</span>
+                    <span className="text-sm font-bold text-foreground mt-0.5 block">{reportLabel}</span>
                   </div>
                 </div>
 
                 {/* Location Stat Box */}
-                <div className="rounded-xl border border-border-default/50 bg-surface-2 p-4 flex items-center gap-3.5 transition-all duration-300 hover:border-accent/20 hover:bg-surface-3/30 hover:shadow-sm">
-                  <div className="p-2.5 bg-accent/5 rounded-xl text-accent shrink-0 flex items-center justify-center border border-accent/10">
+                <div className="rounded-xl border border-border-default/60 bg-surface-2 p-4 flex items-center gap-4 transition-all duration-300 hover:border-accent/25 hover:bg-surface-3/30 hover:shadow-sm select-none">
+                  <div className="p-2.5 bg-surface-3 text-accent rounded-xl shrink-0 flex items-center justify-center border border-border-strong shadow-sm">
                     <GlobeIcon className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted block">Location</span>
-                    <span className="text-sm font-semibold text-foreground mt-0.5 block">{profile.location ?? "Not listed"}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-subtle block">Location</span>
+                    <span className="text-sm font-bold text-foreground mt-0.5 block">{profile.location ?? "Not listed"}</span>
                   </div>
                 </div>
               </div>
