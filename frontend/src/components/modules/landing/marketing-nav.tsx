@@ -31,7 +31,7 @@ export function MarketingNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 md:px-10">
-        <BrandLogo className="h-6 w-24" />
+        <BrandLogo className="h-7 w-28 md:h-8 md:w-32 shrink-0" />
         <nav className="hidden items-center gap-8 md:flex">
           {activeLinks.map((link) => (
             <Link

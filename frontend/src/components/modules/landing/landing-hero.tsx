@@ -24,12 +24,12 @@ export function LandingHero() {
     <section className="relative overflow-hidden px-5 pb-16 pt-12 md:px-10 md:pt-20 lg:pt-24">
       <div className="mx-auto w-full max-w-[1280px]">
 
-        <h1 className="mx-auto mt-6 max-w-3xl text-balance text-center font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-6xl lg:text-7xl">
-          Build your reputation around what you&apos;ve created
+        <h1 className="mx-auto mt-6 max-w-3xl text-balance text-center font-heading text-4xl font-semibold leading-tight tracking-tight text-foreground md:text-6xl lg:text-7xl">
+          Marketplace for operational frameworks
         </h1>
 
-        <p className="mx-auto mt-5 max-w-xl text-balance text-center text-base leading-7 text-foreground-muted md:text-lg">
-          Turn your proven playbooks into licensed assets. Build reputation, earn recurring revenue, and help teams move faster
+        <p className="mx-auto mt-5 max-w-2xl text-balance text-center text-base leading-7 text-foreground-muted md:text-lg">
+          Get all the tools and support needed to launch your operations in any industry
         </p>
 
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
