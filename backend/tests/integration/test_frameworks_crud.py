@@ -245,6 +245,11 @@ async def create_artifact_for_framework(
         headers=auth_headers(contributor_id, ["contributor"]),
     )
     assert response.status_code == 200
+    # Mirror a confirmed upload: the object now exists in storage, so the
+    # publish/relist file-presence re-check passes for this artifact.
+    from app.integrations import s3
+
+    s3.storage.existing_keys.add(response.json()["file_key"])
     return str(response.json()["artifact_id"])
 
 
@@ -1740,6 +1745,54 @@ async def test_publish_refuses_when_current_artifact_drifted_to_flagged_pii(
         artifact.processing_status = "flagged_pii"
         artifact.pii_review_needed = True
         await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        assert framework.status != "published"
+
+
+async def test_publish_refuses_when_current_artifact_file_missing_from_storage(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Publish blocks when a current Artifact's S3 object was removed.
+
+    The pipeline gate only inspects DB columns, so a file deleted from S3 out
+    of band (lifecycle rule, manual delete, quarantine) after processing would
+    otherwise publish a dangling ``file_key`` — Operators would buy a Framework
+    whose presigned download 404s. Publish must re-verify the bytes exist.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-missing-file@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    # The S3 object disappears after the pipeline passed but before publish.
+    storage = framework_test_context["storage"]
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        storage.existing_keys.discard(artifact.file_key)
 
     response = await client.post(
         f"/v1/frameworks/{framework_id}/publish",

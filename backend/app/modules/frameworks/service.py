@@ -782,6 +782,45 @@ async def current_artifacts_block_publish(
     return bool(blocked)
 
 
+async def current_artifact_file_missing(
+    db: AsyncSession,
+    framework_id: UUID,
+) -> bool:
+    """Return whether any current Artifact's S3 object is absent.
+
+    The pipeline gate (`evaluate_framework_pipeline`) only inspects DB columns,
+    so a file removed from S3 out of band after processing (lifecycle expiry,
+    manual console delete, quarantine that left the row) leaves a current
+    Artifact whose bytes are gone. Publishing or relisting it would seed a
+    dangling ``file_key`` into the catalog whose presigned download 404s for the
+    buying Operator. Re-verify object existence before the Framework goes public.
+
+    Args:
+        db: Async session for loading current Artifact file keys.
+        framework_id: UUID of the Framework whose artifacts are checked.
+
+    Returns:
+        True if at least one current Artifact has no object in storage.
+    """
+    settings = get_settings()
+    file_keys = (
+        (
+            await db.execute(
+                select(Artifact.file_key).where(
+                    Artifact.framework_id == framework_id,
+                    Artifact.current_for_framework.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return any(
+        not s3.storage.object_exists(settings.s3_artifacts_bucket, file_key)
+        for file_key in file_keys
+    )
+
+
 async def relist_framework(
     db: AsyncSession,
     contributor: User,
@@ -827,6 +866,16 @@ async def relist_framework(
             detail=(
                 "This framework can't be relisted because an artifact failed a "
                 "trust check (virus or PII). Start a new version to resolve it."
+            ),
+        )
+    # A file deleted from S3 while delisted leaves a dangling file_key; block
+    # relist so the catalog never re-exposes an artifact whose bytes are gone.
+    if await current_artifact_file_missing(db, framework.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "An artifact file is no longer available in storage. "
+                "Re-upload the affected artifact in a new version to relist."
             ),
         )
 
@@ -1559,6 +1608,17 @@ async def publish_framework(
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="At least one Artifact is required.",
+                )
+            # The pipeline gate only inspects DB columns; re-verify the bytes
+            # still exist so a file removed from S3 out of band never publishes
+            # as a dangling file_key that 404s on the Operator's download.
+            if await current_artifact_file_missing(db, framework.id):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "An artifact file is no longer available in storage. "
+                        "Re-upload the affected artifact and resubmit."
+                    ),
                 )
 
             await _ensure_published_version_snapshot(
