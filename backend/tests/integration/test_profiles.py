@@ -646,6 +646,180 @@ async def test_suspended_profile_withholds_links(
     assert public.json()["links"] == []
 
 
+async def test_owner_sets_experience_and_education_shown_publicly(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Experience and education set via PATCH appear on the public profile."""
+    user_id = await create_user("profile-cv@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "experience": [
+                {
+                    "title": "Lead Architect",
+                    "company": "Stripe",
+                    "start": "2019",
+                    "end": "2023",
+                    "current": False,
+                    "description": "Led payments platform.",
+                }
+            ],
+            "education": [
+                {
+                    "school": "MIT",
+                    "degree": "BSc",
+                    "field": "Computer Science",
+                    "start_year": 2011,
+                    "end_year": 2015,
+                }
+            ],
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["experience"][0]["title"] == "Lead Architect"
+    assert body["education"][0]["school"] == "MIT"
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    pub = public.json()
+    assert pub["experience"][0]["company"] == "Stripe"
+    assert pub["education"][0]["end_year"] == 2015
+
+
+async def test_experience_patch_replaces_whole_list(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Setting experience replaces the prior list (not append)."""
+    user_id = await create_user("profile-cv2@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"experience": [{"title": "Old", "company": "A"}]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"experience": [{"title": "New", "company": "B"}]},
+        headers=headers,
+    )
+
+    body = response.json()
+    assert len(body["experience"]) == 1
+    assert body["experience"][0]["title"] == "New"
+
+
+async def test_too_many_experience_entries_rejected(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """More than the experience cap is rejected with 422."""
+    user_id = await create_user("profile-cv3@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "experience": [
+                {"title": f"Role {i}", "company": "Co"} for i in range(25)
+            ]
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_suspended_profile_withholds_experience_education_banner(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's CV sections and banner are withheld publicly."""
+    user_id = await create_user("profile-cv4@auracles.space", ["contributor"])
+    await client.patch(
+        "/v1/profiles/me",
+        json={
+            "experience": [{"title": "Hidden", "company": "Co"}],
+            "education": [{"school": "Hidden U"}],
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.banner_url = "https://x/banner.png"
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    body = public.json()
+    assert body["experience"] == []
+    assert body["education"] == []
+    assert body["banner_url"] is None
+
+
+async def test_banner_upload_url_and_confirm_sets_banner(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """Banner upload-url namespaces the key and confirm publishes the banner."""
+    user_id = await create_user("profile-banner@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    presign = await client.post(
+        "/v1/profiles/me/banner/upload-url",
+        json={"filename": "b.png", "mime_type": "image/png", "file_size": 80_000},
+        headers=headers,
+    )
+    assert presign.status_code == 200
+    file_key = presign.json()["file_key"]
+    assert file_key.startswith(f"banners/{user_id}/")
+    avatar_storage.existing_keys.add(file_key)
+
+    confirm = await client.post(
+        "/v1/profiles/me/banner/confirm",
+        json={"file_key": file_key},
+        headers=headers,
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["banner_url"]
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["banner_url"] == confirm.json()["banner_url"]
+
+
+async def test_banner_confirm_rejects_foreign_key(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """A user cannot confirm a banner key under another user's id."""
+    owner_id = await create_user("banner-owner@auracles.space", ["contributor"])
+    attacker_id = await create_user("banner-attacker@auracles.space", ["contributor"])
+
+    foreign_key = f"banners/{owner_id}/{uuid4()}.png"
+    avatar_storage.existing_keys.add(foreign_key)
+
+    confirm = await client.post(
+        "/v1/profiles/me/banner/confirm",
+        json={"file_key": foreign_key},
+        headers=auth_headers(attacker_id, ["contributor"]),
+    )
+
+    assert confirm.status_code == 403
+
+
 async def test_profile_update_only_changes_provided_fields(
     client: AsyncClient,
     migrated_database: None,

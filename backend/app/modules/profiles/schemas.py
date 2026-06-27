@@ -17,6 +17,49 @@ PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 MAX_SPECIALIZATIONS = 20
 MAX_SPECIALIZATION_LENGTH = 80
 MAX_LINKS = 10
+MAX_EXPERIENCE = 20
+MAX_EDUCATION = 15
+
+
+class ProfileExperience(BaseModel):
+    """A single self-reported professional experience entry.
+
+    Dates are free-text (e.g. "2021" or "Jan 2021") to avoid forcing a precise
+    format; ``current`` marks an ongoing role where ``end`` is absent.
+
+    Attributes:
+        title: Role title (1-160 chars).
+        company: Organization name (1-160 chars).
+        start: Free-text start date, or None.
+        end: Free-text end date, or None (e.g. for current roles).
+        current: Whether this is the person's current role.
+        description: Responsibilities/summary, or None (<=2000 chars).
+    """
+
+    title: str = Field(min_length=1, max_length=160)
+    company: str = Field(min_length=1, max_length=160)
+    start: str | None = Field(default=None, max_length=40)
+    end: str | None = Field(default=None, max_length=40)
+    current: bool = False
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class ProfileEducation(BaseModel):
+    """A single self-reported education entry.
+
+    Attributes:
+        school: Institution name (1-160 chars).
+        degree: Degree or qualification, or None (<=160 chars).
+        field: Field of study, or None (<=160 chars).
+        start_year: Start year, or None.
+        end_year: End/graduation year, or None.
+    """
+
+    school: str = Field(min_length=1, max_length=160)
+    degree: str | None = Field(default=None, max_length=160)
+    field: str | None = Field(default=None, max_length=160)
+    start_year: int | None = Field(default=None, ge=1900, le=2100)
+    end_year: int | None = Field(default=None, ge=1900, le=2100)
 
 
 class ProfileLink(BaseModel):
@@ -77,12 +120,15 @@ class PublicProfileResponse(BaseModel):
     id: UUID
     display_name: str
     avatar_url: str | None = None
+    banner_url: str | None = None
     headline: str | None = None
     bio: str | None = None
     location: str | None = None
     website: str | None = None
     specializations: list[str] = []
     links: list[ProfileLink] = []
+    experience: list[ProfileExperience] = []
+    education: list[ProfileEducation] = []
     verified_credentials: list[PublicCredentialResponse] = []
     roles: list[str] = []
     kyc_verified: bool = False
@@ -111,6 +157,12 @@ class ProfileUpdateRequest(BaseModel):
     website: str | None = Field(default=None, max_length=2048)
     specializations: list[str] | None = Field(default=None)
     links: list[ProfileLink] | None = Field(default=None, max_length=MAX_LINKS)
+    experience: list[ProfileExperience] | None = Field(
+        default=None, max_length=MAX_EXPERIENCE
+    )
+    education: list[ProfileEducation] | None = Field(
+        default=None, max_length=MAX_EDUCATION
+    )
 
     @field_validator("specializations")
     @classmethod
@@ -214,6 +266,50 @@ class AvatarUploadUrlResponse(BaseModel):
 
 class AvatarConfirmRequest(BaseModel):
     """Request body confirming a completed avatar upload.
+
+    Attributes:
+        file_key: The object key returned by the upload-url request.
+    """
+
+    file_key: str = Field(min_length=1, max_length=512)
+
+
+class BannerUploadUrlRequest(BaseModel):
+    """Request body for a banner presigned upload target.
+
+    Attributes:
+        filename: Original filename, used only to derive the stored extension.
+        mime_type: Declared image MIME type (validated against an allow-list).
+        file_size: Declared size in bytes (validated against the size cap).
+    """
+
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=100)
+    file_size: int = Field(gt=0)
+
+
+class BannerUploadUrlResponse(BaseModel):
+    """Presigned POST target plus the URL the banner will be served at.
+
+    Attributes:
+        upload_url: The S3 POST URL the client uploads to.
+        fields: Form fields the client must include in the POST.
+        file_key: The object key the banner will live at.
+        banner_url: Public URL the object will be served at once uploaded.
+        max_size: Maximum allowed size in bytes (also enforced by S3).
+        expires_in: Seconds until the presigned target expires.
+    """
+
+    upload_url: str
+    fields: dict[str, str]
+    file_key: str
+    banner_url: str
+    max_size: int
+    expires_in: int
+
+
+class BannerConfirmRequest(BaseModel):
+    """Request body confirming a completed banner upload.
 
     Attributes:
         file_key: The object key returned by the upload-url request.

@@ -951,6 +951,52 @@ export type AvatarUploadUrlResponse = {
 };
 
 /**
+ * Request body confirming a completed banner upload.
+ *
+ * Attributes:
+ * file_key: The object key returned by the upload-url request.
+ */
+export type BannerConfirmRequest = {
+    file_key: string;
+};
+
+/**
+ * Request body for a banner presigned upload target.
+ *
+ * Attributes:
+ * filename: Original filename, used only to derive the stored extension.
+ * mime_type: Declared image MIME type (validated against an allow-list).
+ * file_size: Declared size in bytes (validated against the size cap).
+ */
+export type BannerUploadUrlRequest = {
+    filename: string;
+    mime_type: string;
+    file_size: number;
+};
+
+/**
+ * Presigned POST target plus the URL the banner will be served at.
+ *
+ * Attributes:
+ * upload_url: The S3 POST URL the client uploads to.
+ * fields: Form fields the client must include in the POST.
+ * file_key: The object key the banner will live at.
+ * banner_url: Public URL the object will be served at once uploaded.
+ * max_size: Maximum allowed size in bytes (also enforced by S3).
+ * expires_in: Seconds until the presigned target expires.
+ */
+export type BannerUploadUrlResponse = {
+    upload_url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    file_key: string;
+    banner_url: string;
+    max_size: number;
+    expires_in: number;
+};
+
+/**
  * Contributor request body for creating a draft Collection.
  */
 export type CollectionCreateRequest = {
@@ -2433,6 +2479,47 @@ export type PricingConfig_Output = {
 };
 
 /**
+ * A single self-reported education entry.
+ *
+ * Attributes:
+ * school: Institution name (1-160 chars).
+ * degree: Degree or qualification, or None (<=160 chars).
+ * field: Field of study, or None (<=160 chars).
+ * start_year: Start year, or None.
+ * end_year: End/graduation year, or None.
+ */
+export type ProfileEducation = {
+    school: string;
+    degree?: (string | null);
+    field?: (string | null);
+    start_year?: (number | null);
+    end_year?: (number | null);
+};
+
+/**
+ * A single self-reported professional experience entry.
+ *
+ * Dates are free-text (e.g. "2021" or "Jan 2021") to avoid forcing a precise
+ * format; ``current`` marks an ongoing role where ``end`` is absent.
+ *
+ * Attributes:
+ * title: Role title (1-160 chars).
+ * company: Organization name (1-160 chars).
+ * start: Free-text start date, or None.
+ * end: Free-text end date, or None (e.g. for current roles).
+ * current: Whether this is the person's current role.
+ * description: Responsibilities/summary, or None (<=2000 chars).
+ */
+export type ProfileExperience = {
+    title: string;
+    company: string;
+    start?: (string | null);
+    end?: (string | null);
+    current?: boolean;
+    description?: (string | null);
+};
+
+/**
  * A single portfolio link.
  *
  * Attributes:
@@ -2465,6 +2552,8 @@ export type ProfileUpdateRequest = {
     website?: (string | null);
     specializations?: (Array<(string)> | null);
     links?: (Array<ProfileLink> | null);
+    experience?: (Array<ProfileExperience> | null);
+    education?: (Array<ProfileEducation> | null);
 };
 
 /**
@@ -2612,12 +2701,15 @@ export type PublicProfileResponse = {
     id: string;
     display_name: string;
     avatar_url?: (string | null);
+    banner_url?: (string | null);
     headline?: (string | null);
     bio?: (string | null);
     location?: (string | null);
     website?: (string | null);
     specializations?: Array<(string)>;
     links?: Array<ProfileLink>;
+    experience?: Array<ProfileExperience>;
+    education?: Array<ProfileEducation>;
     verified_credentials?: Array<PublicCredentialResponse>;
     roles?: Array<(string)>;
     kyc_verified?: boolean;
@@ -5244,6 +5336,34 @@ export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostData = {
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostResponse = (PublicProfileResponse);
 
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostError = (HTTPValidationError);
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostData = {
+    body: BannerUploadUrlRequest;
+    query?: {
+        /**
+         * Access token via query parameter for links
+         */
+        token?: (string | null);
+    };
+};
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostResponse = (BannerUploadUrlResponse);
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostError = (HTTPValidationError);
+
+export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostData = {
+    body: BannerConfirmRequest;
+    query?: {
+        /**
+         * Access token via query parameter for links
+         */
+        token?: (string | null);
+    };
+};
+
+export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostResponse = (PublicProfileResponse);
+
+export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostError = (HTTPValidationError);
 
 export type GetPublicProfileV1ProfilesUserIdGetData = {
     path: {

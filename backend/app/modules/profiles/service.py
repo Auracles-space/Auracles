@@ -26,6 +26,9 @@ from app.modules.profiles.schemas import (
     AvatarConfirmRequest,
     AvatarUploadUrlRequest,
     AvatarUploadUrlResponse,
+    BannerConfirmRequest,
+    BannerUploadUrlRequest,
+    BannerUploadUrlResponse,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
@@ -180,12 +183,15 @@ async def get_public_profile(
         id=user.id,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        banner_url=None if is_limited else user.banner_url,
         headline=None if is_limited else user.headline,
         bio=None if is_limited else user.bio,
         location=None if is_limited else user.location,
         website=None if is_limited else _safe_public_url(user.website),
         specializations=[] if is_limited else list(user.specializations),
         links=[] if is_limited else list(user.links),
+        experience=[] if is_limited else list(user.experience),
+        education=[] if is_limited else list(user.education),
         verified_credentials=credentials,
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
@@ -217,12 +223,15 @@ async def get_own_profile(
         id=user.id,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        banner_url=user.banner_url,
         headline=user.headline,
         bio=user.bio,
         location=user.location,
         website=_safe_public_url(user.website),
         specializations=list(user.specializations),
         links=list(user.links),
+        experience=list(user.experience),
+        education=list(user.education),
         verified_credentials=await _verified_credentials(db, user.id),
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
@@ -258,17 +267,99 @@ async def update_profile(
     return await get_own_profile(db, user=user)
 
 
+def _presign_profile_image(
+    *,
+    user: User,
+    filename_mime: str,
+    file_size: int,
+    prefix: str,
+) -> tuple[str, dict[str, str], str, str]:
+    """Validate an image and mint a presigned POST target under a key prefix.
+
+    Avatars and banners share the public avatars bucket, the same image type
+    allow-list and size cap, and the same per-user key namespacing; only the key
+    prefix differs.
+
+    Args:
+        user: The authenticated profile owner.
+        filename_mime: The declared MIME type.
+        file_size: The declared size in bytes.
+        prefix: The object key prefix ("avatars" or "banners").
+
+    Returns:
+        A tuple of (upload_url, fields, file_key, public_url).
+
+    Raises:
+        HTTPException(415): If the MIME type is not an allowed image type.
+        HTTPException(413): If the declared size exceeds the cap.
+    """
+    extension = ALLOWED_AVATAR_MIME_TYPES.get(filename_mime)
+    if extension is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Image must be a PNG, JPEG, or WebP image.",
+        )
+    if file_size > AVATAR_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Image exceeds the 5MB limit.",
+        )
+
+    settings = get_settings()
+    file_key = f"{prefix}/{user.id}/{uuid4()}.{extension}"
+    target = s3.storage.presigned_post(
+        bucket=settings.s3_avatars_bucket,
+        key=file_key,
+        mime_type=filename_mime,
+        max_size=AVATAR_MAX_SIZE,
+        expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
+    )
+    fields = {str(name): str(value) for name, value in target["fields"].items()}
+    return (
+        str(target["url"]),
+        fields,
+        file_key,
+        _avatar_public_url(settings, file_key),
+    )
+
+
+def _verify_profile_image(*, user: User, file_key: str, prefix: str) -> str:
+    """Verify an uploaded image belongs to the owner and exists in storage.
+
+    Args:
+        user: The authenticated profile owner.
+        file_key: The confirmed object key.
+        prefix: The expected key prefix ("avatars" or "banners").
+
+    Returns:
+        The public URL for the verified object.
+
+    Raises:
+        HTTPException(403): If the key is not namespaced under the owner's id.
+        HTTPException(409): If no object exists at the key (upload incomplete).
+    """
+    # Ownership is enforced by key prefix: the upload-url endpoint only issues
+    # keys under the caller's own id, so any other prefix is a cross-user write.
+    if not file_key.startswith(f"{prefix}/{user.id}/"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Image key does not belong to this user.",
+        )
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_avatars_bucket, file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Image upload not found. Complete the upload and retry.",
+        )
+    return _avatar_public_url(settings, file_key)
+
+
 async def request_avatar_upload_url(
     *,
     user: User,
     payload: AvatarUploadUrlRequest,
 ) -> AvatarUploadUrlResponse:
     """Return a presigned POST target for the owner's avatar.
-
-    Validates the declared image type and size before minting the target. The
-    object key is namespaced under the owner's id so one user can never target
-    another's avatar. The avatar_url is returned but not persisted until the
-    upload is confirmed.
 
     Args:
         user: The authenticated profile owner.
@@ -279,42 +370,22 @@ async def request_avatar_upload_url(
 
     Raises:
         HTTPException(415): If the MIME type is not an allowed image type.
-        HTTPException(413): If the declared size exceeds the avatar cap.
+        HTTPException(413): If the declared size exceeds the cap.
     """
-    extension = ALLOWED_AVATAR_MIME_TYPES.get(payload.mime_type)
-    if extension is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Avatar must be a PNG, JPEG, or WebP image.",
-        )
-    if payload.file_size > AVATAR_MAX_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Avatar exceeds the 5MB limit.",
-        )
-
-    settings = get_settings()
-    file_key = f"avatars/{user.id}/{uuid4()}.{extension}"
-    upload_target = s3.storage.presigned_post(
-        bucket=settings.s3_avatars_bucket,
-        key=file_key,
-        mime_type=payload.mime_type,
-        max_size=AVATAR_MAX_SIZE,
-        expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
+    upload_url, fields, file_key, public_url = _presign_profile_image(
+        user=user,
+        filename_mime=payload.mime_type,
+        file_size=payload.file_size,
+        prefix="avatars",
     )
     logger.bind(
-        module="profiles",
-        action="request_avatar_upload_url",
-        user_id=user.id,
+        module="profiles", action="request_avatar_upload_url", user_id=user.id
     ).info("avatar_upload_url_created")
     return AvatarUploadUrlResponse(
-        upload_url=str(upload_target["url"]),
-        fields={
-            str(name): str(value)
-            for name, value in upload_target["fields"].items()
-        },
+        upload_url=upload_url,
+        fields=fields,
         file_key=file_key,
-        avatar_url=_avatar_public_url(settings, file_key),
+        avatar_url=public_url,
         max_size=AVATAR_MAX_SIZE,
         expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
     )
@@ -340,27 +411,78 @@ async def confirm_avatar_upload(
         HTTPException(403): If the key is not namespaced under the owner's id.
         HTTPException(409): If no object exists at the key (upload incomplete).
     """
-    # Ownership is enforced by key prefix: the upload-url endpoint only ever
-    # issues keys under the caller's own id, so a key under a different id is a
-    # cross-user write attempt.
-    if not payload.file_key.startswith(f"avatars/{user.id}/"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Avatar key does not belong to this user.",
-        )
-
-    settings = get_settings()
-    if not s3.storage.object_exists(settings.s3_avatars_bucket, payload.file_key):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Avatar upload not found. Complete the upload and retry.",
-        )
-
-    user.avatar_url = _avatar_public_url(settings, payload.file_key)
+    user.avatar_url = _verify_profile_image(
+        user=user, file_key=payload.file_key, prefix="avatars"
+    )
     await db.commit()
     logger.bind(
-        module="profiles",
-        action="confirm_avatar_upload",
-        user_id=user.id,
+        module="profiles", action="confirm_avatar_upload", user_id=user.id
     ).info("avatar_updated")
+    return await get_own_profile(db, user=user)
+
+
+async def request_banner_upload_url(
+    *,
+    user: User,
+    payload: BannerUploadUrlRequest,
+) -> BannerUploadUrlResponse:
+    """Return a presigned POST target for the owner's profile banner.
+
+    Args:
+        user: The authenticated profile owner.
+        payload: Declared filename, MIME type, and size.
+
+    Returns:
+        The presigned POST target plus the eventual public banner URL.
+
+    Raises:
+        HTTPException(415): If the MIME type is not an allowed image type.
+        HTTPException(413): If the declared size exceeds the cap.
+    """
+    upload_url, fields, file_key, public_url = _presign_profile_image(
+        user=user,
+        filename_mime=payload.mime_type,
+        file_size=payload.file_size,
+        prefix="banners",
+    )
+    logger.bind(
+        module="profiles", action="request_banner_upload_url", user_id=user.id
+    ).info("banner_upload_url_created")
+    return BannerUploadUrlResponse(
+        upload_url=upload_url,
+        fields=fields,
+        file_key=file_key,
+        banner_url=public_url,
+        max_size=AVATAR_MAX_SIZE,
+        expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def confirm_banner_upload(
+    db: AsyncSession,
+    *,
+    user: User,
+    payload: BannerConfirmRequest,
+) -> PublicProfileResponse:
+    """Persist the owner's banner once the uploaded object is verified present.
+
+    Args:
+        db: Async session for the update.
+        user: The authenticated profile owner.
+        payload: The confirmed object key.
+
+    Returns:
+        The owner's profile with the banner applied.
+
+    Raises:
+        HTTPException(403): If the key is not namespaced under the owner's id.
+        HTTPException(409): If no object exists at the key (upload incomplete).
+    """
+    user.banner_url = _verify_profile_image(
+        user=user, file_key=payload.file_key, prefix="banners"
+    )
+    await db.commit()
+    logger.bind(
+        module="profiles", action="confirm_banner_upload", user_id=user.id
+    ).info("banner_updated")
     return await get_own_profile(db, user=user)

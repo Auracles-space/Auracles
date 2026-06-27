@@ -13,6 +13,11 @@
 import { useEffect, useState } from "react";
 
 import { AvatarUploader } from "@/components/modules/profiles/avatar-uploader";
+import { BannerUploader } from "@/components/modules/profiles/banner-uploader";
+import {
+  EducationEditor,
+  ExperienceEditor,
+} from "@/components/modules/profiles/cv-sections-editor";
 import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
@@ -24,12 +29,14 @@ import {
   updateMyProfileV1ProfilesMePatch,
 } from "@/lib/generated/sdk.gen";
 import type {
+  ProfileEducation,
+  ProfileExperience,
   ProfileLink,
   PublicProfileResponse,
 } from "@/lib/generated/types.gen";
 
 const FIELD_CLASS =
-  "w-full rounded-xl border border-border-default bg-surface-1 px-3 py-3 text-sm text-foreground outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20";
+  "w-full rounded-xl border border-border-default bg-surface-1 px-3 py-3 text-sm text-foreground outline-none transition-colors focus:border-accent focus:ring-0";
 const LABEL_CLASS =
   "block text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted";
 
@@ -66,6 +73,8 @@ export function ProfileEditor({
   const [specializations, setSpecializations] = useState<string[]>([]);
   const [specInput, setSpecInput] = useState("");
   const [links, setLinks] = useState<ProfileLink[]>([]);
+  const [experience, setExperience] = useState<ProfileExperience[]>([]);
+  const [education, setEducation] = useState<ProfileEducation[]>([]);
 
   /**
    * Populate the form state from a loaded profile payload.
@@ -80,6 +89,8 @@ export function ProfileEditor({
     setWebsite(data.website ?? "");
     setSpecializations(data.specializations ?? []);
     setLinks(data.links ?? []);
+    setExperience(data.experience ?? []);
+    setEducation(data.education ?? []);
   }
 
   useEffect(() => {
@@ -141,6 +152,10 @@ export function ProfileEditor({
           website: website.trim() || null,
           specializations,
           links: links.filter((link) => link.label.trim() && link.url.trim()),
+          experience: experience.filter(
+            (item) => item.title.trim() && item.company.trim(),
+          ),
+          education: education.filter((item) => item.school.trim()),
         },
         headers: getAccessTokenHeaders(),
       });
@@ -169,161 +184,220 @@ export function ProfileEditor({
   }
 
   return (
-    <div className="space-y-6">
-      <AvatarUploader
-        avatarUrl={profile.avatar_url ?? null}
-        displayName={profile.display_name}
-        onUploaded={(url) =>
-          setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev))
-        }
-      />
-
-      <div className="space-y-2">
-        <label className={LABEL_CLASS} htmlFor="headline">
-          Headline
-        </label>
-        <input
-          className={FIELD_CLASS}
-          id="headline"
-          maxLength={160}
-          onChange={(event) => setHeadline(event.target.value)}
-          placeholder="Compliance frameworks for fintech"
-          value={headline}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className={LABEL_CLASS} htmlFor="bio">
-          Bio
-        </label>
-        <textarea
-          className={FIELD_CLASS}
-          id="bio"
-          maxLength={2000}
-          onChange={(event) => setBio(event.target.value)}
-          placeholder="Tell people what you do and how you help."
-          rows={4}
-          value={bio}
-        />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className={LABEL_CLASS} htmlFor="location">
-            Location
-          </label>
-          <input
-            className={FIELD_CLASS}
-            id="location"
-            maxLength={100}
-            onChange={(event) => setLocation(event.target.value)}
-            placeholder="Lagos, NG"
-            value={location}
-          />
-        </div>
-        <div className="space-y-2">
-          <label className={LABEL_CLASS} htmlFor="website">
-            Website
-          </label>
-          <input
-            className={FIELD_CLASS}
-            id="website"
-            onChange={(event) => setWebsite(event.target.value)}
-            placeholder="https://your-site.com"
-            value={website}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <span className={LABEL_CLASS}>Specializations</span>
-        <div className="flex flex-wrap gap-2">
-          {specializations.map((item) => (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-surface-2 px-3 py-1.5 text-xs font-semibold text-foreground"
-              key={item}
-            >
-              {item}
-              <button
-                aria-label={`Remove ${item}`}
-                className="text-foreground-subtle hover:text-error"
-                onClick={() =>
-                  setSpecializations(specializations.filter((s) => s !== item))
-                }
-                type="button"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            className={FIELD_CLASS}
-            maxLength={80}
-            onChange={(event) => setSpecInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addSpecialization();
+    <div className="space-y-8">
+      {/* Visual Identity Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-6 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Visual Branding
+        </h2>
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <span className={LABEL_CLASS}>Cover Banner</span>
+            <BannerUploader
+              bannerUrl={profile.banner_url ?? null}
+              onUploaded={(url) =>
+                setProfile((prev) => (prev ? { ...prev, banner_url: url } : prev))
               }
-            }}
-            placeholder="Add a specialization and press Enter"
-            value={specInput}
-          />
-          <Button onClick={addSpecialization} variant="secondary">
-            Add
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <span className={LABEL_CLASS}>Portfolio links</span>
-        {links.map((link, index) => (
-          <div className="flex flex-col gap-2 sm:flex-row" key={index}>
-            <input
-              className={`${FIELD_CLASS} sm:w-1/3`}
-              maxLength={80}
-              onChange={(event) =>
-                setLinks(
-                  links.map((l, i) =>
-                    i === index ? { ...l, label: event.target.value } : l,
-                  ),
-                )
-              }
-              placeholder="Label"
-              value={link.label}
             />
+          </div>
+          <div className="space-y-2">
+            <span className={LABEL_CLASS}>Avatar Photo</span>
+            <AvatarUploader
+              avatarUrl={profile.avatar_url ?? null}
+              displayName={profile.display_name}
+              onUploaded={(url) =>
+                setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev))
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* About Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-6 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          About You
+        </h2>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className={LABEL_CLASS} htmlFor="headline">
+              Headline
+            </label>
             <input
               className={FIELD_CLASS}
-              onChange={(event) =>
-                setLinks(
-                  links.map((l, i) =>
-                    i === index ? { ...l, url: event.target.value } : l,
-                  ),
-                )
-              }
-              placeholder="https://…"
-              value={link.url}
+              id="headline"
+              maxLength={160}
+              onChange={(event) => setHeadline(event.target.value)}
+              placeholder="Compliance frameworks for fintech"
+              value={headline}
             />
-            <Button
-              onClick={() => setLinks(links.filter((_, i) => i !== index))}
-              variant="secondary"
-            >
-              Remove
-            </Button>
           </div>
-        ))}
-        {links.length < 10 ? (
-          <Button
-            onClick={() => setLinks([...links, { label: "", url: "" }])}
-            variant="secondary"
-          >
-            Add link
-          </Button>
-        ) : null}
-      </div>
 
+          <div className="space-y-2">
+            <label className={LABEL_CLASS} htmlFor="bio">
+              Bio
+            </label>
+            <textarea
+              className={FIELD_CLASS}
+              id="bio"
+              maxLength={2000}
+              onChange={(event) => setBio(event.target.value)}
+              placeholder="Tell people what you do and how you help."
+              rows={4}
+              value={bio}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Location & Website Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-6 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Location & Contact
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className={LABEL_CLASS} htmlFor="location">
+              Location
+            </label>
+            <input
+              className={FIELD_CLASS}
+              id="location"
+              maxLength={100}
+              onChange={(event) => setLocation(event.target.value)}
+              placeholder="Lagos, NG"
+              value={location}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className={LABEL_CLASS} htmlFor="website">
+              Website
+            </label>
+            <input
+              className={FIELD_CLASS}
+              id="website"
+              onChange={(event) => setWebsite(event.target.value)}
+              placeholder="https://your-site.com"
+              value={website}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Expertise & Links Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-6 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Expertise & Portfolio
+        </h2>
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <span className={LABEL_CLASS}>Specializations</span>
+            <div className="flex flex-wrap gap-2">
+              {specializations.map((item) => (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-surface-2 px-3 py-1.5 text-xs font-semibold text-foreground"
+                  key={item}
+                >
+                  {item}
+                  <button
+                    aria-label={`Remove ${item}`}
+                    className="text-foreground-subtle hover:text-error"
+                    onClick={() =>
+                      setSpecializations(specializations.filter((s) => s !== item))
+                    }
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                className={FIELD_CLASS}
+                maxLength={80}
+                onChange={(event) => setSpecInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addSpecialization();
+                  }
+                }}
+                placeholder="Add a specialization and press Enter"
+                value={specInput}
+              />
+              <Button onClick={addSpecialization} variant="secondary">
+                Add
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <span className={LABEL_CLASS}>Portfolio links</span>
+            {links.map((link, index) => (
+              <div className="flex flex-col gap-2 sm:flex-row" key={index}>
+                <input
+                  className={`${FIELD_CLASS} sm:w-1/3`}
+                  maxLength={80}
+                  onChange={(event) =>
+                    setLinks(
+                      links.map((l, i) =>
+                        i === index ? { ...l, label: event.target.value } : l,
+                      ),
+                    )
+                  }
+                  placeholder="Label"
+                  value={link.label}
+                />
+                <input
+                  className={FIELD_CLASS}
+                  onChange={(event) =>
+                    setLinks(
+                      links.map((l, i) =>
+                        i === index ? { ...l, url: event.target.value } : l,
+                      ),
+                    )
+                  }
+                  placeholder="https://…"
+                  value={link.url}
+                />
+                <Button
+                  onClick={() => setLinks(links.filter((_, i) => i !== index))}
+                  variant="secondary"
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            {links.length < 10 ? (
+              <Button
+                onClick={() => setLinks([...links, { label: "", url: "" }])}
+                variant="secondary"
+              >
+                Add link
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* Experience History Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-4 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Experience History
+        </h2>
+        <ExperienceEditor onChange={setExperience} value={experience} />
+      </section>
+
+      {/* Academic History Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-4 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Academic History
+        </h2>
+        <EducationEditor onChange={setEducation} value={education} />
+      </section>
+
+      {/* Form Action Controls */}
       <div className="flex items-center gap-4 border-t border-border-default pt-5">
         <Button loading={saving} onClick={save}>
           Save changes

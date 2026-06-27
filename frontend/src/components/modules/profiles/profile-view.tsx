@@ -75,28 +75,48 @@ export function ProfileView({
   const credentials = profile.verified_credentials ?? [];
   const specializations = profile.specializations ?? [];
   const links = profile.links ?? [];
+  const experience = profile.experience ?? [];
+  const education = profile.education ?? [];
   const websiteHref = safeHref(profile.website);
 
   return (
     <div className="mx-auto max-w-[1280px] space-y-8">
       {/* Identity header — verified accounts get the accent avatar ring. */}
-      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-bento md:p-8">
-        <div className="flex flex-col items-start gap-6 md:flex-row">
-          <div className="shrink-0 rounded-2xl border border-border-default p-1 bg-surface-2">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[14px] bg-surface-3 md:h-28 md:w-28">
-              {profile.avatar_url ? (
-                <div
-                  aria-hidden="true"
-                  className="h-full w-full bg-cover bg-center"
-                  style={{ backgroundImage: `url(${profile.avatar_url})` }}
-                />
-              ) : (
-                <span className="font-heading text-3xl font-extrabold tracking-tighter text-accent">
-                  {initials(profile.display_name)}
-                </span>
-              )}
+      <section className="rounded-2xl border border-border-default bg-surface-1 shadow-bento overflow-hidden">
+        {profile.banner_url ? (
+          <div
+            aria-hidden="true"
+            className="h-36 w-full bg-cover bg-center border-b border-border-default bg-surface-2 sm:h-48 md:h-56"
+            style={{ backgroundImage: `url(${profile.banner_url})` }}
+          />
+        ) : (
+          <div className="h-20 w-full bg-surface-2 border-b border-border-default sm:h-24" />
+        )}
+
+        <div className="p-6 md:p-8">
+          <div className="flex flex-col items-start gap-6 md:flex-row">
+            <div
+              className={[
+                "shrink-0 rounded-2xl border p-1 relative z-10 shadow-sm -mt-16 md:-mt-20",
+                profile.kyc_verified
+                  ? "border-accent bg-accent/10"
+                  : "border-border-default bg-surface-1",
+              ].join(" ")}
+            >
+              <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[14px] bg-surface-3 md:h-28 md:w-28">
+                {profile.avatar_url ? (
+                  <div
+                    aria-hidden="true"
+                    className="h-full w-full bg-cover bg-center"
+                    style={{ backgroundImage: `url(${profile.avatar_url})` }}
+                  />
+                ) : (
+                  <span className="font-heading text-3xl font-extrabold tracking-tighter text-accent">
+                    {initials(profile.display_name)}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-col gap-4 border-b border-border-default pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -177,7 +197,8 @@ export function ProfileView({
             ) : null}
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       {links.length > 0 ? (
         <section>
@@ -222,6 +243,81 @@ export function ProfileView({
               <FrameworkCard framework={framework} key={framework.id} />
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {experience.length > 0 ? (
+        <section>
+          <div className="mb-4 flex items-end justify-between border-b border-border-default pb-4">
+            <h2 className="font-heading text-xl font-bold text-foreground">
+              Experience
+            </h2>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+              Self-reported
+            </span>
+          </div>
+          <ul className="space-y-4">
+            {experience.map((item, index) => (
+              <li
+                className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
+                key={`${item.title}-${item.company}-${index}`}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <h3 className="font-heading text-lg font-bold text-foreground">
+                    {item.title}
+                  </h3>
+                  <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+                    {[item.start, item.current ? "Present" : item.end]
+                      .filter(Boolean)
+                      .join(" – ")}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm font-semibold text-foreground-muted">
+                  {item.company}
+                </p>
+                {item.description ? (
+                  <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
+                    {item.description}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {education.length > 0 ? (
+        <section>
+          <div className="mb-4 flex items-end justify-between border-b border-border-default pb-4">
+            <h2 className="font-heading text-xl font-bold text-foreground">
+              Education
+            </h2>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+              Self-reported
+            </span>
+          </div>
+          <ul className="space-y-4">
+            {education.map((item, index) => (
+              <li
+                className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
+                key={`${item.school}-${index}`}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <h3 className="font-heading text-lg font-bold text-foreground">
+                    {item.school}
+                  </h3>
+                  <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+                    {[item.start_year, item.end_year].filter(Boolean).join(" – ")}
+                  </span>
+                </div>
+                {item.degree || item.field ? (
+                  <p className="mt-0.5 text-sm font-semibold text-foreground-muted">
+                    {[item.degree, item.field].filter(Boolean).join(", ")}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 

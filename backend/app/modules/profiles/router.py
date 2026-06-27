@@ -20,6 +20,9 @@ from app.modules.profiles.schemas import (
     AvatarConfirmRequest,
     AvatarUploadUrlRequest,
     AvatarUploadUrlResponse,
+    BannerConfirmRequest,
+    BannerUploadUrlRequest,
+    BannerUploadUrlResponse,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
@@ -99,6 +102,45 @@ async def confirm_avatar_upload(
 ) -> PublicProfileResponse:
     """Persist the owner's avatar after verifying the upload."""
     return await service.confirm_avatar_upload(
+        db, user=current_user, payload=payload
+    )
+
+
+@router.post(
+    "/me/banner/upload-url",
+    response_model=BannerUploadUrlResponse,
+    summary="Request a banner upload URL",
+    description=(
+        "Return a presigned POST target for the authenticated user's profile "
+        "banner. Image type and size are validated before the target is issued."
+    ),
+)
+async def request_banner_upload_url(
+    payload: BannerUploadUrlRequest,
+    current_user: CurrentUser,
+) -> BannerUploadUrlResponse:
+    """Return a presigned banner upload target for the owner."""
+    return await service.request_banner_upload_url(
+        user=current_user, payload=payload
+    )
+
+
+@router.post(
+    "/me/banner/confirm",
+    response_model=PublicProfileResponse,
+    summary="Confirm a banner upload",
+    description=(
+        "Confirm a completed banner upload and publish it on the profile. "
+        "The object must exist and the key must belong to the caller."
+    ),
+)
+async def confirm_banner_upload(
+    payload: BannerConfirmRequest,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> PublicProfileResponse:
+    """Persist the owner's banner after verifying the upload."""
+    return await service.confirm_banner_upload(
         db, user=current_user, payload=payload
     )
 

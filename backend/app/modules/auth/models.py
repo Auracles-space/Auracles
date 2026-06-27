@@ -75,6 +75,7 @@ class User(UpdatedAtMixin, Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    banner_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     headline: Mapped[str | None] = mapped_column(String(160), nullable=True)
     specializations: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
@@ -82,6 +83,16 @@ class User(UpdatedAtMixin, Base):
         server_default=text("'{}'"),
     )
     links: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
+    experience: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
+    education: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=text("'[]'"),
