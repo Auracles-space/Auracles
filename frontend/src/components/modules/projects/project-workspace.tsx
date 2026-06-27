@@ -737,10 +737,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 />
               </label>
               <button
-                className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!canSubmitProposal}
                 type="submit"
               >
+                <svg className="h-4 w-4 text-background" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
                 Submit proposal
               </button>
             </form>
@@ -773,10 +776,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                   <p className="mt-2 text-sm text-foreground-muted">{proposal.scope}</p>
                   {showAcceptButton && proposal.status === "pending" ? (
                     <button
-                      className="mt-3 min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
+                      className="mt-3 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent"
                       onClick={() => void acceptProjectProposal(proposal.id)}
                       type="button"
                     >
+                      <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
                       Accept proposal
                     </button>
                   ) : null}
@@ -900,18 +906,24 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
               ) : null}
               <div className="flex flex-wrap gap-3">
                 <button
-                  className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canAddMilestone}
                   type="submit"
                 >
+                  <svg className="h-4 w-4 text-background" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
                   Add milestone
                 </button>
                 <button
-                  className="min-h-12 rounded-xl bg-[#16A34A] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#16A34A]/90 focus-visible:ring-2 focus-visible:ring-[#16A34A] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#16A34A] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#16A34A]/90 focus-visible:ring-2 focus-visible:ring-[#16A34A] disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canFinalizePlan}
                   onClick={() => void finalizePlan()}
                   type="button"
                 >
+                  <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
                   Finalize plan
                 </button>
               </div>
@@ -925,10 +937,13 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                 funding begins.
               </p>
               <button
-                className="min-h-12 rounded-xl border border-accent/40 bg-accent/5 px-6 text-sm font-semibold text-accent transition-all hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/5 px-6 text-sm font-semibold text-accent transition-all hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={() => void reopenPlan()}
                 type="button"
               >
+                <svg className="h-4 w-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                </svg>
                 Reopen plan
               </button>
             </div>
@@ -957,7 +972,33 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       <p className="font-semibold text-foreground">
                         {milestone.sequence}. {milestone.name} · ${milestone.budget}
                       </p>
-                      <StatusBadge status={milestone.status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={milestone.status} />
+                        {canManage && !isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              aria-label="Edit milestone"
+                              onClick={() => startEditMilestone(milestone)}
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-default bg-surface-1 text-foreground-muted hover:bg-surface-3 transition-all cursor-pointer"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              aria-label="Delete milestone"
+                              onClick={() => void deleteProjectMilestone(milestone.id)}
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-default bg-surface-1 text-foreground-muted hover:border-error/30 hover:bg-error/5 hover:text-error transition-all cursor-pointer"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                     {isEditing ? (
                       <div className="mt-3 grid gap-3">
@@ -1077,24 +1118,6 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                             type="button"
                           >
                             Cancel
-                          </button>
-                        </>
-                      ) : null}
-                      {canManage && !isEditing ? (
-                        <>
-                          <button
-                            className="min-h-12 rounded-xl border border-border-default px-6 text-sm font-semibold text-foreground transition-all hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
-                            onClick={() => startEditMilestone(milestone)}
-                            type="button"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="min-h-12 rounded-xl border border-[#DC2626]/40 px-6 text-sm font-semibold text-[#DC2626] transition-all hover:bg-[#DC2626]/10 focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-                            onClick={() => void deleteProjectMilestone(milestone.id)}
-                            type="button"
-                          >
-                            Delete
                           </button>
                         </>
                       ) : null}

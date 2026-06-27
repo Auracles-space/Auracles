@@ -239,11 +239,14 @@ export function SavedSearchesPanel() {
                         />
                       </label>
                       <button
-                        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center rounded-xl border border-border-default bg-background px-5 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 shrink-0"
+                        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-border-default bg-background px-5 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 shrink-0"
                         disabled={pendingType === "rename" || !isNameEdited}
                         onClick={() => void renameSavedSearch(savedSearch)}
                         type="button"
                       >
+                        <svg className="h-4 w-4 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
                         {pendingType === "rename" ? "Saving..." : "Save name"}
                       </button>
                     </div>
@@ -263,9 +266,12 @@ export function SavedSearchesPanel() {
                       Actions
                     </span>
                     <Link
-                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent text-center w-full"
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent text-center w-full"
                       href={savedSearchFiltersToHref(savedSearch.filters)}
                     >
+                      <svg className="h-4 w-4 text-background" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
                       Open
                     </Link>
                     <button

@@ -326,7 +326,10 @@ export function ProfileEditor({
                 placeholder="Add a specialization and press Enter"
                 value={specInput}
               />
-              <Button onClick={addSpecialization} variant="secondary">
+              <Button onClick={addSpecialization} variant="secondary" className="flex items-center gap-1.5 px-4 shrink-0">
+                <svg className="h-4 w-4 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
                 Add
               </Button>
             </div>
@@ -361,19 +364,27 @@ export function ProfileEditor({
                   placeholder="https://…"
                   value={link.url}
                 />
-                <Button
+                <button
+                  aria-label="Remove link"
                   onClick={() => setLinks(links.filter((_, i) => i !== index))}
-                  variant="secondary"
+                  type="button"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted hover:border-error/30 hover:bg-error/5 hover:text-error transition-all cursor-pointer"
                 >
-                  Remove
-                </Button>
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
             ))}
             {links.length < 10 ? (
               <Button
                 onClick={() => setLinks([...links, { label: "", url: "" }])}
                 variant="secondary"
+                className="w-full flex items-center justify-center gap-2"
               >
+                <svg className="h-4 w-4 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
                 Add link
               </Button>
             ) : null}

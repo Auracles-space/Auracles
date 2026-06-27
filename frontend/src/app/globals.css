@@ -137,11 +137,16 @@ select {
   scrollbar-color: var(--border-strong) transparent;
 }
 
-/* Prevent native browser blue outlines on interactive fields */
+/* Prevent native browser blue outlines on interactive fields and enforce brand focus colors */
 input:focus,
 textarea:focus,
-select:focus,
+select:focus {
+  outline: none !important;
+  --tw-ring-color: var(--accent) !important;
+}
+
 button:focus {
   outline: none !important;
 }
+
 

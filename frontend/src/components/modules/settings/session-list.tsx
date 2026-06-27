@@ -113,10 +113,16 @@ export function SessionList({
       {success ? <FormMessage kind="success" message={success} /> : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <Button disabled={isLoading} onClick={loadActiveSessions} variant="secondary">
+        <Button disabled={isLoading} onClick={loadActiveSessions} variant="secondary" className="flex items-center gap-2">
+          <svg className="h-4 w-4 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89" />
+          </svg>
           {isLoading ? "Loading sessions" : "Refresh sessions"}
         </Button>
-        <Button onClick={revokeOthers} variant="secondary">
+        <Button onClick={revokeOthers} variant="secondary" className="flex items-center gap-2">
+          <svg className="h-4 w-4 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
           Revoke other sessions
         </Button>
       </div>
@@ -132,7 +138,7 @@ export function SessionList({
               className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm"
               key={session.id}
             >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-heading text-sm font-semibold text-foreground">
                     {session.current ? "Current session" : "Browser session"}
@@ -145,12 +151,21 @@ export function SessionList({
                     Last seen {new Date(session.last_seen).toLocaleString()}
                   </p>
                 </div>
-                <Button
+                <button
+                  aria-label="Revoke session"
                   onClick={() => void revoke(session.id)}
-                  variant={session.current ? "destructive" : "secondary"}
+                  type="button"
+                  className={[
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all cursor-pointer",
+                    session.current
+                      ? "border-error/40 bg-error/5 text-error hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                      : "border-border-default bg-surface-1 text-foreground-muted hover:border-error/30 hover:bg-error/5 hover:text-error focus-visible:ring-2 focus-visible:ring-accent"
+                  ].join(" ")}
                 >
-                  Revoke session
-                </Button>
+                  <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
             </article>
           ))
