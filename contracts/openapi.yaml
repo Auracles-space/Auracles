@@ -2218,6 +2218,87 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/auth/google/start:
+    get:
+      tags:
+      - Auth
+      summary: Begin Google sign-in
+      description: Start the Google OAuth authorization-code flow. Generates CSRF
+        state and a PKCE pair, seals them in a short-lived HttpOnly cookie, and redirects
+        the browser to Google's consent screen.
+      operationId: google_start_v1_auth_google_start_get
+      parameters:
+      - name: next
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next
+      - name: terms
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Terms
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/auth/google/callback:
+    get:
+      tags:
+      - Auth
+      summary: Complete Google sign-in
+      description: 'Handle Google''s authorization-code redirect: verify CSRF state,
+        exchange the code, verify the id_token, resolve or create the account, and
+        issue a session before redirecting back into the app.'
+      operationId: google_callback_v1_auth_google_callback_get
+      parameters:
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      - name: code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+      - name: error
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/register:
     post:
       tags:
@@ -9317,10 +9398,12 @@ components:
     AccountDeletionRequestBody:
       properties:
         password:
-          type: string
-          format: password
+          anyOf:
+          - type: string
+            format: password
+            writeOnly: true
+          - type: 'null'
           title: Password
-          writeOnly: true
         totp_code:
           anyOf:
           - type: string
@@ -9329,11 +9412,16 @@ components:
           - type: 'null'
           title: Totp Code
       type: object
-      required:
-      - password
       title: AccountDeletionRequestBody
-      description: Request body for starting the GDPR account-deletion cooling-off
+      description: 'Request body for starting the GDPR account-deletion cooling-off
         flow.
+
+
+        Password accounts confirm with their password; passwordless (e.g. Google)
+
+        accounts omit it and rely on the deletion grace period as the safety net.
+
+        TOTP still applies when the account has it enabled.'
     AccountDeletionStatusResponse:
       properties:
         id:
@@ -12613,6 +12701,10 @@ components:
           type: boolean
           title: Is Superadmin
           default: false
+        has_password:
+          type: boolean
+          title: Has Password
+          default: true
       type: object
       required:
       - id
@@ -13324,10 +13416,12 @@ components:
           format: email
           title: New Email
         password:
-          type: string
-          format: password
+          anyOf:
+          - type: string
+            format: password
+            writeOnly: true
+          - type: 'null'
           title: Password
-          writeOnly: true
         totp_code:
           anyOf:
           - type: string
@@ -13338,14 +13432,18 @@ components:
       type: object
       required:
       - new_email
-      - password
       title: EmailChangeRequest
       description: 'Request body for starting a verified account email change.
 
 
-        Email change always re-authenticates with the account password and, when the
+        Password accounts re-authenticate with the account password and, when 2FA
+        is
 
-        account has 2FA enabled, additionally steps up with a TOTP/backup code.'
+        enabled, step up with a TOTP/backup code. Passwordless (e.g. Google) accounts
+
+        omit the password; the new-address verification link is the proof of intent
+
+        and TOTP still applies when enabled.'
     ExploreArtifactSummary:
       properties:
         id:

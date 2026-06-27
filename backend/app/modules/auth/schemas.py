@@ -118,6 +118,9 @@ class CurrentUserResponse(BaseModel):
     kyc_status: str
     deactivated_at: datetime | None
     is_superadmin: bool = False
+    # False for passwordless (e.g. Google) accounts; the settings UI uses this to
+    # swap password re-auth for a "set a password" path and TOTP-only step-up.
+    has_password: bool = True
 
 
 class AddRoleRequest(BaseModel):

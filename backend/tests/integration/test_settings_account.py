@@ -318,3 +318,38 @@ async def test_email_change_without_2fa_uses_password_only(
     alerts = settings_account_context["sent_email_alerts"]
     assert alerts[0] == ("no2fa-change@auracles.space", "fresh@auracles.space")
 
+
+async def test_email_change_passwordless_account_skips_password_reauth(
+    client: AsyncClient,
+    migrated_database: None,
+    settings_account_context: dict[str, Any],
+) -> None:
+    """A passwordless (Google) account changes email without a password.
+
+    Re-auth substitutes the factor the account actually has: no password is
+    demanded, and the new-address verification link is the proof of intent.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="google-change@auracles.space",
+                password_hash=None,
+                display_name="Google User",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(UserRole(user_id=user.id, role="operator"))
+        user_id = user.id
+    access_token = create_access_token(user_id=user_id, roles=["operator"])
+
+    requested = await client.post(
+        "/v1/settings/account/email-change",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"new_email": "moved@auracles.space"},
+    )
+
+    assert requested.status_code == 200
+    sent = settings_account_context["sent_email_changes"]
+    assert sent[0][0] == "moved@auracles.space"
+

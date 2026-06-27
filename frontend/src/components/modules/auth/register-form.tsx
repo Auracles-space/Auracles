@@ -25,6 +25,7 @@ import {
 } from "@/lib/forms/validators";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
+import { AuthDivider, GoogleSignInButton } from "./google-sign-in-button";
 import { ResendVerificationButton } from "./resend-verification-button";
 
 type AssignableRole = "attestor" | "contributor" | "operator";
@@ -166,6 +167,22 @@ export function RegisterForm() {
 
       {error ? <FormMessage kind="error" message={error} /> : null}
       {success ? <FormMessage kind="success" message={success} /> : null}
+
+      <div className="space-y-2">
+        <GoogleSignInButton label="Sign up with Google" />
+        <p className="text-xs leading-5 text-foreground-subtle">
+          By signing up with Google you agree to our{" "}
+          <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
+            Terms
+          </a>{" "}
+          and{" "}
+          <a className="font-medium text-accent hover:underline" href="/privacy" target="_blank" rel="noreferrer">
+            Privacy Policy
+          </a>
+          . You&apos;ll pick how you use Auracles right after.
+        </p>
+      </div>
+      <AuthDivider />
 
       <FormField
         autoFocus

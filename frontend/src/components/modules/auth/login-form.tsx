@@ -27,6 +27,7 @@ import {
 } from "@/lib/auth/form-client";
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
+import { AuthDivider, GoogleSignInButton } from "./google-sign-in-button";
 
 type LoginFormProps = {
   next?: string;
@@ -132,6 +133,22 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
         </p>
       </div>
 
+      <div className="space-y-2">
+        <GoogleSignInButton next={safeNext ?? undefined} />
+        <p className="text-xs leading-5 text-foreground-subtle">
+          By continuing with Google you agree to our{" "}
+          <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
+            Terms
+          </a>{" "}
+          and{" "}
+          <a className="font-medium text-accent hover:underline" href="/privacy" target="_blank" rel="noreferrer">
+            Privacy Policy
+          </a>
+          .
+        </p>
+      </div>
+      <AuthDivider />
+
       {error ? <FormMessage kind="error" message={error} /> : null}
 
       <FormField
@@ -170,7 +187,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
             Sign up
           </a>
         </div>
-        <Button disabled={isSubmitting || !canSubmit} type="submit">
+        <Button className="w-full sm:w-auto" disabled={isSubmitting || !canSubmit} type="submit">
           {isSubmitting ? (
             <>
               <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-background" fill="none" viewBox="0 0 24 24">

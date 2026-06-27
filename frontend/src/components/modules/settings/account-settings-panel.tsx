@@ -21,6 +21,7 @@ import {
   cancelAccountDeletion,
   downloadDataExportV1GdprExportsExportRequestIdDownloadGet,
   getAccountDeletionStatus,
+  getCurrentUser,
   getLatestDataExportStatusV1GdprExportsLatestGet,
   requestAccountDeletion,
   requestDataExportV1GdprExportsPost,
@@ -146,6 +147,9 @@ export function AccountSettingsPanel() {
   const [statusLoading, setStatusLoading] = useState(true);
   const [totpCode, setTotpCode] = useState("");
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  // Passwordless (e.g. Google) accounts re-auth without a password: the
+  // verification link / 2FA stands in, and they can set a password to recover.
+  const [hasPassword, setHasPassword] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -153,15 +157,17 @@ export function AccountSettingsPanel() {
     async function loadSettingsState(): Promise<void> {
       configureBrowserClient();
       const headers = getAccessTokenHeaders();
-      const [deletionResult, exportResult, totpResult] = await Promise.all([
-        getAccountDeletionStatus({
-          headers,
-        }),
-        getLatestDataExportStatusV1GdprExportsLatestGet({
-          headers,
-        }),
-        totpStatus({ headers }),
-      ]);
+      const [deletionResult, exportResult, totpResult, userResult] =
+        await Promise.all([
+          getAccountDeletionStatus({
+            headers,
+          }),
+          getLatestDataExportStatusV1GdprExportsLatestGet({
+            headers,
+          }),
+          totpStatus({ headers }),
+          getCurrentUser({ headers }),
+        ]);
 
       if (!mounted) {
         return;
@@ -170,6 +176,9 @@ export function AccountSettingsPanel() {
       // Only accounts with 2FA enabled need to confirm GDPR actions with a code.
       if (totpResult.response.ok && totpResult.data) {
         setTwoFactorEnabled(totpResult.data.totp_enabled);
+      }
+      if (userResult.response.ok && userResult.data) {
+        setHasPassword(userResult.data.has_password ?? true);
       }
 
       setStatusLoading(false);
@@ -244,11 +253,11 @@ export function AccountSettingsPanel() {
     exportStatus?.status === "pending" || exportStatus?.status === "processing";
   const canSubmitEmailChange = allValid(
     isEmail(newEmail),
-    isNonEmpty(emailPassword),
+    !hasPassword || isNonEmpty(emailPassword),
     !twoFactorEnabled || totpCode.trim().length >= 6,
   );
   const canSubmitDeletion =
-    isNonEmpty(deletionPassword) &&
+    (!hasPassword || isNonEmpty(deletionPassword)) &&
     (!twoFactorEnabled || deletionTotp.trim().length >= 6);
 
   async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -256,7 +265,9 @@ export function AccountSettingsPanel() {
     setEmailError(null);
     setEmailMessage(null);
 
-    if (!isNonEmpty(emailPassword)) {
+    // Passwordless accounts have no password to confirm; the verification link
+    // sent to the new address is the proof of intent.
+    if (hasPassword && !isNonEmpty(emailPassword)) {
       setEmailError("Enter your current password.");
       return;
     }
@@ -270,7 +281,7 @@ export function AccountSettingsPanel() {
     const result = await requestEmailChange({
       body: {
         new_email: newEmail.trim(),
-        password: emailPassword,
+        password: hasPassword ? emailPassword : undefined,
         totp_code: twoFactorEnabled ? totpCode.trim() : null,
       },
       headers: getAccessTokenHeaders(),
@@ -360,7 +371,7 @@ export function AccountSettingsPanel() {
     configureBrowserClient();
     const result = await requestAccountDeletion({
       body: {
-        password: deletionPassword,
+        password: hasPassword ? deletionPassword : undefined,
         totp_code: deletionTotp.trim() || null,
       },
       headers: getAccessTokenHeaders(),
@@ -416,9 +427,9 @@ export function AccountSettingsPanel() {
             Email address
           </h2>
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
-            Confirm with your password{twoFactorEnabled ? " and 2FA code" : ""},
-            then verify the new address from your email. We notify your current
-            address for security.
+            {hasPassword
+              ? `Confirm with your password${twoFactorEnabled ? " and 2FA code" : ""}, then verify the new address from your email. We notify your current address for security.`
+              : `Verify the new address from your email${twoFactorEnabled ? " and confirm with your 2FA code" : ""}. We notify your current address for security.`}
           </p>
         </div>
         {emailError ? <FormMessage kind="error" message={emailError} /> : null}
@@ -434,15 +445,25 @@ export function AccountSettingsPanel() {
           type="email"
           value={newEmail}
         />
-        <FormField
-          autoComplete="current-password"
-          label="Account password"
-          name="email_change_password"
-          onChange={(event) => setEmailPassword(event.target.value)}
-          required
-          type="password"
-          value={emailPassword}
-        />
+        {hasPassword ? (
+          <FormField
+            autoComplete="current-password"
+            label="Account password"
+            name="email_change_password"
+            onChange={(event) => setEmailPassword(event.target.value)}
+            required
+            type="password"
+            value={emailPassword}
+          />
+        ) : (
+          <p className="text-sm leading-6 text-foreground-muted">
+            You signed in with Google, so there&apos;s no password to enter.{" "}
+            <a className="font-medium text-accent hover:underline" href="/forgot-password">
+              Set a password
+            </a>{" "}
+            to add email sign-in.
+          </p>
+        )}
         {twoFactorEnabled ? (
           <FormField
             autoComplete="one-time-code"
@@ -623,15 +644,23 @@ export function AccountSettingsPanel() {
               />
             ) : null}
 
-            <FormField
-              autoComplete="current-password"
-              label="Current password"
-              name="password"
-              onChange={(event) => setDeletionPassword(event.target.value)}
-              required
-              type="password"
-              value={deletionPassword}
-            />
+            {hasPassword ? (
+              <FormField
+                autoComplete="current-password"
+                label="Current password"
+                name="password"
+                onChange={(event) => setDeletionPassword(event.target.value)}
+                required
+                type="password"
+                value={deletionPassword}
+              />
+            ) : (
+              <p className="text-sm leading-6 text-foreground-muted">
+                You signed in with Google. Deletion starts a cooling-off period
+                before anything is removed
+                {twoFactorEnabled ? ", and your 2FA code confirms it below" : ""}.
+              </p>
+            )}
             {twoFactorEnabled ? (
               <FormField
                 autoComplete="one-time-code"

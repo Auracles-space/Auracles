@@ -11,9 +11,13 @@ export type AccountDeletionBlockedReason = {
 
 /**
  * Request body for starting the GDPR account-deletion cooling-off flow.
+ *
+ * Password accounts confirm with their password; passwordless (e.g. Google)
+ * accounts omit it and rely on the deletion grace period as the safety net.
+ * TOTP still applies when the account has it enabled.
  */
 export type AccountDeletionRequestBody = {
-    password: string;
+    password?: (string | null);
     totp_code?: (string | null);
 };
 
@@ -1202,6 +1206,7 @@ export type CurrentUserResponse = {
     kyc_status: string;
     deactivated_at: (string | null);
     is_superadmin?: boolean;
+    has_password?: boolean;
 };
 
 /**
@@ -1448,12 +1453,14 @@ export type EmailChangeConfirmRequest = {
 /**
  * Request body for starting a verified account email change.
  *
- * Email change always re-authenticates with the account password and, when the
- * account has 2FA enabled, additionally steps up with a TOTP/backup code.
+ * Password accounts re-authenticate with the account password and, when 2FA is
+ * enabled, step up with a TOTP/backup code. Passwordless (e.g. Google) accounts
+ * omit the password; the new-address verification link is the proof of intent
+ * and TOTP still applies when enabled.
  */
 export type EmailChangeRequest = {
     new_email: string;
-    password: string;
+    password?: (string | null);
     totp_code?: (string | null);
 };
 
@@ -3935,6 +3942,29 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type GoogleStartV1AuthGoogleStartGetData = {
+    query?: {
+        next?: (string | null);
+        terms?: boolean;
+    };
+};
+
+export type GoogleStartV1AuthGoogleStartGetResponse = (unknown);
+
+export type GoogleStartV1AuthGoogleStartGetError = (HTTPValidationError);
+
+export type GoogleCallbackV1AuthGoogleCallbackGetData = {
+    query: {
+        code?: (string | null);
+        error?: (string | null);
+        state: string;
+    };
+};
+
+export type GoogleCallbackV1AuthGoogleCallbackGetResponse = (unknown);
+
+export type GoogleCallbackV1AuthGoogleCallbackGetError = (HTTPValidationError);
 
 export type RegisterV1AuthRegisterPostData = {
     body: RegisterRequest;

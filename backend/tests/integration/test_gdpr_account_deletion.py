@@ -664,6 +664,44 @@ async def test_request_account_deletion_schedules_cooling_off_and_status_reads_i
     assert audit is not None
 
 
+async def test_request_account_deletion_passwordless_account_skips_password(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """A passwordless (Google) account schedules deletion without a password.
+
+    The grace period is the safety net; no password is demanded of an account
+    that has none. TOTP would still apply if the account had enabled it.
+    """
+    del account_deletion_test_context
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="google-delete@auracles.space",
+                password_hash=None,
+                display_name="Google Delete",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id, role="operator", approved_at=datetime.now(UTC)
+                )
+            )
+        user_id = user.id
+
+    created = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={},
+    )
+
+    assert created.status_code == 202
+    assert created.json()["status"] == "scheduled"
+
+
 async def test_get_account_deletion_status_returns_empty_state_without_request(
     client: AsyncClient,
     migrated_database: None,

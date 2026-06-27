@@ -190,6 +190,8 @@ async def test_login_sets_refresh_cookie_and_me_accepts_access_token(
     assert me_response.status_code == 200
     assert me_response.json()["id"] == str(user_id)
     assert me_response.json()["avatar_url"] is None
+    # Password accounts report has_password so the settings UI keeps password re-auth.
+    assert me_response.json()["has_password"] is True
 
 
 async def test_me_exposes_pending_attestor_role(

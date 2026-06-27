@@ -216,15 +216,16 @@ async def request_email_change(
     redis: Redis,
     user: User,
     new_email: str,
-    password: str,
+    password: str | None,
     totp_code: str | None,
 ) -> None:
     """Create a new-email verification token after re-authentication.
 
-    Email change always re-authenticates with the account password. Accounts
-    with 2FA enabled additionally step up with a TOTP/backup code; accounts
-    without 2FA rely on password plus the new-address verification link, so they
-    are not locked out. The current (old) address is notified for awareness.
+    Re-auth substitutes the factor the account actually has. Password accounts
+    re-authenticate with the account password; passwordless (e.g. Google)
+    accounts skip the password and rely on the new-address verification link as
+    proof of intent. Accounts with 2FA enabled additionally step up with a
+    TOTP/backup code. The current (old) address is notified for awareness.
     """
     normalized_email = auth_service.normalize_email(new_email)
     if normalized_email == user.email:
@@ -239,11 +240,14 @@ async def request_email_change(
             detail="Email is already in use.",
         )
 
-    if user.password_hash is None or not verify_password(password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password.",
-        )
+    # Password accounts must re-authenticate; passwordless accounts have no
+    # password to demand, so the new-address verification link is the factor.
+    if user.password_hash is not None:
+        if password is None or not verify_password(password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password.",
+            )
     # Step up with 2FA only when the account has it; never demand a factor the
     # account does not possess (that would lock the user out of email change).
     if user.totp_enabled:
