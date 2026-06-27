@@ -14,6 +14,39 @@ from pydantic import BaseModel, Field, field_validator
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 MAX_SPECIALIZATIONS = 20
 MAX_SPECIALIZATION_LENGTH = 80
+MAX_LINKS = 10
+
+
+class ProfileLink(BaseModel):
+    """A single portfolio link.
+
+    Attributes:
+        label: Human-readable link label (1-80 chars).
+        url: Destination URL; must use http or https.
+    """
+
+    label: str = Field(min_length=1, max_length=80)
+    url: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def url_uses_safe_scheme(cls, value: str) -> str:
+        """Reject any link URL that is not http/https.
+
+        Args:
+            value: The submitted link URL.
+
+        Returns:
+            The trimmed URL when valid.
+
+        Raises:
+            ValueError: If the URL does not use a safe web scheme.
+        """
+        candidate = value.strip()
+        scheme, separator, _ = candidate.partition("://")
+        if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
+            raise ValueError("link url must be an http or https URL")
+        return candidate
 
 
 class PublicProfileResponse(BaseModel):
@@ -47,6 +80,7 @@ class PublicProfileResponse(BaseModel):
     location: str | None = None
     website: str | None = None
     specializations: list[str] = []
+    links: list[ProfileLink] = []
     roles: list[str] = []
     kyc_verified: bool = False
     is_deactivated: bool = False
@@ -73,6 +107,7 @@ class ProfileUpdateRequest(BaseModel):
     location: str | None = Field(default=None, max_length=100)
     website: str | None = Field(default=None, max_length=2048)
     specializations: list[str] | None = Field(default=None)
+    links: list[ProfileLink] | None = Field(default=None, max_length=MAX_LINKS)
 
     @field_validator("specializations")
     @classmethod

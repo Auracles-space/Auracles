@@ -445,6 +445,147 @@ async def test_suspended_profile_withholds_specializations(
     assert public.json()["specializations"] == []
 
 
+async def test_owner_sets_portfolio_links_shown_on_public_profile(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Portfolio links set via PATCH appear on the public profile."""
+    user_id = await create_user("profile-links@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "links": [
+                {"label": "GitHub", "url": "https://github.com/ada"},
+                {"label": "Site", "url": "https://ada.example"},
+            ]
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    links = response.json()["links"]
+    assert links == [
+        {"label": "GitHub", "url": "https://github.com/ada"},
+        {"label": "Site", "url": "https://ada.example"},
+    ]
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["links"] == links
+
+
+async def test_links_patch_replaces_whole_list(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Setting links replaces the prior list (not append)."""
+    user_id = await create_user("profile-links2@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"links": [{"label": "Old", "url": "https://old.example"}]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"links": [{"label": "New", "url": "https://new.example"}]},
+        headers=headers,
+    )
+
+    assert response.json()["links"] == [
+        {"label": "New", "url": "https://new.example"}
+    ]
+
+
+async def test_links_omitted_leaves_them_untouched(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A PATCH without links does not clear existing ones."""
+    user_id = await create_user("profile-links3@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"links": [{"label": "Keep", "url": "https://keep.example"}]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"headline": "Unrelated"},
+        headers=headers,
+    )
+
+    assert response.json()["links"] == [
+        {"label": "Keep", "url": "https://keep.example"}
+    ]
+
+
+async def test_links_reject_unsafe_url_scheme(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A link with a non-http(s) URL is rejected with 422."""
+    user_id = await create_user("profile-links4@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"links": [{"label": "Bad", "url": "javascript:alert(1)"}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_too_many_links_rejected(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """More than the cap of links is rejected with 422."""
+    user_id = await create_user("profile-links5@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "links": [
+                {"label": f"L{i}", "url": f"https://x{i}.example"}
+                for i in range(15)
+            ]
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_suspended_profile_withholds_links(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's links are withheld from the public read."""
+    user_id = await create_user("profile-links6@auracles.space", ["contributor"])
+    await client.patch(
+        "/v1/profiles/me",
+        json={"links": [{"label": "Hidden", "url": "https://hidden.example"}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["links"] == []
+
+
 async def test_profile_update_only_changes_provided_fields(
     client: AsyncClient,
     migrated_database: None,

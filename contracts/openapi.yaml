@@ -16503,6 +16503,25 @@ components:
       - license_types
       title: PricingConfig
       description: Framework pricing and licensing options configured by a Contributor.
+    ProfileLink:
+      properties:
+        label:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Label
+        url:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Url
+      type: object
+      required:
+      - label
+      - url
+      title: ProfileLink
+      description: "A single portfolio link.\n\nAttributes:\n    label: Human-readable\
+        \ link label (1-80 chars).\n    url: Destination URL; must use http or https."
     ProfileUpdateRequest:
       properties:
         headline:
@@ -16536,6 +16555,14 @@ components:
             type: array
           - type: 'null'
           title: Specializations
+        links:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ProfileLink'
+            type: array
+            maxItems: 10
+          - type: 'null'
+          title: Links
       type: object
       title: ProfileUpdateRequest
       description: "Owner-editable profile fields for PATCH /profiles/me.\n\nAll fields\
@@ -16998,6 +17025,12 @@ components:
             type: string
           type: array
           title: Specializations
+          default: []
+        links:
+          items:
+            $ref: '#/components/schemas/ProfileLink'
+          type: array
+          title: Links
           default: []
         roles:
           items:

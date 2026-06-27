@@ -20,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, ENUM
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -80,6 +80,11 @@ class User(UpdatedAtMixin, Base):
         ARRAY(Text),
         nullable=False,
         server_default=text("'{}'"),
+    )
+    links: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'"),
     )
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)
