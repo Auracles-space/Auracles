@@ -93,3 +93,50 @@ class ProfileUpdateRequest(BaseModel):
         if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
             raise ValueError("website must be an http or https URL")
         return candidate
+
+
+class AvatarUploadUrlRequest(BaseModel):
+    """Request body for an avatar presigned upload target.
+
+    Attributes:
+        filename: Original filename, used only to derive the stored extension.
+        mime_type: Declared image MIME type (validated against an allow-list).
+        file_size: Declared size in bytes (validated against the size cap).
+    """
+
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=100)
+    file_size: int = Field(gt=0)
+
+
+class AvatarUploadUrlResponse(BaseModel):
+    """Presigned POST target plus the avatar URL the object will be served at.
+
+    The avatar_url is not persisted until the upload is confirmed, so a never
+    completed upload cannot leave a dangling URL on the profile.
+
+    Attributes:
+        upload_url: The S3 POST URL the client uploads to.
+        fields: Form fields the client must include in the POST.
+        file_key: The object key the avatar will live at.
+        avatar_url: Public URL the object will be served at once uploaded.
+        max_size: Maximum allowed size in bytes (also enforced by S3).
+        expires_in: Seconds until the presigned target expires.
+    """
+
+    upload_url: str
+    fields: dict[str, str]
+    file_key: str
+    avatar_url: str
+    max_size: int
+    expires_in: int
+
+
+class AvatarConfirmRequest(BaseModel):
+    """Request body confirming a completed avatar upload.
+
+    Attributes:
+        file_key: The object key returned by the upload-url request.
+    """
+
+    file_key: str = Field(min_length=1, max_length=512)

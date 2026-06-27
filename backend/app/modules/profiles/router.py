@@ -17,6 +17,9 @@ from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.profiles import service
 from app.modules.profiles.schemas import (
+    AvatarConfirmRequest,
+    AvatarUploadUrlRequest,
+    AvatarUploadUrlResponse,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
@@ -59,6 +62,45 @@ async def update_my_profile(
 ) -> PublicProfileResponse:
     """Apply the owner's partial profile edit."""
     return await service.update_profile(db, user=current_user, payload=payload)
+
+
+@router.post(
+    "/me/avatar/upload-url",
+    response_model=AvatarUploadUrlResponse,
+    summary="Request an avatar upload URL",
+    description=(
+        "Return a presigned POST target for the authenticated user's avatar. "
+        "Image type and size are validated before the target is issued."
+    ),
+)
+async def request_avatar_upload_url(
+    payload: AvatarUploadUrlRequest,
+    current_user: CurrentUser,
+) -> AvatarUploadUrlResponse:
+    """Return a presigned avatar upload target for the owner."""
+    return await service.request_avatar_upload_url(
+        user=current_user, payload=payload
+    )
+
+
+@router.post(
+    "/me/avatar/confirm",
+    response_model=PublicProfileResponse,
+    summary="Confirm an avatar upload",
+    description=(
+        "Confirm a completed avatar upload and publish it on the profile. "
+        "The object must exist and the key must belong to the caller."
+    ),
+)
+async def confirm_avatar_upload(
+    payload: AvatarConfirmRequest,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> PublicProfileResponse:
+    """Persist the owner's avatar after verifying the upload."""
+    return await service.confirm_avatar_upload(
+        db, user=current_user, payload=payload
+    )
 
 
 @router.get(

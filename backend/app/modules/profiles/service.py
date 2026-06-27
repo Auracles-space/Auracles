@@ -9,17 +9,54 @@ Maps to: FR-SET-001/002.
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
+from app.integrations import s3
 from app.modules.auth.models import User, UserRole
 from app.modules.profiles.schemas import (
+    AvatarConfirmRequest,
+    AvatarUploadUrlRequest,
+    AvatarUploadUrlResponse,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
+
+# Avatars are public images served on every profile view. Keep the type set
+# small (raster web image formats) and the size cap modest.
+ALLOWED_AVATAR_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
+AVATAR_MAX_SIZE = 5 * 1024 * 1024
+AVATAR_UPLOAD_URL_TTL_SECONDS = 900
+
+
+def _avatar_public_url(settings: Settings, file_key: str) -> str:
+    """Build the public URL an avatar object is served at.
+
+    Avatars live in a public-read bucket, so the URL is deterministic from the
+    key. A configured endpoint (LocalStack) is path-style; AWS is virtual-host.
+
+    Args:
+        settings: Application settings holding bucket, region, endpoint.
+        file_key: The avatar object key.
+
+    Returns:
+        The public URL for the object.
+    """
+    bucket = settings.s3_avatars_bucket
+    if settings.aws_endpoint_url is not None:
+        return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{file_key}"
+    return (
+        f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{file_key}"
+    )
 
 
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
@@ -168,4 +205,112 @@ async def update_profile(
     for field, value in changes.items():
         setattr(user, field, value)
     await db.commit()
+    return await get_own_profile(db, user=user)
+
+
+async def request_avatar_upload_url(
+    *,
+    user: User,
+    payload: AvatarUploadUrlRequest,
+) -> AvatarUploadUrlResponse:
+    """Return a presigned POST target for the owner's avatar.
+
+    Validates the declared image type and size before minting the target. The
+    object key is namespaced under the owner's id so one user can never target
+    another's avatar. The avatar_url is returned but not persisted until the
+    upload is confirmed.
+
+    Args:
+        user: The authenticated profile owner.
+        payload: Declared filename, MIME type, and size.
+
+    Returns:
+        The presigned POST target plus the eventual public avatar URL.
+
+    Raises:
+        HTTPException(415): If the MIME type is not an allowed image type.
+        HTTPException(413): If the declared size exceeds the avatar cap.
+    """
+    extension = ALLOWED_AVATAR_MIME_TYPES.get(payload.mime_type)
+    if extension is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Avatar must be a PNG, JPEG, or WebP image.",
+        )
+    if payload.file_size > AVATAR_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Avatar exceeds the 5MB limit.",
+        )
+
+    settings = get_settings()
+    file_key = f"avatars/{user.id}/{uuid4()}.{extension}"
+    upload_target = s3.storage.presigned_post(
+        bucket=settings.s3_avatars_bucket,
+        key=file_key,
+        mime_type=payload.mime_type,
+        max_size=AVATAR_MAX_SIZE,
+        expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
+    )
+    logger.bind(
+        module="profiles",
+        action="request_avatar_upload_url",
+        user_id=user.id,
+    ).info("avatar_upload_url_created")
+    return AvatarUploadUrlResponse(
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(name): str(value)
+            for name, value in upload_target["fields"].items()
+        },
+        file_key=file_key,
+        avatar_url=_avatar_public_url(settings, file_key),
+        max_size=AVATAR_MAX_SIZE,
+        expires_in=AVATAR_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def confirm_avatar_upload(
+    db: AsyncSession,
+    *,
+    user: User,
+    payload: AvatarConfirmRequest,
+) -> PublicProfileResponse:
+    """Persist the owner's avatar once the uploaded object is verified present.
+
+    Args:
+        db: Async session for the update.
+        user: The authenticated profile owner.
+        payload: The confirmed object key.
+
+    Returns:
+        The owner's profile with the avatar applied.
+
+    Raises:
+        HTTPException(403): If the key is not namespaced under the owner's id.
+        HTTPException(409): If no object exists at the key (upload incomplete).
+    """
+    # Ownership is enforced by key prefix: the upload-url endpoint only ever
+    # issues keys under the caller's own id, so a key under a different id is a
+    # cross-user write attempt.
+    if not payload.file_key.startswith(f"avatars/{user.id}/"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Avatar key does not belong to this user.",
+        )
+
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_avatars_bucket, payload.file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Avatar upload not found. Complete the upload and retry.",
+        )
+
+    user.avatar_url = _avatar_public_url(settings, payload.file_key)
+    await db.commit()
+    logger.bind(
+        module="profiles",
+        action="confirm_avatar_upload",
+        user_id=user.id,
+    ).info("avatar_updated")
     return await get_own_profile(db, user=user)

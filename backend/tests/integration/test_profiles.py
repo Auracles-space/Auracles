@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,6 +25,31 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
+
+
+class FakeAvatarStorage:
+    """S3 storage double for avatar presigned upload and confirm checks."""
+
+    def __init__(self) -> None:
+        """Create empty fake object state."""
+        self.existing_keys: set[str] = set()
+
+    def presigned_post(
+        self,
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return a deterministic presigned POST payload."""
+        del bucket, mime_type, max_size, expires_in
+        return {"fields": {"key": key}, "url": "https://s3.test/avatar-upload"}
+
+    def object_exists(self, bucket: str, key: str) -> bool:
+        """Return whether the fake S3 object exists."""
+        del bucket
+        return key in self.existing_keys
 
 
 @pytest.fixture
@@ -57,6 +83,16 @@ async def profile_test_context() -> AsyncIterator[None]:
     finally:
         await cleanup()
         await engine.dispose()
+
+
+@pytest.fixture
+def avatar_storage(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAvatarStorage]:
+    """Swap the live S3 storage for an in-memory avatar double."""
+    from app.integrations import s3
+
+    fake = FakeAvatarStorage()
+    monkeypatch.setattr(s3, "storage", fake)
+    yield fake
 
 
 async def create_user(
@@ -316,3 +352,181 @@ async def test_profile_update_rejects_unsafe_website_scheme(
     )
 
     assert response.status_code == 422
+
+
+async def test_avatar_upload_url_returns_presigned_target(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """Requesting an avatar upload URL returns a presigned POST target.
+
+    The object key is namespaced under the owner's id so one user can never
+    overwrite another's avatar object.
+    """
+    user_id = await create_user("avatar-url@auracles.space", ["contributor"])
+
+    response = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={
+            "filename": "me.png",
+            "mime_type": "image/png",
+            "file_size": 50_000,
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["upload_url"]
+    assert body["file_key"].startswith(f"avatars/{user_id}/")
+    assert body["fields"]["key"] == body["file_key"]
+
+
+async def test_avatar_upload_url_rejects_non_image_mime(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """A non-image MIME type is rejected with 415."""
+    user_id = await create_user("avatar-badmime@auracles.space", ["contributor"])
+
+    response = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={
+            "filename": "doc.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 50_000,
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 415
+
+
+async def test_avatar_upload_url_rejects_oversized_file(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """An avatar larger than the size cap is rejected with 413."""
+    user_id = await create_user("avatar-big@auracles.space", ["contributor"])
+
+    response = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={
+            "filename": "huge.png",
+            "mime_type": "image/png",
+            "file_size": 50 * 1024 * 1024,
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 413
+
+
+async def test_avatar_upload_url_requires_authentication(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Requesting an avatar upload URL without a token is rejected with 401."""
+    response = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={"filename": "me.png", "mime_type": "image/png", "file_size": 1000},
+    )
+
+    assert response.status_code == 401
+
+
+async def test_avatar_confirm_sets_avatar_on_profile(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """Confirming an uploaded avatar publishes it on the public profile."""
+    user_id = await create_user("avatar-confirm@auracles.space", ["contributor"])
+
+    presign = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={
+            "filename": "me.png",
+            "mime_type": "image/png",
+            "file_size": 50_000,
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    file_key = presign.json()["file_key"]
+    # Simulate the client completing the upload to the presigned target.
+    avatar_storage.existing_keys.add(file_key)
+
+    confirm = await client.post(
+        "/v1/profiles/me/avatar/confirm",
+        json={"file_key": file_key},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert confirm.status_code == 200
+    assert confirm.json()["avatar_url"]
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["avatar_url"] == confirm.json()["avatar_url"]
+
+
+async def test_avatar_confirm_rejects_missing_object(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """Confirming before the upload completes is rejected with 409.
+
+    Guards against persisting an avatar_url whose object does not exist, which
+    would render as a broken image on every profile view.
+    """
+    user_id = await create_user("avatar-noobj@auracles.space", ["contributor"])
+
+    presign = await client.post(
+        "/v1/profiles/me/avatar/upload-url",
+        json={
+            "filename": "me.png",
+            "mime_type": "image/png",
+            "file_size": 50_000,
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    file_key = presign.json()["file_key"]
+
+    confirm = await client.post(
+        "/v1/profiles/me/avatar/confirm",
+        json={"file_key": file_key},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert confirm.status_code == 409
+
+
+async def test_avatar_confirm_rejects_foreign_key(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+    avatar_storage: FakeAvatarStorage,
+) -> None:
+    """A user cannot confirm a key namespaced under another user's id."""
+    owner_id = await create_user("avatar-owner@auracles.space", ["contributor"])
+    attacker_id = await create_user("avatar-attacker@auracles.space", ["contributor"])
+
+    foreign_key = f"avatars/{owner_id}/{uuid4()}.png"
+    avatar_storage.existing_keys.add(foreign_key)
+
+    confirm = await client.post(
+        "/v1/profiles/me/avatar/confirm",
+        json={"file_key": foreign_key},
+        headers=auth_headers(attacker_id, ["contributor"]),
+    )
+
+    assert confirm.status_code == 403

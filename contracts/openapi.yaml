@@ -6387,6 +6387,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/profiles/me/avatar/upload-url:
+    post:
+      tags:
+      - Profiles
+      summary: Request an avatar upload URL
+      description: Return a presigned POST target for the authenticated user's avatar.
+        Image type and size are validated before the target is issued.
+      operationId: request_avatar_upload_url_v1_profiles_me_avatar_upload_url_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarUploadUrlRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarUploadUrlResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/profiles/me/avatar/confirm:
+    post:
+      tags:
+      - Profiles
+      summary: Confirm an avatar upload
+      description: Confirm a completed avatar upload and publish it on the profile.
+        The object must exist and the key must belong to the caller.
+      operationId: confirm_avatar_upload_v1_profiles_me_avatar_confirm_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarConfirmRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/profiles/{user_id}:
     get:
       tags:
@@ -11684,6 +11764,85 @@ components:
       - assignments
       title: AttestorAssignmentsResponse
       description: List response for an Attestor's open offers and accepted work.
+    AvatarConfirmRequest:
+      properties:
+        file_key:
+          type: string
+          maxLength: 512
+          minLength: 1
+          title: File Key
+      type: object
+      required:
+      - file_key
+      title: AvatarConfirmRequest
+      description: "Request body confirming a completed avatar upload.\n\nAttributes:\n\
+        \    file_key: The object key returned by the upload-url request."
+    AvatarUploadUrlRequest:
+      properties:
+        filename:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Filename
+        mime_type:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Mime Type
+        file_size:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: File Size
+      type: object
+      required:
+      - filename
+      - mime_type
+      - file_size
+      title: AvatarUploadUrlRequest
+      description: "Request body for an avatar presigned upload target.\n\nAttributes:\n\
+        \    filename: Original filename, used only to derive the stored extension.\n\
+        \    mime_type: Declared image MIME type (validated against an allow-list).\n\
+        \    file_size: Declared size in bytes (validated against the size cap)."
+    AvatarUploadUrlResponse:
+      properties:
+        upload_url:
+          type: string
+          title: Upload Url
+        fields:
+          additionalProperties:
+            type: string
+          type: object
+          title: Fields
+        file_key:
+          type: string
+          title: File Key
+        avatar_url:
+          type: string
+          title: Avatar Url
+        max_size:
+          type: integer
+          title: Max Size
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - upload_url
+      - fields
+      - file_key
+      - avatar_url
+      - max_size
+      - expires_in
+      title: AvatarUploadUrlResponse
+      description: "Presigned POST target plus the avatar URL the object will be served\
+        \ at.\n\nThe avatar_url is not persisted until the upload is confirmed, so\
+        \ a never\ncompleted upload cannot leave a dangling URL on the profile.\n\n\
+        Attributes:\n    upload_url: The S3 POST URL the client uploads to.\n    fields:\
+        \ Form fields the client must include in the POST.\n    file_key: The object\
+        \ key the avatar will live at.\n    avatar_url: Public URL the object will\
+        \ be served at once uploaded.\n    max_size: Maximum allowed size in bytes\
+        \ (also enforced by S3).\n    expires_in: Seconds until the presigned target\
+        \ expires."
     CollectionCreateRequest:
       properties:
         title:
