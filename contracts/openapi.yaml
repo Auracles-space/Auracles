@@ -4777,6 +4777,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/profiles/me:
+    get:
+      tags:
+      - Profiles
+      summary: Get my own profile
+      description: Return the authenticated user's own profile. The owner always
+        sees their full content; the is_limited flag reflects moderation state.
+      operationId: get_my_profile_v1_profiles_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileResponse'
+      security:
+      - HTTPBearer: []
+  /v1/profiles/{user_id}:
+    get:
+      tags:
+      - Profiles
+      summary: Get a public profile
+      description: Return the curated public profile for any platform user — identity,
+        role badges, and KYC verification status. Private account fields are never
+        included.
+      operationId: get_public_profile_v1_profiles__user_id__get
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/projects:
     post:
       tags:
@@ -14552,6 +14599,60 @@ components:
         Never exposes evidence keys, verification URL, reference number, or review
 
         metadata — anti-gaming and PII protection.'
+    PublicProfileResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        display_name:
+          type: string
+          title: Display Name
+        avatar_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Avatar Url
+        bio:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Bio
+        location:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        roles:
+          items:
+            type: string
+          type: array
+          title: Roles
+          default: []
+        kyc_verified:
+          type: boolean
+          title: Kyc Verified
+          default: false
+        is_deactivated:
+          type: boolean
+          title: Is Deactivated
+          default: false
+        is_limited:
+          type: boolean
+          title: Is Limited
+          default: false
+      type: object
+      required:
+      - id
+      - display_name
+      title: PublicProfileResponse
+      description: Curated public identity for any platform user. Only fields a visitor
+        may see are present; private account fields are never included.
     PurchaseHistoryItem:
       properties:
         transaction_id:

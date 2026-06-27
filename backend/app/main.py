@@ -23,6 +23,7 @@ from app.modules.gdpr.router import router as gdpr_router
 from app.modules.health.router import router as health_router
 from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
+from app.modules.profiles.router import router as profiles_router
 from app.modules.projects.router import router as projects_router
 from app.modules.realtime.gateway import router as realtime_router
 from app.modules.reputation.router import router as reputation_router
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     application.include_router(gdpr_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")
     application.include_router(notifications_router, prefix="/v1")
+    application.include_router(profiles_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
     application.include_router(partner_router, prefix="/v1")
     application.include_router(realtime_router, prefix="/v1")
