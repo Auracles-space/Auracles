@@ -19,6 +19,7 @@ import type {
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
+import { RatingStars } from "@/components/modules/reputation/rating-stars";
 
 type FrameworkCardProps = {
   framework: ExploreFrameworkCard;
@@ -87,15 +88,23 @@ export function ReviewSummary({
   averageScore: string | null;
   reviewCount: number;
 }) {
-  const label = averageScore
-    ? `${averageScore} (${reviewCount} review${reviewCount === 1 ? "" : "s"})`
-    : "No reviews yet";
+  if (!averageScore) {
+    return (
+      <span className="inline-flex items-center text-xs font-semibold text-foreground-muted">
+        No reviews yet
+      </span>
+    );
+  }
+
+  const numericScore = parseFloat(averageScore);
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
-      <StarFilledIcon className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-      {label}
-    </span>
+    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
+      <RatingStars rating={numericScore} starClassName="h-3.5 w-3.5" />
+      <span>
+        {averageScore} ({reviewCount})
+      </span>
+    </div>
   );
 }
 

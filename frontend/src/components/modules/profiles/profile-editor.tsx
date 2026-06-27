@@ -18,6 +18,7 @@ import {
   EducationEditor,
   ExperienceEditor,
 } from "@/components/modules/profiles/cv-sections-editor";
+import { FeaturedEditor } from "@/components/modules/profiles/featured-editor";
 import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
@@ -31,6 +32,7 @@ import {
 import type {
   ProfileEducation,
   ProfileExperience,
+  ProfileFeatured,
   ProfileLink,
   PublicProfileResponse,
 } from "@/lib/generated/types.gen";
@@ -75,6 +77,7 @@ export function ProfileEditor({
   const [links, setLinks] = useState<ProfileLink[]>([]);
   const [experience, setExperience] = useState<ProfileExperience[]>([]);
   const [education, setEducation] = useState<ProfileEducation[]>([]);
+  const [featured, setFeatured] = useState<ProfileFeatured[]>([]);
 
   /**
    * Populate the form state from a loaded profile payload.
@@ -91,6 +94,7 @@ export function ProfileEditor({
     setLinks(data.links ?? []);
     setExperience(data.experience ?? []);
     setEducation(data.education ?? []);
+    setFeatured(data.featured ?? []);
   }
 
   useEffect(() => {
@@ -152,6 +156,9 @@ export function ProfileEditor({
           website: website.trim() || null,
           specializations,
           links: links.filter((link) => link.label.trim() && link.url.trim()),
+          featured: featured
+            .filter((item) => item.title.trim())
+            .map((item) => ({ ...item, url: item.url?.trim() || null })),
           experience: experience.filter(
             (item) => item.title.trim() && item.company.trim(),
           ),
@@ -161,14 +168,19 @@ export function ProfileEditor({
       });
       if (result.data) {
         hydrate(result.data);
+        if (onSaved) {
+          onSaved(result.data);
+          // Return early to preserve the saving state (spinner) while Next.js navigates
+          return;
+        }
         setMessage("Profile saved.");
-        onSaved?.(result.data);
       } else {
         setError(describeGeneratedError(result.error));
       }
-    } finally {
-      setSaving(false);
+    } catch (err) {
+      setError("An unexpected error occurred.");
     }
+    setSaving(false);
   }
 
   if (loading) {
@@ -390,6 +402,14 @@ export function ProfileEditor({
             ) : null}
           </div>
         </div>
+      </section>
+
+      {/* Featured Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-4 shadow-sm">
+        <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
+          Featured
+        </h2>
+        <FeaturedEditor onChange={setFeatured} value={featured} />
       </section>
 
       {/* Experience History Section */}

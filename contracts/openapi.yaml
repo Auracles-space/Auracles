@@ -16749,6 +16749,33 @@ components:
         \ date, or None (e.g. for current roles).\n    current: Whether this is the\
         \ person's current role.\n    description: Responsibilities/summary, or None\
         \ (<=2000 chars)."
+    ProfileFeatured:
+      properties:
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Title
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        url:
+          anyOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+          title: Url
+      type: object
+      required:
+      - title
+      title: ProfileFeatured
+      description: "A single featured spotlight (flagship framework, case study, milestone).\n\
+        \nAttributes:\n    title: Spotlight title (1-160 chars).\n    description:\
+        \ Short summary, or None (<=500 chars).\n    url: Optional link to the highlighted\
+        \ item; must use http or https."
     ProfileLink:
       properties:
         label:
@@ -16768,6 +16795,34 @@ components:
       title: ProfileLink
       description: "A single portfolio link.\n\nAttributes:\n    label: Human-readable\
         \ link label (1-80 chars).\n    url: Destination URL; must use http or https."
+    ProfileStats:
+      properties:
+        frameworks_published:
+          type: integer
+          title: Frameworks Published
+          default: 0
+        reviews_received:
+          type: integer
+          title: Reviews Received
+          default: 0
+        average_rating:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Average Rating
+        attestations_performed:
+          type: integer
+          title: Attestations Performed
+          default: 0
+      type: object
+      title: ProfileStats
+      description: "Aggregated marketplace analytics shown on the profile.\n\nAll\
+        \ values are derived from public records (published Frameworks, public\nreviews,\
+        \ completed attestations), not self-reported.\n\nAttributes:\n    frameworks_published:\
+        \ Count of the user's published Frameworks.\n    reviews_received: Count of\
+        \ reviews across the user's Frameworks.\n    average_rating: Mean review score\
+        \ (1 decimal), or None if no reviews.\n    attestations_performed: Count of\
+        \ attestations the user completed as an\n        Attestor."
     ProfileUpdateRequest:
       properties:
         headline:
@@ -16809,6 +16864,14 @@ components:
             maxItems: 10
           - type: 'null'
           title: Links
+        featured:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ProfileFeatured'
+            type: array
+            maxItems: 3
+          - type: 'null'
+          title: Featured
         experience:
           anyOf:
           - items:
@@ -17299,6 +17362,12 @@ components:
           type: array
           title: Links
           default: []
+        featured:
+          items:
+            $ref: '#/components/schemas/ProfileFeatured'
+          type: array
+          title: Featured
+          default: []
         experience:
           items:
             $ref: '#/components/schemas/ProfileExperience'
@@ -17317,6 +17386,12 @@ components:
           type: array
           title: Verified Credentials
           default: []
+        stats:
+          $ref: '#/components/schemas/ProfileStats'
+          default:
+            frameworks_published: 0
+            reviews_received: 0
+            attestations_performed: 0
         roles:
           items:
             type: string

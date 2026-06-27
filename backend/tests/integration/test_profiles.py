@@ -23,8 +23,9 @@ from sqlalchemy import create_engine, delete
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
-from app.modules.attestation.models import Credential
+from app.modules.attestation.models import Attestation, Credential
 from app.modules.auth.models import User, UserRole
+from app.modules.frameworks.models import Framework, Review
 from app.shared.models.audit_log import AuditLog
 
 
@@ -74,6 +75,9 @@ async def profile_test_context() -> AsyncIterator[None]:
         """Delete rows in dependency order so tests stay isolated."""
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
+            await session.execute(delete(Review))
+            await session.execute(delete(Attestation))
+            await session.execute(delete(Framework))
             await session.execute(delete(Credential))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
@@ -644,6 +648,181 @@ async def test_suspended_profile_withholds_links(
 
     public = await client.get(f"/v1/profiles/{user_id}")
     assert public.json()["links"] == []
+
+
+async def test_profile_stats_zero_for_fresh_user(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A user with no marketplace activity reports zeroed stats."""
+    user_id = await create_user("profile-stats0@auracles.space", ["contributor"])
+
+    stats = (await client.get(f"/v1/profiles/{user_id}")).json()["stats"]
+
+    assert stats["frameworks_published"] == 0
+    assert stats["reviews_received"] == 0
+    assert stats["average_rating"] is None
+    assert stats["attestations_performed"] == 0
+
+
+async def test_profile_stats_counts_published_frameworks_and_attestations(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Stats count published Frameworks and completed attestations performed."""
+    from decimal import Decimal
+
+    user_id = await create_user("profile-stats@auracles.space", ["contributor"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Framework(
+                    contributor_id=user_id,
+                    title="Published One",
+                    description="d",
+                    category="security",
+                    price=Decimal("10"),
+                    status="published",
+                    license_types=["single_user"],
+                )
+            )
+            session.add(
+                Framework(
+                    contributor_id=user_id,
+                    title="Draft One",
+                    description="d",
+                    category="security",
+                    price=Decimal("10"),
+                    status="draft",
+                    license_types=["single_user"],
+                )
+            )
+            session.add(
+                Attestation(
+                    target_type="framework",
+                    target_id=uuid4(),
+                    requestor_id=user_id,
+                    attestor_id=user_id,
+                    status="report_submitted",
+                    fee_amount=Decimal("100"),
+                    currency="USD",
+                    requested_specializations=[],
+                    requested_jurisdictions=[],
+                )
+            )
+
+    stats = (await client.get(f"/v1/profiles/{user_id}")).json()["stats"]
+
+    assert stats["frameworks_published"] == 1
+    assert stats["attestations_performed"] == 1
+
+
+async def test_suspended_profile_withholds_stats(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's stats are zeroed in the public read."""
+    from decimal import Decimal
+
+    user_id = await create_user("profile-stats2@auracles.space", ["contributor"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Framework(
+                    contributor_id=user_id,
+                    title="Pub",
+                    description="d",
+                    category="security",
+                    price=Decimal("10"),
+                    status="published",
+                    license_types=["single_user"],
+                )
+            )
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    stats = (await client.get(f"/v1/profiles/{user_id}")).json()["stats"]
+    assert stats["frameworks_published"] == 0
+
+
+async def test_owner_sets_featured_shown_publicly(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Featured spotlights set via PATCH appear on the public profile."""
+    user_id = await create_user("profile-feat@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "featured": [
+                {
+                    "title": "SOC 2 Readiness Kit",
+                    "description": "My flagship framework.",
+                    "url": "https://auracles.space/explore/x",
+                }
+            ]
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["featured"][0]["title"] == "SOC 2 Readiness Kit"
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["featured"][0]["description"] == "My flagship framework."
+
+
+async def test_featured_rejects_unsafe_url_and_caps_count(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A featured item with an unsafe URL, or too many items, is rejected."""
+    user_id = await create_user("profile-feat2@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    unsafe = await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"title": "Bad", "url": "javascript:alert(1)"}]},
+        headers=headers,
+    )
+    assert unsafe.status_code == 422
+
+    too_many = await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"title": f"F{i}"} for i in range(5)]},
+        headers=headers,
+    )
+    assert too_many.status_code == 422
+
+
+async def test_suspended_profile_withholds_featured(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's featured spotlights are withheld publicly."""
+    user_id = await create_user("profile-feat3@auracles.space", ["contributor"])
+    await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"title": "Hidden flagship"}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["featured"] == []
 
 
 async def test_owner_sets_experience_and_education_shown_publicly(

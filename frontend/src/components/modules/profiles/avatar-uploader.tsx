@@ -38,6 +38,24 @@ export function AvatarUploader({
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+
   // Cropping State
   const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
   const [originalFile, setOriginalFile] = useState<File | null>(null);
@@ -301,8 +319,14 @@ export function AvatarUploader({
   }
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border-default bg-surface-2">
+    <div onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="flex items-center gap-4">
+      <div className={[
+        "flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border transition-all",
+        isDragging ? "border-accent bg-accent/5 ring-2 ring-accent" : "border-border-default bg-surface-2"
+      ].join(" ")}>
         {avatarUrl ? (
           <div
             aria-hidden="true"

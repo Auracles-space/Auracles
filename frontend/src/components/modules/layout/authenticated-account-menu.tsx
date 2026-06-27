@@ -125,8 +125,13 @@ export function AuthenticatedAccountMenu({
         type="button"
         className="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-transparent p-2 text-left outline-none transition-all hover:border-border-default hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-sm font-semibold text-foreground">
-          {avatarFallback}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-sm font-semibold text-foreground overflow-hidden">
+          {currentUser?.avatar_url ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={currentUser.avatar_url} alt={displayName} className="h-full w-full object-cover" />
+          ) : (
+            avatarFallback
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
@@ -154,8 +159,13 @@ export function AuthenticatedAccountMenu({
           {/* User Details & View Profile */}
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-sm font-semibold text-foreground">
-                {avatarFallback}
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-sm font-semibold text-foreground overflow-hidden">
+                {currentUser?.avatar_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={currentUser.avatar_url} alt={displayName} className="h-full w-full object-cover" />
+                ) : (
+                  avatarFallback
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground leading-tight">{displayName}</p>

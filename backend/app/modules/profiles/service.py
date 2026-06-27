@@ -14,14 +14,15 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.integrations import s3
-from app.modules.attestation.models import Credential
+from app.modules.attestation.models import Attestation, Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
+from app.modules.frameworks.models import Framework, Review
 from app.modules.profiles.schemas import (
     AvatarConfirmRequest,
     AvatarUploadUrlRequest,
@@ -29,9 +30,13 @@ from app.modules.profiles.schemas import (
     BannerConfirmRequest,
     BannerUploadUrlRequest,
     BannerUploadUrlResponse,
+    ProfileStats,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
+
+# Attestation statuses that count as a completed attestation for analytics.
+COMPLETED_ATTESTATION_STATUSES = ("report_submitted", "closed")
 
 # Avatars are public images served on every profile view. Keep the type set
 # small (raster web image formats) and the size cap modest.
@@ -103,6 +108,52 @@ async def _verified_credentials(
         )
         for credential in rows.scalars().all()
     ]
+
+
+async def _profile_stats(db: AsyncSession, user_id: UUID) -> ProfileStats:
+    """Compute the public marketplace analytics shown on a profile.
+
+    All values come from public records: published Frameworks, public reviews on
+    those Frameworks, and completed attestations performed as an Attestor.
+
+    Args:
+        db: Async session for the aggregate queries.
+        user_id: UUID of the profile owner.
+
+    Returns:
+        The aggregated profile stats.
+    """
+    frameworks_published = int(
+        await db.scalar(
+            select(func.count(Framework.id)).where(
+                Framework.contributor_id == user_id,
+                Framework.status == "published",
+            )
+        )
+        or 0
+    )
+    review_count, review_avg = (
+        await db.execute(
+            select(func.count(Review.id), func.avg(Review.score))
+            .join(Framework, Framework.id == Review.framework_id)
+            .where(Framework.contributor_id == user_id)
+        )
+    ).one()
+    attestations_performed = int(
+        await db.scalar(
+            select(func.count(Attestation.id)).where(
+                Attestation.attestor_id == user_id,
+                Attestation.status.in_(COMPLETED_ATTESTATION_STATUSES),
+            )
+        )
+        or 0
+    )
+    return ProfileStats(
+        frameworks_published=frameworks_published,
+        reviews_received=int(review_count or 0),
+        average_rating=round(float(review_avg), 1) if review_avg is not None else None,
+        attestations_performed=attestations_performed,
+    )
 
 
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
@@ -178,6 +229,7 @@ async def get_public_profile(
     # the user controls, so a suspended profile cannot keep broadcasting it.
     is_limited = user.suspended_at is not None
     credentials = [] if is_limited else await _verified_credentials(db, user_id)
+    stats = ProfileStats() if is_limited else await _profile_stats(db, user_id)
 
     return PublicProfileResponse(
         id=user.id,
@@ -190,9 +242,11 @@ async def get_public_profile(
         website=None if is_limited else _safe_public_url(user.website),
         specializations=[] if is_limited else list(user.specializations),
         links=[] if is_limited else list(user.links),
+        featured=[] if is_limited else list(user.featured),
         experience=[] if is_limited else list(user.experience),
         education=[] if is_limited else list(user.education),
         verified_credentials=credentials,
+        stats=stats,
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
         is_deactivated=user.deactivated_at is not None,
@@ -230,9 +284,11 @@ async def get_own_profile(
         website=_safe_public_url(user.website),
         specializations=list(user.specializations),
         links=list(user.links),
+        featured=list(user.featured),
         experience=list(user.experience),
         education=list(user.education),
         verified_credentials=await _verified_credentials(db, user.id),
+        stats=await _profile_stats(db, user.id),
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
         is_deactivated=user.deactivated_at is not None,

@@ -2520,6 +2520,20 @@ export type ProfileExperience = {
 };
 
 /**
+ * A single featured spotlight (flagship framework, case study, milestone).
+ *
+ * Attributes:
+ * title: Spotlight title (1-160 chars).
+ * description: Short summary, or None (<=500 chars).
+ * url: Optional link to the highlighted item; must use http or https.
+ */
+export type ProfileFeatured = {
+    title: string;
+    description?: (string | null);
+    url?: (string | null);
+};
+
+/**
  * A single portfolio link.
  *
  * Attributes:
@@ -2529,6 +2543,26 @@ export type ProfileExperience = {
 export type ProfileLink = {
     label: string;
     url: string;
+};
+
+/**
+ * Aggregated marketplace analytics shown on the profile.
+ *
+ * All values are derived from public records (published Frameworks, public
+ * reviews, completed attestations), not self-reported.
+ *
+ * Attributes:
+ * frameworks_published: Count of the user's published Frameworks.
+ * reviews_received: Count of reviews across the user's Frameworks.
+ * average_rating: Mean review score (1 decimal), or None if no reviews.
+ * attestations_performed: Count of attestations the user completed as an
+ * Attestor.
+ */
+export type ProfileStats = {
+    frameworks_published?: number;
+    reviews_received?: number;
+    average_rating?: (number | null);
+    attestations_performed?: number;
 };
 
 /**
@@ -2552,6 +2586,7 @@ export type ProfileUpdateRequest = {
     website?: (string | null);
     specializations?: (Array<(string)> | null);
     links?: (Array<ProfileLink> | null);
+    featured?: (Array<ProfileFeatured> | null);
     experience?: (Array<ProfileExperience> | null);
     education?: (Array<ProfileEducation> | null);
 };
@@ -2708,9 +2743,11 @@ export type PublicProfileResponse = {
     website?: (string | null);
     specializations?: Array<(string)>;
     links?: Array<ProfileLink>;
+    featured?: Array<ProfileFeatured>;
     experience?: Array<ProfileExperience>;
     education?: Array<ProfileEducation>;
     verified_credentials?: Array<PublicCredentialResponse>;
+    stats?: ProfileStats;
     roles?: Array<(string)>;
     kyc_verified?: boolean;
     is_deactivated?: boolean;

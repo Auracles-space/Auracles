@@ -19,6 +19,45 @@ MAX_SPECIALIZATION_LENGTH = 80
 MAX_LINKS = 10
 MAX_EXPERIENCE = 20
 MAX_EDUCATION = 15
+MAX_FEATURED = 3
+
+
+class ProfileFeatured(BaseModel):
+    """A single featured spotlight (flagship framework, case study, milestone).
+
+    Attributes:
+        title: Spotlight title (1-160 chars).
+        description: Short summary, or None (<=500 chars).
+        url: Optional link to the highlighted item; must use http or https.
+    """
+
+    title: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=500)
+    url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def url_uses_safe_scheme(cls, value: str | None) -> str | None:
+        """Reject any featured URL that is not http/https.
+
+        Args:
+            value: The submitted URL, or None.
+
+        Returns:
+            The trimmed URL when valid, or None when cleared.
+
+        Raises:
+            ValueError: If a non-empty value does not use a safe web scheme.
+        """
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        scheme, separator, _ = candidate.partition("://")
+        if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
+            raise ValueError("featured url must be an http or https URL")
+        return candidate
 
 
 class ProfileExperience(BaseModel):
@@ -94,6 +133,26 @@ class ProfileLink(BaseModel):
         return candidate
 
 
+class ProfileStats(BaseModel):
+    """Aggregated marketplace analytics shown on the profile.
+
+    All values are derived from public records (published Frameworks, public
+    reviews, completed attestations), not self-reported.
+
+    Attributes:
+        frameworks_published: Count of the user's published Frameworks.
+        reviews_received: Count of reviews across the user's Frameworks.
+        average_rating: Mean review score (1 decimal), or None if no reviews.
+        attestations_performed: Count of attestations the user completed as an
+            Attestor.
+    """
+
+    frameworks_published: int = 0
+    reviews_received: int = 0
+    average_rating: float | None = None
+    attestations_performed: int = 0
+
+
 class PublicProfileResponse(BaseModel):
     """Curated public identity for any platform user.
 
@@ -127,9 +186,11 @@ class PublicProfileResponse(BaseModel):
     website: str | None = None
     specializations: list[str] = []
     links: list[ProfileLink] = []
+    featured: list[ProfileFeatured] = []
     experience: list[ProfileExperience] = []
     education: list[ProfileEducation] = []
     verified_credentials: list[PublicCredentialResponse] = []
+    stats: ProfileStats = ProfileStats()
     roles: list[str] = []
     kyc_verified: bool = False
     is_deactivated: bool = False
@@ -157,6 +218,9 @@ class ProfileUpdateRequest(BaseModel):
     website: str | None = Field(default=None, max_length=2048)
     specializations: list[str] | None = Field(default=None)
     links: list[ProfileLink] | None = Field(default=None, max_length=MAX_LINKS)
+    featured: list[ProfileFeatured] | None = Field(
+        default=None, max_length=MAX_FEATURED
+    )
     experience: list[ProfileExperience] | None = Field(
         default=None, max_length=MAX_EXPERIENCE
     )

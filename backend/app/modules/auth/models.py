@@ -97,6 +97,11 @@ class User(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("'[]'"),
     )
+    featured: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)

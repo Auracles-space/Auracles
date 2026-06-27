@@ -11,7 +11,7 @@
  *
  * Maps to: FR-SET-001/002.
  */
-import { CheckCircledIcon, GlobeIcon } from "@radix-ui/react-icons";
+import { CheckCircledIcon, GlobeIcon, StarFilledIcon } from "@radix-ui/react-icons";
 import type { ReactNode } from "react";
 
 import {
@@ -23,6 +23,7 @@ import {
   RoleBadge,
 } from "@/components/modules/profiles/profile-badges";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
+import { RatingStars } from "@/components/modules/reputation/rating-stars";
 import type {
   ExploreAttestationBadge,
   ExploreFrameworkCard,
@@ -77,6 +78,14 @@ export function ProfileView({
   const links = profile.links ?? [];
   const experience = profile.experience ?? [];
   const education = profile.education ?? [];
+  const featured = profile.featured ?? [];
+  const stats = profile.stats ?? {};
+  const frameworksPublished = stats.frameworks_published ?? 0;
+  const reviewsReceived = stats.reviews_received ?? 0;
+  const attestationsPerformed = stats.attestations_performed ?? 0;
+  const averageRating = stats.average_rating ?? null;
+  const hasStats =
+    frameworksPublished > 0 || reviewsReceived > 0 || attestationsPerformed > 0;
   const websiteHref = safeHref(profile.website);
 
   return (
@@ -95,15 +104,13 @@ export function ProfileView({
 
         <div className="p-6 md:p-8">
           <div className="flex flex-col items-start gap-6 md:flex-row">
-            <div
-              className={[
-                "shrink-0 rounded-2xl border p-1 relative z-10 shadow-sm -mt-16 md:-mt-20",
-                profile.kyc_verified
-                  ? "border-accent bg-accent/10"
-                  : "border-border-default bg-surface-1",
-              ].join(" ")}
-            >
-              <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[14px] bg-surface-3 md:h-28 md:w-28">
+            <div className="shrink-0 relative z-10 -mt-16 md:-mt-20">
+              <div
+                className={[
+                  "flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-surface-3 md:h-28 md:w-28 shadow-sm",
+                  profile.kyc_verified ? "ring-2 ring-accent ring-offset-4 ring-offset-surface-1" : "ring-4 ring-surface-1"
+                ].join(" ")}
+              >
                 {profile.avatar_url ? (
                   <div
                     aria-hidden="true"
@@ -199,6 +206,87 @@ export function ProfileView({
         </div>
       </div>
     </section>
+
+      {hasStats ? (
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[
+            { label: "Frameworks", value: String(frameworksPublished) },
+            {
+              label: "Avg rating",
+              value: averageRating === null ? "—" : (
+                <div className="flex items-center gap-1.5">
+                  <RatingStars rating={averageRating} starClassName="h-4 w-4" />
+                  <span className="text-sm font-semibold text-foreground-muted ml-0.5 mt-0.5">
+                    ({reviewsReceived})
+                  </span>
+                </div>
+              ),
+            },
+            { label: "Attestations", value: String(attestationsPerformed) },
+          ].map((tile) => (
+            <div
+              className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm"
+              key={tile.label}
+            >
+              <div className="font-heading text-2xl font-extrabold tracking-tight text-foreground flex items-center h-8">
+                {tile.value}
+              </div>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-subtle">
+                {tile.label}
+              </p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {featured.length > 0 ? (
+        <section>
+          <h2 className="mb-4 border-b border-border-default pb-4 font-heading text-xl font-bold text-foreground">
+            Featured
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.map((item, index) => {
+              const href = safeHref(item.url);
+              const card = (
+                <>
+                  <h3 className="font-heading text-lg font-bold text-foreground">
+                    {item.title}
+                  </h3>
+                  {item.description ? (
+                    <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
+                      {item.description}
+                    </p>
+                  ) : null}
+                  {href ? (
+                    <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
+                      View
+                      <GlobeIcon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  ) : null}
+                </>
+              );
+              return href ? (
+                <a
+                  className="block rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm transition-colors hover:border-accent/30 hover:bg-surface-2"
+                  href={href}
+                  key={`${item.title}-${index}`}
+                  rel="noreferrer noopener"
+                  target="_blank"
+                >
+                  {card}
+                </a>
+              ) : (
+                <div
+                  className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
+                  key={`${item.title}-${index}`}
+                >
+                  {card}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {links.length > 0 ? (
         <section>
