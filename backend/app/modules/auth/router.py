@@ -1,5 +1,6 @@
 """FastAPI router for auth registration and verification endpoints."""
 
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -9,11 +10,15 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.core.config import Settings, get_settings
 from app.core.cookies import (
+    OAUTH_STATE_COOKIE_NAME,
     REFRESH_COOKIE_NAME,
+    clear_oauth_state_cookie,
     clear_refresh_cookie,
     clear_session_hint_cookie,
+    read_oauth_state_value,
     set_oauth_state_cookie,
     set_refresh_cookie,
     set_session_hint_cookie,
@@ -26,8 +31,11 @@ from app.core.security import decode_access_token
 from app.integrations.google_oauth import (
     GoogleOAuthError,
     build_authorization_url,
+    exchange_code,
+    fetch_google_jwks,
     generate_pkce_pair,
     generate_state,
+    verify_id_token,
 )
 from app.modules.auth import service
 from app.modules.auth.models import User, UserRole
@@ -146,6 +154,135 @@ def _set_session_hint_from_access_token(response: Response, access_token: str) -
         roles=payload.roles,
         totp_verified=payload.totp_verified,
     )
+
+
+def _frontend_base_url(settings: Settings) -> str:
+    """Return the frontend origin used to build post-login redirects."""
+    origins = settings.cors_origin_list
+    return origins[0] if origins else "http://localhost:3000"
+
+
+def _google_redirect_target(
+    settings: Settings,
+    needs_onboarding: bool,
+    next_path: object,
+) -> str:
+    """Resolve where to send the browser after a successful Google sign-in.
+
+    Roleless / new users go to onboarding; otherwise resume a safe in-app
+    ``next`` path, falling back to the app root.
+    """
+    base = _frontend_base_url(settings)
+    if needs_onboarding:
+        return f"{base}/settings/onboarding"
+    safe_next = _safe_next_path(next_path if isinstance(next_path, str) else None)
+    return f"{base}{safe_next or '/'}"
+
+
+@router.get(
+    "/google/callback",
+    summary="Complete Google sign-in",
+    description=(
+        "Handle Google's authorization-code redirect: verify CSRF state, "
+        "exchange the code, verify the id_token, resolve or create the account, "
+        "and issue a session before redirecting back into the app."
+    ),
+)
+async def google_callback(
+    request: Request,
+    settings: AppSettings,
+    db: DatabaseSession,
+    redis: RedisClient,
+    state: str,
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Complete the Google authorization-code flow and issue a session.
+
+    Verifies the signed state cookie against the returned ``state`` (CSRF),
+    exchanges the code with PKCE, verifies the id_token, then resolves the
+    account and issues refresh + session-hint cookies. The access token is
+    minted by the frontend via ``/auth/refresh`` after the redirect.
+
+    Args:
+        request: Incoming request (state cookie, client IP, user agent).
+        settings: Application settings (Google config + cookie attributes).
+        db: Async DB session.
+        redis: Redis for refresh-token storage.
+        state: CSRF state echoed back by Google.
+        code: Authorization code (absent if the user denied consent).
+        error: Google error code when the user denies or consent fails.
+
+    Returns:
+        A 302 redirect into the app (onboarding for new users, else resume).
+
+    Raises:
+        HTTPException(400): On state mismatch, denied consent, or any Google
+            verification failure.
+    """
+    log = logger.bind(module="auth", action="google_callback")
+    payload = read_oauth_state_value(
+        request.cookies.get(OAUTH_STATE_COOKIE_NAME), settings=settings
+    )
+    cookie_state = str(payload.get("state", "")) if payload else ""
+    if payload is None or not secrets.compare_digest(cookie_state, state):
+        log.warning("oauth_state_invalid")
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="oauth_state_invalid",
+            target_type="user",
+            metadata={"provider": "google"},
+            ip=_client_ip(request),
+            ua=request.headers.get("user-agent"),
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid sign-in state.",
+        )
+
+    if error or not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google sign-in was not completed.",
+        )
+
+    try:
+        tokens = await exchange_code(
+            code=code,
+            code_verifier=str(payload.get("verifier", "")),
+            settings=settings,
+        )
+        jwks = await fetch_google_jwks(settings=settings)
+        claims = verify_id_token(
+            str(tokens.get("id_token", "")), settings=settings, jwks=jwks
+        )
+    except GoogleOAuthError:
+        log.warning("google_login_failure")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not complete Google sign-in.",
+        ) from None
+
+    result = await service.complete_google_login(
+        db=db,
+        redis=redis,
+        claims=claims,
+        ip=_client_ip(request),
+        ua=request.headers.get("user-agent"),
+    )
+
+    response = RedirectResponse(
+        url=_google_redirect_target(
+            settings, result.needs_onboarding, payload.get("next")
+        ),
+        status_code=status.HTTP_302_FOUND,
+    )
+    set_refresh_cookie(response, result.refresh_token, settings=settings)
+    _set_session_hint_from_access_token(response, result.access_token)
+    clear_oauth_state_cookie(response, settings=settings)
+    return response
 
 
 @router.post("/register", response_model=RegisterResponse)

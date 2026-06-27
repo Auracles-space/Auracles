@@ -11,6 +11,7 @@ import ipaddress
 import json
 from base64 import b64encode
 from collections.abc import Awaitable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any, cast
@@ -37,7 +38,8 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
-from app.modules.auth.models import User, UserBackupCode, UserRole
+from app.integrations.google_oauth import GoogleClaims
+from app.modules.auth.models import OAuthAccount, User, UserBackupCode, UserRole
 from app.modules.auth.schemas import (
     LoginResponse,
     RegisterRequest,
@@ -724,6 +726,166 @@ async def login(
     )
     await db.commit()
     return LoginResponse(access_token=access_token), refresh_token
+
+
+GOOGLE_PROVIDER = "google"
+
+
+@dataclass(frozen=True)
+class GoogleLoginResult:
+    """Outcome of a Google sign-in: the issued session plus routing hints."""
+
+    user: User
+    access_token: str
+    refresh_token: str
+    needs_onboarding: bool
+
+
+def _display_name_from_claims(claims: GoogleClaims) -> str:
+    """Derive a non-empty display name (<=100 chars) from Google claims."""
+    name = (claims.name or "").strip()
+    if not name:
+        name = claims.email.split("@", 1)[0]
+    return name[:100]
+
+
+async def complete_google_login(
+    db: AsyncSession,
+    redis: Redis,
+    claims: GoogleClaims,
+    ip: str | None = None,
+    ua: str | None = None,
+) -> GoogleLoginResult:
+    """Resolve (or create) the account for verified Google claims and issue a session.
+
+    Resolution order: existing Google link -> verified-email auto-link ->
+    new passwordless user. An unverified Google email never auto-links
+    (account-linking trust). Deactivated/suspended accounts are refused before
+    any write occurs.
+
+    Args:
+        db: Async DB session.
+        redis: Redis for refresh-token storage.
+        claims: Verified Google identity claims (sub, email, email_verified, name).
+        ip: Originating client IP for audit.
+        ua: Originating user agent for audit.
+
+    Returns:
+        GoogleLoginResult with the user, freshly issued tokens, and whether the
+        user still needs onboarding (no active role).
+
+    Raises:
+        HTTPException(400): If the Google email is unverified but matches an
+            existing account (cannot safely auto-link), or a link is orphaned.
+        HTTPException(403): If the resolved account is deactivated or suspended.
+    """
+    normalized_email = normalize_email(claims.email)
+    log = logger.bind(module="auth", action="complete_google_login")
+
+    link = await db.scalar(
+        select(OAuthAccount).where(
+            OAuthAccount.provider == GOOGLE_PROVIDER,
+            OAuthAccount.provider_id == claims.sub,
+        )
+    )
+
+    user: User | None
+    action: str
+    if link is not None:
+        user = await db.get(User, link.user_id)
+        if user is None:  # defensive: orphaned link row
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not complete Google sign-in.",
+            )
+        action = "google_login_success"
+    else:
+        user = await db.scalar(select(User).where(User.email == normalized_email))
+        if user is not None and not claims.email_verified:
+            # An unverified Google email could be attacker-controlled; never link.
+            await write_audit(
+                db=db,
+                actor_id=user.id,
+                action="google_login_failure",
+                target_type="user",
+                target_id=user.id,
+                metadata={"reason": "unverified_email_link_attempt"},
+                ip=ip,
+                ua=ua,
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not complete Google sign-in.",
+            )
+        action = (
+            "google_account_linked"
+            if user is not None
+            else "google_account_created"
+        )
+
+    # Refuse blocked accounts before writing the link / creating the user.
+    if user is not None and user.deactivated_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated.",
+        )
+    if user is not None and user.suspended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is suspended.",
+        )
+
+    if action == "google_account_created":
+        user = User(
+            email=normalized_email,
+            password_hash=None,
+            display_name=_display_name_from_claims(claims),
+            email_verified=True,
+        )
+        db.add(user)
+        await db.flush()
+        db.add(
+            OAuthAccount(
+                user_id=user.id, provider=GOOGLE_PROVIDER, provider_id=claims.sub
+            )
+        )
+    elif action == "google_account_linked":
+        assert user is not None
+        db.add(
+            OAuthAccount(
+                user_id=user.id, provider=GOOGLE_PROVIDER, provider_id=claims.sub
+            )
+        )
+
+    assert user is not None
+    roles = await _load_active_roles(db, user.id)
+    access_token = create_access_token(
+        user_id=user.id, roles=roles, totp_verified=False
+    )
+    refresh_token = generate_opaque_token()
+    family_id = str(uuid4())
+    await _store_refresh_token(
+        redis, refresh_token, user.id, family_id, ip, ua, totp_verified=False
+    )
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action=action,
+        target_type="user",
+        target_id=user.id,
+        metadata={"provider": GOOGLE_PROVIDER},
+        ip=ip,
+        ua=ua,
+    )
+    await db.commit()
+    log.info("google_login_completed", user_id=str(user.id))
+    return GoogleLoginResult(
+        user=user,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        needs_onboarding=len(roles) == 0,
+    )
 
 
 async def refresh(
