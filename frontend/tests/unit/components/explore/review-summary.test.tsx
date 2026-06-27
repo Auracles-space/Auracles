@@ -4,10 +4,11 @@ import { describe, expect, it } from "vitest";
 import { ReviewSummary } from "@/components/modules/explore/framework-card";
 
 describe("ReviewSummary", () => {
-  it("renders average score and pluralized review count", () => {
+  it("renders the score as stars and the review count", () => {
     render(<ReviewSummary averageScore="4.50" reviewCount={2} />);
 
-    expect(screen.getByText("4.50 (2 reviews)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Rating: 4.5 out of 5 stars")).toBeInTheDocument();
+    expect(screen.getByText("(2)")).toBeInTheDocument();
   });
 
   it("renders the empty review state", () => {
