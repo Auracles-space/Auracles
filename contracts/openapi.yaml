@@ -11,27 +11,19 @@ paths:
       summary: List Platform Config
       description: List platform financial configuration for admin review.
       operationId: list_platform_config_v1_admin_config_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminConfigResponse'
       security:
       - HTTPBearer: []
-    patch:
-      tags:
-      - Admin
-      summary: Update Platform Config
-      description: Update editable platform financial configuration with admin 2FA.
-      operationId: update_platform_config_v1_admin_config_patch
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdminConfigPatchRequest'
-        required: true
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -45,8 +37,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Admin
+      summary: Update Platform Config
+      description: Update editable platform configuration. Super-admin only, with
+        2FA.
+      operationId: update_platform_config_v1_admin_config_patch
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigPatchRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/analytics/dashboard:
     get:
       tags:
@@ -55,6 +84,19 @@ paths:
       description: Return current-state admin analytics aggregates plus frozen daily
         trend rows from snapshot history.
       operationId: get_admin_analytics_dashboard_v1_admin_analytics_dashboard_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -62,8 +104,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminAnalyticsDashboardResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/analytics/export:
     get:
       tags:
@@ -89,6 +135,16 @@ paths:
           type: string
           format: date
           title: To
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: CSV export stream
@@ -141,6 +197,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -171,6 +237,16 @@ paths:
           type: string
           format: uuid
           title: User Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -236,6 +312,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -266,6 +352,16 @@ paths:
           type: string
           format: uuid
           title: User Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -302,6 +398,16 @@ paths:
           type: string
           format: uuid
           title: User Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -338,6 +444,16 @@ paths:
           type: string
           format: uuid
           title: User Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -381,6 +497,16 @@ paths:
           - type: 'null'
           default: pending
           title: Status
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -411,6 +537,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -441,6 +577,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -484,6 +630,16 @@ paths:
           type: string
           minLength: 1
           title: Key
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -519,6 +675,16 @@ paths:
             maxLength: 255
           - type: 'null'
           title: Query
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -542,6 +708,17 @@ paths:
       operationId: list_suspended_frameworks_v1_admin_frameworks_suspended_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -549,30 +726,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminSuspendedFrameworksResponse'
-  /v1/admin/frameworks/{framework_id}/reinstate:
-    post:
-      tags:
-      - Admin
-      summary: Reinstate Framework
-      description: Reverse a takedown, returning a suspended Framework to the marketplace.
-      operationId: reinstate_framework_v1_admin_frameworks__framework_id__reinstate_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: framework_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Framework Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminFrameworkStatusResponse'
         '422':
           description: Validation Error
           content:
@@ -596,12 +749,62 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminFrameworkSuspendRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFrameworkStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/frameworks/{framework_id}/reinstate:
+    post:
+      tags:
+      - Admin
+      summary: Reinstate Framework
+      description: Reverse a takedown, returning a suspended Framework to the marketplace.
+      operationId: reinstate_framework_v1_admin_frameworks__framework_id__reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -632,6 +835,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -658,12 +871,25 @@ paths:
       summary: Grant License
       description: Grant a Framework license to an Operator during Phase 2.
       operationId: grant_license_v1_admin_licenses_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminLicenseGrantRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -677,8 +903,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/admin/escrows/{escrow_id}/release:
     post:
       tags:
@@ -696,6 +920,16 @@ paths:
           type: string
           format: uuid
           title: Escrow Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -732,6 +966,16 @@ paths:
           type: string
           format: uuid
           title: Escrow Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -758,12 +1002,25 @@ paths:
       summary: Recompute Reputation Subject
       description: Queue an audited, 2FA-gated recompute for one reputation subject.
       operationId: recompute_reputation_subject_v1_admin_reputation_recompute_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminReputationRecomputeRequest'
-        required: true
       responses:
         '202':
           description: Successful Response
@@ -777,17 +1034,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/admin/projects/disputes:
     get:
       tags:
       - Admin
       summary: List Project disputes for the admin queue
-      description: >-
-        Return Project milestone disputes across all Projects. Defaults to
-        active disputes (open or under_review); pass an explicit status to view
-        a single status such as resolved.
+      description: Return Project milestone disputes across all Projects, enriched
+        with the milestone budget, held escrow amount, project title, and raising
+        party. Defaults to active disputes (open or under_review); pass an explicit
+        status to view a single status such as resolved.
       operationId: list_project_disputes_v1_admin_projects_disputes_get
       security:
       - HTTPBearer: []
@@ -797,14 +1052,25 @@ paths:
         required: false
         schema:
           anyOf:
-          - type: string
-            enum:
+          - enum:
             - open
             - under_review
             - resolved
+            type: string
           - type: 'null'
-          title: Status
           description: Filter by an exact dispute status.
+          title: Status
+        description: Filter by an exact dispute status.
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -835,6 +1101,16 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -863,6 +1139,17 @@ paths:
       operationId: request_attestation_v1_attestations_post
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -902,6 +1189,16 @@ paths:
           type: string
           default: requestor
           title: Role
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -932,6 +1229,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -962,6 +1269,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -992,6 +1309,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1022,6 +1349,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1059,6 +1396,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1095,6 +1442,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1125,6 +1482,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1161,6 +1528,16 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1197,6 +1574,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1233,6 +1620,16 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1259,6 +1656,19 @@ paths:
       summary: List Attestor Assignments
       description: List offered and accepted Attestation assignments for an Attestor.
       operationId: list_attestor_assignments_v1_attestor_assignments_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1266,8 +1676,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestorAssignmentsResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestor/applications:
     post:
       tags:
@@ -1275,12 +1689,25 @@ paths:
       summary: Submit Attestor Application
       description: Submit an Attestor application as any authenticated user.
       operationId: submit_attestor_application_v1_attestor_applications_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AttestorApplicationCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -1294,8 +1721,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/attestor/applications/mine:
     get:
       tags:
@@ -1303,6 +1728,19 @@ paths:
       summary: List My Attestor Applications
       description: List the authenticated user's Attestor application history.
       operationId: list_my_attestor_applications_v1_attestor_applications_mine_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1310,8 +1748,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestorApplicationsResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestor/applications/{application_id}:
     patch:
       tags:
@@ -1329,6 +1771,16 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1365,6 +1817,16 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1401,6 +1863,16 @@ paths:
             type: string
           - type: 'null'
           title: Status
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1431,6 +1903,16 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1451,33 +1933,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/credentials:
-    get:
-      tags:
-      - Attestation
-      summary: List Credentials
-      description: List Credentials owned by the authenticated user.
-      operationId: list_credentials_v1_credentials_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialsResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Attestation
       summary: Create Credential
       description: Create a user-owned professional Credential.
       operationId: create_credential_v1_credentials_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CredentialCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -1491,8 +1971,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Attestation
+      summary: List Credentials
+      description: List Credentials owned by the authenticated user.
+      operationId: list_credentials_v1_credentials_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/credentials/{credential_id}:
     patch:
       tags:
@@ -1510,6 +2020,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1545,6 +2065,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -1571,6 +2101,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1609,6 +2149,16 @@ paths:
           type: string
           minLength: 1
           title: Key
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1639,6 +2189,16 @@ paths:
           type: string
           format: uuid
           title: Credential Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1849,6 +2409,19 @@ paths:
       summary: Me
       description: Return the authenticated user's public auth profile.
       operationId: me_v1_auth_me_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1856,8 +2429,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUserResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/roles:
     post:
       tags:
@@ -1865,12 +2442,25 @@ paths:
       summary: Add Role
       description: Self-add a non-privileged role.
       operationId: add_role_v1_auth_roles_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AddRoleRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1884,8 +2474,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/auth/2fa/status:
     get:
       tags:
@@ -1893,6 +2481,19 @@ paths:
       summary: Totp Status
       description: Report 2FA enablement and remaining backup-code count.
       operationId: totp_status_v1_auth_2fa_status_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1900,8 +2501,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TotpStatusResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/2fa/setup:
     post:
       tags:
@@ -1909,6 +2514,19 @@ paths:
       summary: Setup Totp
       description: Start TOTP setup for the authenticated user.
       operationId: setup_totp_v1_auth_2fa_setup_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1916,8 +2534,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TotpSetupResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/2fa/backup-codes/regenerate:
     post:
       tags:
@@ -1925,12 +2547,25 @@ paths:
       summary: Regenerate Backup Codes
       description: Issue a fresh set of backup codes after verifying a current code.
       operationId: regenerate_backup_codes_v1_auth_2fa_backup_codes_regenerate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1944,8 +2579,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/auth/2fa/verify:
     post:
       tags:
@@ -1953,12 +2586,25 @@ paths:
       summary: Verify Totp
       description: Enable TOTP after validating the current code.
       operationId: verify_totp_v1_auth_2fa_verify_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1972,8 +2618,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/auth/2fa/disable:
     post:
       tags:
@@ -1981,12 +2625,25 @@ paths:
       summary: Disable Totp
       description: Disable TOTP after validating a current code or backup code.
       operationId: disable_totp_v1_auth_2fa_disable_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -2000,8 +2657,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/auth/2fa/verify-login:
     post:
       tags:
@@ -2035,12 +2690,25 @@ paths:
       summary: Create Collection
       description: Create a draft Collection for the authenticated Contributor.
       operationId: create_collection_v1_collections_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CollectionCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -2054,8 +2722,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/collections/mine:
     get:
       tags:
@@ -2063,6 +2729,19 @@ paths:
       summary: List My Collections
       description: List Collections owned by the authenticated Contributor.
       operationId: list_my_collections_v1_collections_mine_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2070,8 +2749,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionListResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/collections/{collection_id}:
     get:
       tags:
@@ -2089,6 +2772,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2118,6 +2811,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2154,6 +2857,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2197,6 +2910,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2227,6 +2950,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2257,6 +2990,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2277,12 +3020,25 @@ paths:
       summary: Submit Developer Application
       description: Submit a Developer application as any authenticated user.
       operationId: submit_developer_application_v1_developer_applications_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DeveloperApplicationCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -2296,8 +3052,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/developer/applications/mine:
     get:
       tags:
@@ -2305,6 +3059,19 @@ paths:
       summary: List My Developer Applications
       description: List the authenticated user's Developer application history.
       operationId: list_my_developer_applications_v1_developer_applications_mine_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2312,8 +3079,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeveloperApplicationsResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/applications/{application_id}/withdraw:
     patch:
       tags:
@@ -2331,6 +3102,16 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2367,6 +3148,16 @@ paths:
             type: string
           - type: 'null'
           title: Status
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2397,6 +3188,16 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2417,33 +3218,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/api-keys:
-    get:
-      tags:
-      - Developer
-      summary: List Api Keys
-      description: List API key metadata for the active Developer account.
-      operationId: list_api_keys_v1_developer_api_keys_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeysResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Developer
       summary: Create Api Key
       description: Create a scoped API key and return the raw key exactly once.
       operationId: create_api_key_v1_developer_api_keys_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ApiKeyCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -2457,8 +3256,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Developer
+      summary: List Api Keys
+      description: List API key metadata for the active Developer account.
+      operationId: list_api_keys_v1_developer_api_keys_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeysResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/tier:
     get:
       tags:
@@ -2466,6 +3295,19 @@ paths:
       summary: Get Developer Tier Progress
       description: Return Partner commission tier and next-tier progress.
       operationId: get_developer_tier_progress_v1_developer_tier_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2473,36 +3315,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeveloperTierProgressResponse'
-      security:
-      - HTTPBearer: []
-  /v1/developer/payouts:
-    get:
-      tags:
-      - Developer
-      summary: List Partner Payouts
-      description: List Partner payout history for the active Developer account.
-      operationId: list_partner_payouts_v1_developer_payouts_get
-      responses:
-        '200':
-          description: Successful Response
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PartnerPayoutsResponse'
-      security:
-      - HTTPBearer: []
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/developer/payouts:
     post:
       tags:
       - Developer
       summary: Request Partner Payout
       description: Request withdrawal of cleared Partner commission balance.
       operationId: request_partner_payout_v1_developer_payouts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PartnerPayoutRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -2516,8 +3360,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Developer
+      summary: List Partner Payouts
+      description: List Partner payout history for the active Developer account.
+      operationId: list_partner_payouts_v1_developer_payouts_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerPayoutsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/analytics/usage:
     get:
       tags:
@@ -2537,6 +3411,16 @@ paths:
           minimum: 1
           default: 30
           title: Days
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2569,6 +3453,16 @@ paths:
           minimum: 1
           default: 30
           title: Days
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2583,33 +3477,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/webhooks:
-    get:
-      tags:
-      - Developer
-      summary: List Partner Webhooks
-      description: List Partner outbound webhook metadata for the active Developer.
-      operationId: list_partner_webhooks_v1_developer_webhooks_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerWebhooksResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Developer
       summary: Create Partner Webhook
       description: Register a Partner outbound webhook and return its raw secret once.
       operationId: create_partner_webhook_v1_developer_webhooks_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PartnerWebhookCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -2623,8 +3515,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Developer
+      summary: List Partner Webhooks
+      description: List Partner outbound webhook metadata for the active Developer.
+      operationId: list_partner_webhooks_v1_developer_webhooks_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerWebhooksResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/webhooks/{webhook_id}:
     delete:
       tags:
@@ -2642,6 +3564,16 @@ paths:
           type: string
           format: uuid
           title: Webhook Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2672,6 +3604,16 @@ paths:
           type: string
           format: uuid
           title: Delivery Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2702,6 +3644,16 @@ paths:
           type: string
           format: uuid
           title: Api Key Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2737,6 +3689,16 @@ paths:
           type: string
           format: uuid
           title: Api Key Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2928,8 +3890,10 @@ paths:
       summary: List Mixed Catalog
       description: 'Return paginated public Framework and Collection catalog results.
 
+
         Framework taxonomy filters narrow Framework cards and exclude Collections
-        (bundles carry no taxonomy); q and price filters apply to both.'
+
+        (bundles carry no taxonomy); ``q`` and price filters apply to both.'
       operationId: list_mixed_catalog_v1_explore_catalog_get
       security:
       - HTTPBearer: []
@@ -3302,33 +4266,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/payment-methods:
-    get:
-      tags:
-      - Financials
-      summary: List Payment Methods
-      description: List safe metadata for the Operator's provider-held payment methods.
-      operationId: list_payment_methods_v1_financials_payment_methods_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentMethodsResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Financials
       summary: Create Payment Method Setup
       description: Start provider-hosted setup for an Operator payment method.
       operationId: create_payment_method_setup_v1_financials_payment_methods_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PaymentMethodSetupRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -3342,8 +4304,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Financials
+      summary: List Payment Methods
+      description: List safe metadata for the Operator's provider-held payment methods.
+      operationId: list_payment_methods_v1_financials_payment_methods_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/purchases:
     get:
       tags:
@@ -3371,6 +4363,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3400,6 +4402,16 @@ paths:
         schema:
           type: string
           title: Payment Method Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3436,6 +4448,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3472,6 +4494,16 @@ paths:
           type: string
           format: uuid
           title: Collection Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3508,6 +4540,16 @@ paths:
           type: string
           format: uuid
           title: Transaction Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3538,6 +4580,16 @@ paths:
           type: string
           format: uuid
           title: Transaction Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3557,6 +4609,19 @@ paths:
       summary: Get Contributor Earnings
       description: Return refund-safe earnings balances for the Contributor.
       operationId: get_contributor_earnings_v1_financials_earnings_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3564,8 +4629,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EarningsResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/payout-accounts/onboard:
     post:
       tags:
@@ -3573,12 +4642,25 @@ paths:
       summary: Onboard Payout Account
       description: Create a Stripe Express payout account for a verified Contributor.
       operationId: onboard_payout_account_v1_financials_payout_accounts_onboard_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PayoutAccountOnboardRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -3592,8 +4674,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/financials/payout-accounts:
     get:
       tags:
@@ -3601,6 +4681,19 @@ paths:
       summary: List Payout Accounts
       description: List active payout accounts for the authenticated Contributor.
       operationId: list_payout_accounts_v1_financials_payout_accounts_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3608,36 +4701,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PayoutAccountsResponse'
-      security:
-      - HTTPBearer: []
-  /v1/financials/payouts:
-    get:
-      tags:
-      - Financials
-      summary: List Payouts
-      description: List payout history for the authenticated Contributor.
-      operationId: list_payouts_v1_financials_payouts_get
-      responses:
-        '200':
-          description: Successful Response
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PayoutsResponse'
-      security:
-      - HTTPBearer: []
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/financials/payouts:
     post:
       tags:
       - Financials
       summary: Request Payout
       description: Request payout of available Contributor earnings after 2FA.
       operationId: request_payout_v1_financials_payouts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PayoutRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -3651,8 +4746,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Financials
+      summary: List Payouts
+      description: List payout history for the authenticated Contributor.
+      operationId: list_payouts_v1_financials_payouts_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/payout-accounts/{payout_account_id}:
     delete:
       tags:
@@ -3670,6 +4795,16 @@ paths:
           type: string
           format: uuid
           title: Payout Account Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3690,36 +4825,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks:
-    get:
-      tags:
-      - Frameworks
-      summary: List Frameworks
-      description: List Frameworks owned by the authenticated Contributor.
-      operationId: list_frameworks_v1_frameworks_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/FrameworkListItem'
-                type: array
-                title: Response List Frameworks V1 Frameworks Get
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Frameworks
       summary: Create Framework
       description: Create a draft Framework for the authenticated Contributor.
       operationId: create_framework_v1_frameworks_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/FrameworkCreate'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -3733,8 +4863,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Frameworks
+      summary: List Frameworks
+      description: List Frameworks owned by the authenticated Contributor.
+      operationId: list_frameworks_v1_frameworks_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FrameworkListItem'
+                title: Response List Frameworks V1 Frameworks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/reviews:
     post:
       tags:
@@ -3752,6 +4915,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3817,6 +4990,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3853,6 +5036,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3882,6 +5075,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3917,6 +5120,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -3943,6 +5156,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3973,6 +5196,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4003,6 +5236,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4039,6 +5282,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4069,6 +5322,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4099,6 +5362,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4135,6 +5408,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4165,6 +5448,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4201,6 +5494,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4235,6 +5538,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4271,6 +5584,16 @@ paths:
           type: string
           format: uuid
           title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4314,6 +5637,16 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -4347,6 +5680,16 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4384,6 +5727,16 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4398,33 +5751,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/consent:
-    get:
-      tags:
-      - GDPR
-      summary: List Consent History
-      description: Return the user's consent status and append-only history.
-      operationId: list_consent_history_v1_gdpr_consent_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConsentHistoryResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - GDPR
       summary: Accept Current Consent
       description: Record acceptance of the current legal document versions.
       operationId: accept_current_consent_v1_gdpr_consent_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ConsentAcceptRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -4438,8 +5789,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - GDPR
+      summary: List Consent History
+      description: Return the user's consent status and append-only history.
+      operationId: list_consent_history_v1_gdpr_consent_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/exports:
     post:
       tags:
@@ -4447,6 +5828,19 @@ paths:
       summary: Request Data Export
       description: Request an async GDPR JSON data export for the current user.
       operationId: request_data_export_v1_gdpr_exports_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '202':
           description: Successful Response
@@ -4454,8 +5848,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataExportRequestResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/exports/latest:
     get:
       tags:
@@ -4463,6 +5861,19 @@ paths:
       summary: Get Latest Data Export Status
       description: Return the current user's latest GDPR data export request status.
       operationId: get_latest_data_export_status_v1_gdpr_exports_latest_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4470,8 +5881,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataExportRequestResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/exports/{export_request_id}:
     get:
       tags:
@@ -4489,6 +5904,16 @@ paths:
           type: string
           format: uuid
           title: Export Request Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4520,6 +5945,16 @@ paths:
           type: string
           format: uuid
           title: Export Request Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '302':
           description: Private presigned download URL.
@@ -4530,7 +5965,7 @@ paths:
         '410':
           description: Data export has expired.
         '429':
-          description: Rate limit exceeded.
+          description: Too many attempts; see the Retry-After header.
         '422':
           description: Validation Error
           content:
@@ -4538,22 +5973,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/account-deletion:
-    get:
-      tags:
-      - GDPR
-      summary: Get account deletion status
-      description: Return the latest GDPR account-deletion request for the current
-        user.
-      operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDeletionStatusResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - GDPR
@@ -4561,12 +5980,25 @@ paths:
       description: Schedule GDPR account deletion after password confirmation and
         the configured cooling-off period.
       operationId: request_account_deletion_v1_gdpr_account_deletion_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AccountDeletionRequestBody'
-        required: true
       responses:
         '202':
           description: Account deletion scheduled during cooling-off.
@@ -4586,8 +6018,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - GDPR
+      summary: Get account deletion status
+      description: Return the latest GDPR account-deletion request for the current
+        user.
+      operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/account-deletion/cancel:
     post:
       tags:
@@ -4596,6 +6059,19 @@ paths:
       description: Cancel the current user's scheduled GDPR account deletion during
         the cooling-off window.
       operationId: cancel_account_deletion_v1_gdpr_account_deletion_cancel_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4605,8 +6081,12 @@ paths:
                 $ref: '#/components/schemas/AccountDeletionStatusResponse'
         '404':
           description: Account deletion request not found.
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/library:
     get:
       tags:
@@ -4634,6 +6114,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4671,6 +6161,16 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4718,6 +6218,16 @@ paths:
           type: boolean
           default: false
           title: Unread Only
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4738,6 +6248,19 @@ paths:
       summary: Mark All Notifications Read
       description: Mark every unread notification owned by the current user as read.
       operationId: mark_all_notifications_read_v1_notifications_read_all_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4745,8 +6268,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MarkAllReadResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/notifications/{notification_id}/read:
     patch:
       tags:
@@ -4764,6 +6291,16 @@ paths:
           type: string
           format: uuid
           title: Notification Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4782,9 +6319,22 @@ paths:
       tags:
       - Profiles
       summary: Get my own profile
-      description: Return the authenticated user's own profile. The owner always
-        sees their full content; the is_limited flag reflects moderation state.
+      description: Return the authenticated user's own profile. The owner always sees
+        their full content; the is_limited flag reflects moderation state.
       operationId: get_my_profile_v1_profiles_me_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4792,16 +6342,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicProfileResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/profiles/{user_id}:
     get:
       tags:
       - Profiles
       summary: Get a public profile
-      description: Return the curated public profile for any platform user — identity,
+      description: 'Return the curated public profile for any platform user: identity,
         role badges, and KYC verification status. Private account fields are never
-        included.
+        included.'
       operationId: get_public_profile_v1_profiles__user_id__get
       parameters:
       - name: user_id
@@ -4833,6 +6387,17 @@ paths:
       operationId: create_project_v1_projects_post
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4856,9 +6421,12 @@ paths:
       tags:
       - Projects
       summary: List Projects
-      description: List Projects for a role. Contributors get the open marketplace
-        feed (scope=open) or their assigned Projects (scope=assigned); Operators always
-        get owned Projects.
+      description: 'List Projects for a role.
+
+
+        Contributors get the open marketplace feed (``scope=open``) or their
+
+        assigned Projects (``scope=assigned``); Operators always get owned Projects.'
       operationId: list_projects_v1_projects_get
       security:
       - HTTPBearer: []
@@ -4899,6 +6467,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4929,6 +6507,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4958,6 +6546,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4994,6 +6592,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5029,6 +6637,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5059,6 +6677,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5089,6 +6717,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5124,6 +6762,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5154,6 +6802,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5172,9 +6830,13 @@ paths:
       tags:
       - Projects
       summary: Reopen Milestone Plan
-      description: Reopen a finalized Milestone plan to draft while no Milestone is
-        funded. Open to either Project member so the breakdown can be renegotiated
-        before any Escrow is funded.
+      description: 'Reopen a finalized Milestone plan to draft while no Milestone
+        is funded.
+
+
+        Open to either Project member so the breakdown can be renegotiated before
+
+        any Escrow is funded.'
       operationId: reopen_milestone_plan_v1_projects__project_id__milestones_reopen_post
       security:
       - HTTPBearer: []
@@ -5186,6 +6848,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5223,6 +6895,16 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5260,6 +6942,16 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5302,6 +6994,16 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -5335,6 +7037,16 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5377,6 +7089,16 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5421,6 +7143,16 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5465,6 +7197,16 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5509,6 +7251,16 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5559,6 +7311,16 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5589,6 +7351,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5624,6 +7396,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5661,6 +7443,16 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5691,6 +7483,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5728,6 +7530,16 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5778,6 +7590,16 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5822,6 +7644,16 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5866,6 +7698,16 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5903,6 +7745,16 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5940,6 +7792,16 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5958,9 +7820,12 @@ paths:
       tags:
       - Projects
       summary: Cancel Acceptance
-      description: Cancel an unfunded Proposal acceptance and reopen the Project. Open
-        to either Project member while the Project is still assigned (no Escrow funded);
-        once funding has begun, use the dispute flow instead.
+      description: 'Cancel an unfunded Proposal acceptance and reopen the Project.
+
+
+        Open to either Project member while the Project is still ``assigned`` (no
+
+        Escrow funded). Once funding has begun, use the dispute flow instead.'
       operationId: cancel_acceptance_v1_projects__project_id__cancel_acceptance_post
       security:
       - HTTPBearer: []
@@ -5972,6 +7837,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6424,6 +8299,16 @@ paths:
           type: string
           format: uuid
           title: Operator Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6438,33 +8323,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/saved-searches:
-    get:
-      tags:
-      - Saved Searches
-      summary: List Saved Searches
-      description: List saved searches owned by the authenticated Operator.
-      operationId: list_saved_searches_v1_saved_searches_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SavedSearchListResponse'
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Saved Searches
       summary: Create Saved Search
       description: Create an Operator-owned saved Explore search.
       operationId: create_saved_search_v1_saved_searches_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SavedSearchCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -6478,8 +8361,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Saved Searches
+      summary: List Saved Searches
+      description: List saved searches owned by the authenticated Operator.
+      operationId: list_saved_searches_v1_saved_searches_get
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedSearchListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/saved-searches/{saved_search_id}/run:
     get:
       tags:
@@ -6514,6 +8427,16 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6544,6 +8467,16 @@ paths:
           type: string
           format: uuid
           title: Saved Search Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6579,6 +8512,16 @@ paths:
           type: string
           format: uuid
           title: Saved Search Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -6595,6 +8538,19 @@ paths:
       summary: Start Identity Verification
       description: Start a Persona identity-verification session for the current user.
       operationId: start_identity_verification_v1_settings_kyc_session_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6602,8 +8558,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KycVerificationSessionResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/settings/kyc:
     get:
       tags:
@@ -6611,6 +8571,19 @@ paths:
       summary: Get Kyc Status
       description: Return the authenticated user's KYC status.
       operationId: get_kyc_status_v1_settings_kyc_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6618,8 +8591,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KycStatusResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/settings/sessions:
     get:
       tags:
@@ -6627,6 +8604,19 @@ paths:
       summary: List Sessions
       description: Return active browser refresh-token sessions for the current user.
       operationId: list_sessions_v1_settings_sessions_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6634,14 +8624,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionsResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
       tags:
       - Settings
       summary: Revoke Other Sessions
       description: Revoke all browser refresh-token sessions except the current one.
       operationId: revoke_other_sessions_v1_settings_sessions_delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6649,8 +8656,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
-      security:
-      - HTTPBearer: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/settings/notification-preferences:
     get:
       tags:
@@ -6659,27 +8670,19 @@ paths:
       description: Return the authenticated user's effective notification preference
         matrix.
       operationId: get_notification_preferences_v1_settings_notification_preferences_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationPreferencesResponse'
       security:
       - HTTPBearer: []
-    patch:
-      tags:
-      - Settings
-      summary: Update Notification Preferences
-      description: Persist owner-scoped notification preference updates.
-      operationId: update_notification_preferences_v1_settings_notification_preferences_patch
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
-        required: true
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6693,8 +8696,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Settings
+      summary: Update Notification Preferences
+      description: Persist owner-scoped notification preference updates.
+      operationId: update_notification_preferences_v1_settings_notification_preferences_patch
       security:
       - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/settings/sessions/{session_id}:
     delete:
       tags:
@@ -6711,6 +8750,16 @@ paths:
         schema:
           type: string
           title: Session Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6731,12 +8780,25 @@ paths:
       summary: Request Email Change
       description: Start a verified account email change.
       operationId: request_email_change_v1_settings_account_email_change_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EmailChangeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -6750,8 +8812,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /v1/settings/account/email-change/confirm:
     post:
       tags:
@@ -6772,6 +8832,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/waitlist:
+    post:
+      tags:
+      - Waitlist
+      summary: Join the pre-launch waitlist
+      description: 'Record a marketing waitlist email. Public and unauthenticated.
+        Idempotent: an already-recorded email returns 200 with already_joined=true
+        instead of creating a duplicate.'
+      operationId: join_waitlist_v1_waitlist_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WaitlistJoinRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitlistJoinResponse'
         '422':
           description: Validation Error
           content:
@@ -6853,6 +8941,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6889,6 +8987,16 @@ paths:
           type: string
           format: uuid
           title: Project Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6942,6 +9050,16 @@ paths:
           minimum: 1
           default: 50
           title: Limit
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6976,34 +9094,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-  /v1/waitlist:
-    post:
-      tags:
-      - Waitlist
-      summary: Join the pre-launch waitlist
-      description: 'Record a marketing waitlist email. Public and unauthenticated.
-        Idempotent: an already-recorded email returns 200 with already_joined=true
-        instead of creating a duplicate.'
-      operationId: join_waitlist_v1_waitlist_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WaitlistJoinRequest'
-        required: true
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WaitlistJoinResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AccountDeletionBlockedReason:
@@ -7646,6 +9736,157 @@ components:
       - totp_code
       title: AdminDisputeResolveRequest
       description: Request body for resolving a Project dispute.
+    AdminDisputeResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        milestone_id:
+          type: string
+          format: uuid
+          title: Milestone Id
+        raised_by:
+          type: string
+          format: uuid
+          title: Raised By
+        reason:
+          type: string
+          title: Reason
+        status:
+          type: string
+          title: Status
+        resolution_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Type
+        release_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Release Amount
+        refund_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Refund Amount
+        admin_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Admin Id
+        resolution_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Notes
+        escalated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Escalated At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        project_title:
+          type: string
+          title: Project Title
+        milestone_name:
+          type: string
+          title: Milestone Name
+        milestone_budget:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Milestone Budget
+        currency:
+          type: string
+          title: Currency
+        escrow_amount:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Escrow Amount
+        escrow_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Escrow Status
+        raised_by_name:
+          type: string
+          title: Raised By Name
+        raised_by_role:
+          type: string
+          title: Raised By Role
+        operator_name:
+          type: string
+          title: Operator Name
+        contributor_name:
+          type: string
+          title: Contributor Name
+      type: object
+      required:
+      - id
+      - project_id
+      - milestone_id
+      - raised_by
+      - reason
+      - status
+      - resolution_type
+      - release_amount
+      - refund_amount
+      - admin_id
+      - resolution_notes
+      - escalated_at
+      - resolved_at
+      - created_at
+      - project_title
+      - milestone_name
+      - milestone_budget
+      - currency
+      - escrow_amount
+      - escrow_status
+      - raised_by_name
+      - raised_by_role
+      - operator_name
+      - contributor_name
+      title: AdminDisputeResponse
+      description: 'Dispute enriched with the context an Admin needs to resolve it.
+
+
+        Adds the milestone budget, currently-held escrow amount, project title, and
+
+        the name of the party who raised the dispute so the resolver can choose a
+
+        release/refund/split amount without leaving the queue.'
+    AdminDisputesResponse:
+      properties:
+        disputes:
+          items:
+            $ref: '#/components/schemas/AdminDisputeResponse'
+          type: array
+          title: Disputes
+      type: object
+      required:
+      - disputes
+      title: AdminDisputesResponse
+      description: Admin list response for Project Disputes with resolution context.
     AdminEscrowOverrideRequest:
       properties:
         reason:
@@ -7714,84 +9955,6 @@ components:
       - released_by
       title: AdminEscrowResponse
       description: Response body for admin escrow state changes.
-    AdminFrameworkStatusResponse:
-      properties:
-        framework_id:
-          type: string
-          format: uuid
-          title: Framework Id
-        status:
-          type: string
-          title: Status
-        reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Reason
-      type: object
-      required:
-      - framework_id
-      - status
-      title: AdminFrameworkStatusResponse
-      description: Response body for admin Framework state changes.
-    AdminFrameworkSuspendRequest:
-      properties:
-        reason:
-          type: string
-          minLength: 1
-          title: Reason
-      type: object
-      required:
-      - reason
-      title: AdminFrameworkSuspendRequest
-      description: Request body for post-publish Framework suspension.
-    AdminSuspendedFrameworkItem:
-      properties:
-        framework_id:
-          type: string
-          format: uuid
-          title: Framework Id
-        title:
-          type: string
-          title: Title
-        contributor_id:
-          type: string
-          format: uuid
-          title: Contributor Id
-        contributor_name:
-          type: string
-          title: Contributor Name
-        reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Reason
-        suspended_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Suspended At
-      type: object
-      required:
-      - framework_id
-      - title
-      - contributor_id
-      - contributor_name
-      title: AdminSuspendedFrameworkItem
-      description: One suspended Framework awaiting possible reinstatement.
-    AdminSuspendedFrameworksResponse:
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminSuspendedFrameworkItem'
-          title: Items
-      type: object
-      required:
-      - items
-      title: AdminSuspendedFrameworksResponse
-      description: Listing of Frameworks currently suspended from the marketplace.
     AdminFrameworkDirectoryItem:
       properties:
         framework_id:
@@ -7829,15 +9992,46 @@ components:
     AdminFrameworkDirectoryResponse:
       properties:
         items:
-          type: array
           items:
             $ref: '#/components/schemas/AdminFrameworkDirectoryItem'
+          type: array
           title: Items
       type: object
       required:
       - items
       title: AdminFrameworkDirectoryResponse
       description: Paginated admin listing of Frameworks for post-publish state control.
+    AdminFrameworkStatusResponse:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        status:
+          type: string
+          title: Status
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - framework_id
+      - status
+      title: AdminFrameworkStatusResponse
+      description: Response body for admin Framework state changes.
+    AdminFrameworkSuspendRequest:
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          title: Reason
+      type: object
+      required:
+      - reason
+      title: AdminFrameworkSuspendRequest
+      description: Request body for post-publish Framework suspension.
     AdminKycReviewRequest:
       properties:
         status:
@@ -8170,6 +10364,53 @@ components:
       - approved
       title: AdminRoleAssignmentResponse
       description: Response body for admin role assignment.
+    AdminSuspendedFrameworkItem:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        contributor_id:
+          type: string
+          format: uuid
+          title: Contributor Id
+        contributor_name:
+          type: string
+          title: Contributor Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+      type: object
+      required:
+      - framework_id
+      - title
+      - contributor_id
+      - contributor_name
+      title: AdminSuspendedFrameworkItem
+      description: One suspended Framework awaiting possible reinstatement.
+    AdminSuspendedFrameworksResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminSuspendedFrameworkItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: AdminSuspendedFrameworksResponse
+      description: Listing of Frameworks currently suspended from the marketplace.
     AdminUserDirectoryItem:
       properties:
         user_id:
@@ -8643,9 +10884,9 @@ components:
           type: boolean
           title: Pii Review Needed
         pii_types_found:
-          type: array
           items:
             type: string
+          type: array
           title: Pii Types Found
           default: []
         redaction_available:
@@ -9179,44 +11420,6 @@ components:
       - professional_references
       title: AttestorApplicationCreateRequest
       description: Request body for submitting an Attestor role application.
-    AttestorApplicationUpdateRequest:
-      properties:
-        specializations:
-          items:
-            type: string
-          type: array
-          maxItems: 25
-          minItems: 1
-          title: Specializations
-        jurisdictions:
-          items:
-            type: string
-          type: array
-          maxItems: 25
-          minItems: 1
-          title: Jurisdictions
-        credentials_summary:
-          type: string
-          maxLength: 5000
-          minLength: 10
-          title: Credentials Summary
-        sample_work:
-          additionalProperties: true
-          type: object
-          title: Sample Work
-        professional_references:
-          type: string
-          maxLength: 5000
-          minLength: 3
-          title: Professional References
-      type: object
-      required:
-      - specializations
-      - jurisdictions
-      - credentials_summary
-      - professional_references
-      title: AttestorApplicationUpdateRequest
-      description: Request body for editing a pending Attestor application in place.
     AttestorApplicationResponse:
       properties:
         id:
@@ -9312,6 +11515,44 @@ components:
       - totp_code
       title: AttestorApplicationReviewRequest
       description: Admin request body for approving or rejecting an Attestor application.
+    AttestorApplicationUpdateRequest:
+      properties:
+        specializations:
+          items:
+            type: string
+          type: array
+          maxItems: 25
+          minItems: 1
+          title: Specializations
+        jurisdictions:
+          items:
+            type: string
+          type: array
+          maxItems: 25
+          minItems: 1
+          title: Jurisdictions
+        credentials_summary:
+          type: string
+          maxLength: 5000
+          minLength: 10
+          title: Credentials Summary
+        sample_work:
+          additionalProperties: true
+          type: object
+          title: Sample Work
+        professional_references:
+          type: string
+          maxLength: 5000
+          minLength: 3
+          title: Professional References
+      type: object
+      required:
+      - specializations
+      - jurisdictions
+      - credentials_summary
+      - professional_references
+      title: AttestorApplicationUpdateRequest
+      description: Request body for editing a pending Attestor application in place.
     AttestorApplicationsResponse:
       properties:
         applications:
@@ -10070,6 +12311,36 @@ components:
       - failure_reason
       title: DataExportRequestResponse
       description: Status response for a GDPR data export request.
+    DeliverableDownloadResponse:
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/DeliverableFileDownload'
+          type: array
+          title: Files
+      type: object
+      required:
+      - files
+      title: DeliverableDownloadResponse
+      description: Presigned download targets for a Deliverable's files.
+    DeliverableFileDownload:
+      properties:
+        file_key:
+          type: string
+          title: File Key
+        file_name:
+          type: string
+          title: File Name
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - file_key
+      - file_name
+      - url
+      title: DeliverableFileDownload
+      description: A single downloadable Deliverable file with a presigned URL.
     DeliverableResponse:
       properties:
         id:
@@ -10140,48 +12411,6 @@ components:
       - created_at
       title: DeliverableResponse
       description: Deliverable response returned to Project members.
-    DeliverablesResponse:
-      properties:
-        deliverables:
-          items:
-            $ref: '#/components/schemas/DeliverableResponse'
-          type: array
-          title: Deliverables
-      type: object
-      required:
-      - deliverables
-      title: DeliverablesResponse
-      description: List of Deliverables submitted against a Milestone.
-    DeliverableFileDownload:
-      properties:
-        file_key:
-          type: string
-          title: File Key
-        file_name:
-          type: string
-          title: File Name
-        url:
-          type: string
-          title: Url
-      type: object
-      required:
-      - file_key
-      - file_name
-      - url
-      title: DeliverableFileDownload
-      description: A single downloadable Deliverable file with a presigned URL.
-    DeliverableDownloadResponse:
-      properties:
-        files:
-          items:
-            $ref: '#/components/schemas/DeliverableFileDownload'
-          type: array
-          title: Files
-      type: object
-      required:
-      - files
-      title: DeliverableDownloadResponse
-      description: Presigned download targets for a Deliverable's files.
     DeliverableRevisionRequest:
       properties:
         revision_notes:
@@ -10239,6 +12468,18 @@ components:
       - file_keys
       title: DeliverableSubmitRequest
       description: Accepted Contributor request body for submitting Milestone work.
+    DeliverablesResponse:
+      properties:
+        deliverables:
+          items:
+            $ref: '#/components/schemas/DeliverableResponse'
+          type: array
+          title: Deliverables
+      type: object
+      required:
+      - deliverables
+      title: DeliverablesResponse
+      description: List of Deliverables submitted against a Milestone.
     DeveloperApplicationCreateRequest:
       properties:
         company_name:
@@ -10577,150 +12818,6 @@ components:
       - reason
       title: DisputeCreateRequest
       description: Project member request body for raising a Milestone dispute.
-    AdminDisputeResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        project_id:
-          type: string
-          format: uuid
-          title: Project Id
-        milestone_id:
-          type: string
-          format: uuid
-          title: Milestone Id
-        raised_by:
-          type: string
-          format: uuid
-          title: Raised By
-        reason:
-          type: string
-          title: Reason
-        status:
-          type: string
-          title: Status
-        resolution_type:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Resolution Type
-        release_amount:
-          anyOf:
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-          - type: 'null'
-          title: Release Amount
-        refund_amount:
-          anyOf:
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-          - type: 'null'
-          title: Refund Amount
-        admin_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Admin Id
-        resolution_notes:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Resolution Notes
-        escalated_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Escalated At
-        resolved_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Resolved At
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-        project_title:
-          type: string
-          title: Project Title
-        milestone_name:
-          type: string
-          title: Milestone Name
-        milestone_budget:
-          type: string
-          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-          title: Milestone Budget
-        currency:
-          type: string
-          title: Currency
-        escrow_amount:
-          anyOf:
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-          - type: 'null'
-          title: Escrow Amount
-        escrow_status:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Escrow Status
-        raised_by_name:
-          type: string
-          title: Raised By Name
-        raised_by_role:
-          type: string
-          title: Raised By Role
-        operator_name:
-          type: string
-          title: Operator Name
-        contributor_name:
-          type: string
-          title: Contributor Name
-      type: object
-      required:
-      - id
-      - project_id
-      - milestone_id
-      - raised_by
-      - reason
-      - status
-      - resolution_type
-      - release_amount
-      - refund_amount
-      - admin_id
-      - resolution_notes
-      - escalated_at
-      - resolved_at
-      - created_at
-      - project_title
-      - milestone_name
-      - milestone_budget
-      - currency
-      - escrow_amount
-      - escrow_status
-      - raised_by_name
-      - raised_by_role
-      - operator_name
-      - contributor_name
-      title: AdminDisputeResponse
-      description: Dispute enriched with the context an Admin needs to resolve it.
-    AdminDisputesResponse:
-      properties:
-        disputes:
-          items:
-            $ref: '#/components/schemas/AdminDisputeResponse'
-          type: array
-          title: Disputes
-      type: object
-      required:
-      - disputes
-      title: AdminDisputesResponse
-      description: Admin list response for Project Disputes with resolution context.
     DisputeResponse:
       properties:
         id:
@@ -10888,7 +12985,12 @@ components:
       - new_email
       - password
       title: EmailChangeRequest
-      description: Request body for starting a verified account email change.
+      description: 'Request body for starting a verified account email change.
+
+
+        Email change always re-authenticates with the account password and, when the
+
+        account has 2FA enabled, additionally steps up with a TOTP/backup code.'
     ExploreArtifactSummary:
       properties:
         id:
@@ -12626,7 +14728,12 @@ components:
       - hosted_url
       - inquiry_id
       title: KycVerificationSessionResponse
-      description: Hosted Persona verification link for the authenticated user.
+      description: 'Hosted Persona verification link for the authenticated user.
+
+
+        The frontend redirects the user to ``hosted_url`` to complete identity
+
+        verification; the Persona webhook later flips ``kyc_status``.'
     LibraryItem:
       properties:
         license_id:
@@ -13633,6 +15740,9 @@ components:
           type: string
           format: date-time
           title: Created At
+        secret_hint:
+          type: string
+          title: Secret Hint
         secret:
           type: string
           title: Secret
@@ -13643,6 +15753,7 @@ components:
       - events
       - active
       - created_at
+      - secret_hint
       - secret
       title: PartnerWebhookCreateResponse
       description: Webhook creation response that includes the raw secret exactly
@@ -13733,7 +15844,15 @@ components:
       - created_at
       - secret_hint
       title: PartnerWebhookResponse
-      description: Partner webhook endpoint metadata with a masked signing-secret hint.
+      description: 'Partner webhook endpoint metadata with a masked signing-secret
+        hint.
+
+
+        The full secret is only returned once on creation; ``secret_hint`` is a
+
+        non-sensitive masked form (prefix + last four characters) shown in the list
+
+        so the partner can recognize which secret is configured.'
     PartnerWebhooksResponse:
       properties:
         webhooks:
@@ -14651,8 +16770,19 @@ components:
       - id
       - display_name
       title: PublicProfileResponse
-      description: Curated public identity for any platform user. Only fields a visitor
-        may see are present; private account fields are never included.
+      description: "Curated public identity for any platform user.\n\nReturned for\
+        \ the canonical profile page regardless of role. Only fields a\nvisitor is\
+        \ allowed to see are present; the body is assembled field-by-field\nin the\
+        \ service, never serialised straight from the ORM user.\n\nAttributes:\n \
+        \   id: The profile owner's user id.\n    display_name: Public display name.\n\
+        \    avatar_url: Public avatar URL, or None.\n    bio: Free-text bio, or None.\n\
+        \    location: Free-text location, or None.\n    website: Personal/site URL,\
+        \ validated to a safe web scheme, or None.\n    roles: Public role badges\
+        \ (e.g. contributor, operator, attestor).\n    kyc_verified: Whether the user\
+        \ has completed identity verification.\n    is_deactivated: Whether the account\
+        \ is self-deactivated.\n    is_limited: Whether discretionary content is withheld\
+        \ (suspended\n        account). Safe identity stays visible; bio/location/website\
+        \ are\n        nulled."
     PurchaseHistoryItem:
       properties:
         transaction_id:
@@ -15318,7 +17448,12 @@ components:
       - already_joined
       - message
       title: WaitlistJoinResponse
-      description: Result of a waitlist join attempt.
+      description: 'Result of a waitlist join attempt.
+
+
+        `already_joined` is True when the email was previously recorded, letting the
+
+        client confirm the spot without leaking whether the address is new.'
     WebhookIngestResponse:
       properties:
         received:
