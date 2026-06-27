@@ -2,15 +2,19 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
+from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_refresh_cookie,
     clear_session_hint_cookie,
+    set_oauth_state_cookie,
     set_refresh_cookie,
     set_session_hint_cookie,
 )
@@ -19,6 +23,12 @@ from app.core.dependencies import get_current_user
 from app.core.network import client_ip
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
+from app.integrations.google_oauth import (
+    GoogleOAuthError,
+    build_authorization_url,
+    generate_pkce_pair,
+    generate_state,
+)
 from app.modules.auth import service
 from app.modules.auth.models import User, UserRole
 from app.modules.auth.schemas import (
@@ -46,11 +56,85 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentConsentUser = Annotated[User, Depends(require_current_consent)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
 def _client_ip(request: Request) -> str | None:
     """Return the originating client IP, honouring a trusted proxy header."""
     return client_ip(request)
+
+
+def _safe_next_path(next_path: str | None) -> str | None:
+    """Return an in-app path safe to redirect to, or None.
+
+    Only same-origin absolute paths are allowed. Protocol-relative (``//host``)
+    and external (``https://...``) values are dropped so the OAuth round trip
+    cannot be turned into an open redirect.
+    """
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return None
+    return next_path
+
+
+@router.get(
+    "/google/start",
+    summary="Begin Google sign-in",
+    description=(
+        "Start the Google OAuth authorization-code flow. Generates CSRF state "
+        "and a PKCE pair, seals them in a short-lived HttpOnly cookie, and "
+        "redirects the browser to Google's consent screen."
+    ),
+)
+async def google_start(
+    settings: AppSettings,
+    next: str | None = None,
+) -> RedirectResponse:
+    """Redirect the user to Google's consent screen.
+
+    Generates a fresh CSRF ``state`` and PKCE pair, builds the consent URL, and
+    seals ``state`` + the PKCE verifier (and any ``next`` path) into a signed,
+    short-lived HttpOnly cookie the callback validates.
+
+    Args:
+        settings: Application settings (provides Google client config).
+        next: Optional in-app path to resume after sign-in; non-local values
+            are dropped to prevent open redirects.
+
+    Returns:
+        A 302 redirect to Google's authorization endpoint.
+
+    Raises:
+        HTTPException(503): If Google OAuth credentials are not configured.
+    """
+    pkce = generate_pkce_pair()
+    state = generate_state()
+    try:
+        authorization_url = build_authorization_url(
+            state=state,
+            code_challenge=pkce.challenge,
+            settings=settings,
+        )
+    except GoogleOAuthError:
+        logger.bind(module="auth", action="google_start").warning(
+            "google_oauth_unconfigured"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google sign-in is unavailable.",
+        ) from None
+    response = RedirectResponse(
+        url=authorization_url,
+        status_code=status.HTTP_302_FOUND,
+    )
+    set_oauth_state_cookie(
+        response,
+        state=state,
+        verifier=pkce.verifier,
+        next_path=_safe_next_path(next),
+        settings=settings,
+    )
+    logger.bind(module="auth", action="google_start").info("google_login_started")
+    return response
 
 
 def _set_session_hint_from_access_token(response: Response, access_token: str) -> None:

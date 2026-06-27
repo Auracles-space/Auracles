@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     persona_redirect_url: str | None = Field(
         default=None, alias="PERSONA_REDIRECT_URL"
     )
+    google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
+    google_client_secret: SecretStr | None = Field(
+        default=None, alias="GOOGLE_CLIENT_SECRET"
+    )
+    google_redirect_uri: str | None = Field(default=None, alias="GOOGLE_REDIRECT_URI")
     brave_search_api_key: SecretStr | None = Field(
         default=None, alias="BRAVE_SEARCH_API_KEY"
     )
