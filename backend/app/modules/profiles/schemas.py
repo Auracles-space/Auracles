@@ -12,6 +12,8 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
+MAX_SPECIALIZATIONS = 20
+MAX_SPECIALIZATION_LENGTH = 80
 
 
 class PublicProfileResponse(BaseModel):
@@ -44,6 +46,7 @@ class PublicProfileResponse(BaseModel):
     bio: str | None = None
     location: str | None = None
     website: str | None = None
+    specializations: list[str] = []
     roles: list[str] = []
     kyc_verified: bool = False
     is_deactivated: bool = False
@@ -69,6 +72,45 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=2000)
     location: str | None = Field(default=None, max_length=100)
     website: str | None = Field(default=None, max_length=2048)
+    specializations: list[str] | None = Field(default=None)
+
+    @field_validator("specializations")
+    @classmethod
+    def clean_specializations(cls, value: list[str] | None) -> list[str] | None:
+        """Trim, drop blanks, and de-duplicate specializations in order.
+
+        Args:
+            value: The submitted specializations, or None when omitted.
+
+        Returns:
+            The cleaned list, or None when omitted (leaving them untouched).
+
+        Raises:
+            ValueError: If too many are submitted, or any entry is too long.
+        """
+        if value is None:
+            return None
+        if len(value) > MAX_SPECIALIZATIONS:
+            raise ValueError(
+                f"at most {MAX_SPECIALIZATIONS} specializations are allowed"
+            )
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw in value:
+            label = raw.strip()
+            if not label:
+                continue
+            if len(label) > MAX_SPECIALIZATION_LENGTH:
+                raise ValueError(
+                    "each specialization must be "
+                    f"{MAX_SPECIALIZATION_LENGTH} characters or fewer"
+                )
+            key = label.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(label)
+        return cleaned
 
     @field_validator("website")
     @classmethod

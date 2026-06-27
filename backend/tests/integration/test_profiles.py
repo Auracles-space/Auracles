@@ -299,6 +299,152 @@ async def test_owner_updates_editable_profile_fields(
     assert public.json()["headline"] == "Compliance frameworks for fintech"
 
 
+async def test_owner_sets_specializations_shown_on_public_profile(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Specializations set via PATCH appear on the public profile."""
+    user_id = await create_user("profile-spec@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["Fintech Risk", "AML Compliance"]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["specializations"] == ["Fintech Risk", "AML Compliance"]
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["specializations"] == ["Fintech Risk", "AML Compliance"]
+
+
+async def test_specializations_patch_replaces_whole_list(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Setting specializations replaces the prior list (not append)."""
+    user_id = await create_user("profile-spec2@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["One", "Two"]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["Three"]},
+        headers=headers,
+    )
+
+    assert response.json()["specializations"] == ["Three"]
+
+
+async def test_specializations_omitted_leaves_them_untouched(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A PATCH without specializations does not clear existing ones."""
+    user_id = await create_user("profile-spec3@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["Kept"]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"headline": "Unrelated change"},
+        headers=headers,
+    )
+
+    assert response.json()["specializations"] == ["Kept"]
+
+
+async def test_specializations_empty_list_clears_them(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """An explicit empty list clears specializations."""
+    user_id = await create_user("profile-spec4@auracles.space", ["contributor"])
+    headers = auth_headers(user_id, ["contributor"])
+
+    await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["Gone"]},
+        headers=headers,
+    )
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": []},
+        headers=headers,
+    )
+
+    assert response.json()["specializations"] == []
+
+
+async def test_specializations_are_trimmed_and_deduplicated(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Whitespace is trimmed, blanks dropped, and duplicates removed in order."""
+    user_id = await create_user("profile-spec5@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["  Risk  ", "Risk", "", "AML"]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.json()["specializations"] == ["Risk", "AML"]
+
+
+async def test_too_many_specializations_rejected(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """More than the cap of specializations is rejected with 422."""
+    user_id = await create_user("profile-spec6@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": [f"Skill {i}" for i in range(25)]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_suspended_profile_withholds_specializations(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's specializations are withheld from the public read."""
+    user_id = await create_user("profile-spec7@auracles.space", ["contributor"])
+    await client.patch(
+        "/v1/profiles/me",
+        json={"specializations": ["Hidden Skill"]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["specializations"] == []
+
+
 async def test_profile_update_only_changes_provided_fields(
     client: AsyncClient,
     migrated_database: None,

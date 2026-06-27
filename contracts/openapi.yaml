@@ -16529,6 +16529,13 @@ components:
             maxLength: 2048
           - type: 'null'
           title: Website
+        specializations:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Specializations
       type: object
       title: ProfileUpdateRequest
       description: "Owner-editable profile fields for PATCH /profiles/me.\n\nAll fields\
@@ -16986,6 +16993,12 @@ components:
           - type: string
           - type: 'null'
           title: Website
+        specializations:
+          items:
+            type: string
+          type: array
+          title: Specializations
+          default: []
         roles:
           items:
             type: string
