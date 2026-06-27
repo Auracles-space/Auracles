@@ -9,6 +9,7 @@ Maps to: FR-SET-001/002.
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -18,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.integrations import s3
+from app.modules.attestation.models import Credential
+from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
 from app.modules.profiles.schemas import (
     AvatarConfirmRequest,
@@ -57,6 +60,46 @@ def _avatar_public_url(settings: Settings, file_key: str) -> str:
     return (
         f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{file_key}"
     )
+
+
+async def _verified_credentials(
+    db: AsyncSession, user_id: UUID
+) -> list[PublicCredentialResponse]:
+    """Return a user's verified credentials as public display rows.
+
+    Only verified credentials are exposed; evidence keys, verification URLs,
+    and review metadata are never included (handled by PublicCredentialResponse).
+
+    Args:
+        db: Async session for loading credentials.
+        user_id: UUID of the credential holder.
+
+    Returns:
+        Public credential rows, newest issued first.
+    """
+    rows = await db.execute(
+        select(Credential)
+        .where(
+            Credential.user_id == user_id,
+            Credential.verification_status == "verified",
+        )
+        .order_by(Credential.issued_date.desc())
+    )
+    today = date.today()
+    return [
+        PublicCredentialResponse(
+            title=credential.title,
+            issuer=credential.issuer,
+            credential_type=credential.credential_type,
+            issued_date=credential.issued_date,
+            expires_date=credential.expires_date,
+            expired=(
+                credential.expires_date is not None
+                and credential.expires_date < today
+            ),
+        )
+        for credential in rows.scalars().all()
+    ]
 
 
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
@@ -131,6 +174,7 @@ async def get_public_profile(
     # (name, avatar, roles) visible but withhold discretionary free-text content
     # the user controls, so a suspended profile cannot keep broadcasting it.
     is_limited = user.suspended_at is not None
+    credentials = [] if is_limited else await _verified_credentials(db, user_id)
 
     return PublicProfileResponse(
         id=user.id,
@@ -142,6 +186,7 @@ async def get_public_profile(
         website=None if is_limited else _safe_public_url(user.website),
         specializations=[] if is_limited else list(user.specializations),
         links=[] if is_limited else list(user.links),
+        verified_credentials=credentials,
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
         is_deactivated=user.deactivated_at is not None,
@@ -178,6 +223,7 @@ async def get_own_profile(
         website=_safe_public_url(user.website),
         specializations=list(user.specializations),
         links=list(user.links),
+        verified_credentials=await _verified_credentials(db, user.id),
         roles=roles,
         kyc_verified=user.kyc_status == "verified",
         is_deactivated=user.deactivated_at is not None,

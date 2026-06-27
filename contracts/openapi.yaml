@@ -17032,6 +17032,12 @@ components:
           type: array
           title: Links
           default: []
+        verified_credentials:
+          items:
+            $ref: '#/components/schemas/PublicCredentialResponse'
+          type: array
+          title: Verified Credentials
+          default: []
         roles:
           items:
             type: string

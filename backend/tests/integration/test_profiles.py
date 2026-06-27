@@ -23,6 +23,7 @@ from sqlalchemy import create_engine, delete
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.main import app
+from app.modules.attestation.models import Credential
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
 
@@ -73,6 +74,7 @@ async def profile_test_context() -> AsyncIterator[None]:
         """Delete rows in dependency order so tests stay isolated."""
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
+            await session.execute(delete(Credential))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
             await session.commit()
@@ -443,6 +445,64 @@ async def test_suspended_profile_withholds_specializations(
 
     public = await client.get(f"/v1/profiles/{user_id}")
     assert public.json()["specializations"] == []
+
+
+async def _add_credential(
+    user_id: UUID,
+    *,
+    title: str,
+    verification_status: str,
+) -> None:
+    """Insert a credential row for a user with the given verification status."""
+    from datetime import date
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Credential(
+                    user_id=user_id,
+                    title=title,
+                    issuer="Issuer Co",
+                    issued_date=date(2024, 1, 1),
+                    verification_status=verification_status,
+                )
+            )
+
+
+async def test_public_profile_includes_only_verified_credentials(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """The public profile lists verified credentials and hides unverified ones."""
+    user_id = await create_user("profile-cred@auracles.space", ["contributor"])
+    await _add_credential(user_id, title="CFA", verification_status="verified")
+    await _add_credential(user_id, title="Pending One", verification_status="pending")
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+
+    assert public.status_code == 200
+    titles = [c["title"] for c in public.json()["verified_credentials"]]
+    assert titles == ["CFA"]
+
+
+async def test_suspended_profile_withholds_credentials(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A suspended account's credentials are withheld from the public read."""
+    user_id = await create_user("profile-cred2@auracles.space", ["contributor"])
+    await _add_credential(user_id, title="Hidden CFA", verification_status="verified")
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.suspended_at = datetime.now(UTC)
+        await session.commit()
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+
+    assert public.json()["verified_credentials"] == []
 
 
 async def test_owner_sets_portfolio_links_shown_on_public_profile(

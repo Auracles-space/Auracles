@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.modules.attestation.schemas import PublicCredentialResponse
+
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 MAX_SPECIALIZATIONS = 20
 MAX_SPECIALIZATION_LENGTH = 80
@@ -81,6 +83,7 @@ class PublicProfileResponse(BaseModel):
     website: str | None = None
     specializations: list[str] = []
     links: list[ProfileLink] = []
+    verified_credentials: list[PublicCredentialResponse] = []
     roles: list[str] = []
     kyc_verified: bool = False
     is_deactivated: bool = False
