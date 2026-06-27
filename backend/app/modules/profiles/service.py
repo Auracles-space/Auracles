@@ -22,6 +22,7 @@ from app.integrations import s3
 from app.modules.attestation.models import Attestation, Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
+from app.modules.explore import service as explore_service
 from app.modules.frameworks.models import Framework, Review
 from app.modules.profiles.schemas import (
     AvatarConfirmRequest,
@@ -30,6 +31,7 @@ from app.modules.profiles.schemas import (
     BannerConfirmRequest,
     BannerUploadUrlRequest,
     BannerUploadUrlResponse,
+    ProfileFeatured,
     ProfileStats,
     ProfileUpdateRequest,
     PublicProfileResponse,
@@ -156,6 +158,46 @@ async def _profile_stats(db: AsyncSession, user_id: UUID) -> ProfileStats:
     )
 
 
+async def _resolve_featured(
+    db: AsyncSession,
+    stored: list[dict[str, object]],
+) -> list[ProfileFeatured]:
+    """Build featured spotlights, resolving pinned Frameworks to live cards.
+
+    Args:
+        db: Async session for loading pinned Framework cards.
+        stored: The raw featured entries from the user's JSONB column.
+
+    Returns:
+        Featured spotlights with resolved Framework cards where pinned. A pinned
+        Framework that is no longer published resolves to None.
+    """
+    framework_ids = [
+        UUID(str(item["framework_id"]))
+        for item in stored
+        if item.get("framework_id")
+    ]
+    cards = (
+        await explore_service.public_framework_cards(db, framework_ids)
+        if framework_ids
+        else {}
+    )
+    resolved: list[ProfileFeatured] = []
+    for item in stored:
+        raw_id = item.get("framework_id")
+        framework_id = UUID(str(raw_id)) if raw_id else None
+        resolved.append(
+            ProfileFeatured(
+                title=item.get("title"),
+                description=item.get("description"),
+                url=item.get("url"),
+                framework_id=framework_id,
+                framework=cards.get(framework_id) if framework_id else None,
+            )
+        )
+    return resolved
+
+
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
     """Return a user's role names, alphabetically ordered for stable output."""
     return list(
@@ -242,7 +284,7 @@ async def get_public_profile(
         website=None if is_limited else _safe_public_url(user.website),
         specializations=[] if is_limited else list(user.specializations),
         links=[] if is_limited else list(user.links),
-        featured=[] if is_limited else list(user.featured),
+        featured=[] if is_limited else await _resolve_featured(db, list(user.featured)),
         experience=[] if is_limited else list(user.experience),
         education=[] if is_limited else list(user.education),
         verified_credentials=credentials,
@@ -284,7 +326,7 @@ async def get_own_profile(
         website=_safe_public_url(user.website),
         specializations=list(user.specializations),
         links=list(user.links),
-        featured=list(user.featured),
+        featured=await _resolve_featured(db, list(user.featured)),
         experience=list(user.experience),
         education=list(user.education),
         verified_credentials=await _verified_credentials(db, user.id),
@@ -316,11 +358,64 @@ async def update_profile(
     Returns:
         The owner's profile after the update.
     """
-    changes = payload.model_dump(exclude_unset=True)
+    # mode="json" so UUIDs (e.g. featured framework_id) serialise to strings,
+    # which the JSONB columns can store.
+    changes = payload.model_dump(exclude_unset=True, mode="json")
+    if "featured" in changes:
+        await _validate_featured_frameworks(db, user, changes["featured"])
     for field, value in changes.items():
         setattr(user, field, value)
     await db.commit()
     return await get_own_profile(db, user=user)
+
+
+async def _validate_featured_frameworks(
+    db: AsyncSession,
+    user: User,
+    featured: list[dict[str, object]],
+) -> None:
+    """Ensure every pinned featured Framework is the owner's and published.
+
+    Args:
+        db: Async session for the ownership check.
+        user: The profile owner.
+        featured: The submitted featured items (already serialised).
+
+    Raises:
+        HTTPException(422): If a pinned Framework is not the owner's published one.
+    """
+    pinned_ids = [
+        str(item["framework_id"])
+        for item in featured
+        if item.get("framework_id") is not None
+    ]
+    pinned = set(pinned_ids)
+    if not pinned:
+        return
+    if len(pinned_ids) != len(pinned):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A framework can only be featured once.",
+        )
+    owned = {
+        str(framework_id)
+        for framework_id in (
+            await db.execute(
+                select(Framework.id).where(
+                    Framework.id.in_(pinned),
+                    Framework.contributor_id == user.id,
+                    Framework.status == "published",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+    if pinned - owned:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A featured framework must be your own published framework.",
+        )
 
 
 def _presign_profile_image(

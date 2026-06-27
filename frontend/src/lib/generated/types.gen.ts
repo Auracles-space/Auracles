@@ -2520,17 +2520,44 @@ export type ProfileExperience = {
 };
 
 /**
- * A single featured spotlight (flagship framework, case study, milestone).
+ * A featured spotlight as shown on the profile.
+ *
+ * Carries the stored fields plus, when a Framework is pinned, the resolved
+ * public Framework card so clients render the live Framework.
  *
  * Attributes:
- * title: Spotlight title (1-160 chars).
- * description: Short summary, or None (<=500 chars).
- * url: Optional link to the highlighted item; must use http or https.
+ * title: Free-form title, or None when a Framework is pinned.
+ * description: Short summary, or None.
+ * url: Optional link.
+ * framework_id: Pinned Framework id, or None.
+ * framework: Resolved public Framework card, or None.
  */
 export type ProfileFeatured = {
-    title: string;
+    title?: (string | null);
     description?: (string | null);
     url?: (string | null);
+    framework_id?: (string | null);
+    framework?: (ExploreFrameworkCard | null);
+};
+
+/**
+ * A featured spotlight as submitted by the owner (PATCH /profiles/me).
+ *
+ * A spotlight is either a pinned Framework (``framework_id`` set to one of the
+ * owner's published Frameworks) or a free-form entry (``title`` set). At least
+ * one of the two must be present.
+ *
+ * Attributes:
+ * title: Free-form title (<=160 chars); required unless framework_id set.
+ * description: Short summary, or None (<=500 chars).
+ * url: Optional link; must use http or https.
+ * framework_id: Optional id of a published Framework to pin.
+ */
+export type ProfileFeaturedInput = {
+    title?: (string | null);
+    description?: (string | null);
+    url?: (string | null);
+    framework_id?: (string | null);
 };
 
 /**
@@ -2586,7 +2613,7 @@ export type ProfileUpdateRequest = {
     website?: (string | null);
     specializations?: (Array<(string)> | null);
     links?: (Array<ProfileLink> | null);
-    featured?: (Array<ProfileFeatured> | null);
+    featured?: (Array<ProfileFeaturedInput> | null);
     experience?: (Array<ProfileExperience> | null);
     education?: (Array<ProfileEducation> | null);
 };

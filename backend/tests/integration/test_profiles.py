@@ -779,6 +779,113 @@ async def test_owner_sets_featured_shown_publicly(
     assert public.json()["featured"][0]["description"] == "My flagship framework."
 
 
+async def test_featured_can_pin_own_published_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Pinning the owner's published Framework resolves to a live card."""
+    from decimal import Decimal
+
+    user_id = await create_user("feat-pin@auracles.space", ["contributor"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=user_id,
+                title="Flagship Kit",
+                description="d",
+                category="security",
+                price=Decimal("10"),
+                status="published",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+        framework_id = framework.id
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"framework_id": str(framework_id)}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    item = response.json()["featured"][0]
+    assert item["framework_id"] == str(framework_id)
+    assert item["framework"] is not None
+    assert item["framework"]["title"] == "Flagship Kit"
+
+
+async def test_featured_rejects_pinning_unowned_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Pinning a Framework that is not the owner's published one is rejected."""
+    user_id = await create_user("feat-pin2@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"framework_id": str(uuid4())}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_featured_rejects_duplicate_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Pinning the same Framework in two featured items is rejected."""
+    from decimal import Decimal
+
+    user_id = await create_user("feat-dup@auracles.space", ["contributor"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=user_id,
+                title="Dup Kit",
+                description="d",
+                category="security",
+                price=Decimal("10"),
+                status="published",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+        framework_id = framework.id
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "featured": [
+                {"framework_id": str(framework_id)},
+                {"framework_id": str(framework_id)},
+            ]
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_featured_requires_title_or_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A featured item with neither title nor framework is rejected."""
+    user_id = await create_user("feat-empty@auracles.space", ["contributor"])
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"featured": [{"description": "orphan"}]},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422
+
+
 async def test_featured_rejects_unsafe_url_and_caps_count(
     client: AsyncClient,
     migrated_database: None,

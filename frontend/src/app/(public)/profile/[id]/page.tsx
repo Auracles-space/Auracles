@@ -41,8 +41,8 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px] space-y-6">
-        <BackButton fallbackHref="/explore" className="text-sm font-semibold text-accent">
-          &larr; Back
+        <BackButton fallbackHref="/explore">
+          Back to Explore
         </BackButton>
         <ProfileView
           attestationBadge={extras.attestationBadge}

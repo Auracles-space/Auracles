@@ -17,8 +17,8 @@ import {
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 // Enforce a maximum file selection size of 10MB to prevent browser UI lockup during load
 const MAX_SELECT_BYTES = 10 * 1024 * 1024;
-const CROP_CONTAINER_WIDTH = 300;
-const CROP_CONTAINER_HEIGHT = 100;
+const CROP_CONTAINER_WIDTH = 270;
+const CROP_CONTAINER_HEIGHT = 90;
 
 type BannerUploaderProps = {
   bannerUrl: string | null;
@@ -405,7 +405,7 @@ export function BannerUploader({
             {/* Circular crop container */}
             <div className="mt-4 flex justify-center">
               <div
-                className="relative h-[100px] w-[300px] overflow-hidden rounded-xl border border-border-strong bg-surface-2 cursor-grab active:cursor-grabbing select-none"
+                className="relative h-[90px] w-[270px] overflow-hidden rounded-xl border border-border-strong bg-surface-2 cursor-grab active:cursor-grabbing select-none"
                 onMouseDown={handleMouseDown}
                 onTouchStart={handleTouchStart}
               >

@@ -18,6 +18,8 @@ type BackButtonProps = {
  * Falls back to a standard anchor tag href if no history exists (e.g. direct visits),
  * preventing users from getting trapped or losing their query parameters/filters.
  */
+import { ArrowLeftIcon } from "@radix-ui/react-icons";
+
 export function BackButton({ fallbackHref, children, className }: BackButtonProps) {
   const router = useRouter();
 
@@ -33,8 +35,9 @@ export function BackButton({ fallbackHref, children, className }: BackButtonProp
     <a
       href={fallbackHref}
       onClick={handleBack}
-      className={className}
+      className={className || "inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-md px-1 -ml-1"}
     >
+      <ArrowLeftIcon className="h-4 w-4" />
       {children}
     </a>
   );

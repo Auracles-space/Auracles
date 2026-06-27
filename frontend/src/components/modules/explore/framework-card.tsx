@@ -102,7 +102,7 @@ export function ReviewSummary({
     <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
       <RatingStars rating={numericScore} starClassName="h-3.5 w-3.5" />
       <span>
-        {averageScore} ({reviewCount})
+        ({reviewCount})
       </span>
     </div>
   );

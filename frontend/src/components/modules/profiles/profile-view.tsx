@@ -108,7 +108,7 @@ export function ProfileView({
               <div
                 className={[
                   "flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-surface-3 md:h-28 md:w-28 shadow-sm",
-                  profile.kyc_verified ? "ring-2 ring-accent ring-offset-4 ring-offset-surface-1" : "ring-4 ring-surface-1"
+                  profile.kyc_verified ? "ring-2 ring-accent ring-offset-4 ring-offset-surface-1" : ""
                 ].join(" ")}
               >
                 {profile.avatar_url ? (
@@ -246,6 +246,14 @@ export function ProfileView({
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featured.map((item, index) => {
+              if (item.framework) {
+                return (
+                  <FrameworkCard
+                    framework={item.framework}
+                    key={`fw-${item.framework.id}-${index}`}
+                  />
+                );
+              }
               const href = safeHref(item.url);
               const card = (
                 <>

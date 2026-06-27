@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.modules.attestation.schemas import PublicCredentialResponse
+from app.modules.explore.schemas import ExploreFrameworkCard
 
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 MAX_SPECIALIZATIONS = 20
@@ -22,42 +23,77 @@ MAX_EDUCATION = 15
 MAX_FEATURED = 3
 
 
-class ProfileFeatured(BaseModel):
-    """A single featured spotlight (flagship framework, case study, milestone).
+def _validate_featured_url(value: str | None) -> str | None:
+    """Return a featured URL only when it uses a safe http/https scheme.
+
+    Args:
+        value: The submitted URL, or None.
+
+    Returns:
+        The trimmed URL when valid, or None when cleared.
+
+    Raises:
+        ValueError: If a non-empty value does not use a safe web scheme.
+    """
+    if value is None:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    scheme, separator, _ = candidate.partition("://")
+    if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
+        raise ValueError("featured url must be an http or https URL")
+    return candidate
+
+
+class ProfileFeaturedInput(BaseModel):
+    """A featured spotlight as submitted by the owner (PATCH /profiles/me).
+
+    A spotlight is either a pinned Framework (``framework_id`` set to one of the
+    owner's published Frameworks) or a free-form entry (``title`` set). At least
+    one of the two must be present.
 
     Attributes:
-        title: Spotlight title (1-160 chars).
+        title: Free-form title (<=160 chars); required unless framework_id set.
         description: Short summary, or None (<=500 chars).
-        url: Optional link to the highlighted item; must use http or https.
+        url: Optional link; must use http or https.
+        framework_id: Optional id of a published Framework to pin.
     """
 
-    title: str = Field(min_length=1, max_length=160)
+    title: str | None = Field(default=None, max_length=160)
     description: str | None = Field(default=None, max_length=500)
     url: str | None = Field(default=None, max_length=2048)
+    framework_id: UUID | None = None
 
-    @field_validator("url")
-    @classmethod
-    def url_uses_safe_scheme(cls, value: str | None) -> str | None:
-        """Reject any featured URL that is not http/https.
+    _check_url = field_validator("url")(_validate_featured_url)
 
-        Args:
-            value: The submitted URL, or None.
+    @model_validator(mode="after")
+    def require_title_or_framework(self) -> ProfileFeaturedInput:
+        """Require either a pinned Framework or a free-form title."""
+        if self.framework_id is None and not (self.title and self.title.strip()):
+            raise ValueError("a featured item needs a title or a framework")
+        return self
 
-        Returns:
-            The trimmed URL when valid, or None when cleared.
 
-        Raises:
-            ValueError: If a non-empty value does not use a safe web scheme.
-        """
-        if value is None:
-            return None
-        candidate = value.strip()
-        if not candidate:
-            return None
-        scheme, separator, _ = candidate.partition("://")
-        if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
-            raise ValueError("featured url must be an http or https URL")
-        return candidate
+class ProfileFeatured(BaseModel):
+    """A featured spotlight as shown on the profile.
+
+    Carries the stored fields plus, when a Framework is pinned, the resolved
+    public Framework card so clients render the live Framework.
+
+    Attributes:
+        title: Free-form title, or None when a Framework is pinned.
+        description: Short summary, or None.
+        url: Optional link.
+        framework_id: Pinned Framework id, or None.
+        framework: Resolved public Framework card, or None.
+    """
+
+    title: str | None = None
+    description: str | None = None
+    url: str | None = None
+    framework_id: UUID | None = None
+    framework: ExploreFrameworkCard | None = None
 
 
 class ProfileExperience(BaseModel):
@@ -218,7 +254,7 @@ class ProfileUpdateRequest(BaseModel):
     website: str | None = Field(default=None, max_length=2048)
     specializations: list[str] | None = Field(default=None)
     links: list[ProfileLink] | None = Field(default=None, max_length=MAX_LINKS)
-    featured: list[ProfileFeatured] | None = Field(
+    featured: list[ProfileFeaturedInput] | None = Field(
         default=None, max_length=MAX_FEATURED
     )
     experience: list[ProfileExperience] | None = Field(

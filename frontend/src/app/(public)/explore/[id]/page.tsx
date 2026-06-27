@@ -54,7 +54,7 @@ export default async function ExploreDetailPage({
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
-        <BackButton className="text-sm font-semibold text-accent" fallbackHref="/explore">
+        <BackButton fallbackHref="/explore">
           Back to Explore
         </BackButton>
         <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start min-w-0">

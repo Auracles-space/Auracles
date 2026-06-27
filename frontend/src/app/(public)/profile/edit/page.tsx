@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BackButton } from "@/components/ui/back-button";
+import { loadContributorExtras } from "@/components/modules/profiles/contributor-extras";
 import { ProfileEditor } from "@/components/modules/profiles/profile-editor";
+import { configureBrowserClient } from "@/lib/auth/form-client";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 
 /**
@@ -14,6 +17,9 @@ import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 export default function ProfileEditPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const [frameworkOptions, setFrameworkOptions] = useState<
+    { id: string; title: string }[]
+  >([]);
 
   useEffect(() => {
     let active = true;
@@ -22,9 +28,18 @@ export default function ProfileEditPage() {
       if (!active) return;
       if (!user) {
         router.replace("/login?next=/profile/edit");
-      } else {
-        setChecking(false);
+        return;
       }
+      configureBrowserClient();
+      const extras = await loadContributorExtras(user.id, user.roles ?? []);
+      if (!active) return;
+      setFrameworkOptions(
+        extras.frameworks.map((framework) => ({
+          id: framework.id,
+          title: framework.title,
+        })),
+      );
+      setChecking(false);
     }
     void checkAuth();
     return () => {
@@ -45,6 +60,11 @@ export default function ProfileEditPage() {
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-3xl">
+        <div className="mb-6">
+          <BackButton fallbackHref="/profile/me">
+            Back to profile
+          </BackButton>
+        </div>
         <div className="mb-6 flex items-center justify-between">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             Edit your profile
@@ -54,6 +74,7 @@ export default function ProfileEditPage() {
           </span>
         </div>
         <ProfileEditor
+          frameworkOptions={frameworkOptions}
           onSaved={() => router.push("/profile/me")}
           onCancel={() => router.push("/profile/me")}
         />

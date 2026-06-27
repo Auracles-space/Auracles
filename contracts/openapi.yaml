@@ -16752,9 +16752,45 @@ components:
     ProfileFeatured:
       properties:
         title:
-          type: string
-          maxLength: 160
-          minLength: 1
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+        framework_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Framework Id
+        framework:
+          anyOf:
+          - $ref: '#/components/schemas/ExploreFrameworkCard'
+          - type: 'null'
+      type: object
+      title: ProfileFeatured
+      description: "A featured spotlight as shown on the profile.\n\nCarries the stored\
+        \ fields plus, when a Framework is pinned, the resolved\npublic Framework\
+        \ card so clients render the live Framework.\n\nAttributes:\n    title: Free-form\
+        \ title, or None when a Framework is pinned.\n    description: Short summary,\
+        \ or None.\n    url: Optional link.\n    framework_id: Pinned Framework id,\
+        \ or None.\n    framework: Resolved public Framework card, or None."
+    ProfileFeaturedInput:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
           title: Title
         description:
           anyOf:
@@ -16768,14 +16804,22 @@ components:
             maxLength: 2048
           - type: 'null'
           title: Url
+        framework_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Framework Id
       type: object
-      required:
-      - title
-      title: ProfileFeatured
-      description: "A single featured spotlight (flagship framework, case study, milestone).\n\
-        \nAttributes:\n    title: Spotlight title (1-160 chars).\n    description:\
-        \ Short summary, or None (<=500 chars).\n    url: Optional link to the highlighted\
-        \ item; must use http or https."
+      title: ProfileFeaturedInput
+      description: "A featured spotlight as submitted by the owner (PATCH /profiles/me).\n\
+        \nA spotlight is either a pinned Framework (``framework_id`` set to one of\
+        \ the\nowner's published Frameworks) or a free-form entry (``title`` set).\
+        \ At least\none of the two must be present.\n\nAttributes:\n    title: Free-form\
+        \ title (<=160 chars); required unless framework_id set.\n    description:\
+        \ Short summary, or None (<=500 chars).\n    url: Optional link; must use\
+        \ http or https.\n    framework_id: Optional id of a published Framework to\
+        \ pin."
     ProfileLink:
       properties:
         label:
@@ -16867,7 +16911,7 @@ components:
         featured:
           anyOf:
           - items:
-              $ref: '#/components/schemas/ProfileFeatured'
+              $ref: '#/components/schemas/ProfileFeaturedInput'
             type: array
             maxItems: 3
           - type: 'null'

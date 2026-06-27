@@ -1282,3 +1282,67 @@ async def get_contributor_profile(
         ],
         verified_credentials=verified_credentials,
     )
+
+
+async def public_framework_cards(
+    db: AsyncSession,
+    framework_ids: list[UUID],
+) -> dict[UUID, ExploreFrameworkCard]:
+    """Build public catalog cards for a set of published Framework ids.
+
+    Reused by surfaces that embed Framework cards outside the catalog (e.g. a
+    profile's Featured spotlights). Only published Frameworks are returned;
+    unknown or unpublished ids are silently dropped.
+
+    Args:
+        db: Async session for loading Frameworks and their card aggregates.
+        framework_ids: Framework ids to resolve.
+
+    Returns:
+        A mapping of Framework id to its public card, for published ids only.
+    """
+    if not framework_ids:
+        return {}
+    frameworks = list(
+        (
+            await db.execute(
+                select(Framework).where(
+                    Framework.id.in_(framework_ids),
+                    Framework.status == "published",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not frameworks:
+        return {}
+    ids = [framework.id for framework in frameworks]
+    rarity_scores = await _framework_rarity_scores(db, ids)
+    attestation_badges = await _framework_attestation_badges(db, ids)
+    review_aggregates = await _framework_review_aggregates(db, ids)
+    reputations = await reputation_service.summaries_for_subjects(
+        db, subject_type="framework", subject_ids=ids
+    )
+    contributor_ids = {framework.contributor_id for framework in frameworks}
+    names: dict[UUID, str] = {
+        row[0]: row[1]
+        for row in (
+            await db.execute(
+                select(User.id, User.display_name).where(
+                    User.id.in_(contributor_ids)
+                )
+            )
+        ).all()
+    }
+    return {
+        framework.id: _card_from_framework(
+            framework,
+            rarity_scores.get(framework.id),
+            attestation_badges.get(framework.id),
+            review_aggregates.get(framework.id),
+            names.get(framework.contributor_id, ""),
+            reputations.get(framework.id),
+        )
+        for framework in frameworks
+    }
