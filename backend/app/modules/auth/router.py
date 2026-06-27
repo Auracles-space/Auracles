@@ -2,6 +2,7 @@
 
 import secrets
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -273,10 +274,27 @@ async def google_callback(
         ua=request.headers.get("user-agent"),
     )
 
+    next_value = payload.get("next")
+    next_path = _safe_next_path(next_value if isinstance(next_value, str) else None)
+
+    # A 2FA-enabled user must clear TOTP before any session cookie is granted;
+    # send them to the same challenge page the password flow uses.
+    if result.requires_2fa:
+        params = {"challenge": result.challenge_token or ""}
+        if next_path:
+            params["next"] = next_path
+        challenge_url = (
+            f"{_frontend_base_url(settings)}/2fa-challenge?{urlencode(params)}"
+        )
+        response = RedirectResponse(
+            url=challenge_url, status_code=status.HTTP_302_FOUND
+        )
+        clear_oauth_state_cookie(response, settings=settings)
+        return response
+
+    assert result.access_token is not None and result.refresh_token is not None
     response = RedirectResponse(
-        url=_google_redirect_target(
-            settings, result.needs_onboarding, payload.get("next")
-        ),
+        url=_google_redirect_target(settings, result.needs_onboarding, next_path),
         status_code=status.HTTP_302_FOUND,
     )
     set_refresh_cookie(response, result.refresh_token, settings=settings)

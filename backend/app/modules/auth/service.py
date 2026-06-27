@@ -733,12 +733,14 @@ GOOGLE_PROVIDER = "google"
 
 @dataclass(frozen=True)
 class GoogleLoginResult:
-    """Outcome of a Google sign-in: the issued session plus routing hints."""
+    """Outcome of a Google sign-in: the issued session or a pending 2FA step."""
 
     user: User
-    access_token: str
-    refresh_token: str
     needs_onboarding: bool
+    access_token: str | None = None
+    refresh_token: str | None = None
+    requires_2fa: bool = False
+    challenge_token: str | None = None
 
 
 def _display_name_from_claims(claims: GoogleClaims) -> str:
@@ -860,6 +862,36 @@ async def complete_google_login(
 
     assert user is not None
     roles = await _load_active_roles(db, user.id)
+
+    # Google proves the first factor; a user who turned on TOTP must still clear
+    # it before a session issues. Mirror the password-login 2FA challenge — the
+    # account link/creation persists, but no tokens are minted yet.
+    if user.totp_enabled:
+        challenge_token = generate_opaque_token()
+        await redis.setex(
+            _totp_challenge_key(challenge_token),
+            TOTP_CHALLENGE_TTL_SECONDS,
+            str(user.id),
+        )
+        await write_audit(
+            db=db,
+            actor_id=user.id,
+            action=action,
+            target_type="user",
+            target_id=user.id,
+            metadata={"provider": GOOGLE_PROVIDER, "requires_2fa": True},
+            ip=ip,
+            ua=ua,
+        )
+        await db.commit()
+        log.info("google_login_2fa_required", user_id=str(user.id))
+        return GoogleLoginResult(
+            user=user,
+            needs_onboarding=len(roles) == 0,
+            requires_2fa=True,
+            challenge_token=challenge_token,
+        )
+
     access_token = create_access_token(
         user_id=user.id, roles=roles, totp_verified=False
     )
@@ -882,9 +914,9 @@ async def complete_google_login(
     log.info("google_login_completed", user_id=str(user.id))
     return GoogleLoginResult(
         user=user,
+        needs_onboarding=len(roles) == 0,
         access_token=access_token,
         refresh_token=refresh_token,
-        needs_onboarding=len(roles) == 0,
     )
 
 

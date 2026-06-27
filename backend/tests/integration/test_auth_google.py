@@ -293,6 +293,62 @@ async def test_callback_auto_links_verified_email_to_existing_user(
 
 
 @pytest.mark.asyncio
+async def test_callback_with_totp_user_redirects_to_2fa_without_session(
+    client: AsyncClient,
+    google_configured: None,
+    migrated_database: None,
+    google_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 2FA user signing in with Google must clear TOTP before a session issues."""
+    from app.modules.auth.service import _totp_challenge_key
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="secured@example.com",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="Secured",
+                email_verified=True,
+                totp_enabled=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(UserRole(user_id=user.id, role="operator"))
+        secured_id = user.id
+
+    _stub_google(
+        monkeypatch,
+        GoogleClaims(
+            sub="sub-secured",
+            email="secured@example.com",
+            email_verified=True,
+            name="Secured",
+        ),
+    )
+    client.cookies.set(
+        OAUTH_STATE_COOKIE_NAME, await _seed_state(google_context["redis"])
+    )
+
+    response = await client.get(
+        "/v1/auth/google/callback?code=abc&state=known-state"
+    )
+
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert "/2fa-challenge" in location
+    # No session is granted until the second factor is confirmed.
+    assert response.cookies.get("refresh_token") is None
+
+    challenge = location.split("challenge=", 1)[1].split("&", 1)[0]
+    redis: FakeRedis = google_context["redis"]
+    assert redis.values.get(_totp_challenge_key(challenge)) == str(secured_id)
+    # The Google account was still linked despite the pending 2FA step.
+    rows = await _oauth_rows()
+    assert len(rows) == 1 and rows[0].user_id == secured_id
+
+
+@pytest.mark.asyncio
 async def test_callback_refuses_link_when_google_email_unverified(
     client: AsyncClient,
     google_configured: None,
