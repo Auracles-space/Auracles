@@ -15,6 +15,7 @@ import { FrameworkLicenseCta } from "@/components/modules/explore/framework-lice
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
+import { BackButton } from "@/components/ui/back-button";
 import {
   getExploreFrameworkDetail,
   getRelatedExploreFrameworks,
@@ -53,9 +54,9 @@ export default async function ExploreDetailPage({
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
-        <Link className="text-sm font-semibold text-accent" href="/explore">
+        <BackButton className="text-sm font-semibold text-accent" fallbackHref="/explore">
           Back to Explore
-        </Link>
+        </BackButton>
         <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start min-w-0">
           <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-6 md:p-10 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
@@ -69,7 +70,7 @@ export default async function ExploreDetailPage({
             </p>
             <Link
               className="mt-4 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
-              href={`/explore/contributors/${framework.contributor_id}`}
+              href={`/profile/${framework.contributor_id}`}
             >
               {framework.contributor_name}
             </Link>

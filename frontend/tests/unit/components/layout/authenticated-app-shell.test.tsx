@@ -61,7 +61,7 @@ describe("AuthenticatedAppShell", () => {
     );
     expect(within(appNav).getByRole("link", { name: /settings/i })).toHaveAttribute(
       "href",
-      "/settings/profile",
+      "/settings/identity",
     );
   });
 

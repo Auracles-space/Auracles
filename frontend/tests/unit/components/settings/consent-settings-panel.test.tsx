@@ -63,7 +63,7 @@ describe("ConsentSettingsPanel", () => {
     });
 
     expect(
-      within(consentSection).getByText(/new legal versions require your acceptance/i),
+      await within(consentSection).findByText(/new legal versions require your acceptance/i),
     ).toBeInTheDocument();
     expect(
       within(consentSection).getAllByText(/terms of service/i).length,

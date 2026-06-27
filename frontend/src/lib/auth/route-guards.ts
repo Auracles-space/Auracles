@@ -66,7 +66,7 @@ export function getRoleLandingPath(roles: string[]): string {
   // with no role requirement — the contributor `/dashboard` would bounce them
   // straight back here and loop. The attestor application prompt surfaces in
   // the authenticated shell from here.
-  return "/settings/profile";
+  return "/settings/identity";
 }
 
 /**

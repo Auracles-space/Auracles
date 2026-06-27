@@ -377,7 +377,7 @@ test("signs out and forces protected routes back through login", async ({
   });
   await seedSessionHint(context, ["operator"]);
 
-  await page.goto("/settings/profile");
+  await page.goto("/settings/identity");
   await page.getByText("Ada Markets").first().click();
   await page
     .locator("aside")

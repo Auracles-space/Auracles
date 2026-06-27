@@ -30,7 +30,7 @@ export const appLinks: AppNavigationLink[] = [
   { href: "/library", label: "Library", roles: ["operator"] },
   { href: "/settings/saved-searches", label: "Saved Searches", roles: ["operator"] },
   { href: "/admin/analytics", label: "Admin", roles: ["admin"] },
-  { href: "/settings/profile", label: "Settings", roles: null },
+  { href: "/settings/identity", label: "Settings", roles: null },
 ];
 
 /**

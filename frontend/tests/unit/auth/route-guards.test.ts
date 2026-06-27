@@ -84,7 +84,7 @@ describe("auth route guards", () => {
     ["/library", ["operator"]],
     ["/projects/project-1", ["operator"]],
     ["/projects/project-1", ["contributor"]],
-    ["/settings/profile", ["operator"]],
+    ["/settings/identity", ["operator"]],
   ])("allows the right roles through for %s", (pathname, roles) => {
     expect(
       resolveAuthRouteDecision({

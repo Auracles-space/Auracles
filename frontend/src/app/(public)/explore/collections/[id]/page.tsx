@@ -5,6 +5,7 @@
  * contributor metadata are visible before checkout.
  */
 import Link from "next/link";
+import { BackButton } from "@/components/ui/back-button";
 import { notFound } from "next/navigation";
 
 import { getExploreCollectionDetail } from "@/lib/generated/sdk.gen";
@@ -41,9 +42,9 @@ export default async function CollectionDetailPage({
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
-        <Link className="text-sm font-semibold text-accent" href="/explore">
+        <BackButton className="text-sm font-semibold text-accent" fallbackHref="/explore">
           Back to Explore
-        </Link>
+        </BackButton>
         <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_360px] lg:items-start">
           <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:p-10">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
@@ -57,7 +58,7 @@ export default async function CollectionDetailPage({
             </p>
             <Link
               className="mt-4 inline-flex min-h-12 items-center text-sm font-semibold text-accent transition hover:text-accent/80"
-              href={`/explore/contributors/${collection.contributor_id}`}
+              href={`/profile/${collection.contributor_id}`}
             >
               {collection.contributor_name}
             </Link>

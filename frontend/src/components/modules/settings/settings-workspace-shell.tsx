@@ -24,9 +24,9 @@ type SettingsLink = {
 
 const settingsLinks: SettingsLink[] = [
   {
-    href: "/settings/profile",
-    label: "Identity & Profile",
-    getSummary: () => "Public identity, email verification, and KYC status.",
+    href: "/settings/identity",
+    label: "Identity & Verification",
+    getSummary: () => "Private credentials, email verification, and KYC status.",
   },
   {
     href: "/settings/account",

@@ -60,6 +60,10 @@ describe("AuthenticatedAccountMenu", () => {
 
     expect(await screen.findByText("Ada Markets")).toBeInTheDocument();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+
+    // Open the menu popover to reveal roles, settings, and sign out options
+    fireEvent.click(screen.getByRole("button", { name: /Ada Markets/i }));
+
     expect(screen.getByText("Operator")).toBeInTheDocument();
     expect(screen.getByText("Contributor")).toBeInTheDocument();
 

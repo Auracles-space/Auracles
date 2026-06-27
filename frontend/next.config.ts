@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        // The contributor profile was unified into the canonical, all-roles
+        // profile at /profile/:id.
+        source: "/explore/contributors/:id",
+        destination: "/profile/:id",
+        permanent: true,
+      },
+      {
         source: "/dashboard/earnings",
         destination: "/dashboard/financials",
         permanent: true,

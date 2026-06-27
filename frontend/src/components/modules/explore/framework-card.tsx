@@ -144,7 +144,7 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
             <span className="text-foreground-subtle font-normal mr-1">By</span>
             <Link
               className="hover:text-accent transition-colors"
-              href={`/explore/contributors/${framework.contributor_id}`}
+              href={`/profile/${framework.contributor_id}`}
             >
               {framework.contributor_name}
             </Link>
@@ -259,7 +259,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
             <span className="text-foreground-subtle font-normal mr-1">By</span>
             <Link
               className="hover:text-accent transition-colors"
-              href={`/explore/contributors/${collection.contributor_id}`}
+              href={`/profile/${collection.contributor_id}`}
             >
               {collection.contributor_name}
             </Link>

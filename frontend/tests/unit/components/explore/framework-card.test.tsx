@@ -80,7 +80,7 @@ describe("FrameworkCard", () => {
 
     expect(screen.getByRole("link", { name: "Mara Okafor" })).toHaveAttribute(
       "href",
-      "/explore/contributors/00000000-0000-4000-8000-000000000014",
+      "/profile/00000000-0000-4000-8000-000000000014",
     );
   });
 
