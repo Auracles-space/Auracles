@@ -755,6 +755,7 @@ async def complete_google_login(
     db: AsyncSession,
     redis: Redis,
     claims: GoogleClaims,
+    terms_accepted: bool = False,
     ip: str | None = None,
     ua: str | None = None,
 ) -> GoogleLoginResult:
@@ -778,7 +779,8 @@ async def complete_google_login(
 
     Raises:
         HTTPException(400): If the Google email is unverified but matches an
-            existing account (cannot safely auto-link), or a link is orphaned.
+            existing account (cannot safely auto-link), a link is orphaned, or a
+            new account would be created without accepting the Terms.
         HTTPException(403): If the resolved account is deactivated or suspended.
     """
     normalized_email = normalize_email(claims.email)
@@ -839,6 +841,13 @@ async def complete_google_login(
         )
 
     if action == "google_account_created":
+        # A new account must accept the Terms + Privacy Policy, exactly as the
+        # email/password registration form requires before creating an account.
+        if not terms_accepted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must accept the Terms of Service and Privacy Policy.",
+            )
         user = User(
             email=normalized_email,
             password_hash=None,
@@ -851,6 +860,9 @@ async def complete_google_login(
             OAuthAccount(
                 user_id=user.id, provider=GOOGLE_PROVIDER, provider_id=claims.sub
             )
+        )
+        await consent_service.record_current_consents(
+            db=db, user_id=user.id, ip=ip, ua=ua
         )
     elif action == "google_account_linked":
         assert user is not None

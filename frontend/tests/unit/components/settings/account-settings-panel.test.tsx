@@ -12,6 +12,7 @@ import {
   cancelAccountDeletion,
   downloadDataExportV1GdprExportsExportRequestIdDownloadGet,
   getAccountDeletionStatus,
+  getCurrentUser,
   getLatestDataExportStatusV1GdprExportsLatestGet,
   requestAccountDeletion,
   requestDataExportV1GdprExportsPost,
@@ -30,6 +31,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   cancelAccountDeletion: vi.fn(),
   downloadDataExportV1GdprExportsExportRequestIdDownloadGet: vi.fn(),
   getAccountDeletionStatus: vi.fn(),
+  getCurrentUser: vi.fn(),
   getLatestDataExportStatusV1GdprExportsLatestGet: vi.fn(),
   requestAccountDeletion: vi.fn(),
   requestDataExportV1GdprExportsPost: vi.fn(),
@@ -71,6 +73,12 @@ describe("AccountSettingsPanel", () => {
       error: undefined,
       response: new Response(null, { status: 200 }),
     });
+    vi.mocked(getCurrentUser).mockReset();
+    vi.mocked(getCurrentUser).mockResolvedValue({
+      data: { has_password: true },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
     vi.stubGlobal("location", {
       assign: vi.fn(),
     });

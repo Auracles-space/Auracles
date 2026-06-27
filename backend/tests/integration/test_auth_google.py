@@ -34,6 +34,7 @@ from app.integrations.google_oauth import (
 from app.main import app
 from app.modules.auth import router as auth_router
 from app.modules.auth.models import OAuthAccount, User, UserRole
+from app.modules.gdpr.models import ConsentLog
 from app.shared.models.audit_log import AuditLog
 from tests.integration.test_auth_sessions import FakeRedis
 
@@ -72,6 +73,7 @@ async def google_context() -> AsyncIterator[dict[str, Any]]:
     await engine.dispose()
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(ConsentLog))
         await session.execute(delete(OAuthAccount))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
@@ -101,12 +103,13 @@ def _stub_google(monkeypatch: pytest.MonkeyPatch, claims: GoogleClaims) -> None:
     monkeypatch.setattr(auth_router, "verify_id_token", _verify)
 
 
-async def _seed_state(redis: FakeRedis) -> str:
+async def _seed_state(redis: FakeRedis, terms_accepted: bool = True) -> str:
     """Return a signed state cookie value with a known state token."""
     return create_oauth_state_value(
         state="known-state",
         verifier="known-verifier",
         next_path=None,
+        terms_accepted=terms_accepted,
         settings=GOOGLE_SETTINGS,
     )
 
@@ -243,6 +246,47 @@ async def test_callback_creates_passwordless_user_and_redirects_to_onboarding(
     assert user.display_name == "New User"
     rows = await _oauth_rows()
     assert [(r.provider, r.provider_id) for r in rows] == [("google", "sub-new")]
+    # The Terms acceptance carried from sign-up is recorded as consent.
+    async with async_session_factory() as session:
+        consent_rows = list(
+            (
+                await session.scalars(
+                    select(ConsentLog).where(ConsentLog.user_id == user.id)
+                )
+            ).all()
+        )
+    assert len(consent_rows) > 0
+
+
+@pytest.mark.asyncio
+async def test_callback_refuses_new_account_without_terms_acceptance(
+    client: AsyncClient,
+    google_configured: None,
+    migrated_database: None,
+    google_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new Google account cannot be created without accepting the Terms."""
+    _stub_google(
+        monkeypatch,
+        GoogleClaims(
+            sub="sub-noterms",
+            email="noterms@example.com",
+            email_verified=True,
+            name="No Terms",
+        ),
+    )
+    client.cookies.set(
+        OAUTH_STATE_COOKIE_NAME,
+        await _seed_state(google_context["redis"], terms_accepted=False),
+    )
+
+    response = await client.get(
+        "/v1/auth/google/callback?code=abc&state=known-state"
+    )
+
+    assert response.status_code == 400
+    assert await _user_by_email("noterms@example.com") is None
 
 
 @pytest.mark.asyncio

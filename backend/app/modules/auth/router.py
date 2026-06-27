@@ -97,6 +97,7 @@ def _safe_next_path(next_path: str | None) -> str | None:
 async def google_start(
     settings: AppSettings,
     next: str | None = None,
+    terms: bool = False,
 ) -> RedirectResponse:
     """Redirect the user to Google's consent screen.
 
@@ -108,6 +109,9 @@ async def google_start(
         settings: Application settings (provides Google client config).
         next: Optional in-app path to resume after sign-in; non-local values
             are dropped to prevent open redirects.
+        terms: Whether the user accepted the Terms before starting (set by the
+            sign-up entry point); sealed into state and required to create a new
+            account at the callback.
 
     Returns:
         A 302 redirect to Google's authorization endpoint.
@@ -140,6 +144,7 @@ async def google_start(
         state=state,
         verifier=pkce.verifier,
         next_path=_safe_next_path(next),
+        terms_accepted=terms,
         settings=settings,
     )
     logger.bind(module="auth", action="google_start").info("google_login_started")
@@ -270,6 +275,7 @@ async def google_callback(
         db=db,
         redis=redis,
         claims=claims,
+        terms_accepted=bool(payload.get("terms_accepted")),
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
     )
@@ -486,6 +492,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         kyc_status=current_user.kyc_status,
         deactivated_at=current_user.deactivated_at,
         is_superadmin=current_user.is_superadmin,
+        has_password=current_user.password_hash is not None,
     )
 
 

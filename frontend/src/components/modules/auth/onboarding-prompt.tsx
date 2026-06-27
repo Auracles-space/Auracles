@@ -7,6 +7,8 @@
  */
 import Link from "next/link";
 
+import { OnboardingRoleStep } from "./onboarding-role-step";
+
 const steps = [
   {
     body: "Your registered display name is the Phase 1 profile baseline. Expanded public profile fields arrive in the settings phase.",
@@ -39,6 +41,7 @@ export function OnboardingPrompt({ returnTo }: OnboardingPromptProps = {}) {
 
   return (
     <div className="space-y-6">
+      <OnboardingRoleStep />
       <div>
         <h2 className="font-heading text-xl font-semibold text-foreground">
           Account completion

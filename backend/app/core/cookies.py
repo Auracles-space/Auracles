@@ -118,19 +118,22 @@ def create_oauth_state_value(
     state: str,
     verifier: str,
     next_path: str | None,
+    terms_accepted: bool = False,
     settings: Settings | None = None,
 ) -> str:
     """Create a signed, HttpOnly OAuth state payload for CSRF + PKCE.
 
     Carries the CSRF ``state`` token, the PKCE ``verifier`` (needed to redeem the
-    authorization code at the callback), and the optional post-login ``next``
-    path. Signed with SECRET_KEY so a tampered value is rejected; HttpOnly so the
-    PKCE verifier is never readable by client JavaScript.
+    authorization code at the callback), the optional post-login ``next`` path,
+    and whether the user accepted the Terms at sign-up. Signed with SECRET_KEY so
+    a tampered value is rejected; HttpOnly so neither the PKCE verifier nor the
+    consent flag is readable or forgeable by client JavaScript.
 
     Args:
         state: CSRF state token also sent to Google.
         verifier: PKCE code verifier whose S256 challenge was sent to Google.
         next_path: Optional in-app path to resume after sign-in.
+        terms_accepted: Whether the user accepted the Terms before starting.
         settings: Application settings (defaults to the process settings).
 
     Returns:
@@ -142,6 +145,7 @@ def create_oauth_state_value(
         "state": state,
         "verifier": verifier,
         "next": next_path,
+        "terms_accepted": terms_accepted,
         "exp": int(expires_at.timestamp()),
     }
     encoded = _base64url_encode(
@@ -188,6 +192,7 @@ def set_oauth_state_cookie(
     state: str,
     verifier: str,
     next_path: str | None,
+    terms_accepted: bool = False,
     settings: Settings | None = None,
 ) -> None:
     """Attach the signed HttpOnly OAuth state cookie for the consent round trip."""
@@ -198,6 +203,7 @@ def set_oauth_state_cookie(
             state=state,
             verifier=verifier,
             next_path=next_path,
+            terms_accepted=terms_accepted,
             settings=resolved_settings,
         ),
         max_age=OAUTH_STATE_MAX_AGE_SECONDS,
