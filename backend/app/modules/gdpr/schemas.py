@@ -45,9 +45,14 @@ class DataExportRequestResponse(BaseModel):
 
 
 class AccountDeletionRequestBody(BaseModel):
-    """Request body for starting the GDPR account-deletion cooling-off flow."""
+    """Request body for starting the GDPR account-deletion cooling-off flow.
 
-    password: SecretStr
+    Password accounts confirm with their password; passwordless (e.g. Google)
+    accounts omit it and rely on the deletion grace period as the safety net.
+    TOTP still applies when the account has it enabled.
+    """
+
+    password: SecretStr | None = None
     totp_code: str | None = Field(default=None, min_length=6, max_length=16)
 
 

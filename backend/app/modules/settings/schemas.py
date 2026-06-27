@@ -60,12 +60,14 @@ class SessionsResponse(BaseModel):
 class EmailChangeRequest(BaseModel):
     """Request body for starting a verified account email change.
 
-    Email change always re-authenticates with the account password and, when the
-    account has 2FA enabled, additionally steps up with a TOTP/backup code.
+    Password accounts re-authenticate with the account password and, when 2FA is
+    enabled, step up with a TOTP/backup code. Passwordless (e.g. Google) accounts
+    omit the password; the new-address verification link is the proof of intent
+    and TOTP still applies when enabled.
     """
 
     new_email: EmailStr
-    password: SecretStr
+    password: SecretStr | None = None
     totp_code: str | None = Field(default=None, min_length=6, max_length=16)
 
 

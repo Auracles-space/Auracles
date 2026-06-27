@@ -114,14 +114,18 @@ async def _ensure_password_confirmation(
     user: User,
     payload: AccountDeletionRequestBody,
 ) -> None:
-    """Require password confirmation for current password-account users."""
+    """Re-authenticate before deletion using the factor the account has.
+
+    Password accounts confirm with their password. Passwordless (e.g. Google)
+    accounts have no password to verify; the deletion grace period is the safety
+    net, and TOTP (enforced downstream) still applies when enabled.
+    """
     password_hash = user.password_hash
     if password_hash is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Passwordless account deletion re-auth is not available yet.",
-        )
-    if not verify_password(payload.password.get_secret_value(), password_hash):
+        return
+    if payload.password is None or not verify_password(
+        payload.password.get_secret_value(), password_hash
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password.",

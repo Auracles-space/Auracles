@@ -272,6 +272,57 @@ async def test_reset_password_changes_password_consumes_token_and_revokes_sessio
     assert audit_log is not None
 
 
+async def test_reset_password_sets_password_on_passwordless_account(
+    client: AsyncClient,
+    migrated_database: None,
+    reset_test_context: dict[str, Any],
+) -> None:
+    """A passwordless (Google) account can set a password via the reset flow.
+
+    This is the recovery path: a Google-only user gains a second login method
+    without ever having had a prior password.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="google-recover@auracles.space",
+                password_hash=None,
+                display_name="Google Recover",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id, role="operator", approved_at=datetime.now(UTC)
+                )
+            )
+        user_id = user.id
+
+    await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "google-recover@auracles.space"},
+    )
+    token = reset_test_context["sent_emails"].reset_calls[0]["token"]
+
+    reset = await client.post(
+        "/v1/auth/reset-password",
+        json={"token": token, "new_password": "BrandNewPass9"},
+    )
+    new_login = await client.post(
+        "/v1/auth/login",
+        json={"email": "google-recover@auracles.space", "password": "BrandNewPass9"},
+    )
+
+    async with async_session_factory() as session:
+        user_after = await session.scalar(select(User).where(User.id == user_id))
+
+    assert reset.status_code == 200
+    assert new_login.status_code == 200
+    assert user_after is not None
+    assert user_after.password_hash is not None
+
+
 async def test_forgot_password_rate_limits_email_and_reset_rejects_weak_password(
     client: AsyncClient,
     migrated_database: None,
