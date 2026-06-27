@@ -224,3 +224,95 @@ async def test_me_requires_authentication(
     response = await client.get("/v1/profiles/me")
 
     assert response.status_code == 401
+
+
+async def test_owner_updates_editable_profile_fields(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """The owner edits headline/bio/location/website via PATCH /profiles/me.
+
+    The update response and a subsequent public read both reflect the change.
+    """
+    user_id = await create_user(
+        "profile-edit@auracles.space",
+        ["contributor"],
+        display_name="Editor User",
+    )
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={
+            "headline": "Compliance frameworks for fintech",
+            "bio": "Updated bio.",
+            "location": "Abuja, NG",
+            "website": "https://editor.example",
+        },
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["headline"] == "Compliance frameworks for fintech"
+    assert body["bio"] == "Updated bio."
+    assert body["location"] == "Abuja, NG"
+    assert body["website"] == "https://editor.example"
+
+    public = await client.get(f"/v1/profiles/{user_id}")
+    assert public.json()["headline"] == "Compliance frameworks for fintech"
+
+
+async def test_profile_update_only_changes_provided_fields(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A partial PATCH leaves omitted fields untouched."""
+    user_id = await create_user(
+        "profile-partial@auracles.space",
+        ["operator"],
+        bio="Keep me.",
+    )
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"headline": "Only headline set"},
+        headers=auth_headers(user_id, ["operator"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["headline"] == "Only headline set"
+    assert body["bio"] == "Keep me."
+
+
+async def test_profile_update_requires_authentication(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """Editing the profile without a token is rejected with 401."""
+    response = await client.patch("/v1/profiles/me", json={"headline": "x"})
+
+    assert response.status_code == 401
+
+
+async def test_profile_update_rejects_unsafe_website_scheme(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A non-http(s) website URL is rejected at the write boundary with 422."""
+    user_id = await create_user(
+        "profile-badurl@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.patch(
+        "/v1/profiles/me",
+        json={"website": "javascript:alert(1)"},
+        headers=auth_headers(user_id, ["contributor"]),
+    )
+
+    assert response.status_code == 422

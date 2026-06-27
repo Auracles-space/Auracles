@@ -75,6 +75,7 @@ class User(UpdatedAtMixin, Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    headline: Mapped[str | None] = mapped_column(String(160), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -16,7 +16,10 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.profiles import service
-from app.modules.profiles.schemas import PublicProfileResponse
+from app.modules.profiles.schemas import (
+    ProfileUpdateRequest,
+    PublicProfileResponse,
+)
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -38,6 +41,24 @@ async def get_my_profile(
 ) -> PublicProfileResponse:
     """Return the authenticated owner's own profile."""
     return await service.get_own_profile(db, user=current_user)
+
+
+@router.patch(
+    "/me",
+    response_model=PublicProfileResponse,
+    summary="Update my profile",
+    description=(
+        "Update the authenticated user's editable profile fields (headline, "
+        "bio, location, website). Partial update: omitted fields are unchanged."
+    ),
+)
+async def update_my_profile(
+    payload: ProfileUpdateRequest,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> PublicProfileResponse:
+    """Apply the owner's partial profile edit."""
+    return await service.update_profile(db, user=current_user, payload=payload)
 
 
 @router.get(

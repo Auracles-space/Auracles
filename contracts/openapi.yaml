@@ -6348,6 +6348,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Profiles
+      summary: Update my profile
+      description: 'Update the authenticated user''s editable profile fields (headline,
+        bio, location, website). Partial update: omitted fields are unchanged.'
+      operationId: update_my_profile_v1_profiles_me_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/profiles/{user_id}:
     get:
       tags:
@@ -16305,6 +16344,42 @@ components:
       - license_types
       title: PricingConfig
       description: Framework pricing and licensing options configured by a Contributor.
+    ProfileUpdateRequest:
+      properties:
+        headline:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Headline
+        bio:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Bio
+        location:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Location
+        website:
+          anyOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+          title: Website
+      type: object
+      title: ProfileUpdateRequest
+      description: "Owner-editable profile fields for PATCH /profiles/me.\n\nAll fields\
+        \ optional: only those present in the request are updated, so a\npartial PATCH\
+        \ never clears omitted fields. The website scheme is validated\nhere at the\
+        \ write boundary so an unsafe URL is rejected before storage,\nrather than\
+        \ silently nulled on read.\n\nAttributes:\n    headline: Short professional\
+        \ headline (<=160 chars).\n    bio: Free-text bio (<=2000 chars).\n    location:\
+        \ Free-text location (<=100 chars).\n    website: Personal/site URL; must\
+        \ use http or https."
     ProjectCreateRequest:
       properties:
         title:
@@ -16732,6 +16807,11 @@ components:
           - type: string
           - type: 'null'
           title: Avatar Url
+        headline:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Headline
         bio:
           anyOf:
           - type: string
@@ -16775,14 +16855,14 @@ components:
         \ allowed to see are present; the body is assembled field-by-field\nin the\
         \ service, never serialised straight from the ORM user.\n\nAttributes:\n \
         \   id: The profile owner's user id.\n    display_name: Public display name.\n\
-        \    avatar_url: Public avatar URL, or None.\n    bio: Free-text bio, or None.\n\
-        \    location: Free-text location, or None.\n    website: Personal/site URL,\
-        \ validated to a safe web scheme, or None.\n    roles: Public role badges\
-        \ (e.g. contributor, operator, attestor).\n    kyc_verified: Whether the user\
-        \ has completed identity verification.\n    is_deactivated: Whether the account\
-        \ is self-deactivated.\n    is_limited: Whether discretionary content is withheld\
-        \ (suspended\n        account). Safe identity stays visible; bio/location/website\
-        \ are\n        nulled."
+        \    avatar_url: Public avatar URL, or None.\n    headline: Short professional\
+        \ headline, or None.\n    bio: Free-text bio, or None.\n    location: Free-text\
+        \ location, or None.\n    website: Personal/site URL, validated to a safe\
+        \ web scheme, or None.\n    roles: Public role badges (e.g. contributor, operator,\
+        \ attestor).\n    kyc_verified: Whether the user has completed identity verification.\n\
+        \    is_deactivated: Whether the account is self-deactivated.\n    is_limited:\
+        \ Whether discretionary content is withheld (suspended\n        account).\
+        \ Safe identity stays visible; bio/location/website are\n        nulled."
     PurchaseHistoryItem:
       properties:
         transaction_id:

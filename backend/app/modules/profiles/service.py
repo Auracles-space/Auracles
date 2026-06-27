@@ -16,7 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import User, UserRole
-from app.modules.profiles.schemas import PublicProfileResponse
+from app.modules.profiles.schemas import (
+    ProfileUpdateRequest,
+    PublicProfileResponse,
+)
 
 
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
@@ -96,6 +99,7 @@ async def get_public_profile(
         id=user.id,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        headline=None if is_limited else user.headline,
         bio=None if is_limited else user.bio,
         location=None if is_limited else user.location,
         website=None if is_limited else _safe_public_url(user.website),
@@ -129,6 +133,7 @@ async def get_own_profile(
         id=user.id,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        headline=user.headline,
         bio=user.bio,
         location=user.location,
         website=_safe_public_url(user.website),
@@ -137,3 +142,30 @@ async def get_own_profile(
         is_deactivated=user.deactivated_at is not None,
         is_limited=user.suspended_at is not None,
     )
+
+
+async def update_profile(
+    db: AsyncSession,
+    *,
+    user: User,
+    payload: ProfileUpdateRequest,
+) -> PublicProfileResponse:
+    """Apply an owner's partial profile edit and return the updated profile.
+
+    Only fields present in the request are written, so omitted fields are left
+    untouched. The website scheme was already validated on the schema, so any
+    stored value is safe.
+
+    Args:
+        db: Async session for the update.
+        user: The authenticated profile owner.
+        payload: The validated partial update.
+
+    Returns:
+        The owner's profile after the update.
+    """
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        setattr(user, field, value)
+    await db.commit()
+    return await get_own_profile(db, user=user)
