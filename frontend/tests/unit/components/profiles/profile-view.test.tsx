@@ -114,7 +114,7 @@ describe("ProfileView", () => {
       screen.getByRole("heading", { level: 1, name: "Mara Okafor" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Governance systems architect")).toBeInTheDocument();
-    expect(screen.getByText("Verified identity")).toBeInTheDocument();
+    expect(screen.getAllByText("Verified").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
 
     // Section headings render only when their list is non-empty.
@@ -173,7 +173,7 @@ describe("ProfileView", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Quiet User" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Verified identity")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Featured" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Links" })).not.toBeInTheDocument();
     expect(

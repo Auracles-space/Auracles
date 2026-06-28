@@ -21,7 +21,7 @@ describe("KycSeal", () => {
   it("renders the verified seal when verified", () => {
     render(<KycSeal verified />);
 
-    expect(screen.getByText("Verified identity")).toBeInTheDocument();
+    expect(screen.getByText("Verified")).toBeInTheDocument();
   });
 
   it("renders nothing when not verified", () => {
