@@ -119,6 +119,7 @@ def create_oauth_state_value(
     verifier: str,
     next_path: str | None,
     terms_accepted: bool = False,
+    redirect_uri: str | None = None,
     settings: Settings | None = None,
 ) -> str:
     """Create a signed, HttpOnly OAuth state payload for CSRF + PKCE.
@@ -146,6 +147,7 @@ def create_oauth_state_value(
         "verifier": verifier,
         "next": next_path,
         "terms_accepted": terms_accepted,
+        "redirect_uri": redirect_uri,
         "exp": int(expires_at.timestamp()),
     }
     encoded = _base64url_encode(
@@ -193,6 +195,7 @@ def set_oauth_state_cookie(
     verifier: str,
     next_path: str | None,
     terms_accepted: bool = False,
+    redirect_uri: str | None = None,
     settings: Settings | None = None,
 ) -> None:
     """Attach the signed HttpOnly OAuth state cookie for the consent round trip."""
@@ -204,6 +207,7 @@ def set_oauth_state_cookie(
             verifier=verifier,
             next_path=next_path,
             terms_accepted=terms_accepted,
+            redirect_uri=redirect_uri,
             settings=resolved_settings,
         ),
         max_age=OAUTH_STATE_MAX_AGE_SECONDS,

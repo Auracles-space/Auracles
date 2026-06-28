@@ -2,7 +2,7 @@
 
 import secrets
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -85,6 +85,54 @@ def _safe_next_path(next_path: str | None) -> str | None:
     return next_path
 
 
+GOOGLE_CALLBACK_PATH_FALLBACK = "/api/v1/auth/google/callback"
+
+
+def _callback_path(settings: Settings) -> str:
+    """Return the callback path appended to a frontend origin (from config)."""
+    if settings.google_redirect_uri:
+        path = urlsplit(settings.google_redirect_uri).path
+        if path:
+            return path
+    return GOOGLE_CALLBACK_PATH_FALLBACK
+
+
+def _request_frontend_origin(request: Request) -> str | None:
+    """Best-effort origin of the frontend that initiated the request.
+
+    Top-level GET navigations usually omit Origin but send Referer; behind the
+    Vercel `/api` proxy the original host also arrives as x-forwarded-host.
+    """
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        parts = urlsplit(referer)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_host:
+        proto = request.headers.get("x-forwarded-proto", "https")
+        return f"{proto}://{forwarded_host}"
+    return None
+
+
+def _resolve_redirect_uri(request: Request, settings: Settings) -> str:
+    """Resolve the callback URL for the frontend this request came from.
+
+    One backend can serve several frontends (prod + dev/preview). We pick the
+    callback on the originating frontend — but only if that origin is in the
+    CORS allowlist, so an attacker cannot steer the OAuth callback to an
+    arbitrary host. Falls back to the configured GOOGLE_REDIRECT_URI.
+    """
+    allowed = {origin.rstrip("/") for origin in settings.cors_origin_list}
+    origin = _request_frontend_origin(request)
+    if origin and origin in allowed:
+        return f"{origin}{_callback_path(settings)}"
+    return settings.google_redirect_uri or ""
+
+
 @router.get(
     "/google/start",
     summary="Begin Google sign-in",
@@ -95,6 +143,7 @@ def _safe_next_path(next_path: str | None) -> str | None:
     ),
 )
 async def google_start(
+    request: Request,
     settings: AppSettings,
     next: str | None = None,
     terms: bool = False,
@@ -121,10 +170,12 @@ async def google_start(
     """
     pkce = generate_pkce_pair()
     state = generate_state()
+    redirect_uri = _resolve_redirect_uri(request, settings)
     try:
         authorization_url = build_authorization_url(
             state=state,
             code_challenge=pkce.challenge,
+            redirect_uri=redirect_uri,
             settings=settings,
         )
     except GoogleOAuthError:
@@ -145,6 +196,7 @@ async def google_start(
         verifier=pkce.verifier,
         next_path=_safe_next_path(next),
         terms_accepted=terms,
+        redirect_uri=redirect_uri,
         settings=settings,
     )
     logger.bind(module="auth", action="google_start").info("google_login_started")
@@ -162,8 +214,20 @@ def _set_session_hint_from_access_token(response: Response, access_token: str) -
     )
 
 
-def _frontend_base_url(settings: Settings) -> str:
-    """Return the frontend origin used to build post-login redirects."""
+def _frontend_base_url(settings: Settings, redirect_uri: str | None = None) -> str:
+    """Return the frontend origin used to build post-login redirects.
+
+    Derived from the callback's own origin — the exact frontend Google returned
+    the user to (sealed in state) — so a single backend serving multiple
+    frontends (prod + dev/preview) sends each user back to the origin they signed
+    in from. Falls back to the configured GOOGLE_REDIRECT_URI, then CORS, then
+    localhost.
+    """
+    candidate = redirect_uri or settings.google_redirect_uri
+    if candidate:
+        parts = urlsplit(candidate)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
     origins = settings.cors_origin_list
     return origins[0] if origins else "http://localhost:3000"
 
@@ -193,6 +257,7 @@ def _google_redirect_target(
     needs_onboarding: bool,
     roles: list[str],
     next_path: object,
+    redirect_uri: str | None = None,
 ) -> str:
     """Resolve where to send the browser after a successful Google sign-in.
 
@@ -200,7 +265,7 @@ def _google_redirect_target(
     ``next`` path, falling back to the user's role landing (never the public
     home, which would render a logged-out header).
     """
-    base = _frontend_base_url(settings)
+    base = _frontend_base_url(settings, redirect_uri)
     if needs_onboarding:
         return f"{base}/settings/onboarding"
     safe_next = _safe_next_path(next_path if isinstance(next_path, str) else None)
@@ -276,10 +341,16 @@ async def google_callback(
             detail="Google sign-in was not completed.",
         )
 
+    # The token exchange must reuse the exact redirect_uri from authorization.
+    sealed_redirect = payload.get("redirect_uri")
+    redirect_uri = (
+        str(sealed_redirect) if isinstance(sealed_redirect, str) else None
+    )
     try:
         tokens = await exchange_code(
             code=code,
             code_verifier=str(payload.get("verifier", "")),
+            redirect_uri=redirect_uri,
             settings=settings,
         )
         jwks = await fetch_google_jwks(settings=settings)
@@ -292,9 +363,9 @@ async def google_callback(
             error=str(exc),
             cause=str(exc.__cause__) if exc.__cause__ else None,
         )
-        # DEBUG(local-only): expose the underlying reason to diagnose setup.
+        # DEBUG(non-prod): expose the underlying reason to diagnose setup.
         detail = "Could not complete Google sign-in."
-        if settings.environment == "local":
+        if settings.environment != "production":
             detail = f"{detail} [{exc}]"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -320,7 +391,8 @@ async def google_callback(
         if next_path:
             params["next"] = next_path
         challenge_url = (
-            f"{_frontend_base_url(settings)}/2fa-challenge?{urlencode(params)}"
+            f"{_frontend_base_url(settings, redirect_uri)}"
+            f"/2fa-challenge?{urlencode(params)}"
         )
         response = RedirectResponse(
             url=challenge_url, status_code=status.HTTP_302_FOUND
@@ -331,7 +403,11 @@ async def google_callback(
     assert result.access_token is not None and result.refresh_token is not None
     response = RedirectResponse(
         url=_google_redirect_target(
-            settings, result.needs_onboarding, result.roles, next_path
+            settings,
+            result.needs_onboarding,
+            result.roles,
+            next_path,
+            redirect_uri,
         ),
         status_code=status.HTTP_302_FOUND,
     )

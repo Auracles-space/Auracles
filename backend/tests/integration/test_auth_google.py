@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, delete, select
 
 from app.core.config import Settings, get_settings
@@ -146,6 +146,42 @@ async def test_start_redirects_to_google_with_state_cookie(
     # The PKCE verifier is sealed in the HttpOnly cookie, never in the URL.
     assert isinstance(payload["verifier"], str) and payload["verifier"]
     assert str(payload["verifier"]) not in location
+
+
+@pytest.mark.asyncio
+async def test_start_uses_originating_frontend_for_redirect_uri() -> None:
+    """With several allowed frontends, /start uses the origin the user came from."""
+    multi = Settings(
+        GOOGLE_CLIENT_ID="client-abc.apps.googleusercontent.com",
+        GOOGLE_CLIENT_SECRET="gclient_secret",
+        GOOGLE_REDIRECT_URI="https://www.auracles.space/api/v1/auth/google/callback",
+        CORS_ALLOWED_ORIGINS=(
+            "https://www.auracles.space,https://dev-auracles.vercel.app"
+        ),
+    )
+    app.dependency_overrides[get_settings] = lambda: multi
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as scoped:
+            response = await scoped.get(
+                "/v1/auth/google/start",
+                headers={"referer": "https://dev-auracles.vercel.app/login"},
+            )
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+    location = response.headers["location"]
+    payload = read_oauth_state_value(
+        response.cookies.get(OAUTH_STATE_COOKIE_NAME), settings=multi
+    )
+    assert payload is not None
+    # The dev frontend's callback is chosen, not the configured prod default.
+    assert (
+        payload["redirect_uri"]
+        == "https://dev-auracles.vercel.app/api/v1/auth/google/callback"
+    )
+    assert "dev-auracles.vercel.app" in location
 
 
 @pytest.mark.asyncio

@@ -85,6 +85,7 @@ def generate_state() -> str:
 def build_authorization_url(
     state: str,
     code_challenge: str,
+    redirect_uri: str | None = None,
     settings: Settings | None = None,
 ) -> str:
     """Build the Google consent URL for the authorization-code flow.
@@ -92,6 +93,8 @@ def build_authorization_url(
     Args:
         state: Opaque CSRF token echoed back to the callback for verification.
         code_challenge: S256 PKCE challenge derived from the stored verifier.
+        redirect_uri: Per-request callback URL (one backend may serve several
+            frontends); falls back to the configured GOOGLE_REDIRECT_URI.
         settings: Application settings (defaults to the process settings).
 
     Returns:
@@ -101,12 +104,13 @@ def build_authorization_url(
         GoogleOAuthError: If Google client id or redirect URI are not configured.
     """
     resolved = settings or get_settings()
-    if not resolved.google_client_id or not resolved.google_redirect_uri:
+    effective_redirect_uri = redirect_uri or resolved.google_redirect_uri
+    if not resolved.google_client_id or not effective_redirect_uri:
         raise GoogleOAuthError("Google OAuth is not configured.")
 
     params = {
         "client_id": resolved.google_client_id,
-        "redirect_uri": resolved.google_redirect_uri,
+        "redirect_uri": effective_redirect_uri,
         "response_type": "code",
         "scope": " ".join(GOOGLE_OAUTH_SCOPES),
         "state": state,
@@ -122,6 +126,7 @@ def build_authorization_url(
 async def exchange_code(
     code: str,
     code_verifier: str,
+    redirect_uri: str | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Exchange an authorization code for tokens, server-side, with PKCE.
@@ -129,6 +134,8 @@ async def exchange_code(
     Args:
         code: The authorization code returned by Google to the callback.
         code_verifier: The PKCE verifier sealed in the state cookie.
+        redirect_uri: The same callback URL used at authorization (OAuth requires
+            it to match); falls back to the configured GOOGLE_REDIRECT_URI.
         settings: Application settings (provides Google client config).
 
     Returns:
@@ -139,10 +146,11 @@ async def exchange_code(
             Google returns a non-2xx response.
     """
     resolved = settings or get_settings()
+    effective_redirect_uri = redirect_uri or resolved.google_redirect_uri
     if (
         not resolved.google_client_id
         or not resolved.google_client_secret
-        or not resolved.google_redirect_uri
+        or not effective_redirect_uri
     ):
         raise GoogleOAuthError("Google OAuth is not configured.")
 
@@ -152,7 +160,7 @@ async def exchange_code(
         "code_verifier": code_verifier,
         "client_id": resolved.google_client_id,
         "client_secret": resolved.google_client_secret.get_secret_value(),
-        "redirect_uri": resolved.google_redirect_uri,
+        "redirect_uri": effective_redirect_uri,
     }
     try:
         async with httpx.AsyncClient(timeout=_GOOGLE_TIMEOUT_SECONDS) as http_client:
