@@ -14,6 +14,10 @@ vi.mock("@/components/ui/theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@/lib/auth/server-session", () => ({
+  getVerifiedSessionHintFromCookies: vi.fn().mockResolvedValue(null),
+}));
+
 describe("landing sections render", () => {
   it("renders the hero with its headline copy", () => {
     render(<LandingHero />);
@@ -52,8 +56,8 @@ describe("landing sections render", () => {
     expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
   });
 
-  it("renders the marketing nav with navigation links", () => {
-    render(<MarketingNav />);
+  it("renders the marketing nav with navigation links", async () => {
+    render(await MarketingNav());
     expect(screen.getByRole("navigation")).toBeInTheDocument();
   });
 });

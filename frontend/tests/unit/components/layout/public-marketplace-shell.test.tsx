@@ -7,12 +7,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock("@/lib/auth/server-session", () => ({
+  getVerifiedSessionHintFromCookies: vi.fn().mockResolvedValue(null),
+}));
+
 describe("PublicMarketplaceShell", () => {
-  it("keeps public marketplace pages connected to Auracles navigation", () => {
+  it("keeps public marketplace pages connected to Auracles navigation", async () => {
     render(
-      <PublicMarketplaceShell>
-        <h1>Explore frameworks</h1>
-      </PublicMarketplaceShell>,
+      await PublicMarketplaceShell({ children: <h1>Explore frameworks</h1> }),
     );
 
     expect(
