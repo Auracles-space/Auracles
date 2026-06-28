@@ -53,6 +53,10 @@ const fullProfile: PublicProfileResponse = {
     { label: "Portfolio", url: "https://maraokafor.example/work" },
     { label: "Unsafe", url: "javascript:alert(1)" },
   ],
+  social_links: [
+    { platform: "github", url: "https://github.com/mara" },
+    { platform: "x", url: "javascript:alert(1)" },
+  ],
   featured: [
     { framework_id: framework.id, framework },
     {
@@ -136,6 +140,15 @@ describe("ProfileView", () => {
     );
     // The javascript: link is dropped, so no link is rendered for it.
     expect(screen.queryByText("Unsafe")).not.toBeInTheDocument();
+  });
+
+  it("renders social icons for safe links and drops unsafe schemes", () => {
+    render(<ProfileView profile={fullProfile} />);
+
+    const github = screen.getByRole("link", { name: "GitHub" });
+    expect(github).toHaveAttribute("href", "https://github.com/mara");
+    // The javascript: X link is dropped, so no X social link is rendered.
+    expect(screen.queryByRole("link", { name: "X" })).not.toBeInTheDocument();
   });
 
   it("renders a passed Framework as its live card alongside free-form spotlights", () => {

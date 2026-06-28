@@ -69,9 +69,21 @@ export function FeaturedEditor({
         );
         return (
           <div
-            className="space-y-3 rounded-xl border border-border-default bg-surface-2/40 p-4"
+            className="group relative space-y-3 rounded-xl border border-border-default bg-surface-2/40 p-4 pt-10"
             key={index}
           >
+            <button
+              aria-label="Remove featured item"
+              className="absolute right-3 top-3 text-foreground-muted hover:text-error transition-colors"
+              onClick={() => onChange(value.filter((_, i) => i !== index))}
+              title="Remove featured item"
+              type="button"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+
             {frameworks.length > 0 ? (
               <div className="space-y-1">
                 <span className={LABEL_CLASS}>Pin a framework</span>
@@ -132,13 +144,6 @@ export function FeaturedEditor({
                 Showing this framework&apos;s live card.
               </p>
             )}
-
-            <Button
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
-              variant="secondary"
-            >
-              Remove
-            </Button>
           </div>
         );
       })}

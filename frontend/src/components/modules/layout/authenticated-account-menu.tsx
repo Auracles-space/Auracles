@@ -99,6 +99,17 @@ export function AuthenticatedAccountMenu({
     };
   }, []);
 
+  useEffect(() => {
+    function handleAvatarUpdated(e: Event) {
+      const customEvent = e as CustomEvent<string>;
+      setCurrentUser((prev) => (prev ? { ...prev, avatar_url: customEvent.detail } : prev));
+    }
+    window.addEventListener("auracles-avatar-updated", handleAvatarUpdated);
+    return () => {
+      window.removeEventListener("auracles-avatar-updated", handleAvatarUpdated);
+    };
+  }, []);
+
   const roleLabels = useMemo(
     () => roles.map((role) => formatRoleLabel(role)),
     [roles],

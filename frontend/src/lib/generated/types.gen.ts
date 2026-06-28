@@ -2620,6 +2620,7 @@ export type ProfileUpdateRequest = {
     website?: (string | null);
     specializations?: (Array<(string)> | null);
     links?: (Array<ProfileLink> | null);
+    social_links?: (Array<SocialLink> | null);
     featured?: (Array<ProfileFeaturedInput> | null);
     experience?: (Array<ProfileExperience> | null);
     education?: (Array<ProfileEducation> | null);
@@ -2777,6 +2778,7 @@ export type PublicProfileResponse = {
     website?: (string | null);
     specializations?: Array<(string)>;
     links?: Array<ProfileLink>;
+    social_links?: Array<SocialLink>;
     featured?: Array<ProfileFeatured>;
     experience?: Array<ProfileExperience>;
     education?: Array<ProfileEducation>;
@@ -2993,6 +2995,20 @@ export type SimilarityNotice = {
 export type SimilarityNoticeAcknowledgementRequest = {
     differentiation_note: string;
 };
+
+/**
+ * A single typed social profile link.
+ *
+ * Attributes:
+ * platform: One of the allow-listed social platforms.
+ * url: Destination URL on that platform; must use http or https.
+ */
+export type SocialLink = {
+    platform: 'x' | 'linkedin' | 'github' | 'youtube' | 'instagram' | 'facebook' | 'tiktok';
+    url: string;
+};
+
+export type platform = 'x' | 'linkedin' | 'github' | 'youtube' | 'instagram' | 'facebook' | 'tiktok';
 
 /**
  * One-time response carrying a freshly generated set of backup codes.

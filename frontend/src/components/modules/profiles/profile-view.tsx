@@ -22,6 +22,7 @@ import {
   KycSeal,
   RoleBadge,
 } from "@/components/modules/profiles/profile-badges";
+import { SOCIAL_PLATFORM_MAP } from "@/components/modules/profiles/social-platforms";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { RatingStars } from "@/components/modules/reputation/rating-stars";
 import type {
@@ -76,6 +77,7 @@ export function ProfileView({
   const credentials = profile.verified_credentials ?? [];
   const specializations = profile.specializations ?? [];
   const links = profile.links ?? [];
+  const socialLinks = profile.social_links ?? [];
   const experience = profile.experience ?? [];
   const education = profile.education ?? [];
   const featured = profile.featured ?? [];
@@ -200,6 +202,33 @@ export function ProfileView({
                     {item}
                   </li>
                 ))}
+              </ul>
+            ) : null}
+
+            {socialLinks.length > 0 ? (
+              <ul className="mt-5 flex flex-wrap items-center gap-2">
+                {socialLinks.map((social) => {
+                  const meta = SOCIAL_PLATFORM_MAP[social.platform];
+                  const href = safeHref(social.url);
+                  if (!meta || !href) {
+                    return null;
+                  }
+                  const Icon = meta.Icon;
+                  return (
+                    <li key={social.platform}>
+                      <a
+                        aria-label={meta.label}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted transition-colors hover:border-accent/30 hover:bg-surface-2 hover:text-accent"
+                        href={href}
+                        rel="noreferrer noopener"
+                        target="_blank"
+                        title={meta.label}
+                      >
+                        <Icon className="h-5 w-5" />
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </div>

@@ -10,6 +10,7 @@
  *
  * Maps to: FR-SET-001/002.
  */
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AvatarUploader } from "@/components/modules/profiles/avatar-uploader";
@@ -19,6 +20,7 @@ import {
   ExperienceEditor,
 } from "@/components/modules/profiles/cv-sections-editor";
 import { FeaturedEditor } from "@/components/modules/profiles/featured-editor";
+import { SocialLinksEditor } from "@/components/modules/profiles/social-links-editor";
 import { Button } from "@/components/ui/button";
 import {
   configureBrowserClient,
@@ -35,6 +37,7 @@ import type {
   ProfileFeatured,
   ProfileLink,
   PublicProfileResponse,
+  SocialLink,
 } from "@/lib/generated/types.gen";
 
 const FIELD_CLASS =
@@ -65,6 +68,7 @@ export function ProfileEditor({
   onCancel,
   frameworkOptions = [],
 }: ProfileEditorProps = {}) {
+  const router = useRouter();
   const [profile, setProfile] = useState<PublicProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,6 +82,7 @@ export function ProfileEditor({
   const [specializations, setSpecializations] = useState<string[]>([]);
   const [specInput, setSpecInput] = useState("");
   const [links, setLinks] = useState<ProfileLink[]>([]);
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [experience, setExperience] = useState<ProfileExperience[]>([]);
   const [education, setEducation] = useState<ProfileEducation[]>([]);
   const [featured, setFeatured] = useState<ProfileFeatured[]>([]);
@@ -95,6 +100,7 @@ export function ProfileEditor({
     setWebsite(data.website ?? "");
     setSpecializations(data.specializations ?? []);
     setLinks(data.links ?? []);
+    setSocialLinks(data.social_links ?? []);
     setExperience(data.experience ?? []);
     setEducation(data.education ?? []);
     setFeatured(data.featured ?? []);
@@ -142,46 +148,147 @@ export function ProfileEditor({
     setSpecInput("");
   }
 
+  const currentBody = {
+    headline: headline.trim() || null,
+    bio: bio.trim() || null,
+    location: location.trim() || null,
+    website: website.trim()
+      ? /^https?:\/\//i.test(website.trim())
+        ? website.trim()
+        : "https://" + website.trim()
+      : null,
+    specializations: [...specializations].sort(),
+    links: links
+      .filter((link) => link.label.trim() && link.url.trim())
+      .map((link) => {
+        let url = link.url.trim();
+        if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+        return { label: link.label.trim(), url };
+      }),
+    social_links: socialLinks
+      .filter((link) => link.url.trim())
+      .map((link) => {
+        let url = link.url.trim();
+        if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+        return { platform: link.platform, url };
+      }),
+    featured: featured
+      .filter((item) => item.framework_id || item.title?.trim())
+      .map((item) => ({
+        framework_id: item.framework_id ?? null,
+        title: item.framework_id ? null : item.title?.trim() || null,
+        description: item.description?.trim() || null,
+        url: item.framework_id ? null : item.url?.trim() || null,
+      })),
+    experience: experience
+      .filter((item) => item.title.trim() && item.company.trim())
+      .map((item) => ({
+        title: item.title.trim(),
+        company: item.company.trim(),
+        start: item.start?.trim() || null,
+        end: item.end?.trim() || null,
+        current: item.current ?? false,
+        description: item.description?.trim() || null,
+      })),
+    education: education
+      .filter((item) => item.school.trim())
+      .map((item) => ({
+        school: item.school.trim(),
+        degree: item.degree?.trim() || null,
+        field: item.field?.trim() || null,
+        start_year: item.start_year || null,
+        end_year: item.end_year || null,
+      })),
+  };
+
+  const initialBody = profile
+    ? {
+        headline: profile.headline?.trim() || null,
+        bio: profile.bio?.trim() || null,
+        location: profile.location?.trim() || null,
+        website: profile.website?.trim() || null,
+        specializations: [...(profile.specializations ?? [])].sort(),
+        links: (profile.links ?? []).map((l) => ({
+          label: l.label.trim(),
+          url: l.url.trim(),
+        })),
+        social_links: (profile.social_links ?? []).map((l) => ({
+          platform: l.platform,
+          url: l.url.trim(),
+        })),
+        featured: (profile.featured ?? []).map((item) => ({
+          framework_id: item.framework_id ?? null,
+          title: item.framework_id ? null : item.title?.trim() || null,
+          description: item.description?.trim() || null,
+          url: item.framework_id ? null : item.url?.trim() || null,
+        })),
+        experience: (profile.experience ?? []).map((item) => ({
+          title: item.title.trim(),
+          company: item.company.trim(),
+          start: item.start?.trim() || null,
+          end: item.end?.trim() || null,
+          current: item.current ?? false,
+          description: item.description?.trim() || null,
+        })),
+        education: (profile.education ?? []).map((item) => ({
+          school: item.school.trim(),
+          degree: item.degree?.trim() || null,
+          field: item.field?.trim() || null,
+          start_year: item.start_year || null,
+          end_year: item.end_year || null,
+        })),
+      }
+    : null;
+
+  const hasChanges = initialBody
+    ? JSON.stringify(currentBody) !== JSON.stringify(initialBody)
+    : false;
+
+  const isValidUrl = (url: string) => {
+    if (!url.trim()) return true;
+    let testUrl = url.trim();
+    if (!/^https?:\/\//i.test(testUrl)) testUrl = "https://" + testUrl;
+    try {
+      const parsed = new URL(testUrl);
+      return /\.[a-z]{2,}/i.test(parsed.hostname);
+    } catch {
+      return false;
+    }
+  };
+
+  const hasInvalidWebsite = website.trim() ? !isValidUrl(website) : false;
+
+  const hasInvalidLinks = links.some(
+    (link) => (link.label.trim() && !link.url.trim()) || (!link.label.trim() && link.url.trim()) || (link.url.trim() && !isValidUrl(link.url))
+  );
+  
+  const hasInvalidSocialLinks = socialLinks.some(
+    (link) => link.url.trim() && !isValidUrl(link.url)
+  );
+
+  const hasInvalidExperience = experience.some(
+    (item) => (item.title.trim() && !item.company.trim()) || (!item.title.trim() && item.company.trim())
+  );
+  
+  const hasValidationErrors = hasInvalidWebsite || hasInvalidLinks || hasInvalidSocialLinks || hasInvalidExperience;
+  const canSave = hasChanges && !hasValidationErrors;
+
   /**
    * Persist the edited profile.
    */
   async function save(): Promise<void> {
+    if (!canSave) return;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
       configureBrowserClient();
       const result = await updateMyProfileV1ProfilesMePatch({
-        body: {
-          headline: headline.trim() || null,
-          bio: bio.trim() || null,
-          location: location.trim() || null,
-          website: website.trim() || null,
-          specializations,
-          links: links.filter((link) => link.label.trim() && link.url.trim()),
-          featured: featured
-            .filter((item) => item.framework_id || item.title?.trim())
-            .map((item) => ({
-              framework_id: item.framework_id ?? null,
-              title: item.framework_id ? null : item.title?.trim() || null,
-              description: item.description?.trim() || null,
-              url: item.framework_id ? null : item.url?.trim() || null,
-            })),
-          experience: experience.filter(
-            (item) => item.title.trim() && item.company.trim(),
-          ),
-          education: education.filter((item) => item.school.trim()),
-        },
+        body: currentBody,
         headers: getAccessTokenHeaders(),
       });
       if (result.data) {
-        hydrate(result.data);
-        if (onSaved) {
-          onSaved(result.data);
-          // Return early to preserve the saving state (spinner) while Next.js navigates
-          return;
-        }
-        setMessage("Profile saved.");
+        router.push("/profile/me");
       } else {
         setError(describeGeneratedError(result.error));
       }
@@ -225,9 +332,10 @@ export function ProfileEditor({
             <AvatarUploader
               avatarUrl={profile.avatar_url ?? null}
               displayName={profile.display_name}
-              onUploaded={(url) =>
-                setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev))
-              }
+              onUploaded={(url) => {
+                setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+                window.dispatchEvent(new CustomEvent("auracles-avatar-updated", { detail: url }));
+              }}
             />
           </div>
         </div>
@@ -413,6 +521,19 @@ export function ProfileEditor({
         </div>
       </section>
 
+      {/* Social Profiles Section */}
+      <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-4 shadow-sm">
+        <div className="border-b border-border-default pb-3">
+          <h2 className="font-heading text-lg font-bold text-foreground">
+            Social profiles
+          </h2>
+          <p className="mt-1 text-sm text-foreground-muted">
+            Add your handles. Leave a field blank to hide that platform.
+          </p>
+        </div>
+        <SocialLinksEditor onChange={setSocialLinks} value={socialLinks} />
+      </section>
+
       {/* Featured Section */}
       <section className="rounded-2xl border border-border-default bg-surface-1 p-6 space-y-4 shadow-sm">
         <h2 className="font-heading text-lg font-bold text-foreground border-b border-border-default pb-3">
@@ -443,7 +564,7 @@ export function ProfileEditor({
 
       {/* Form Action Controls */}
       <div className="flex items-center gap-4 border-t border-border-default pt-5">
-        <Button loading={saving} onClick={save}>
+        <Button loading={saving} onClick={save} disabled={!canSave}>
           Save changes
         </Button>
         {onCancel ? (

@@ -17006,6 +17006,14 @@ components:
             maxItems: 10
           - type: 'null'
           title: Links
+        social_links:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/SocialLink'
+            type: array
+            maxItems: 7
+          - type: 'null'
+          title: Social Links
         featured:
           anyOf:
           - items:
@@ -17503,6 +17511,12 @@ components:
             $ref: '#/components/schemas/ProfileLink'
           type: array
           title: Links
+          default: []
+        social_links:
+          items:
+            $ref: '#/components/schemas/SocialLink'
+          type: array
+          title: Social Links
           default: []
         featured:
           items:
@@ -18085,6 +18099,32 @@ components:
       - differentiation_note
       title: SimilarityNoticeAcknowledgementRequest
       description: Request body for acknowledging a non-blocking similarity notice.
+    SocialLink:
+      properties:
+        platform:
+          type: string
+          enum:
+          - x
+          - linkedin
+          - github
+          - youtube
+          - instagram
+          - facebook
+          - tiktok
+          title: Platform
+        url:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Url
+      type: object
+      required:
+      - platform
+      - url
+      title: SocialLink
+      description: "A single typed social profile link.\n\nAttributes:\n    platform:\
+        \ One of the allow-listed social platforms.\n    url: Destination URL on that\
+        \ platform; must use http or https."
     TotpBackupCodesResponse:
       properties:
         backup_codes:

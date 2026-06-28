@@ -7,6 +7,7 @@ here, so they can never leak through a public profile response.
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -21,6 +22,20 @@ MAX_LINKS = 10
 MAX_EXPERIENCE = 20
 MAX_EDUCATION = 15
 MAX_FEATURED = 3
+
+# Allow-list of social platforms a profile can link out to. Typed (unlike the
+# free-form portfolio ``links``) so the frontend renders the right icon and a
+# profile carries at most one URL per platform.
+SocialPlatform = Literal[
+    "x",
+    "linkedin",
+    "github",
+    "youtube",
+    "instagram",
+    "facebook",
+    "tiktok",
+]
+MAX_SOCIAL_LINKS = 7
 
 
 def _validate_featured_url(value: str | None) -> str | None:
@@ -169,6 +184,38 @@ class ProfileLink(BaseModel):
         return candidate
 
 
+class SocialLink(BaseModel):
+    """A single typed social profile link.
+
+    Attributes:
+        platform: One of the allow-listed social platforms.
+        url: Destination URL on that platform; must use http or https.
+    """
+
+    platform: SocialPlatform
+    url: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def url_uses_safe_scheme(cls, value: str) -> str:
+        """Reject any social link URL that is not http/https.
+
+        Args:
+            value: The submitted social link URL.
+
+        Returns:
+            The trimmed URL when valid.
+
+        Raises:
+            ValueError: If the URL does not use a safe web scheme.
+        """
+        candidate = value.strip()
+        scheme, separator, _ = candidate.partition("://")
+        if not separator or scheme.lower() not in PUBLIC_URL_ALLOWED_SCHEMES:
+            raise ValueError("social link url must be an http or https URL")
+        return candidate
+
+
 class ProfileStats(BaseModel):
     """Aggregated marketplace analytics shown on the profile.
 
@@ -222,6 +269,7 @@ class PublicProfileResponse(BaseModel):
     website: str | None = None
     specializations: list[str] = []
     links: list[ProfileLink] = []
+    social_links: list[SocialLink] = []
     featured: list[ProfileFeatured] = []
     experience: list[ProfileExperience] = []
     education: list[ProfileEducation] = []
@@ -254,6 +302,9 @@ class ProfileUpdateRequest(BaseModel):
     website: str | None = Field(default=None, max_length=2048)
     specializations: list[str] | None = Field(default=None)
     links: list[ProfileLink] | None = Field(default=None, max_length=MAX_LINKS)
+    social_links: list[SocialLink] | None = Field(
+        default=None, max_length=MAX_SOCIAL_LINKS
+    )
     featured: list[ProfileFeaturedInput] | None = Field(
         default=None, max_length=MAX_FEATURED
     )
@@ -301,6 +352,33 @@ class ProfileUpdateRequest(BaseModel):
             seen.add(key)
             cleaned.append(label)
         return cleaned
+
+    @field_validator("social_links")
+    @classmethod
+    def social_links_unique_platform(
+        cls, value: list[SocialLink] | None
+    ) -> list[SocialLink] | None:
+        """Reject more than one social link for the same platform.
+
+        Args:
+            value: The submitted social links, or None when omitted.
+
+        Returns:
+            The list unchanged when valid, or None when omitted.
+
+        Raises:
+            ValueError: If a platform appears more than once.
+        """
+        if value is None:
+            return None
+        seen: set[str] = set()
+        for link in value:
+            if link.platform in seen:
+                raise ValueError(
+                    f"only one link per platform is allowed ({link.platform})"
+                )
+            seen.add(link.platform)
+        return value
 
     @field_validator("website")
     @classmethod

@@ -87,6 +87,11 @@ class User(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("'[]'"),
     )
+    social_links: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
     experience: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB,
         nullable=False,
