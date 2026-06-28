@@ -19,6 +19,8 @@ import {
 
 type FilterSidebarProps = {
   active: Record<string, string | undefined>;
+  defaultOpen?: boolean;
+  className?: string;
 };
 
 const filterGroups = [
@@ -112,63 +114,73 @@ export function buildExploreFilterHref(
  *
  * @param props - Active query param map.
  */
-export function FilterSidebar({ active }: FilterSidebarProps) {
+export function FilterSidebar({ active, defaultOpen = true, className = "" }: FilterSidebarProps) {
   return (
-    <aside className="rounded-2xl border border-border-default bg-surface-1 p-5 sm:p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between gap-3 border-b border-border-default pb-4">
+    <details open={defaultOpen} className={`group rounded-2xl border border-border-default bg-surface-1 shadow-sm overflow-hidden transition-[width] duration-300 ease-in-out ${className}`}>
+      <summary className="flex cursor-pointer items-center justify-between p-4 sm:p-5 outline-none [&::-webkit-details-marker]:hidden hover:bg-surface-2 transition-colors">
         <h2 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
-          <svg className="h-5 w-5 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-5 w-5 shrink-0 text-foreground-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
           </svg>
-          Filters
+          <span className="lg:hidden group-open:lg:inline-block">Filters</span>
         </h2>
-        {Object.keys(active).length > 0 && (
-          <Link className="text-xs font-semibold text-accent transition-colors hover:text-accent/80" href="/explore">
-            Clear all
-          </Link>
-        )}
-      </div>
-      <div className="flex flex-col gap-6">
-        {filterGroups.map((group) => {
-          const hasActiveFilter = active[group.key] !== undefined;
-          return (
-            <details 
-              key={group.key} 
-              className="group"
-              open={hasActiveFilter}
+        <div className="flex items-center gap-4 overflow-hidden">
+          {Object.keys(active).length > 0 && (
+            <Link 
+              className="text-xs font-semibold text-accent transition-colors hover:text-accent/80 lg:hidden group-open:lg:inline-block whitespace-nowrap" 
+              href="/explore"
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between outline-none [&::-webkit-details-marker]:hidden">
-                <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted transition-colors group-hover:text-foreground">
-                  {group.label}
-                </span>
-                <svg className="h-4 w-4 text-foreground-muted transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </summary>
-              <div className="mt-3 grid gap-2">
-                {group.values.map((option) => {
-                  const value = option.value;
-                  const selected = active[group.key] === value;
-                  return (
-                    <Link
-                      className={[
-                        "rounded-xl border px-3 py-2 text-sm transition-all duration-200",
-                        selected
-                          ? "border-accent bg-accent/10 text-accent font-medium shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                          : "border-transparent text-foreground hover:border-border-default hover:bg-surface-2",
-                      ].join(" ")}
-                      href={buildExploreFilterHref(active, group.key, value)}
-                      key={value}
-                    >
-                      {option.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </details>
-          );
-        })}
+              Clear all
+            </Link>
+          )}
+          <svg className="h-5 w-5 shrink-0 text-foreground-muted transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </summary>
+      <div className="border-t border-border-default p-4 sm:p-5 bg-background">
+        <div className="flex flex-col gap-6">
+          {filterGroups.map((group) => {
+            const hasActiveFilter = active[group.key] !== undefined;
+            return (
+              <details 
+                key={group.key} 
+                className="group/filter"
+                open={hasActiveFilter}
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between outline-none [&::-webkit-details-marker]:hidden">
+                  <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted transition-colors group-hover/filter:text-foreground">
+                    {group.label}
+                  </span>
+                  <svg className="h-4 w-4 text-foreground-muted transition-transform duration-200 group-open/filter:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </summary>
+                <div className="mt-3 grid gap-2">
+                  {group.values.map((option) => {
+                    const value = option.value;
+                    const selected = active[group.key] === value;
+                    return (
+                      <Link
+                        className={[
+                          "rounded-xl border px-3 py-2 text-sm transition-all duration-200",
+                          selected
+                            ? "border-accent bg-accent/10 text-accent font-medium shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
+                            : "border-transparent text-foreground hover:border-border-default hover:bg-surface-2",
+                        ].join(" ")}
+                        href={buildExploreFilterHref(active, group.key, value)}
+                        key={value}
+                      >
+                        {option.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
+            );
+          })}
+        </div>
       </div>
-    </aside>
+    </details>
   );
 }
