@@ -168,21 +168,43 @@ def _frontend_base_url(settings: Settings) -> str:
     return origins[0] if origins else "http://localhost:3000"
 
 
+def _role_landing_path(roles: list[str]) -> str:
+    """Mirror the frontend getRoleLandingPath so Google sign-in lands like login.
+
+    Sending users to a role landing (rather than the public home) means they
+    arrive inside the authenticated shell, which restores the in-memory access
+    token from the refresh cookie — so the header reflects the session.
+    """
+    if "admin" in roles:
+        return "/admin"
+    if "attestor" in roles:
+        return "/attestor/assignments"
+    if "operator" in roles:
+        return "/explore"
+    if "contributor" in roles:
+        return "/dashboard"
+    if "developer" in roles:
+        return "/dashboard/developer"
+    return "/settings/identity"
+
+
 def _google_redirect_target(
     settings: Settings,
     needs_onboarding: bool,
+    roles: list[str],
     next_path: object,
 ) -> str:
     """Resolve where to send the browser after a successful Google sign-in.
 
     Roleless / new users go to onboarding; otherwise resume a safe in-app
-    ``next`` path, falling back to the app root.
+    ``next`` path, falling back to the user's role landing (never the public
+    home, which would render a logged-out header).
     """
     base = _frontend_base_url(settings)
     if needs_onboarding:
         return f"{base}/settings/onboarding"
     safe_next = _safe_next_path(next_path if isinstance(next_path, str) else None)
-    return f"{base}{safe_next or '/'}"
+    return f"{base}{safe_next or _role_landing_path(roles)}"
 
 
 @router.get(
@@ -308,7 +330,9 @@ async def google_callback(
 
     assert result.access_token is not None and result.refresh_token is not None
     response = RedirectResponse(
-        url=_google_redirect_target(settings, result.needs_onboarding, next_path),
+        url=_google_redirect_target(
+            settings, result.needs_onboarding, result.roles, next_path
+        ),
         status_code=status.HTTP_302_FOUND,
     )
     set_refresh_cookie(response, result.refresh_token, settings=settings)

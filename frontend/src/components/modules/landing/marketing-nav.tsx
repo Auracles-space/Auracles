@@ -9,6 +9,8 @@ import Link from "next/link";
 import { BrandLogo } from "@/components/ui/brand-logo";
 
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { getRoleLandingPath } from "@/lib/auth/route-guards";
+import { getVerifiedSessionHintFromCookies } from "@/lib/auth/server-session";
 
 // Waitlist mode defaults to true in production/unspecified environments to gate entry.
 // Set NEXT_PUBLIC_WAITLIST_MODE=false locally to bypass the waitlist controls.
@@ -23,9 +25,14 @@ const navLinks = [
 
 /**
  * Render the marketing site top navigation.
+ *
+ * Reads the signed session hint so a signed-in visitor sees a dashboard link
+ * instead of the logged-out "Sign in / Get started" pair.
  */
-export function MarketingNav() {
+export async function MarketingNav() {
   const activeLinks = navLinks;
+  const hint = await getVerifiedSessionHintFromCookies();
+  const dashboardHref = hint ? getRoleLandingPath(hint.roles) : null;
 
 
   return (
@@ -51,6 +58,13 @@ export function MarketingNav() {
               href="#waitlist-form"
             >
               Join Waitlist
+            </Link>
+          ) : dashboardHref ? (
+            <Link
+              className="inline-flex h-10 items-center rounded-control bg-foreground px-4 text-sm font-medium text-background transition hover:opacity-90"
+              href={dashboardHref}
+            >
+              Dashboard
             </Link>
           ) : (
             <>

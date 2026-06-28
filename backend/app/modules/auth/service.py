@@ -737,6 +737,7 @@ class GoogleLoginResult:
 
     user: User
     needs_onboarding: bool
+    roles: list[str]
     access_token: str | None = None
     refresh_token: str | None = None
     requires_2fa: bool = False
@@ -900,6 +901,7 @@ async def complete_google_login(
         return GoogleLoginResult(
             user=user,
             needs_onboarding=len(roles) == 0,
+            roles=roles,
             requires_2fa=True,
             challenge_token=challenge_token,
         )
@@ -927,6 +929,7 @@ async def complete_google_login(
     return GoogleLoginResult(
         user=user,
         needs_onboarding=len(roles) == 0,
+        roles=roles,
         access_token=access_token,
         refresh_token=refresh_token,
     )

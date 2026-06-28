@@ -169,7 +169,17 @@ async def test_start_returns_503_when_google_not_configured(
     client: AsyncClient,
 ) -> None:
     """Without Google credentials the endpoint refuses cleanly (not a 500)."""
-    response = await client.get("/v1/auth/google/start")
+    # Force an unconfigured app regardless of any Google values in a local .env.
+    unconfigured = Settings(
+        GOOGLE_CLIENT_ID=None,
+        GOOGLE_CLIENT_SECRET=None,
+        GOOGLE_REDIRECT_URI=None,
+    )
+    app.dependency_overrides[get_settings] = lambda: unconfigured
+    try:
+        response = await client.get("/v1/auth/google/start")
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 
     assert response.status_code == 503
 

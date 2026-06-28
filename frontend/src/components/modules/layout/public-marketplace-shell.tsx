@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 
 import { BrandLogo } from "@/components/ui/brand-logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { getRoleLandingPath } from "@/lib/auth/route-guards";
+import { getVerifiedSessionHintFromCookies } from "@/lib/auth/server-session";
 
 import { HeaderSearch } from "./header-search";
 
@@ -24,9 +26,16 @@ const topLinks = [
 /**
  * Render shared chrome for public marketplace routes.
  *
+ * Reads the signed session hint so an authenticated visitor sees a dashboard
+ * link instead of the logged-out "Log in / Sign up" pair.
+ *
  * @param props - Route content rendered below the public navigation.
  */
-export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps) {
+export async function PublicMarketplaceShell({
+  children,
+}: PublicMarketplaceShellProps) {
+  const hint = await getVerifiedSessionHintFromCookies();
+  const dashboardHref = hint ? getRoleLandingPath(hint.roles) : null;
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
@@ -62,18 +71,29 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                 Create Framework
               </Link>
               <div className="mx-1 h-4 w-px bg-border-default" />
-              <Link
-                className="inline-flex h-9 items-center justify-center rounded-xl px-4 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
-                href="/login"
-              >
-                Log in
-              </Link>
-              <Link
-                className="inline-flex h-9 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition hover:bg-foreground/90"
-                href="/register"
-              >
-                Sign up
-              </Link>
+              {dashboardHref ? (
+                <Link
+                  className="inline-flex h-9 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition hover:bg-foreground/90"
+                  href={dashboardHref}
+                >
+                  Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    className="inline-flex h-9 items-center justify-center rounded-xl px-4 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                    href="/login"
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    className="inline-flex h-9 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition hover:bg-foreground/90"
+                    href="/register"
+                  >
+                    Sign up
+                  </Link>
+                </>
+              )}
             </div>
             {/* Mobile menu (Hamburger details/summary) */}
             <div className="flex items-center gap-2 md:hidden">
@@ -104,18 +124,29 @@ export function PublicMarketplaceShell({ children }: PublicMarketplaceShellProps
                       New Framework
                     </Link>
                     <div className="my-2 h-px bg-border-default" />
-                    <Link
-                      className="rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
-                      href="/login"
-                    >
-                      Log in
-                    </Link>
-                    <Link
-                      className="rounded-xl px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
-                      href="/register"
-                    >
-                      Sign up
-                    </Link>
+                    {dashboardHref ? (
+                      <Link
+                        className="rounded-xl px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
+                        href={dashboardHref}
+                      >
+                        Dashboard
+                      </Link>
+                    ) : (
+                      <>
+                        <Link
+                          className="rounded-xl px-3 py-2 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
+                          href="/login"
+                        >
+                          Log in
+                        </Link>
+                        <Link
+                          className="rounded-xl px-3 py-2 text-sm font-medium text-accent transition hover:bg-surface-2"
+                          href="/register"
+                        >
+                          Sign up
+                        </Link>
+                      </>
+                    )}
                   </nav>
                 </div>
               </details>
