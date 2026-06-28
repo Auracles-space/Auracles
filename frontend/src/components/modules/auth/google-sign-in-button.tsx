@@ -9,8 +9,13 @@
  * Sign-up requires accepting the Terms first: when `termsAccepted` is false the
  * control is inert and carries no consent, matching the email/password form.
  */
-import { resolveApiBaseUrl } from "@/lib/api-base";
 import { safeInternalPath } from "@/lib/url/safe-href";
+
+// The sign-in link is only ever followed in the browser, so it must use the
+// browser-facing API base. Reading the inlined NEXT_PUBLIC_API_URL directly
+// yields the same value during SSR and on the client, avoiding a hydration
+// mismatch (resolveApiBaseUrl branches on `window` and would differ).
+const BROWSER_API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type GoogleSignInButtonProps = {
   /** Resume-intent path forwarded so the user lands where they meant to. */
@@ -32,7 +37,7 @@ function buildStartHref(next?: string, termsAccepted?: boolean): string {
     params.set("terms", "1");
   }
   const query = params.toString();
-  return `${resolveApiBaseUrl()}/v1/auth/google/start${query ? `?${query}` : ""}`;
+  return `${BROWSER_API_BASE}/v1/auth/google/start${query ? `?${query}` : ""}`;
 }
 
 /** The Google "G" mark in its official four colors. */

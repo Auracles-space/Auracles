@@ -800,7 +800,7 @@ async def complete_google_login(
         if user is None:  # defensive: orphaned link row
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not complete Google sign-in.",
+                detail="Could not complete Google sign-in (orphaned link).",
             )
         action = "google_login_success"
     else:
@@ -820,7 +820,7 @@ async def complete_google_login(
             await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not complete Google sign-in.",
+                detail="Could not complete Google sign-in (email unverified).",
             )
         action = (
             "google_account_linked"

@@ -11,7 +11,7 @@
  * The step self-hides for users who already hold a role, so it is safe to render
  * unconditionally inside the onboarding page.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -36,13 +36,22 @@ const roleOptions: Array<{ description: string; label: string; value: SelfRole }
   },
 ];
 
+type OnboardingRoleStepProps = {
+  /** The rest of onboarding, shown only once the user has a role. */
+  children?: ReactNode;
+};
+
 /**
- * Render the roleless-user onboarding role picker.
+ * Gate onboarding on role selection.
  *
- * Fetches the current roles on mount and renders nothing once a role exists, so
- * returning users never see it.
+ * Fetches the current roles on mount. A roleless user sees only the role
+ * picker; once a role is saved (or for users who already have one) the
+ * remaining onboarding steps (`children`) are shown instead. This makes role
+ * selection a hard first step rather than a skippable section.
+ *
+ * @param props - The downstream onboarding steps to gate behind a role.
  */
-export function OnboardingRoleStep() {
+export function OnboardingRoleStep({ children }: OnboardingRoleStepProps) {
   const [loaded, setLoaded] = useState(false);
   const [hasRole, setHasRole] = useState(true);
   const [roles, setRoles] = useState<SelfRole[]>([]);
@@ -105,8 +114,11 @@ export function OnboardingRoleStep() {
     window.location.reload();
   }
 
-  if (!loaded || hasRole) {
+  if (!loaded) {
     return null;
+  }
+  if (hasRole) {
+    return <>{children}</>;
   }
 
   return (

@@ -160,7 +160,12 @@ async def exchange_code(
     except httpx.HTTPError as exc:
         raise GoogleOAuthError("Google token exchange failed.") from exc
     if response.status_code >= 400:
-        raise GoogleOAuthError("Google rejected the authorization code.")
+        # Google returns {"error": "...", "error_description": "..."}; surface it
+        # so misconfig (invalid_client, redirect_uri_mismatch, invalid_grant) is
+        # diagnosable. No secrets are present in this body.
+        raise GoogleOAuthError(
+            f"Google rejected the authorization code: {response.text}"
+        )
     return dict(response.json())
 
 
@@ -212,9 +217,13 @@ def verify_id_token(
             algorithms=["RS256"],
             audience=resolved.google_client_id,
             issuer=GOOGLE_ISSUERS,
+            # We only consume identity claims, not Google's access token, so there
+            # is no token to hash-compare; skip the at_hash check (it otherwise
+            # fails with "No access_token provided to compare against at_hash").
+            options={"verify_at_hash": False},
         )
     except JWTError as exc:
-        raise GoogleOAuthError("Invalid Google id_token.") from exc
+        raise GoogleOAuthError(f"Invalid Google id_token: {exc}") from exc
 
     sub = claims.get("sub")
     email = claims.get("email")

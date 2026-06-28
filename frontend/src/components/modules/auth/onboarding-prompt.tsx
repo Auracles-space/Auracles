@@ -40,12 +40,12 @@ export function OnboardingPrompt({ returnTo }: OnboardingPromptProps = {}) {
     : "/settings/kyc";
 
   return (
-    <div className="space-y-6">
-      <OnboardingRoleStep />
-      <div>
-        <h2 className="font-heading text-xl font-semibold text-foreground">
-          Account completion
-        </h2>
+    <OnboardingRoleStep>
+      <div className="space-y-6">
+        <div>
+          <h2 className="font-heading text-xl font-semibold text-foreground">
+            Account completion
+          </h2>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">
           You can browse and preview frameworks now. Complete these items before
           marketplace actions that require trust checks.
@@ -82,6 +82,7 @@ export function OnboardingPrompt({ returnTo }: OnboardingPromptProps = {}) {
           Browse frameworks
         </Link>
       </div>
-    </div>
+      </div>
+    </OnboardingRoleStep>
   );
 }

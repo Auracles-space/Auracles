@@ -125,12 +125,15 @@ def test_build_authorization_url_contains_required_oauth_params() -> None:
 
 def test_build_authorization_url_requires_configured_client() -> None:
     """Without Google credentials the adapter refuses rather than build a bad URL."""
+    # Explicitly clear the Google fields so the assertion holds regardless of any
+    # values present in a developer's local .env.
+    unconfigured = Settings(
+        GOOGLE_CLIENT_ID=None,
+        GOOGLE_CLIENT_SECRET=None,
+        GOOGLE_REDIRECT_URI=None,
+    )
     with pytest.raises(GoogleOAuthError):
-        build_authorization_url(
-            state="s",
-            code_challenge="c",
-            settings=Settings(),
-        )
+        build_authorization_url(state="s", code_challenge="c", settings=unconfigured)
 
 
 @pytest.mark.asyncio

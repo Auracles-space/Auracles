@@ -264,11 +264,19 @@ async def google_callback(
         claims = verify_id_token(
             str(tokens.get("id_token", "")), settings=settings, jwks=jwks
         )
-    except GoogleOAuthError:
-        log.warning("google_login_failure")
+    except GoogleOAuthError as exc:
+        log.warning(
+            "google_login_failure",
+            error=str(exc),
+            cause=str(exc.__cause__) if exc.__cause__ else None,
+        )
+        # DEBUG(local-only): expose the underlying reason to diagnose setup.
+        detail = "Could not complete Google sign-in."
+        if settings.environment == "local":
+            detail = f"{detail} [{exc}]"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not complete Google sign-in.",
+            detail=detail,
         ) from None
 
     result = await service.complete_google_login(
