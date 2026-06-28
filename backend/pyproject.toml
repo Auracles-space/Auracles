@@ -2,6 +2,7 @@
 name = "auracles-backend"
 version = "0.1.0"
 description = "FastAPI backend for the Auracles knowledge marketplace."
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 requires-python = ">=3.13"
 dependencies = [
   "alembic>=1.14.0",

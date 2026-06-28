@@ -8,6 +8,13 @@ exchange.
 See `docs/auracles-prd.md` for the product overview and `CLAUDE.md` for the
 engineering conventions.
 
+## License
+
+Source-available under the **PolyForm Noncommercial License 1.0.0** — see
+[`LICENSE`](./LICENSE). You may view, fork, modify, self-host, and share the
+code for **noncommercial purposes only**. **Commercial use of any kind is not
+permitted.** All commercial rights are reserved by the copyright holder.
+
 ## Stack
 
 | Layer    | Tech                                            |
