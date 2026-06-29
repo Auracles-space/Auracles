@@ -116,7 +116,7 @@ def test_attestation_migration_creates_tables_enums_indexes_and_seed_config(
     assert ATTESTATION_TABLES.issubset(set(inspector.get_table_names()))
     assert ATTESTATION_ENUMS.issubset(enum_names)
     assert ATTESTATION_CONFIG_SEEDS.items() <= config_rows.items()
-    assert "uq_attestor_applications_user_pending" in application_indexes
+    assert "uq_attestor_applications_user_submitted" in application_indexes
     assert {
         "idx_attestor_profiles_specializations_gin",
         "idx_attestor_profiles_jurisdictions_gin",
