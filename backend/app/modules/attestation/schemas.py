@@ -207,11 +207,10 @@ class AttestorApplicationsResponse(BaseModel):
     applications: list[AttestorApplicationResponse]
 
 
-class AttestorApplicationReviewRequest(BaseModel):
-    """Admin request body for approving or rejecting an Attestor application."""
+class AttestorApplicationRejectRequest(BaseModel):
+    """Admin request body for rejecting an Attestor application."""
 
-    decision: Literal["approved", "rejected"]
-    feedback: str | None = Field(default=None, max_length=5000)
+    feedback: str = Field(min_length=1, max_length=5000)
     totp_code: str = Field(min_length=6, max_length=16)
 
 

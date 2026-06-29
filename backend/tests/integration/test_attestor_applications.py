@@ -402,12 +402,12 @@ async def test_pending_application_can_be_withdrawn_and_then_reapplied(
     assert withdrawal_audit is not None
 
 
-async def test_admin_approves_attestor_application_with_profile_and_role(
+async def test_admin_review_endpoint_is_removed(
     client: AsyncClient,
     migrated_database: None,
     attestor_application_context: FakeRedis,
 ) -> None:
-    """Admin approval creates the matcher profile and approves Attestor role."""
+    """The legacy admin review endpoint is no longer exposed."""
     del migrated_database, attestor_application_context
     candidate_id = await create_user("approved-attestor@auracles.space", ["operator"])
     admin_id, totp_secret = await create_admin_user()
@@ -417,11 +417,7 @@ async def test_admin_approves_attestor_application_with_profile_and_role(
         json=application_payload(),
     )
 
-    listed = await client.get(
-        "/v1/admin/attestor/applications?status=submitted",
-        headers=auth_headers(admin_id, ["admin"]),
-    )
-    approved = await client.post(
+    reviewed = await client.post(
         f"/v1/admin/attestor/applications/{submitted.json()['id']}/review",
         headers=auth_headers(admin_id, ["admin"]),
         json={
@@ -431,36 +427,7 @@ async def test_admin_approves_attestor_application_with_profile_and_role(
         },
     )
 
-    async with async_session_factory() as session:
-        profile = await session.scalar(
-            select(AttestorProfile).where(AttestorProfile.user_id == candidate_id)
-        )
-        role = await session.scalar(
-            select(UserRole).where(
-                UserRole.user_id == candidate_id,
-                UserRole.role == "attestor",
-            )
-        )
-        audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestor_application_approved"
-            )
-        )
-
-    assert listed.status_code == 200
-    assert [item["id"] for item in listed.json()["applications"]] == [
-        submitted.json()["id"]
-    ]
-    assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    assert approved.json()["reviewed_by"] == str(admin_id)
-    assert profile is not None
-    assert profile.active is True
-    assert profile.specializations == []
-    assert role is not None
-    assert role.approved_at is not None
-    assert role.approved_by == admin_id
-    assert audit is not None
+    assert reviewed.status_code == 404
 
 
 async def test_admin_rejects_attestor_application_with_feedback(
@@ -479,18 +446,16 @@ async def test_admin_rejects_attestor_application_with_feedback(
     )
 
     missing_feedback = await client.post(
-        f"/v1/admin/attestor/applications/{submitted.json()['id']}/review",
+        f"/v1/admin/attestor/applications/{submitted.json()['id']}/reject",
         headers=auth_headers(admin_id, ["admin"]),
         json={
-            "decision": "rejected",
             "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
     rejected = await client.post(
-        f"/v1/admin/attestor/applications/{submitted.json()['id']}/review",
+        f"/v1/admin/attestor/applications/{submitted.json()['id']}/reject",
         headers=auth_headers(admin_id, ["admin"]),
         json={
-            "decision": "rejected",
             "feedback": "Please add verifiable client references.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
         },

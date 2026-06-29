@@ -32,7 +32,7 @@ from app.modules.attestation.models import (
 from app.modules.attestation.schemas import (
     AttestorActivateRequest,
     AttestorApplicationCreateRequest,
-    AttestorApplicationReviewRequest,
+    AttestorApplicationRejectRequest,
     AttestorApplicationUpdateRequest,
     AttestorCredentialCheckRequest,
     AttestorTaxDocumentRequest,
@@ -485,18 +485,18 @@ async def list_applications_for_admin(
     return list(result.scalars().all())
 
 
-async def review_application(
+async def reject_application(
     db: AsyncSession,
     redis: Redis,
     admin: User,
     application_id: UUID,
-    payload: AttestorApplicationReviewRequest,
+    payload: AttestorApplicationRejectRequest,
 ) -> AttestorApplication:
-    """Approve or reject a submitted Attestor application with admin 2FA."""
+    """Reject a non-active Attestor application after admin TOTP verification."""
     admin_id = admin.id
     now = datetime.now(UTC)
-    feedback = payload.feedback.strip() if payload.feedback else None
-    if payload.decision == "rejected" and not feedback:
+    feedback = payload.feedback.strip()
+    if not feedback:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Feedback is required when rejecting an Attestor application.",
@@ -519,29 +519,20 @@ async def review_application(
         )
 
         application = await _load_locked_application(db, application_id)
-        if application.status != "submitted":
+        if application.status in {"active", "rejected", "withdrawn"}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Only submitted Attestor applications can be reviewed.",
+                detail="Only non-active applications can be rejected.",
             )
 
-        application.status = payload.decision
+        application.status = "rejected"
         application.admin_feedback = feedback
         application.reviewed_by = admin_id
         application.reviewed_at = now
-
-        if payload.decision == "approved":
-            await _approve_attestor_profile_and_role(
-                db=db,
-                application=application,
-                admin_id=admin_id,
-                approved_at=now,
-            )
-
         await write_audit(
             db=db,
             actor_id=admin_id,
-            action=f"attestor_application_{payload.decision}",
+            action="attestor_application_rejected",
             target_type="attestor_application",
             target_id=application.id,
             metadata={
@@ -1005,45 +996,3 @@ async def _create_active_profile(
     profile.coi_signed_at = application.coi_signed_at
     profile.coi_expires_at = application.coi_expires_at
 
-
-async def _approve_attestor_profile_and_role(
-    db: AsyncSession,
-    application: AttestorApplication,
-    admin_id: UUID,
-    approved_at: datetime,
-) -> None:
-    """Copy an approved application into matcher profile and role state."""
-    role = await db.scalar(
-        select(UserRole)
-        .where(
-            UserRole.user_id == application.user_id,
-            UserRole.role == "attestor",
-        )
-        .with_for_update()
-    )
-    if role is None:
-        role = UserRole(user_id=application.user_id, role="attestor")
-        db.add(role)
-    role.approved_at = approved_at
-    role.approved_by = admin_id
-
-    profile = await db.scalar(
-        select(AttestorProfile)
-        .where(AttestorProfile.user_id == application.user_id)
-        .with_for_update()
-    )
-    if profile is None:
-        profile = AttestorProfile(
-            user_id=application.user_id,
-            specializations=application.specializations,
-            jurisdictions=application.jurisdictions,
-            active=True,
-            approved_at=approved_at,
-        )
-        db.add(profile)
-        return
-
-    profile.specializations = application.specializations
-    profile.jurisdictions = application.jurisdictions
-    profile.active = True
-    profile.approved_at = approved_at

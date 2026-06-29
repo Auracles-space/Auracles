@@ -42,8 +42,8 @@ from app.modules.attestation.schemas import (
     AttestationsResponse,
     AttestorActivateRequest,
     AttestorApplicationCreateRequest,
+    AttestorApplicationRejectRequest,
     AttestorApplicationResponse,
-    AttestorApplicationReviewRequest,
     AttestorApplicationsResponse,
     AttestorApplicationUpdateRequest,
     AttestorAssignmentResponse,
@@ -593,11 +593,14 @@ async def list_attestor_applications_for_admin(
     admin: AdminUser,
     db: DatabaseSession,
     status_filter: Literal[
-        "pending",
         "submitted",
-        "approved",
+        "identity_verified",
+        "professional_verified",
+        "expert_verified",
+        "active",
         "rejected",
         "withdrawn",
+        "held",
     ]
     | None = Query(default=None, alias="status"),
 ) -> AttestorApplicationsResponse:
@@ -616,18 +619,18 @@ async def list_attestor_applications_for_admin(
 
 
 @router.post(
-    "/admin/attestor/applications/{application_id}/review",
+    "/admin/attestor/applications/{application_id}/reject",
     response_model=AttestorApplicationResponse,
 )
-async def review_attestor_application(
+async def reject_attestor_application(
     application_id: UUID,
-    payload: AttestorApplicationReviewRequest,
+    payload: AttestorApplicationRejectRequest,
     admin: AdminUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> AttestorApplicationResponse:
-    """Approve or reject an Attestor application as a 2FA-confirmed admin."""
-    application = await application_service.review_application(
+    """Reject a non-active Attestor application as a 2FA-confirmed admin."""
+    application = await application_service.reject_application(
         db=db,
         redis=redis,
         admin=admin,

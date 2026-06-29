@@ -1120,6 +1120,45 @@ async def test_activate_attestor_rejects_missing_tax_document(
 
 
 @pytest.mark.usefixtures("migrated_database")
+async def test_admin_rejects_expert_verified_attestor_application(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """Admins can reject a non-active application after onboarding gates."""
+    application_id, applicant_id, _owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    admin_id, admin_secret = await create_admin_user()
+
+    response = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/reject",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "feedback": "Manual review found unresolved trust concerns.",
+            "totp_code": _admin_totp(admin_secret).now(),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "rejected"
+    assert (
+        response.json()["admin_feedback"]
+        == "Manual review found unresolved trust concerns."
+    )
+    assert response.json()["reviewed_by"] == str(admin_id)
+
+    async with async_session_factory() as session:
+        application = await session.get(AttestorApplication, application_id)
+        profile = await session.scalar(
+            select(AttestorProfile).where(AttestorProfile.user_id == applicant_id)
+        )
+
+    assert application is not None
+    assert profile is None
+    assert application.status == "rejected"
+
+
+@pytest.mark.usefixtures("migrated_database")
 async def test_list_public_attestor_directory_shows_only_active_safe_entries(
     client: AsyncClient,
     attestor_application_context,  # noqa: F811
