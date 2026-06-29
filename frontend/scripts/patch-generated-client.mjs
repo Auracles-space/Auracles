@@ -104,7 +104,7 @@ const compatibilityAliases = {
   resolveAttestationDispute: "resolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePost",
   listAdminProjectDisputes: "listProjectDisputesV1AdminProjectsDisputesGet",
   resolveAdminProjectDispute: "resolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePost",
-  reviewAttestorApplication: "reviewAttestorApplicationV1AdminAttestorApplicationsApplicationIdReviewPost",
+  rejectAttestorApplication: "rejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPost",
   createSavedSearch: "createSavedSearchV1SavedSearchesPost",
   deleteSavedSearch: "deleteSavedSearchV1SavedSearchesSavedSearchIdDelete",
   listSavedSearches: "listSavedSearchesV1SavedSearchesGet",

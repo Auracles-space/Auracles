@@ -218,8 +218,9 @@ Extend `application_service.py` (and a small `directory` read path):
 - **KYC provider** — reuse existing `kyc_status` flow as-is (provider integration out of scope
   for this spec).
 - **CoI annual re-sign enforcement** — `coi_expires_at` is stored here; the re-sign reminder /
-  enforcement job is a small scheduled task — confirm whether it lands in Spec A or Spec B (AMM,
-  where screening consumes it).
+  enforcement job is a small scheduled task. **Resolved (2026-06-29): owned by Spec B / Module 3
+  AMM**, alongside the conflict-screening that consumes CoI. Spec A persists the dates only; Spec B
+  must build the scheduled refresh/enforcement explicitly.
 
 ## Risks
 

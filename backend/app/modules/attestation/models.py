@@ -3,6 +3,12 @@
 Slice 1 is schema-only: these models define Attestor applications, profiles,
 credentials, attestation requests, offers, disputes, and upload sessions before
 the lifecycle services and API endpoints are added in later slices.
+
+Module 1 (Attestor Onboarding) extends `AttestorApplication` into a gated
+state machine (legal identity, KYC, taxonomy, CoI, tax docs), adds
+verification levels + taxonomy + CoI to `AttestorProfile`, adds manual
+registry cross-check fields to `Credential`, and introduces `AttestorTrial`
+for the stubbed calibration step.
 """
 
 from __future__ import annotations
@@ -38,6 +44,15 @@ ATTESTOR_APPLICATION_STATUS_ENUM = ENUM(
     "approved",
     "rejected",
     "withdrawn",
+    # Module 1 onboarding gate states, added via ALTER TYPE ... ADD VALUE in
+    # migration 2026_06_29_0041. "pending"/"approved" are kept for any rows
+    # not touched by that migration's backfill (none expected going forward).
+    "submitted",
+    "identity_verified",
+    "professional_verified",
+    "expert_verified",
+    "active",
+    "held",
     name="attestor_application_status_enum",
     create_type=False,
 )
@@ -98,6 +113,7 @@ ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
 ATTESTATION_UPLOAD_PURPOSE_ENUM = ENUM(
     "report_evidence",
     "credential_evidence",
+    "attestor_tax_document",
     name="attestation_upload_purpose_enum",
     create_type=False,
 )
@@ -125,6 +141,33 @@ CREDENTIAL_ISSUER_TYPE_ENUM = ENUM(
     name="credential_issuer_type_enum",
     create_type=False,
 )
+ATTESTOR_TRIAL_STATUS_ENUM = ENUM(
+    "assigned",
+    "passed",
+    "failed",
+    name="attestor_trial_status_enum",
+    create_type=False,
+)
+ATTESTOR_CREDENTIAL_BODY_ENUM = ENUM(
+    "cfa_institute",
+    "aicpa",
+    "isaca",
+    "rics",
+    "sra",
+    "state_bar",
+    "fca",
+    "acams",
+    "other",
+    name="attestor_credential_body_enum",
+    create_type=False,
+)
+TAX_DOCUMENT_TYPE_ENUM = ENUM(
+    "w9",
+    "w8ben",
+    "other",
+    name="tax_document_type_enum",
+    create_type=False,
+)
 
 
 class AttestorApplication(CreatedAtMixin, Base):
@@ -134,10 +177,10 @@ class AttestorApplication(CreatedAtMixin, Base):
     __table_args__ = (
         Index("idx_attestor_applications_user_status", "user_id", "status"),
         Index(
-            "uq_attestor_applications_user_pending",
+            "uq_attestor_applications_user_submitted",
             "user_id",
             unique=True,
-            postgresql_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'submitted'"),
         ),
     )
 
@@ -169,6 +212,56 @@ class AttestorApplication(CreatedAtMixin, Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    legal_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    linkedin_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    professional_body_numbers: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    cv_file_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    coi_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    coi_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    sectors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    framework_categories: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    needs_retag: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    kyc_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    kyc_name_match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    tax_document_type: Mapped[str | None] = mapped_column(
+        TAX_DOCUMENT_TYPE_ENUM, nullable=True
+    )
+    tax_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payout_account_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("payout_accounts.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -212,6 +305,34 @@ class AttestorProfile(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
+    )
+    verification_level: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    sectors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    framework_categories: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    coi_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    coi_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
 
@@ -263,6 +384,20 @@ class Credential(UpdatedAtMixin, Base):
         nullable=True,
     )
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issuing_body: Mapped[str | None] = mapped_column(
+        ATTESTOR_CREDENTIAL_BODY_ENUM, nullable=True
+    )
+    good_standing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    registry_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    registry_checked_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    registry_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Attestation(UpdatedAtMixin, Base):
@@ -472,8 +607,12 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     __tablename__ = "attestation_upload_sessions"
     __table_args__ = (
         CheckConstraint(
-            "(attestation_id IS NOT NULL AND credential_id IS NULL) "
-            "OR (attestation_id IS NULL AND credential_id IS NOT NULL)",
+            "(attestation_id IS NOT NULL AND credential_id IS NULL "
+            "AND application_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NOT NULL "
+            "AND application_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NULL "
+            "AND application_id IS NOT NULL)",
             name="ck_attestation_upload_sessions_single_parent",
         ),
         UniqueConstraint("s3_key", name="uq_attestation_upload_sessions_s3_key"),
@@ -486,6 +625,12 @@ class AttestationUploadSession(CreatedAtMixin, Base):
         Index(
             "idx_attestation_upload_sessions_credential_user_consumed",
             "credential_id",
+            "user_id",
+            "consumed_at",
+        ),
+        Index(
+            "idx_attestation_upload_sessions_application_user_consumed",
+            "application_id",
             "user_id",
             "consumed_at",
         ),
@@ -506,6 +651,11 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     credential_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("credentials.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    application_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestor_applications.id", ondelete="CASCADE"),
         nullable=True,
     )
     user_id: Mapped[UUID] = mapped_column(
@@ -533,3 +683,55 @@ class AttestationUploadSession(CreatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=False,
     )
+
+
+class AttestorTrial(CreatedAtMixin, Base):
+    """Stubbed calibration trial for an Attestor application (manual pass/fail).
+
+    Rubric-scored evaluation arrives with Module 4; for now an admin decides
+    pass/fail. A second failure holds the application.
+    """
+
+    __tablename__ = "attestor_trials"
+    __table_args__ = (
+        CheckConstraint(
+            "attempt >= 1 AND attempt <= 2", name="ck_attestor_trials_attempt_range"
+        ),
+        Index("idx_attestor_trials_application", "application_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    application_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestor_applications.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    seeded_framework_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("frameworks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        ATTESTOR_TRIAL_STATUS_ENUM,
+        nullable=False,
+        server_default="assigned",
+    )
+    attempt: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    decided_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)

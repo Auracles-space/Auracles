@@ -29,7 +29,7 @@ import {
   listMyAttestorApplications,
   requestAttestation,
   resolveAttestationDispute,
-  reviewAttestorApplication,
+  rejectAttestorApplication,
   submitAttestationReport,
   submitAttestorApplication,
   updateAttestorApplication,
@@ -740,7 +740,7 @@ export function AdminAttestationPanel() {
     configureBrowserClient();
     const result = await listAttestorApplicationsForAdmin({
       headers: getAccessTokenHeaders(),
-      query: { status: "pending" },
+      query: { status: "submitted" },
     });
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
@@ -750,19 +750,19 @@ export function AdminAttestationPanel() {
   }
 
   /**
-   * Approve or reject an Attestor application.
+   * Reject an Attestor application.
+   *
+   * Promotion to active is no longer a manual admin action — it happens only
+   * through the gated activation flow (KYC + credential + trial + CoI + payout
+   * + tax). Admins can still reject a non-active application here.
    *
    * @param application - Application row.
-   * @param decision - Review decision.
    */
-  async function handleReview(
-    application: AttestorApplicationResponse,
-    decision: "approved" | "rejected",
-  ) {
+  async function handleReview(application: AttestorApplicationResponse) {
     setError(null);
     configureBrowserClient();
-    const result = await reviewAttestorApplication({
-      body: { decision, feedback: manualReason || null, totp_code: totpCode },
+    const result = await rejectAttestorApplication({
+      body: { feedback: manualReason, totp_code: totpCode },
       headers: getAccessTokenHeaders(),
       path: { application_id: application.id },
     });
@@ -1073,12 +1073,9 @@ function ApplicationList({
 }: {
   applications: AttestorApplicationResponse[];
   onEdit?: (application: AttestorApplicationResponse) => void;
-  onReview?: (
-    application: AttestorApplicationResponse,
-    decision: "approved" | "rejected",
-  ) => void;
+  onReview?: (application: AttestorApplicationResponse) => void;
   onWithdraw?: (applicationId: string) => void;
-  /** Disable Approve/Reject until a 2FA code is entered. */
+  /** Disable Reject until a 2FA code is entered. */
   reviewDisabled?: boolean;
 }) {
   return (
@@ -1146,34 +1143,31 @@ function ApplicationList({
                   : "No reason was provided. You can submit a new application."}
               </p>
             ) : null}
-            {application.status === "approved" ? (
+            {application.status === "active" ? (
               <p className="mt-3 rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm text-success font-medium">
-                Approved.{" "}
+                Active.{" "}
                 {application.admin_feedback ?? "Your attestor access is active."}
               </p>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-3">
-              {onEdit && application.status === "pending" ? (
+              {onEdit && application.status === "submitted" ? (
                 <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => onEdit(application)} type="button">
                   Edit
                 </button>
               ) : null}
-              {onWithdraw && application.status === "pending" ? (
+              {onWithdraw && application.status === "submitted" ? (
                 <button className="min-h-12 rounded-xl border border-error/50 bg-error/5 px-5 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error" onClick={() => onWithdraw(application.id)} type="button">
                   Withdraw
                 </button>
               ) : null}
-              {onReview ? (
+              {onReview && application.status !== "active" && application.status !== "rejected" ? (
                 <>
-                  <button className="min-h-12 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={reviewDisabled} onClick={() => onReview(application, "approved")} type="button">
-                    Approve
-                  </button>
-                  <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50" disabled={reviewDisabled} onClick={() => onReview(application, "rejected")} type="button">
+                  <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50" disabled={reviewDisabled} onClick={() => onReview(application)} type="button">
                     Reject
                   </button>
                   {reviewDisabled ? (
                     <p className="w-full text-xs text-foreground-muted">
-                      Enter your 6-digit 2FA code above to approve or reject.
+                      Enter your 6-digit 2FA code above to reject.
                     </p>
                   ) : null}
                 </>

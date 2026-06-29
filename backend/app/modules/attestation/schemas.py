@@ -10,6 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.attestation.taxonomy import validate_categories, validate_sectors
+
 IssuerType = Literal["institution", "organisation", "government", "association"]
 
 # Safe charset for short controlled labels (specializations, jurisdictions):
@@ -19,6 +21,19 @@ _LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,&/()\-]*$")
 # Characters never allowed in free-text prose: markup delimiters and ASCII
 # control characters (tab/newline excepted) that have no place in plain text.
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CREDENTIAL_ISSUING_BODIES = frozenset(
+    {
+        "cfa_institute",
+        "aicpa",
+        "isaca",
+        "rics",
+        "sra",
+        "state_bar",
+        "fca",
+        "acams",
+        "other",
+    }
+)
 
 
 def _normalise_labels(values: list[str]) -> list[str]:
@@ -78,25 +93,42 @@ class _AttestorApplicationFields(BaseModel):
 
     Centralizes the input-hardening rules so create and edit accept identical,
     cleaned data: controlled labels are trimmed/de-duplicated against a safe
-    charset, and prose fields reject markup and control characters.
+    charset or a controlled taxonomy, and prose fields reject markup and
+    control characters.
     """
 
-    specializations: list[str] = Field(min_length=1, max_length=25)
+    legal_name: str = Field(min_length=2, max_length=200)
+    linkedin_url: str | None = Field(default=None, max_length=2048)
+    professional_body_numbers: dict[str, str] = Field(default_factory=dict)
+    sectors: list[str] = Field(min_length=1, max_length=4)
+    framework_categories: list[str] = Field(min_length=1, max_length=9)
     jurisdictions: list[str] = Field(min_length=1, max_length=25)
     credentials_summary: str = Field(min_length=10, max_length=5000)
     sample_work: dict[str, Any] = Field(default_factory=dict)
     professional_references: str = Field(min_length=3, max_length=5000)
 
-    @field_validator("specializations", "jurisdictions")
+    @field_validator("sectors")
     @classmethod
-    def _clean_labels(cls, value: list[str]) -> list[str]:
-        """Trim, validate, and de-duplicate controlled label lists."""
+    def _clean_sectors(cls, value: list[str]) -> list[str]:
+        """Validate sectors against the controlled taxonomy."""
+        return validate_sectors(value)
+
+    @field_validator("framework_categories")
+    @classmethod
+    def _clean_categories(cls, value: list[str]) -> list[str]:
+        """Validate framework categories against the controlled taxonomy."""
+        return validate_categories(value)
+
+    @field_validator("jurisdictions")
+    @classmethod
+    def _clean_jurisdictions(cls, value: list[str]) -> list[str]:
+        """Trim/validate jurisdiction labels."""
         return _normalise_labels(value)
 
-    @field_validator("credentials_summary", "professional_references")
+    @field_validator("legal_name", "credentials_summary", "professional_references")
     @classmethod
     def _clean_prose(cls, value: str) -> str:
-        """Reject markup and control characters in free-text prose."""
+        """Reject markup/control characters in prose fields."""
         return _ensure_safe_prose(value)
 
 
@@ -108,17 +140,59 @@ class AttestorApplicationUpdateRequest(_AttestorApplicationFields):
     """Request body for editing a pending Attestor application in place."""
 
 
+class CoiEntry(BaseModel):
+    """One declared conflict-of-interest relationship disclosed by an applicant."""
+
+    entity: str
+    entity_type: Literal["firm", "fund", "individual"]
+    relationship: Literal["financial", "advisory", "employment"]
+    within_24mo: bool
+
+
+class CoiDeclarationRequest(BaseModel):
+    """Request body for signing the Attestor conflict-of-interest declaration."""
+
+    declarations: list[CoiEntry]
+    accept_policy: bool
+
+
+class AttestorPayoutAttachRequest(BaseModel):
+    """Request body for attaching an owned payout account to the application."""
+
+    payout_account_id: UUID
+
+
+class AttestorTaxDocumentRequest(BaseModel):
+    """Request body for creating an Attestor tax-document upload session."""
+
+    tax_document_type: Literal["w9", "w8ben", "other"]
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
 class AttestorApplicationResponse(BaseModel):
     """Attestor application details visible to its owner and admins."""
 
     id: UUID
     user_id: UUID
     status: str
-    specializations: list[str]
+    legal_name: str | None
+    linkedin_url: str | None
+    professional_body_numbers: dict[str, str]
+    sectors: list[str]
+    framework_categories: list[str]
+    needs_retag: bool
     jurisdictions: list[str]
     credentials_summary: str
     sample_work: dict[str, Any]
     professional_references: str
+    coi_declarations: list[CoiEntry]
+    coi_signed_at: datetime | None
+    coi_expires_at: datetime | None
+    payout_account_id: UUID | None
+    tax_document_type: str | None
+    tax_document_key: str | None
     admin_feedback: str | None
     reviewed_by: UUID | None
     reviewed_at: datetime | None
@@ -133,12 +207,69 @@ class AttestorApplicationsResponse(BaseModel):
     applications: list[AttestorApplicationResponse]
 
 
-class AttestorApplicationReviewRequest(BaseModel):
-    """Admin request body for approving or rejecting an Attestor application."""
+class AttestorApplicationRejectRequest(BaseModel):
+    """Admin request body for rejecting an Attestor application."""
 
-    decision: Literal["approved", "rejected"]
-    feedback: str | None = Field(default=None, max_length=5000)
+    feedback: str = Field(min_length=1, max_length=5000)
     totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorKycVerifyRequest(BaseModel):
+    """Admin request body for the KYC verification onboarding gate."""
+
+    name_match: bool
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorCredentialCheckRequest(BaseModel):
+    """Admin request body for the credential registry cross-check gate."""
+
+    credential_id: UUID
+    issuing_body: str
+    good_standing: bool
+    registry_reference: str
+    totp_code: str = Field(min_length=6, max_length=16)
+
+    @field_validator("issuing_body")
+    @classmethod
+    def _validate_issuing_body(cls, value: str) -> str:
+        """Accept only controlled credential-body enum values."""
+        if value not in _CREDENTIAL_ISSUING_BODIES:
+            raise ValueError(f"{value!r} is not a valid credential issuing body.")
+        return value
+
+
+class AttestorTrialAssignRequest(BaseModel):
+    """Admin request body for assigning a stubbed calibration trial."""
+
+    seeded_framework_id: UUID | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorTrialDecideRequest(BaseModel):
+    """Admin request body for deciding a stubbed calibration trial."""
+
+    passed: bool
+    feedback: str | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorActivateRequest(BaseModel):
+    """Admin request body for activating a fully verified Attestor."""
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorTrialResponse(BaseModel):
+    """Calibration trial details returned to admins."""
+
+    id: UUID
+    application_id: UUID
+    seeded_framework_id: UUID | None
+    status: str
+    attempt: int
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CredentialCreateRequest(BaseModel):
@@ -456,3 +587,23 @@ class PublicCredentialResponse(BaseModel):
     issued_date: date
     expires_date: date | None
     expired: bool
+
+
+class AttestorDirectoryEntry(BaseModel):
+    """Public Attestor directory row safe for anonymous browsing."""
+
+    user_id: UUID
+    display_name: str
+    sectors: list[str]
+    framework_categories: list[str]
+    jurisdictions: list[str]
+    verification_level: int
+    credentials: list[PublicCredentialResponse]
+    completed_attestations: int
+    reputation: float | None
+
+
+class AttestorDirectoryResponse(BaseModel):
+    """Public list response for the Attestor directory."""
+
+    attestors: list[AttestorDirectoryEntry]
