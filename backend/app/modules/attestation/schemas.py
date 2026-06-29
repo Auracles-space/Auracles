@@ -203,6 +203,33 @@ class AttestorCredentialCheckRequest(BaseModel):
         return value
 
 
+class AttestorTrialAssignRequest(BaseModel):
+    """Admin request body for assigning a stubbed calibration trial."""
+
+    seeded_framework_id: UUID | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorTrialDecideRequest(BaseModel):
+    """Admin request body for deciding a stubbed calibration trial."""
+
+    passed: bool
+    feedback: str | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorTrialResponse(BaseModel):
+    """Calibration trial details returned to admins."""
+
+    id: UUID
+    application_id: UUID
+    seeded_framework_id: UUID | None
+    status: str
+    attempt: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CredentialCreateRequest(BaseModel):
     """Request body for creating a user-owned Credential."""
 

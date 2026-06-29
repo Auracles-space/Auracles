@@ -48,6 +48,9 @@ from app.modules.attestation.schemas import (
     AttestorAssignmentsResponse,
     AttestorCredentialCheckRequest,
     AttestorKycVerifyRequest,
+    AttestorTrialAssignRequest,
+    AttestorTrialDecideRequest,
+    AttestorTrialResponse,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -549,6 +552,65 @@ async def verify_attestor_application_credential(
         admin=admin,
         application_id=application_id,
         payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/admin/attestor/applications/{application_id}/trial",
+    response_model=AttestorTrialResponse,
+    summary="Assign calibration trial",
+    description=(
+        "Assign a stubbed calibration trial to a professional-verified "
+        "Attestor application after admin TOTP verification."
+    ),
+)
+async def assign_attestor_application_trial(
+    application_id: UUID,
+    payload: AttestorTrialAssignRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestorTrialResponse:
+    """Assign a calibration trial to an eligible Attestor application."""
+    trial = await application_service.assign_trial(
+        db=db,
+        redis=redis,
+        admin=admin,
+        application_id=application_id,
+        seeded_framework_id=payload.seeded_framework_id,
+        totp_code=payload.totp_code,
+    )
+    return AttestorTrialResponse.model_validate(trial)
+
+
+@router.post(
+    "/admin/attestor/applications/{application_id}/trial/{trial_id}/decide",
+    response_model=AttestorApplicationResponse,
+    summary="Decide calibration trial",
+    description=(
+        "Record a pass or fail decision for a stubbed calibration trial after "
+        "admin TOTP verification."
+    ),
+)
+async def decide_attestor_application_trial(
+    application_id: UUID,
+    trial_id: UUID,
+    payload: AttestorTrialDecideRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestorApplicationResponse:
+    """Decide an assigned calibration trial for an Attestor application."""
+    application = await application_service.decide_trial(
+        db=db,
+        redis=redis,
+        admin=admin,
+        application_id=application_id,
+        trial_id=trial_id,
+        passed=payload.passed,
+        feedback=payload.feedback,
+        totp_code=payload.totp_code,
     )
     return AttestorApplicationResponse.model_validate(application)
 

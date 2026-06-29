@@ -11,13 +11,14 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.attestation.models import (
     AttestorApplication,
     AttestorProfile,
+    AttestorTrial,
     Credential,
 )
 from app.modules.attestation.schemas import (
@@ -427,6 +428,162 @@ async def verify_credential(
             target_type="attestor_application",
             target_id=application.id,
             metadata={"credential_id": str(payload.credential_id)},
+        )
+    return application
+
+
+async def assign_trial(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    application_id: UUID,
+    seeded_framework_id: UUID | None,
+    totp_code: str,
+) -> AttestorTrial:
+    """Assign a stubbed calibration trial to a professional-verified application."""
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked_admin = await db.get(User, admin_id, with_for_update=True)
+        if locked_admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_admin,
+            code=totp_code,
+        )
+
+        application = await _load_locked_application(db, application_id)
+        existing = await db.scalar(
+            select(func.count())
+            .select_from(AttestorTrial)
+            .where(AttestorTrial.application_id == application_id)
+        )
+        attempt_count = int(existing or 0)
+        if attempt_count >= 2:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Trial attempts exhausted; application held.",
+            )
+        if application.status != "professional_verified":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Only professional-verified applications can be assigned a trial."
+                ),
+            )
+
+        trial = AttestorTrial(
+            application_id=application_id,
+            seeded_framework_id=seeded_framework_id,
+            status="assigned",
+            attempt=attempt_count + 1,
+        )
+        db.add(trial)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="attestor_trial_assigned",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"trial_id": str(trial.id), "attempt": trial.attempt},
+        )
+    return trial
+
+
+async def decide_trial(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    application_id: UUID,
+    trial_id: UUID,
+    passed: bool,
+    feedback: str | None,
+    totp_code: str,
+) -> AttestorApplication:
+    """Decide a stubbed calibration trial and advance or hold the application."""
+    admin_id = admin.id
+    now = datetime.now(UTC)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked_admin = await db.get(User, admin_id, with_for_update=True)
+        if locked_admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_admin,
+            code=totp_code,
+        )
+
+        application = await _load_locked_application(db, application_id)
+        trial = await db.scalar(
+            select(AttestorTrial)
+            .where(
+                AttestorTrial.id == trial_id,
+                AttestorTrial.application_id == application_id,
+            )
+            .with_for_update()
+        )
+        if trial is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trial not found.",
+            )
+        if trial.status != "assigned":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Trial already decided.",
+            )
+
+        trial.decided_by = admin_id
+        trial.decided_at = now
+        trial.feedback = feedback
+
+        if passed:
+            trial.status = "passed"
+            application.status = "expert_verified"
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="attestor_trial_passed",
+                target_type="attestor_application",
+                target_id=application.id,
+                metadata={"trial_id": str(trial.id)},
+            )
+            return application
+
+        trial.status = "failed"
+        metadata = {"trial_id": str(trial.id), "attempt": trial.attempt}
+        if trial.attempt >= 2:
+            application.status = "held"
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="attestor_application_held",
+                target_type="attestor_application",
+                target_id=application.id,
+                metadata=metadata,
+            )
+            return application
+
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="attestor_trial_failed",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata=metadata,
         )
     return application
 
