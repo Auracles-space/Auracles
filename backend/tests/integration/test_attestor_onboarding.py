@@ -12,12 +12,15 @@ from sqlalchemy import select
 
 from app.core.database import async_session_factory
 from app.core.security import create_access_token
+from app.integrations import s3
 from app.modules.attestation.models import (
+    AttestationUploadSession,
     AttestorApplication,
     AttestorTrial,
     Credential,
 )
 from app.modules.auth.models import User
+from app.modules.financials.models import PayoutAccount
 
 # Reuse shared fixtures/helpers from the existing application test module
 # rather than duplicating them. The fixture imports are referenced by name
@@ -576,3 +579,170 @@ async def test_sign_coi_requires_policy_acceptance(
     assert application.coi_signed_at is None
     assert application.coi_expires_at is None
     assert application.coi_declarations == []
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_attach_payout_sets_owned_payout_account_on_application(
+    client: AsyncClient, attestor_application_context,  # noqa: F811
+) -> None:
+    """Applicants can attach one of their own payout accounts to the application."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=applicant_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_owner_001",
+                provider_account_lookup_hash="hash-attestor-owner-001",
+                account_type="express",
+                is_default=True,
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout_account_id = payout_account.id
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payout_account_id"] == str(payout_account_id)
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.payout_account_id == payout_account_id
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_attach_payout_rejects_accounts_owned_by_someone_else(
+    client: AsyncClient, attestor_application_context,  # noqa: F811
+) -> None:
+    """Applicants cannot attach payout accounts they do not own."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+    outsider_id = await create_user(
+        "attestor-payout-outsider@example.com",
+        roles=["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=outsider_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_outsider_001",
+                provider_account_lookup_hash="hash-attestor-outsider-001",
+                account_type="express",
+                is_default=False,
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout_account_id = payout_account.id
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Payout account not found."
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.payout_account_id is None
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_set_tax_document_creates_upload_session_and_persists_key(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tax document upload creates a presigned session linked to the application."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+    presigned_calls: list[tuple[str, str, str, int, int]] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, object]:
+        """Return deterministic presigned POST data without calling AWS."""
+        presigned_calls.append((bucket, key, mime_type, max_size, expires_in))
+        return {
+            "url": f"https://s3.local/{bucket}",
+            "fields": {
+                "key": key,
+                "Content-Type": mime_type,
+                "max_size": str(max_size),
+                "expires_in": str(expires_in),
+            },
+        }
+
+    monkeypatch.setattr(s3.storage, "presigned_post", fake_presigned_post)
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/tax-document",
+        headers=owner_headers,
+        json={
+            "tax_document_type": "w9",
+            "file_name": "Form W-9.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["url"] == "https://s3.local/auracles-artifacts-dev"
+    assert body["fields"]
+    assert body["s3_key"].startswith(
+        f"attestor-tax-documents/{application_id}/{applicant_id}/"
+    )
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+        upload_session = await session.scalar(
+            select(AttestationUploadSession).where(
+                AttestationUploadSession.s3_key == body["s3_key"]
+            )
+        )
+
+    assert application is not None
+    assert upload_session is not None
+    assert application.tax_document_type == "w9"
+    assert application.tax_document_key == body["s3_key"]
+    assert upload_session.application_id == application_id
+    assert upload_session.user_id == applicant_id
+    assert upload_session.purpose == "attestor_tax_document"
+    assert presigned_calls == [
+        (
+            "auracles-artifacts-dev",
+            body["s3_key"],
+            "application/pdf",
+            10 * 1024 * 1024,
+            300,
+        )
+    ]

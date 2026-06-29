@@ -156,6 +156,21 @@ class CoiDeclarationRequest(BaseModel):
     accept_policy: bool
 
 
+class AttestorPayoutAttachRequest(BaseModel):
+    """Request body for attaching an owned payout account to the application."""
+
+    payout_account_id: UUID
+
+
+class AttestorTaxDocumentRequest(BaseModel):
+    """Request body for creating an Attestor tax-document upload session."""
+
+    tax_document_type: Literal["w9", "w8ben", "other"]
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
 class AttestorApplicationResponse(BaseModel):
     """Attestor application details visible to its owner and admins."""
 
@@ -175,6 +190,9 @@ class AttestorApplicationResponse(BaseModel):
     coi_declarations: list[CoiEntry]
     coi_signed_at: datetime | None
     coi_expires_at: datetime | None
+    payout_account_id: UUID | None
+    tax_document_type: str | None
+    tax_document_key: str | None
     admin_feedback: str | None
     reviewed_by: UUID | None
     reviewed_at: datetime | None

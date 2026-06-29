@@ -48,6 +48,8 @@ from app.modules.attestation.schemas import (
     AttestorAssignmentsResponse,
     AttestorCredentialCheckRequest,
     AttestorKycVerifyRequest,
+    AttestorPayoutAttachRequest,
+    AttestorTaxDocumentRequest,
     AttestorTrialAssignRequest,
     AttestorTrialDecideRequest,
     AttestorTrialResponse,
@@ -465,6 +467,56 @@ async def sign_attestor_application_coi(
         payload=payload,
     )
     return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/attestor/applications/{application_id}/payout",
+    response_model=AttestorApplicationResponse,
+    summary="Attach payout account",
+    description=(
+        "Attach one of the applicant's existing payout accounts before "
+        "activation. This does not change onboarding status."
+    ),
+)
+async def attach_attestor_application_payout(
+    application_id: UUID,
+    payload: AttestorPayoutAttachRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestorApplicationResponse:
+    """Attach an owned payout account to one Attestor application."""
+    application = await application_service.attach_payout(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payout_account_id=payload.payout_account_id,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/attestor/applications/{application_id}/tax-document",
+    response_model=CredentialEvidenceUploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create tax-document upload session",
+    description=(
+        "Create a presigned POST upload session for the applicant's tax "
+        "document and record the selected tax document type."
+    ),
+)
+async def create_attestor_tax_document_upload_session(
+    application_id: UUID,
+    payload: AttestorTaxDocumentRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned POST upload session for an Attestor tax document."""
+    return await application_service.set_tax_document(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payload=payload,
+    )
 
 
 @router.patch(

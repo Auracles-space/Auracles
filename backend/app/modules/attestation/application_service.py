@@ -7,7 +7,7 @@ attestation slices consume approved `attestor_profiles` for matching.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
@@ -15,7 +15,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
+from app.integrations import s3
+from app.modules.attestation.credential_service import (
+    CREDENTIAL_EVIDENCE_MAX_BYTES,
+    CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
+    _safe_file_name,
+)
 from app.modules.attestation.models import (
+    AttestationUploadSession,
     AttestorApplication,
     AttestorProfile,
     AttestorTrial,
@@ -26,10 +34,16 @@ from app.modules.attestation.schemas import (
     AttestorApplicationReviewRequest,
     AttestorApplicationUpdateRequest,
     AttestorCredentialCheckRequest,
+    AttestorTaxDocumentRequest,
     CoiDeclarationRequest,
+    CredentialEvidenceUploadSessionResponse,
 )
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import PayoutAccount
+
+TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
+TAX_DOCUMENT_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
 
 
 async def _load_locked_application(
@@ -288,6 +302,174 @@ async def sign_coi(
             metadata={"declaration_count": len(payload.declarations)},
         )
     return application
+
+
+async def attach_payout(
+    db: AsyncSession,
+    user: User,
+    application_id: UUID,
+    payout_account_id: UUID,
+) -> AttestorApplication:
+    """Attach an owned payout account to an Attestor application.
+
+    Args:
+        db: Async session.
+        user: Authenticated owner of the application.
+        application_id: Application to update.
+        payout_account_id: Owned payout account to attach.
+
+    Returns:
+        The application with its payout account attached.
+
+    Raises:
+        HTTPException(404): If the application or payout account is not found.
+        HTTPException(422): If the application is already active.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await db.scalar(
+            select(AttestorApplication)
+            .where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor application not found.",
+            )
+        if application.status == "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Payout settings are locked once the application is active.",
+            )
+        payout_account = await db.scalar(
+            select(PayoutAccount).where(
+                PayoutAccount.id == payout_account_id,
+                PayoutAccount.user_id == user_id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+        )
+        if payout_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payout account not found.",
+            )
+
+        application.payout_account_id = payout_account_id
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="attestor_payout_attached",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"payout_account_id": str(payout_account_id)},
+        )
+    return application
+
+
+async def set_tax_document(
+    db: AsyncSession,
+    user: User,
+    application_id: UUID,
+    payload: AttestorTaxDocumentRequest,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned upload session for an applicant's tax document.
+
+    Args:
+        db: Async session.
+        user: Authenticated owner of the application.
+        application_id: Application whose tax document is being set.
+        payload: Upload metadata and declared tax document type.
+
+    Returns:
+        A presigned POST upload session response for the tax document.
+
+    Raises:
+        HTTPException(404): If the application does not exist for this user.
+        HTTPException(413): If the upload exceeds the size limit.
+        HTTPException(422): If the application is already active.
+    """
+    user_id = user.id
+    if payload.size_bytes > TAX_DOCUMENT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Tax document upload is too large.",
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=TAX_DOCUMENT_UPLOAD_TTL_SECONDS)
+    key = (
+        f"attestor-tax-documents/{application_id}/{user_id}/{uuid4()}-"
+        f"{_safe_file_name(payload.file_name)}"
+    )
+    async with db.begin():
+        application = await db.scalar(
+            select(AttestorApplication)
+            .where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor application not found.",
+            )
+        if application.status == "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Tax documents are locked once the application is active.",
+            )
+
+        upload_session = AttestationUploadSession(
+            application_id=application_id,
+            user_id=user_id,
+            purpose="attestor_tax_document",
+            s3_key=key,
+            content_type=payload.content_type,
+            size_limit=TAX_DOCUMENT_MAX_BYTES,
+            scan_status="pending_scan",
+            expires_at=expires_at,
+        )
+        db.add(upload_session)
+        application.tax_document_type = payload.tax_document_type
+        application.tax_document_key = key
+        await db.flush()
+        await db.refresh(upload_session)
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="attestor_tax_document_set",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"tax_document_type": payload.tax_document_type},
+        )
+
+    settings = get_settings()
+    post = s3.storage.presigned_post(
+        settings.s3_artifacts_bucket,
+        key,
+        payload.content_type,
+        TAX_DOCUMENT_MAX_BYTES,
+        TAX_DOCUMENT_UPLOAD_TTL_SECONDS,
+    )
+    return CredentialEvidenceUploadSessionResponse(
+        id=upload_session.id,
+        s3_key=key,
+        url=str(post["url"]),
+        fields={str(key_): str(value) for key_, value in post["fields"].items()},
+        expires_at=expires_at,
+        size_limit=TAX_DOCUMENT_MAX_BYTES,
+        scan_status=upload_session.scan_status,
+    )
 
 
 async def list_applications_for_admin(

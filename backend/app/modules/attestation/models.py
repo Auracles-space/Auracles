@@ -113,6 +113,7 @@ ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
 ATTESTATION_UPLOAD_PURPOSE_ENUM = ENUM(
     "report_evidence",
     "credential_evidence",
+    "attestor_tax_document",
     name="attestation_upload_purpose_enum",
     create_type=False,
 )
@@ -606,8 +607,12 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     __tablename__ = "attestation_upload_sessions"
     __table_args__ = (
         CheckConstraint(
-            "(attestation_id IS NOT NULL AND credential_id IS NULL) "
-            "OR (attestation_id IS NULL AND credential_id IS NOT NULL)",
+            "(attestation_id IS NOT NULL AND credential_id IS NULL "
+            "AND application_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NOT NULL "
+            "AND application_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NULL "
+            "AND application_id IS NOT NULL)",
             name="ck_attestation_upload_sessions_single_parent",
         ),
         UniqueConstraint("s3_key", name="uq_attestation_upload_sessions_s3_key"),
@@ -620,6 +625,12 @@ class AttestationUploadSession(CreatedAtMixin, Base):
         Index(
             "idx_attestation_upload_sessions_credential_user_consumed",
             "credential_id",
+            "user_id",
+            "consumed_at",
+        ),
+        Index(
+            "idx_attestation_upload_sessions_application_user_consumed",
+            "application_id",
             "user_id",
             "consumed_at",
         ),
@@ -640,6 +651,11 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     credential_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("credentials.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    application_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestor_applications.id", ondelete="CASCADE"),
         nullable=True,
     )
     user_id: Mapped[UUID] = mapped_column(
