@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -86,33 +87,42 @@ async def submit_application(
 
     if db.in_transaction():
         await db.rollback()
-    async with db.begin():
-        application = AttestorApplication(
-            user_id=user_id,
-            status="submitted",
-            # Legacy NOT NULL column superseded by `sectors`/`framework_categories`;
-            # left empty for new onboarding applications (see taxonomy.py).
-            specializations=[],
-            legal_name=payload.legal_name,
-            linkedin_url=payload.linkedin_url,
-            professional_body_numbers=payload.professional_body_numbers,
-            sectors=payload.sectors,
-            framework_categories=payload.framework_categories,
-            jurisdictions=payload.jurisdictions,
-            credentials_summary=payload.credentials_summary,
-            sample_work=payload.sample_work,
-            professional_references=payload.professional_references,
-        )
-        db.add(application)
-        await db.flush()
-        await write_audit(
-            db=db,
-            actor_id=user_id,
-            action="attestor_application_submitted",
-            target_type="attestor_application",
-            target_id=application.id,
-            metadata={"status": application.status},
-        )
+    # The pre-check above is the fast path; the partial unique index
+    # (uq_attestor_applications_user_submitted) is the race-safe backstop for
+    # two concurrent submits that both pass the SELECT.
+    try:
+        async with db.begin():
+            application = AttestorApplication(
+                user_id=user_id,
+                status="submitted",
+                # Legacy NOT NULL column superseded by `sectors`/`framework_categories`;
+                # left empty for new onboarding applications (see taxonomy.py).
+                specializations=[],
+                legal_name=payload.legal_name,
+                linkedin_url=payload.linkedin_url,
+                professional_body_numbers=payload.professional_body_numbers,
+                sectors=payload.sectors,
+                framework_categories=payload.framework_categories,
+                jurisdictions=payload.jurisdictions,
+                credentials_summary=payload.credentials_summary,
+                sample_work=payload.sample_work,
+                professional_references=payload.professional_references,
+            )
+            db.add(application)
+            await db.flush()
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="attestor_application_submitted",
+                target_type="attestor_application",
+                target_id=application.id,
+                metadata={"status": application.status},
+            )
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a submitted Attestor application.",
+        ) from exc
     return application
 
 
@@ -451,7 +461,7 @@ async def set_tax_document(
             action="attestor_tax_document_set",
             target_type="attestor_application",
             target_id=application.id,
-            metadata={"tax_document_type": payload.tax_document_type},
+            metadata={"tax_document_set": True},
         )
 
     settings = get_settings()

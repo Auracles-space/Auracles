@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pyotp
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -1269,3 +1270,107 @@ async def test_get_public_attestor_directory_profile_returns_active_attestor(
     assert [credential["title"] for credential in body["credentials"]] == [
         "Chartered Financial Analyst"
     ]
+
+
+# Each admin onboarding gate verifies TOTP *before* loading or mutating the
+# application, so an invalid code must fail regardless of the gate's required
+# source state — seed one submitted application and assert it never changes.
+_ADMIN_GATES = [
+    ("/verify-kyc", {"name_match": True}),
+    (
+        "/verify-credential",
+        {
+            "credential_id": str(uuid4()),
+            "issuing_body": "cfa_institute",
+            "good_standing": True,
+            "registry_reference": "REF-1",
+        },
+    ),
+    ("/trial", {}),
+    (f"/trial/{uuid4()}/decide", {"passed": True}),
+    ("/activate", {}),
+]
+
+
+@pytest.mark.usefixtures("migrated_database")
+@pytest.mark.parametrize(("path_suffix", "body"), _ADMIN_GATES)
+async def test_admin_onboarding_gate_rejects_invalid_totp(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+    path_suffix: str,
+    body: dict[str, object],
+) -> None:
+    """An invalid admin TOTP code is rejected before any state change at each gate."""
+    application_id, _applicant_id, _headers = await _seed_owner_application(
+        status="submitted",
+    )
+    admin_id, _secret = await create_admin_user()
+
+    response = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}{path_suffix}",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={**body, "totp_code": "000000"},
+    )
+
+    assert response.status_code == 422, response.text
+    async with async_session_factory() as session:
+        application = await session.get(AttestorApplication, application_id)
+    assert application is not None
+    assert application.status == "submitted"
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_admin_onboarding_gate_requires_admin_role(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """A non-admin caller cannot reach an admin onboarding gate (RBAC denies first)."""
+    application_id, _applicant_id, applicant_headers = await _seed_owner_application(
+        status="submitted",
+    )
+
+    response = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/verify-kyc",
+        headers=applicant_headers,
+        json={"name_match": True, "totp_code": "000000"},
+    )
+
+    assert response.status_code == 403, response.text
+    async with async_session_factory() as session:
+        application = await session.get(AttestorApplication, application_id)
+    assert application is not None
+    assert application.status == "submitted"
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_second_submitted_application_blocked_by_unique_index(
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """The DB partial unique index blocks a second submitted application per user.
+
+    Guards against the submit_application TOCTOU race: two concurrent submits can
+    both pass the non-locking pre-check, so the database is the real backstop.
+    """
+    user_id = await create_user("dup-submit@example.com", roles=["contributor"])
+
+    def _application() -> AttestorApplication:
+        return AttestorApplication(
+            user_id=user_id,
+            status="submitted",
+            specializations=[],
+            sectors=["PE"],
+            framework_categories=["Compliance"],
+            jurisdictions=["US"],
+            credentials_summary="x",
+            sample_work={},
+            professional_references="x",
+        )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(_application())
+
+    with pytest.raises(IntegrityError):
+        async with async_session_factory() as session:
+            async with session.begin():
+                session.add(_application())

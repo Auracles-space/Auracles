@@ -177,10 +177,10 @@ class AttestorApplication(CreatedAtMixin, Base):
     __table_args__ = (
         Index("idx_attestor_applications_user_status", "user_id", "status"),
         Index(
-            "uq_attestor_applications_user_pending",
+            "uq_attestor_applications_user_submitted",
             "user_id",
             unique=True,
-            postgresql_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'submitted'"),
         ),
     )
 

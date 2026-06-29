@@ -81,6 +81,13 @@ def downgrade() -> None:
         "attestation_upload_sessions",
         type_="check",
     )
+    # Application-parented upload sessions (tax documents) have both
+    # attestation_id and credential_id NULL, so they satisfy neither branch of
+    # the restored two-parent constraint. Drop them before re-imposing it.
+    op.execute(
+        "DELETE FROM attestation_upload_sessions "
+        "WHERE attestation_id IS NULL AND credential_id IS NULL"
+    )
     op.create_check_constraint(
         "ck_attestation_upload_sessions_single_parent",
         "attestation_upload_sessions",
