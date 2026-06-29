@@ -46,6 +46,7 @@ from app.modules.attestation.schemas import (
     AttestorApplicationUpdateRequest,
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
+    AttestorCredentialCheckRequest,
     AttestorKycVerifyRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
@@ -526,6 +527,28 @@ async def verify_attestor_application_kyc(
         application_id=application_id,
         name_match=payload.name_match,
         totp_code=payload.totp_code,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/admin/attestor/applications/{application_id}/verify-credential",
+    response_model=AttestorApplicationResponse,
+)
+async def verify_attestor_application_credential(
+    application_id: UUID,
+    payload: AttestorCredentialCheckRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestorApplicationResponse:
+    """Advance an identity-verified application through credential review."""
+    application = await application_service.verify_credential(
+        db=db,
+        redis=redis,
+        admin=admin,
+        application_id=application_id,
+        payload=payload,
     )
     return AttestorApplicationResponse.model_validate(application)
 

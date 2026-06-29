@@ -15,11 +15,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.modules.attestation.models import AttestorApplication, AttestorProfile
+from app.modules.attestation.models import (
+    AttestorApplication,
+    AttestorProfile,
+    Credential,
+)
 from app.modules.attestation.schemas import (
     AttestorApplicationCreateRequest,
     AttestorApplicationReviewRequest,
     AttestorApplicationUpdateRequest,
+    AttestorCredentialCheckRequest,
 )
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
@@ -351,6 +356,77 @@ async def verify_kyc(
             target_type="attestor_application",
             target_id=application.id,
             metadata={"user_id": str(application.user_id)},
+        )
+    return application
+
+
+async def verify_credential(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    application_id: UUID,
+    payload: AttestorCredentialCheckRequest,
+) -> AttestorApplication:
+    """Cross-check one applicant credential and advance Level 2/3 on success."""
+    admin_id = admin.id
+    now = datetime.now(UTC)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked_admin = await db.get(User, admin_id, with_for_update=True)
+        if locked_admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_admin,
+            code=payload.totp_code,
+        )
+
+        application = await _load_locked_application(db, application_id)
+        if application.status != "identity_verified":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Only identity-verified applications can have credentials checked."
+                ),
+            )
+
+        credential = await db.scalar(
+            select(Credential).where(
+                Credential.id == payload.credential_id,
+                Credential.user_id == application.user_id,
+            )
+        )
+        if credential is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Credential does not belong to this applicant.",
+            )
+
+        credential.issuing_body = payload.issuing_body
+        credential.good_standing = payload.good_standing
+        credential.registry_checked_at = now
+        credential.registry_checked_by = admin_id
+        credential.registry_reference = payload.registry_reference
+
+        if not payload.good_standing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Credential not in good standing.",
+            )
+
+        application.status = "professional_verified"
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="attestor_credential_checked",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"credential_id": str(payload.credential_id)},
         )
     return application
 

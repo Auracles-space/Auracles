@@ -21,6 +21,19 @@ _LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,&/()\-]*$")
 # Characters never allowed in free-text prose: markup delimiters and ASCII
 # control characters (tab/newline excepted) that have no place in plain text.
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CREDENTIAL_ISSUING_BODIES = frozenset(
+    {
+        "cfa_institute",
+        "aicpa",
+        "isaca",
+        "rics",
+        "sra",
+        "state_bar",
+        "fca",
+        "acams",
+        "other",
+    }
+)
 
 
 def _normalise_labels(values: list[str]) -> list[str]:
@@ -170,6 +183,24 @@ class AttestorKycVerifyRequest(BaseModel):
 
     name_match: bool
     totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AttestorCredentialCheckRequest(BaseModel):
+    """Admin request body for the credential registry cross-check gate."""
+
+    credential_id: UUID
+    issuing_body: str
+    good_standing: bool
+    registry_reference: str
+    totp_code: str = Field(min_length=6, max_length=16)
+
+    @field_validator("issuing_body")
+    @classmethod
+    def _validate_issuing_body(cls, value: str) -> str:
+        """Accept only controlled credential-body enum values."""
+        if value not in _CREDENTIAL_ISSUING_BODIES:
+            raise ValueError(f"{value!r} is not a valid credential issuing body.")
+        return value
 
 
 class CredentialCreateRequest(BaseModel):
