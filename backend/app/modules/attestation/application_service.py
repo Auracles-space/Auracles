@@ -6,7 +6,7 @@ attestation slices consume approved `attestor_profiles` for matching.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -26,6 +26,7 @@ from app.modules.attestation.schemas import (
     AttestorApplicationReviewRequest,
     AttestorApplicationUpdateRequest,
     AttestorCredentialCheckRequest,
+    CoiDeclarationRequest,
 )
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
@@ -218,6 +219,73 @@ async def update_application(
             target_type="attestor_application",
             target_id=application.id,
             metadata={"status": application.status},
+        )
+    return application
+
+
+async def sign_coi(
+    db: AsyncSession,
+    user: User,
+    application_id: UUID,
+    payload: CoiDeclarationRequest,
+) -> AttestorApplication:
+    """Sign or refresh an applicant's conflict-of-interest declaration.
+
+    Args:
+        db: Async session.
+        user: Authenticated owner of the application.
+        application_id: Application whose declaration is being signed.
+        payload: Declared conflicts and policy acceptance flag.
+
+    Returns:
+        The application with updated CoI declaration fields.
+
+    Raises:
+        HTTPException(404): If the application does not exist for this user.
+        HTTPException(422): If policy acceptance is missing or the application
+            is active.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await db.scalar(
+            select(AttestorApplication)
+            .where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor application not found.",
+            )
+        if not payload.accept_policy:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="CoI policy must be accepted.",
+            )
+        if application.status == "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="CoI declarations are locked once the application is active.",
+            )
+
+        now = datetime.now(UTC)
+        application.coi_declarations = [
+            declaration.model_dump() for declaration in payload.declarations
+        ]
+        application.coi_signed_at = now
+        application.coi_expires_at = now + timedelta(days=365)
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="attestor_coi_signed",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"declaration_count": len(payload.declarations)},
         )
     return application
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 import pyotp
@@ -153,6 +153,37 @@ async def _seed_professional_verified_application() -> tuple[
             application_id = application.id
 
     return application_id, auth_headers(admin_id, ["admin"]), _admin_totp(admin_secret)
+
+
+async def _seed_owner_application(
+    status: str = "submitted",
+) -> tuple[UUID, UUID, dict[str, str]]:
+    """Create an application owned by an authenticated applicant."""
+    applicant_id = await create_user(
+        f"attestor-owner-{status}@example.com",
+        roles=["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            application = AttestorApplication(
+                user_id=applicant_id,
+                status=status,
+                specializations=[],
+                legal_name="Jane Q Attestor",
+                linkedin_url="https://linkedin.com/in/jane",
+                professional_body_numbers={"cfa_institute": "12345"},
+                sectors=["PE"],
+                framework_categories=["Compliance"],
+                jurisdictions=["US"],
+                credentials_summary="Twenty years compliance.",
+                sample_work={},
+                professional_references="ref",
+            )
+            session.add(application)
+            await session.flush()
+            application_id = application.id
+
+    return application_id, applicant_id, auth_headers(applicant_id, ["contributor"])
 
 
 @pytest.mark.usefixtures("migrated_database")
@@ -448,3 +479,100 @@ async def test_decide_trial_fail_twice_holds_application_and_blocks_third_assign
     assert application.status == "held"
     assert first_trial.status == "failed"
     assert second_trial.status == "failed"
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_sign_coi_sets_timestamps_and_declarations(
+    client: AsyncClient, attestor_application_context,  # noqa: F811
+) -> None:
+    """Signing CoI stores declarations and sets a one-year expiry window."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={
+            "declarations": [
+                {
+                    "entity": "Northwind Capital",
+                    "entity_type": "fund",
+                    "relationship": "financial",
+                    "within_24mo": True,
+                },
+                {
+                    "entity": "Jane Advisor LLC",
+                    "entity_type": "firm",
+                    "relationship": "advisory",
+                    "within_24mo": False,
+                },
+            ],
+            "accept_policy": True,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    signed_at = datetime.fromisoformat(body["coi_signed_at"])
+    expires_at = datetime.fromisoformat(body["coi_expires_at"])
+    assert len(body["coi_declarations"]) == 2
+    assert abs((expires_at - signed_at) - timedelta(days=365)) < timedelta(seconds=1)
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.coi_signed_at is not None
+    assert application.coi_expires_at is not None
+    assert len(application.coi_declarations) == 2
+    assert (
+        abs(
+            (application.coi_expires_at - application.coi_signed_at)
+            - timedelta(days=365)
+        )
+        < timedelta(seconds=1)
+    )
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_sign_coi_requires_policy_acceptance(
+    client: AsyncClient, attestor_application_context,  # noqa: F811
+) -> None:
+    """Reject signing when the applicant does not accept the CoI policy."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={
+            "declarations": [
+                {
+                    "entity": "Northwind Capital",
+                    "entity_type": "fund",
+                    "relationship": "financial",
+                    "within_24mo": True,
+                }
+            ],
+            "accept_policy": False,
+        },
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "CoI policy must be accepted."
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.coi_signed_at is None
+    assert application.coi_expires_at is None
+    assert application.coi_declarations == []

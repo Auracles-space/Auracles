@@ -51,6 +51,7 @@ from app.modules.attestation.schemas import (
     AttestorTrialAssignRequest,
     AttestorTrialDecideRequest,
     AttestorTrialResponse,
+    CoiDeclarationRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -433,6 +434,31 @@ async def update_attestor_application(
 ) -> AttestorApplicationResponse:
     """Edit a pending Attestor application owned by the current user."""
     application = await application_service.update_application(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/attestor/applications/{application_id}/coi",
+    response_model=AttestorApplicationResponse,
+    summary="Sign conflict-of-interest declaration",
+    description=(
+        "Record or refresh the applicant's conflict-of-interest declaration "
+        "before activation. This does not change onboarding status."
+    ),
+)
+async def sign_attestor_application_coi(
+    application_id: UUID,
+    payload: CoiDeclarationRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestorApplicationResponse:
+    """Sign the owner's conflict-of-interest declaration for one application."""
+    application = await application_service.sign_coi(
         db=db,
         user=user,
         application_id=application_id,

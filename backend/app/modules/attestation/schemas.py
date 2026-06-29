@@ -140,6 +140,22 @@ class AttestorApplicationUpdateRequest(_AttestorApplicationFields):
     """Request body for editing a pending Attestor application in place."""
 
 
+class CoiEntry(BaseModel):
+    """One declared conflict-of-interest relationship disclosed by an applicant."""
+
+    entity: str
+    entity_type: Literal["firm", "fund", "individual"]
+    relationship: Literal["financial", "advisory", "employment"]
+    within_24mo: bool
+
+
+class CoiDeclarationRequest(BaseModel):
+    """Request body for signing the Attestor conflict-of-interest declaration."""
+
+    declarations: list[CoiEntry]
+    accept_policy: bool
+
+
 class AttestorApplicationResponse(BaseModel):
     """Attestor application details visible to its owner and admins."""
 
@@ -156,6 +172,9 @@ class AttestorApplicationResponse(BaseModel):
     credentials_summary: str
     sample_work: dict[str, Any]
     professional_references: str
+    coi_declarations: list[CoiEntry]
+    coi_signed_at: datetime | None
+    coi_expires_at: datetime | None
     admin_feedback: str | None
     reviewed_by: UUID | None
     reviewed_at: datetime | None
