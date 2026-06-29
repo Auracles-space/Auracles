@@ -16,6 +16,7 @@ from app.core.redis import get_redis
 from app.modules.attestation import (
     application_service,
     credential_service,
+    directory_service,
     dispute_service,
     matching_service,
     release_service,
@@ -48,6 +49,8 @@ from app.modules.attestation.schemas import (
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
     AttestorCredentialCheckRequest,
+    AttestorDirectoryEntry,
+    AttestorDirectoryResponse,
     AttestorKycVerifyRequest,
     AttestorPayoutAttachRequest,
     AttestorTaxDocumentRequest,
@@ -146,6 +149,50 @@ async def list_attestations(
             for attestation in attestations
         ]
     )
+
+
+@router.get(
+    "/attestors",
+    response_model=AttestorDirectoryResponse,
+    summary="List public Attestor directory",
+    description=(
+        "Return active Attestors for public directory browsing, with optional "
+        "taxonomy and verification-level filters."
+    ),
+)
+async def list_public_attestor_directory(
+    db: DatabaseSession,
+    sector: str | None = Query(default=None),
+    framework_category: str | None = Query(default=None),
+    jurisdiction: str | None = Query(default=None),
+    level: int | None = Query(default=None),
+) -> AttestorDirectoryResponse:
+    """Return active public Attestor directory entries."""
+    attestors = await directory_service.list_directory(
+        db=db,
+        sector=sector,
+        framework_category=framework_category,
+        jurisdiction=jurisdiction,
+        level=level,
+    )
+    return AttestorDirectoryResponse(attestors=attestors)
+
+
+@router.get(
+    "/attestors/{user_id}",
+    response_model=AttestorDirectoryEntry,
+    summary="Get public Attestor directory profile",
+    description=(
+        "Return one active Attestor's public directory profile, including "
+        "safe verified credentials and completed-attestation count."
+    ),
+)
+async def get_public_attestor_directory_profile(
+    user_id: UUID,
+    db: DatabaseSession,
+) -> AttestorDirectoryEntry:
+    """Return one active public Attestor directory entry."""
+    return await directory_service.get_directory_profile(db=db, user_id=user_id)
 
 
 @router.get(

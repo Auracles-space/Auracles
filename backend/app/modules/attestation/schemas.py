@@ -588,3 +588,23 @@ class PublicCredentialResponse(BaseModel):
     issued_date: date
     expires_date: date | None
     expired: bool
+
+
+class AttestorDirectoryEntry(BaseModel):
+    """Public Attestor directory row safe for anonymous browsing."""
+
+    user_id: UUID
+    display_name: str
+    sectors: list[str]
+    framework_categories: list[str]
+    jurisdictions: list[str]
+    verification_level: int
+    credentials: list[PublicCredentialResponse]
+    completed_attestations: int
+    reputation: float | None
+
+
+class AttestorDirectoryResponse(BaseModel):
+    """Public list response for the Attestor directory."""
+
+    attestors: list[AttestorDirectoryEntry]
