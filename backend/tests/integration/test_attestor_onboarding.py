@@ -16,10 +16,11 @@ from app.integrations import s3
 from app.modules.attestation.models import (
     AttestationUploadSession,
     AttestorApplication,
+    AttestorProfile,
     AttestorTrial,
     Credential,
 )
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PayoutAccount
 
 # Reuse shared fixtures/helpers from the existing application test module
@@ -746,3 +747,254 @@ async def test_set_tax_document_creates_upload_session_and_persists_key(
             300,
         )
     ]
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_activate_attestor_promotes_expert_verified_application_to_active(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Activation creates the live profile and approves the Attestor role."""
+    applicant_id = await create_user(
+        "attestor-activation-owner@example.com",
+        roles=["contributor"],
+    )
+    admin_id, admin_secret = await create_admin_user()
+    owner_headers = auth_headers(applicant_id, ["contributor"])
+    admin_headers = auth_headers(admin_id, ["admin"])
+    totp = _admin_totp(admin_secret)
+
+    submit_resp = await client.post(
+        "/v1/attestor/applications",
+        headers=owner_headers,
+        json={
+            "legal_name": "Jane Q Attestor",
+            "linkedin_url": "https://linkedin.com/in/jane",
+            "professional_body_numbers": {"cfa_institute": "12345"},
+            "sectors": ["PE"],
+            "framework_categories": ["Compliance"],
+            "jurisdictions": ["US"],
+            "credentials_summary": "Twenty years compliance.",
+            "sample_work": {},
+            "professional_references": "ref",
+        },
+    )
+    assert submit_resp.status_code == 201, submit_resp.text
+    application_id = UUID(submit_resp.json()["id"])
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            applicant = await session.get(User, applicant_id)
+            assert applicant is not None
+            applicant.kyc_status = "verified"
+            credential = Credential(
+                user_id=applicant_id,
+                title="Chartered Financial Analyst",
+                issuer="CFA Institute",
+                issued_date=date(2020, 1, 15),
+                evidence_file_keys=["credentials/cfa.pdf"],
+            )
+            payout_account = PayoutAccount(
+                user_id=applicant_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_activation_001",
+                provider_account_lookup_hash="hash-attestor-activation-001",
+                account_type="express",
+                is_default=True,
+            )
+            session.add(credential)
+            session.add(payout_account)
+            await session.flush()
+            credential_id = credential.id
+            payout_account_id = payout_account.id
+
+    kyc_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/verify-kyc",
+        headers=admin_headers,
+        json={"name_match": True, "totp_code": totp.now()},
+    )
+    assert kyc_resp.status_code == 200, kyc_resp.text
+
+    credential_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/verify-credential",
+        headers=admin_headers,
+        json={
+            "credential_id": str(credential_id),
+            "issuing_body": "cfa_institute",
+            "good_standing": True,
+            "registry_reference": "registry-check-activation",
+            "totp_code": totp.now(),
+        },
+    )
+    assert credential_resp.status_code == 200, credential_resp.text
+
+    assign_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/trial",
+        headers=admin_headers,
+        json={"seeded_framework_id": None, "totp_code": totp.now()},
+    )
+    assert assign_resp.status_code == 200, assign_resp.text
+    trial_id = UUID(assign_resp.json()["id"])
+
+    decide_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/trial/{trial_id}/decide",
+        headers=admin_headers,
+        json={"passed": True, "feedback": "Ready.", "totp_code": totp.now()},
+    )
+    assert decide_resp.status_code == 200, decide_resp.text
+
+    coi_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={
+            "declarations": [
+                {
+                    "entity": "Northwind Capital",
+                    "entity_type": "fund",
+                    "relationship": "financial",
+                    "within_24mo": True,
+                }
+            ],
+            "accept_policy": True,
+        },
+    )
+    assert coi_resp.status_code == 200, coi_resp.text
+
+    payout_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+    assert payout_resp.status_code == 200, payout_resp.text
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, object]:
+        """Return deterministic presigned POST data without calling AWS."""
+        del max_size, expires_in
+        return {
+            "url": f"https://s3.local/{bucket}",
+            "fields": {
+                "key": key,
+                "Content-Type": mime_type,
+            },
+        }
+
+    monkeypatch.setattr(s3.storage, "presigned_post", fake_presigned_post)
+    tax_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/tax-document",
+        headers=owner_headers,
+        json={
+            "tax_document_type": "w9",
+            "file_name": "Form W-9.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+    )
+    assert tax_resp.status_code == 201, tax_resp.text
+
+    activate_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/activate",
+        headers=admin_headers,
+        json={"totp_code": totp.now()},
+    )
+
+    assert activate_resp.status_code == 200, activate_resp.text
+    assert activate_resp.json()["status"] == "active"
+
+    async with async_session_factory() as session:
+        application = await session.get(AttestorApplication, application_id)
+        profile = await session.scalar(
+            select(AttestorProfile).where(AttestorProfile.user_id == applicant_id)
+        )
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == applicant_id,
+                UserRole.role == "attestor",
+            )
+        )
+
+    assert application is not None
+    assert profile is not None
+    assert role is not None
+    assert application.status == "active"
+    assert profile.active is True
+    assert profile.verification_level == 4
+    assert profile.sectors == ["PE"]
+    assert role.approved_at is not None
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_activate_attestor_rejects_missing_tax_document(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """Activation must fail until the applicant has set a tax document."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    admin_id, admin_secret = await create_admin_user()
+    admin_headers = auth_headers(admin_id, ["admin"])
+    totp = _admin_totp(admin_secret)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=applicant_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_missing_tax_001",
+                provider_account_lookup_hash="hash-attestor-missing-tax-001",
+                account_type="express",
+                is_default=True,
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout_account_id = payout_account.id
+
+    coi_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={
+            "declarations": [
+                {
+                    "entity": "Northwind Capital",
+                    "entity_type": "fund",
+                    "relationship": "financial",
+                    "within_24mo": True,
+                }
+            ],
+            "accept_policy": True,
+        },
+    )
+    assert coi_resp.status_code == 200, coi_resp.text
+
+    payout_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+    assert payout_resp.status_code == 200, payout_resp.text
+
+    activate_resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/activate",
+        headers=admin_headers,
+        json={"totp_code": totp.now()},
+    )
+
+    assert activate_resp.status_code == 422
+    assert "tax_document" in activate_resp.json()["detail"]
+
+    async with async_session_factory() as session:
+        application = await session.get(AttestorApplication, application_id)
+        profile = await session.scalar(
+            select(AttestorProfile).where(AttestorProfile.user_id == applicant_id)
+        )
+
+    assert application is not None
+    assert profile is None
+    assert application.status == "expert_verified"

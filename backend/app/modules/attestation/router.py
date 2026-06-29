@@ -39,6 +39,7 @@ from app.modules.attestation.schemas import (
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     AttestationsResponse,
+    AttestorActivateRequest,
     AttestorApplicationCreateRequest,
     AttestorApplicationResponse,
     AttestorApplicationReviewRequest,
@@ -689,6 +690,33 @@ async def decide_attestor_application_trial(
         passed=payload.passed,
         feedback=payload.feedback,
         totp_code=payload.totp_code,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/admin/attestor/applications/{application_id}/activate",
+    response_model=AttestorApplicationResponse,
+    summary="Activate Attestor application",
+    description=(
+        "Activate an expert-verified Attestor application after confirming "
+        "all onboarding prerequisites and admin TOTP verification."
+    ),
+)
+async def activate_attestor_application(
+    application_id: UUID,
+    payload: AttestorActivateRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestorApplicationResponse:
+    """Activate a fully verified Attestor application."""
+    application = await application_service.activate_attestor(
+        db=db,
+        redis=redis,
+        admin=admin,
+        application_id=application_id,
+        payload=payload,
     )
     return AttestorApplicationResponse.model_validate(application)
 

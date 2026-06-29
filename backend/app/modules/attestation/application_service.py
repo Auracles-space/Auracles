@@ -30,6 +30,7 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.attestation.schemas import (
+    AttestorActivateRequest,
     AttestorApplicationCreateRequest,
     AttestorApplicationReviewRequest,
     AttestorApplicationUpdateRequest,
@@ -836,6 +837,173 @@ async def decide_trial(
             metadata=metadata,
         )
     return application
+
+
+def _profile_specializations_from_application(
+    application: AttestorApplication,
+) -> list[str]:
+    """Derive legacy matcher specializations from onboarding taxonomy fields."""
+    values: list[str] = []
+    for item in [*application.sectors, *application.framework_categories]:
+        if item not in values:
+            values.append(item)
+    return values
+
+
+def _missing_activation_prerequisites(
+    application: AttestorApplication,
+) -> list[str]:
+    """Return any missing activation prerequisites for an application."""
+    missing: list[str] = []
+    if application.coi_signed_at is None:
+        missing.append("coi_signed_at")
+    if not application.sectors:
+        missing.append("sectors")
+    if not application.framework_categories:
+        missing.append("framework_categories")
+    if application.payout_account_id is None:
+        missing.append("payout_account_id")
+    if not application.tax_document_key:
+        missing.append("tax_document_key")
+    return missing
+
+
+async def activate_attestor(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    application_id: UUID,
+    payload: AttestorActivateRequest,
+) -> AttestorApplication:
+    """Activate a fully verified Attestor application.
+
+    Args:
+        db: Async session.
+        redis: Redis client used for TOTP verification state.
+        admin: Authenticated admin performing the activation.
+        application_id: Application to activate.
+        payload: TOTP confirmation for this sensitive action.
+
+    Returns:
+        The activated Attestor application.
+
+    Raises:
+        HTTPException(401): If the admin token no longer resolves to a user.
+        HTTPException(404): If the application does not exist.
+        HTTPException(422): If the application is not activation-ready.
+    """
+    admin_id = admin.id
+    now = datetime.now(UTC)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked_admin = await db.get(User, admin_id, with_for_update=True)
+        if locked_admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_admin,
+            code=payload.totp_code,
+        )
+
+        application = await _load_locked_application(db, application_id)
+        if application.status != "expert_verified":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only expert-verified applications can be activated.",
+            )
+
+        missing = _missing_activation_prerequisites(application)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Missing activation prerequisites: "
+                    f"{', '.join(missing)}."
+                ),
+            )
+
+        await _create_active_profile(
+            db=db,
+            application=application,
+            admin_id=admin_id,
+            approved_at=now,
+        )
+        application.status = "active"
+        application.reviewed_by = admin_id
+        application.reviewed_at = now
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="attestor_activated",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={
+                "user_id": str(application.user_id),
+                "verification_level": 4,
+            },
+        )
+    return application
+
+
+async def _create_active_profile(
+    db: AsyncSession,
+    application: AttestorApplication,
+    admin_id: UUID,
+    approved_at: datetime,
+) -> None:
+    """Create or refresh the live Attestor profile and approved role."""
+    role = await db.scalar(
+        select(UserRole)
+        .where(
+            UserRole.user_id == application.user_id,
+            UserRole.role == "attestor",
+        )
+        .with_for_update()
+    )
+    if role is None:
+        role = UserRole(user_id=application.user_id, role="attestor")
+        db.add(role)
+    role.approved_at = approved_at
+    role.approved_by = admin_id
+
+    specializations = _profile_specializations_from_application(application)
+    profile = await db.scalar(
+        select(AttestorProfile)
+        .where(AttestorProfile.user_id == application.user_id)
+        .with_for_update()
+    )
+    if profile is None:
+        profile = AttestorProfile(
+            user_id=application.user_id,
+            specializations=specializations,
+            jurisdictions=application.jurisdictions,
+            active=True,
+            approved_at=approved_at,
+            verification_level=4,
+            sectors=application.sectors,
+            framework_categories=application.framework_categories,
+            coi_declarations=application.coi_declarations,
+            coi_signed_at=application.coi_signed_at,
+            coi_expires_at=application.coi_expires_at,
+        )
+        db.add(profile)
+        return
+
+    profile.specializations = specializations
+    profile.jurisdictions = application.jurisdictions
+    profile.active = True
+    profile.approved_at = approved_at
+    profile.verification_level = 4
+    profile.sectors = application.sectors
+    profile.framework_categories = application.framework_categories
+    profile.coi_declarations = application.coi_declarations
+    profile.coi_signed_at = application.coi_signed_at
+    profile.coi_expires_at = application.coi_expires_at
 
 
 async def _approve_attestor_profile_and_role(

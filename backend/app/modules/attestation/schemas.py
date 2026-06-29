@@ -255,6 +255,12 @@ class AttestorTrialDecideRequest(BaseModel):
     totp_code: str = Field(min_length=6, max_length=16)
 
 
+class AttestorActivateRequest(BaseModel):
+    """Admin request body for activating a fully verified Attestor."""
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
 class AttestorTrialResponse(BaseModel):
     """Calibration trial details returned to admins."""
 
