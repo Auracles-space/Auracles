@@ -463,6 +463,7 @@ async def list_attestor_applications_for_admin(
     db: DatabaseSession,
     status_filter: Literal[
         "pending",
+        "submitted",
         "approved",
         "rejected",
         "withdrawn",

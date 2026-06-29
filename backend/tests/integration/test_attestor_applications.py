@@ -165,7 +165,11 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
 def application_payload() -> dict[str, object]:
     """Return a valid Attestor application request payload."""
     return {
-        "specializations": ["healthcare", "governance"],
+        "legal_name": "Ada Example",
+        "linkedin_url": "https://linkedin.com/in/ada-example",
+        "professional_body_numbers": {"cfa_institute": "55512"},
+        "sectors": ["PE", "VC"],
+        "framework_categories": ["Governance", "Risk"],
         "jurisdictions": ["US", "NG"],
         "credentials_summary": "Ten years auditing clinical operations.",
         "sample_work": {"reports": ["s3://example/private-sample.pdf"]},
@@ -193,9 +197,10 @@ async def test_user_submits_and_lists_own_attestor_application(
     )
 
     assert submitted.status_code == 201
-    assert submitted.json()["status"] == "pending"
+    assert submitted.json()["status"] == "submitted"
     assert submitted.json()["user_id"] == str(user_id)
-    assert submitted.json()["specializations"] == ["healthcare", "governance"]
+    assert submitted.json()["sectors"] == ["PE", "VC"]
+    assert submitted.json()["framework_categories"] == ["Governance", "Risk"]
     assert mine.status_code == 200
     assert [item["id"] for item in mine.json()["applications"]] == [
         submitted.json()["id"]
@@ -213,7 +218,7 @@ async def test_user_submits_and_lists_own_attestor_application(
         )
 
     assert application is not None
-    assert application.status == "pending"
+    assert application.status == "submitted"
     assert audit is not None
 
 
@@ -224,17 +229,18 @@ async def test_application_rejects_unsafe_input(
 ) -> None:
     """Disallowed characters in application fields are rejected with 422.
 
-    List items accept only a safe charset (no ``;`` or angle brackets) and prose
-    fields reject markup characters, keeping stored data clean and inert.
+    Controlled list items accept only a safe charset (no ``;`` or angle
+    brackets) and prose fields reject markup characters, keeping stored data
+    clean and inert.
     """
     del migrated_database, attestor_application_context
     user_id = await create_user("unsafe-candidate@auracles.space", ["operator"])
     headers = auth_headers(user_id, ["operator"])
 
-    bad_specialization = await client.post(
+    bad_jurisdiction = await client.post(
         "/v1/attestor/applications",
         headers=headers,
-        json={**application_payload(), "specializations": ["health;; drop"]},
+        json={**application_payload(), "jurisdictions": ["US;; drop"]},
     )
     bad_summary = await client.post(
         "/v1/attestor/applications",
@@ -245,7 +251,7 @@ async def test_application_rejects_unsafe_input(
         },
     )
 
-    assert bad_specialization.status_code == 422
+    assert bad_jurisdiction.status_code == 422
     assert bad_summary.status_code == 422
 
 
@@ -264,12 +270,12 @@ async def test_application_normalizes_list_items(
         headers=headers,
         json={
             **application_payload(),
-            "specializations": ["Healthcare", "  healthcare ", "Governance"],
+            "jurisdictions": ["US", "  US ", "NG"],
         },
     )
 
     assert submitted.status_code == 201
-    assert submitted.json()["specializations"] == ["Healthcare", "Governance"]
+    assert submitted.json()["jurisdictions"] == ["US", "NG"]
 
 
 async def test_owner_edits_pending_application_in_place(
@@ -277,10 +283,10 @@ async def test_owner_edits_pending_application_in_place(
     migrated_database: None,
     attestor_application_context: FakeRedis,
 ) -> None:
-    """An owner can edit a pending application; edits are rejected once it is not.
+    """An owner can edit a submitted application; edits are rejected once it is not.
 
-    Editing updates the fields in place and keeps the application pending. After
-    withdrawal the same application can no longer be edited (422).
+    Editing updates the fields in place and keeps the application submitted.
+    After withdrawal the same application can no longer be edited (422).
     """
     del migrated_database, attestor_application_context
     user_id = await create_user("edit-candidate@auracles.space", ["operator"])
@@ -297,7 +303,7 @@ async def test_owner_edits_pending_application_in_place(
         headers=headers,
         json={
             **application_payload(),
-            "specializations": ["cybersecurity"],
+            "sectors": ["Infrastructure"],
             "credentials_summary": "Updated summary covering security audits.",
         },
     )
@@ -312,8 +318,8 @@ async def test_owner_edits_pending_application_in_place(
     )
 
     assert edited.status_code == 200
-    assert edited.json()["status"] == "pending"
-    assert edited.json()["specializations"] == ["cybersecurity"]
+    assert edited.json()["status"] == "submitted"
+    assert edited.json()["sectors"] == ["Infrastructure"]
     assert edited.json()["credentials_summary"] == (
         "Updated summary covering security audits."
     )
@@ -412,7 +418,7 @@ async def test_admin_approves_attestor_application_with_profile_and_role(
     )
 
     listed = await client.get(
-        "/v1/admin/attestor/applications?status=pending",
+        "/v1/admin/attestor/applications?status=submitted",
         headers=auth_headers(admin_id, ["admin"]),
     )
     approved = await client.post(
@@ -450,7 +456,7 @@ async def test_admin_approves_attestor_application_with_profile_and_role(
     assert approved.json()["reviewed_by"] == str(admin_id)
     assert profile is not None
     assert profile.active is True
-    assert profile.specializations == ["healthcare", "governance"]
+    assert profile.specializations == []
     assert role is not None
     assert role.approved_at is not None
     assert role.approved_by == admin_id

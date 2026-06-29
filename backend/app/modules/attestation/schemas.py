@@ -10,6 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.attestation.taxonomy import validate_categories, validate_sectors
+
 IssuerType = Literal["institution", "organisation", "government", "association"]
 
 # Safe charset for short controlled labels (specializations, jurisdictions):
@@ -78,25 +80,42 @@ class _AttestorApplicationFields(BaseModel):
 
     Centralizes the input-hardening rules so create and edit accept identical,
     cleaned data: controlled labels are trimmed/de-duplicated against a safe
-    charset, and prose fields reject markup and control characters.
+    charset or a controlled taxonomy, and prose fields reject markup and
+    control characters.
     """
 
-    specializations: list[str] = Field(min_length=1, max_length=25)
+    legal_name: str = Field(min_length=2, max_length=200)
+    linkedin_url: str | None = Field(default=None, max_length=2048)
+    professional_body_numbers: dict[str, str] = Field(default_factory=dict)
+    sectors: list[str] = Field(min_length=1, max_length=4)
+    framework_categories: list[str] = Field(min_length=1, max_length=9)
     jurisdictions: list[str] = Field(min_length=1, max_length=25)
     credentials_summary: str = Field(min_length=10, max_length=5000)
     sample_work: dict[str, Any] = Field(default_factory=dict)
     professional_references: str = Field(min_length=3, max_length=5000)
 
-    @field_validator("specializations", "jurisdictions")
+    @field_validator("sectors")
     @classmethod
-    def _clean_labels(cls, value: list[str]) -> list[str]:
-        """Trim, validate, and de-duplicate controlled label lists."""
+    def _clean_sectors(cls, value: list[str]) -> list[str]:
+        """Validate sectors against the controlled taxonomy."""
+        return validate_sectors(value)
+
+    @field_validator("framework_categories")
+    @classmethod
+    def _clean_categories(cls, value: list[str]) -> list[str]:
+        """Validate framework categories against the controlled taxonomy."""
+        return validate_categories(value)
+
+    @field_validator("jurisdictions")
+    @classmethod
+    def _clean_jurisdictions(cls, value: list[str]) -> list[str]:
+        """Trim/validate jurisdiction labels."""
         return _normalise_labels(value)
 
-    @field_validator("credentials_summary", "professional_references")
+    @field_validator("legal_name", "credentials_summary", "professional_references")
     @classmethod
     def _clean_prose(cls, value: str) -> str:
-        """Reject markup and control characters in free-text prose."""
+        """Reject markup/control characters in prose fields."""
         return _ensure_safe_prose(value)
 
 
@@ -114,7 +133,12 @@ class AttestorApplicationResponse(BaseModel):
     id: UUID
     user_id: UUID
     status: str
-    specializations: list[str]
+    legal_name: str | None
+    linkedin_url: str | None
+    professional_body_numbers: dict[str, str]
+    sectors: list[str]
+    framework_categories: list[str]
+    needs_retag: bool
     jurisdictions: list[str]
     credentials_summary: str
     sample_work: dict[str, Any]

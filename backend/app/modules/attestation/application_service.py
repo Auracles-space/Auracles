@@ -30,18 +30,18 @@ async def submit_application(
     user: User,
     payload: AttestorApplicationCreateRequest,
 ) -> AttestorApplication:
-    """Create one pending Attestor application for the authenticated user."""
+    """Create one submitted Attestor application for the authenticated user."""
     user_id = user.id
-    existing_pending = await db.scalar(
+    existing_submitted = await db.scalar(
         select(AttestorApplication).where(
             AttestorApplication.user_id == user_id,
-            AttestorApplication.status == "pending",
+            AttestorApplication.status == "submitted",
         )
     )
-    if existing_pending is not None:
+    if existing_submitted is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a pending Attestor application.",
+            detail="You already have a submitted Attestor application.",
         )
 
     if db.in_transaction():
@@ -49,7 +49,15 @@ async def submit_application(
     async with db.begin():
         application = AttestorApplication(
             user_id=user_id,
-            specializations=payload.specializations,
+            status="submitted",
+            # Legacy NOT NULL column superseded by `sectors`/`framework_categories`;
+            # left empty for new onboarding applications (see taxonomy.py).
+            specializations=[],
+            legal_name=payload.legal_name,
+            linkedin_url=payload.linkedin_url,
+            professional_body_numbers=payload.professional_body_numbers,
+            sectors=payload.sectors,
+            framework_categories=payload.framework_categories,
             jurisdictions=payload.jurisdictions,
             credentials_summary=payload.credentials_summary,
             sample_work=payload.sample_work,
@@ -86,7 +94,7 @@ async def withdraw_application(
     user: User,
     application_id: UUID,
 ) -> AttestorApplication:
-    """Withdraw a pending Attestor application owned by the current user."""
+    """Withdraw a submitted Attestor application owned by the current user."""
     user_id = user.id
     if db.in_transaction():
         await db.rollback()
@@ -104,10 +112,10 @@ async def withdraw_application(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Attestor application not found.",
             )
-        if application.status != "pending":
+        if application.status != "submitted":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Only pending Attestor applications can be withdrawn.",
+                detail="Only submitted Attestor applications can be withdrawn.",
             )
 
         application.status = "withdrawn"
@@ -128,11 +136,11 @@ async def update_application(
     application_id: UUID,
     payload: AttestorApplicationUpdateRequest,
 ) -> AttestorApplication:
-    """Edit a pending Attestor application owned by the current user.
+    """Edit a submitted Attestor application owned by the current user.
 
-    Only the owner may edit, and only while the application is still pending
-    (before an admin acts on it). Approved, rejected, or withdrawn applications
-    are immutable; the user re-applies instead.
+    Only the owner may edit, and only while the application is still
+    submitted (before an admin acts on it). Approved, rejected, or withdrawn
+    applications are immutable; the user re-applies instead.
 
     Args:
         db: Async session.
@@ -141,11 +149,11 @@ async def update_application(
         payload: Replacement application fields.
 
     Returns:
-        The updated, still-pending application.
+        The updated, still-submitted application.
 
     Raises:
         HTTPException(404): If the application does not exist for this user.
-        HTTPException(422): If the application is no longer pending.
+        HTTPException(422): If the application is no longer submitted.
     """
     user_id = user.id
     if db.in_transaction():
@@ -164,13 +172,17 @@ async def update_application(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Attestor application not found.",
             )
-        if application.status != "pending":
+        if application.status != "submitted":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Only pending Attestor applications can be edited.",
+                detail="Only submitted Attestor applications can be edited.",
             )
 
-        application.specializations = payload.specializations
+        application.legal_name = payload.legal_name
+        application.linkedin_url = payload.linkedin_url
+        application.professional_body_numbers = payload.professional_body_numbers
+        application.sectors = payload.sectors
+        application.framework_categories = payload.framework_categories
         application.jurisdictions = payload.jurisdictions
         application.credentials_summary = payload.credentials_summary
         application.sample_work = payload.sample_work
@@ -205,7 +217,7 @@ async def review_application(
     application_id: UUID,
     payload: AttestorApplicationReviewRequest,
 ) -> AttestorApplication:
-    """Approve or reject a pending Attestor application with admin 2FA."""
+    """Approve or reject a submitted Attestor application with admin 2FA."""
     admin_id = admin.id
     now = datetime.now(UTC)
     feedback = payload.feedback.strip() if payload.feedback else None
@@ -241,10 +253,10 @@ async def review_application(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Attestor application not found.",
             )
-        if application.status != "pending":
+        if application.status != "submitted":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Only pending Attestor applications can be reviewed.",
+                detail="Only submitted Attestor applications can be reviewed.",
             )
 
         application.status = payload.decision
