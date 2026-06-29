@@ -43,6 +43,8 @@ All credentials must be active and in good standing. On pass: status → PROFESS
 
 Attestor signs and submits a binding CoI declaration. Fields: list of firms, funds, and individuals they have had financial, advisory, or employment relationships with in the past 24 months. Stored in the Attestor profile for automated conflict screening at assignment time. Attestor must re-submit annually.
 
+> **Build split (resolved 2026-06-29):** Module 1 / Spec A captures the declaration and stores `coi_signed_at` + `coi_expires_at` only. The annual **re-sign reminder + enforcement job** (scheduled task that flags expiry and blocks assignment until re-signed) is built in **Module 3 / Spec B (AMM)**, next to the screening that consumes it — see §3.1.
+
 ## 1.5  Sector & Framework Taxonomy Tags
 
 Attestor selects their specialisation tags from the Auracles taxonomy tree: Sector (PE, VC, Infrastructure, Real Estate) × Framework Category (Compliance, Governance, Risk, Operations, Legal, Finance, HR, Technology, Investment Management). These tags are the primary input to the AMM scoring engine. Over-tagging is detectable via quality reviews — persistent over-tagging penalises AMM score.
@@ -99,6 +101,8 @@ Runs automatically within minutes of escrow confirmation. This is the core algor
 ## 3.1  Conflict Screening
 
 Before scoring, cross-reference every active Attestor's CoI declaration against: the Contributor's profile, the Contributor's firm/organisation name, and any declared relationships in the Attestor's history. Conflicted Attestors are excluded from the match pool for this specific request. Log exclusions.
+
+> **Owns the CoI annual re-sign job (resolved 2026-06-29):** Module 1 stores `coi_expires_at`; this module builds the scheduled re-sign reminder + enforcement (expired CoI ⇒ excluded from the match pool until re-signed). See §1.4.
 
 ## 3.2  AMM Scoring
 
