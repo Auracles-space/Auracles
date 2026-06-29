@@ -25,6 +25,24 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 
 
+async def _load_locked_application(
+    db: AsyncSession,
+    application_id: UUID,
+) -> AttestorApplication:
+    """Load and lock an Attestor application or raise a typed not-found error."""
+    application = await db.scalar(
+        select(AttestorApplication)
+        .where(AttestorApplication.id == application_id)
+        .with_for_update()
+    )
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestor application not found.",
+        )
+    return application
+
+
 async def submit_application(
     db: AsyncSession,
     user: User,
@@ -243,16 +261,7 @@ async def review_application(
             code=payload.totp_code,
         )
 
-        application = await db.scalar(
-            select(AttestorApplication)
-            .where(AttestorApplication.id == application_id)
-            .with_for_update()
-        )
-        if application is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Attestor application not found.",
-            )
+        application = await _load_locked_application(db, application_id)
         if application.status != "submitted":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -282,6 +291,66 @@ async def review_application(
                 "user_id": str(application.user_id),
                 "status": application.status,
             },
+        )
+    return application
+
+
+async def verify_kyc(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    application_id: UUID,
+    name_match: bool,
+    totp_code: str,
+) -> AttestorApplication:
+    """Confirm KYC and name match, advancing a submitted application to Level 1."""
+    admin_id = admin.id
+    now = datetime.now(UTC)
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked_admin = await db.get(User, admin_id, with_for_update=True)
+        if locked_admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_admin,
+            code=totp_code,
+        )
+
+        application = await _load_locked_application(db, application_id)
+        if application.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Only submitted applications can be KYC-verified.",
+            )
+
+        applicant = await db.get(User, application.user_id)
+        if applicant is None or applicant.kyc_status != "verified":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Applicant KYC is not verified.",
+            )
+        if not name_match:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="KYC name does not match.",
+            )
+
+        application.status = "identity_verified"
+        application.kyc_verified_at = now
+        application.kyc_name_match = True
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="attestor_kyc_verified",
+            target_type="attestor_application",
+            target_id=application.id,
+            metadata={"user_id": str(application.user_id)},
         )
     return application
 

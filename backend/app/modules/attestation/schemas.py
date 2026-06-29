@@ -165,6 +165,13 @@ class AttestorApplicationReviewRequest(BaseModel):
     totp_code: str = Field(min_length=6, max_length=16)
 
 
+class AttestorKycVerifyRequest(BaseModel):
+    """Admin request body for the KYC verification onboarding gate."""
+
+    name_match: bool
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
 class CredentialCreateRequest(BaseModel):
     """Request body for creating a user-owned Credential."""
 

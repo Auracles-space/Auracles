@@ -46,6 +46,7 @@ from app.modules.attestation.schemas import (
     AttestorApplicationUpdateRequest,
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
+    AttestorKycVerifyRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -502,6 +503,29 @@ async def review_attestor_application(
         admin=admin,
         application_id=application_id,
         payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
+    "/admin/attestor/applications/{application_id}/verify-kyc",
+    response_model=AttestorApplicationResponse,
+)
+async def verify_attestor_application_kyc(
+    application_id: UUID,
+    payload: AttestorKycVerifyRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> AttestorApplicationResponse:
+    """Advance a submitted application through the KYC verification gate."""
+    application = await application_service.verify_kyc(
+        db=db,
+        redis=redis,
+        admin=admin,
+        application_id=application_id,
+        name_match=payload.name_match,
+        totp_code=payload.totp_code,
     )
     return AttestorApplicationResponse.model_validate(application)
 
