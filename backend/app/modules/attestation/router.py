@@ -41,6 +41,7 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
+    AttestationPackageResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -961,4 +962,19 @@ async def request_attestation_artifact_access(
         attestation_id=attestation_id,
         artifact_id=artifact_id,
         ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/package",
+    response_model=AttestationPackageResponse,
+)
+async def get_attestation_package(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationPackageResponse:
+    """Return the read-only Attestation access package for a participant."""
+    return await access_service.get_attestation_package(
+        db=db, user=user, attestation_id=attestation_id
     )

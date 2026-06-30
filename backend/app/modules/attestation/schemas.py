@@ -643,6 +643,25 @@ class AttestorDirectoryResponse(BaseModel):
     attestors: list[AttestorDirectoryEntry]
 
 
+class AttestationPackageArtifact(BaseModel):
+    """One artifact entry in an Attestation access package."""
+
+    id: UUID
+    filename: str | None = None
+
+
+class AttestationPackageResponse(BaseModel):
+    """The read-only Attestation access package scoped to the caller's entitlement."""
+
+    attestation_id: UUID
+    framework_title: str
+    framework_category: str
+    framework_industry: str | None
+    brief: dict[str, Any] | None
+    entitlement: str
+    artifacts: list[AttestationPackageArtifact]
+
+
 class AttestationArtifactAccessResponse(BaseModel):
     """Presigned access grant for an Attestation framework artifact."""
 

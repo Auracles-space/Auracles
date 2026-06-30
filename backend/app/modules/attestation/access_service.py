@@ -26,7 +26,11 @@ from app.modules.attestation.models import (
     AttestationArtifactAccess,
     AttestationOffer,
 )
-from app.modules.attestation.schemas import AttestationArtifactAccessResponse
+from app.modules.attestation.schemas import (
+    AttestationArtifactAccessResponse,
+    AttestationPackageArtifact,
+    AttestationPackageResponse,
+)
 from app.modules.auth.models import User
 from app.modules.frameworks.models import Framework, FrameworkVersionArtifact
 from app.modules.frameworks.models_artifact import Artifact
@@ -193,4 +197,67 @@ async def request_artifact_access(
         scope=scope,
         download_url=download_url,
         expires_in=ARTIFACT_ACCESS_URL_TTL_SECONDS,
+    )
+
+
+async def get_attestation_package(
+    db: AsyncSession,
+    user: User,
+    *,
+    attestation_id: UUID,
+) -> AttestationPackageResponse:
+    """Assemble the access package scoped to the caller's entitlement.
+
+    Returns framework metadata, the brief, the computed entitlement, and an artifact
+    list — the preview subset for preview scope, all artifacts for full, empty for none.
+    """
+    attestation = await matching_service.get_attestation_for_user(
+        db, attestation_id=attestation_id, user=user
+    )
+    scope = await attestation_access_scope(db, attestation=attestation, user=user)
+    framework = await db.get(Framework, attestation.target_id)
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    artifacts: list[AttestationPackageArtifact] = []
+    if scope == "full":
+        rows = await db.execute(
+            select(Artifact).where(Artifact.framework_id == framework.id)
+        )
+        artifacts = [
+            AttestationPackageArtifact(id=a.id, filename=a.name)
+            for a in rows.scalars().all()
+        ]
+    elif scope == "preview":
+        preview_ids: set[UUID] = set()
+        if framework.preview_artifact_id is not None:
+            preview_ids.add(framework.preview_artifact_id)
+        flagged = await db.execute(
+            select(FrameworkVersionArtifact.artifact_id).where(
+                FrameworkVersionArtifact.is_preview.is_(True),
+            )
+        )
+        for (artifact_id,) in flagged.all():
+            preview_ids.add(artifact_id)
+        if preview_ids:
+            rows = await db.execute(
+                select(Artifact).where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.id.in_(preview_ids),
+                )
+            )
+            artifacts = [
+                AttestationPackageArtifact(id=a.id, filename=a.name)
+                for a in rows.scalars().all()
+            ]
+    return AttestationPackageResponse(
+        attestation_id=attestation.id,
+        framework_title=framework.title,
+        framework_category=framework.category,
+        framework_industry=framework.industry,
+        brief=attestation.brief,
+        entitlement=scope,
+        artifacts=artifacts,
     )

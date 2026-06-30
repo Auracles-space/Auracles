@@ -81,6 +81,8 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestorApplication))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
+            from sqlalchemy import update
+            await session.execute(update(Framework).values(preview_artifact_id=None))
             await session.execute(delete(Artifact))
             await session.execute(delete(Framework))
             await session.execute(delete(AuditLog))
@@ -318,3 +320,77 @@ async def test_outsider_gets_forbidden(
         headers=other_attestor_auth,
     )
     assert resp.status_code in (403, 404)
+
+
+@pytest.fixture
+async def preview_artifact(
+    framework_with_artifact: tuple[Framework, Artifact]
+) -> Artifact:
+    framework, _ = framework_with_artifact
+    async with async_session_factory() as session:
+        artifact = Artifact(
+            framework_id=framework.id,
+            name="preview_doc.pdf",
+            file_key="frameworks/access_test/preview_doc.pdf",
+            file_size=500,
+            mime_type="application/pdf",
+            scan_status="clean",
+        )
+        session.add(artifact)
+        await session.commit()
+        
+        fw = await session.get(Framework, framework.id)
+        fw.preview_artifact_id = artifact.id
+        await session.commit()
+        await session.refresh(artifact)
+    return artifact
+
+
+async def test_package_full_lists_all_artifacts(
+    client: AsyncClient,
+    attestor_auth: dict[str, str],
+    accepted_attestation: Attestation,
+    framework_artifact: Artifact,
+) -> None:
+    """The assigned attestor's package reports full scope and lists all artifacts."""
+    resp = await client.get(
+        f"/v1/attestations/{accepted_attestation.id}/package",
+        headers=attestor_auth,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entitlement"] == "full"
+    assert any(a["id"] == str(framework_artifact.id) for a in body["artifacts"])
+
+
+async def test_package_preview_lists_only_preview(
+    client: AsyncClient,
+    attestor_auth: dict[str, str],
+    offered_attestation: Attestation,
+    framework_artifact: Artifact,
+    preview_artifact: Artifact,
+) -> None:
+    """A cohort member's package reports preview scope and only preview artifacts."""
+    resp = await client.get(
+        f"/v1/attestations/{offered_attestation.id}/package",
+        headers=attestor_auth,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entitlement"] == "preview"
+    ids = {a["id"] for a in body["artifacts"]}
+    assert str(preview_artifact.id) in ids
+    assert str(framework_artifact.id) not in ids
+
+
+async def test_package_outsider_not_found(
+    client: AsyncClient,
+    other_attestor_auth: dict[str, str],
+    accepted_attestation: Attestation,
+) -> None:
+    """A non-participant cannot see the package."""
+    resp = await client.get(
+        f"/v1/attestations/{accepted_attestation.id}/package",
+        headers=other_attestor_auth,
+    )
+    assert resp.status_code == 404
