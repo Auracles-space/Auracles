@@ -141,12 +141,19 @@ class AttestorApplicationUpdateRequest(_AttestorApplicationFields):
 
 
 class CoiEntry(BaseModel):
-    """One declared conflict-of-interest relationship disclosed by an applicant."""
+    """One declared conflict-of-interest relationship disclosed by an applicant.
+
+    ``subject_id`` optionally links the declaration to a known platform entity
+    so the matching engine can screen exact conflicts without relying on
+    brittle free-text matching.
+    """
 
     entity: str
     entity_type: Literal["firm", "fund", "individual"]
     relationship: Literal["financial", "advisory", "employment"]
     within_24mo: bool
+    subject_id: UUID | None = None
+    subject_kind: Literal["user", "framework"] | None = None
 
 
 class CoiDeclarationRequest(BaseModel):

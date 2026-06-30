@@ -7,6 +7,7 @@ notifications. Phase 5 can consume the same event names when scoring exists.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from loguru import logger
@@ -18,6 +19,11 @@ from app.workers.tasks.project_notifications import dispatch_project_notificatio
 def _attestation_link(attestation_id: UUID) -> str:
     """Return the dashboard route for an Attestation detail page."""
     return f"/attestations/{attestation_id}"
+
+
+def _attestor_onboarding_link() -> str:
+    """Return the dashboard route for Attestor onboarding prerequisites."""
+    return "/attestor/onboarding"
 
 
 def _payload(attestation: Attestation, **extra: str | int | None) -> dict[str, str]:
@@ -318,3 +324,63 @@ def notify_manual_assignment(attestation: Attestation, attestor_id: UUID) -> Non
         dedupe_suffix=f"manual:{attestor_id}",
         extra_payload={"attestor_id": str(attestor_id)},
     )
+
+
+def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> bool:
+    """Notify an Attestor that their CoI declaration expires within 30 days.
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed. The caller
+        uses this to avoid marking an attestor reminded when the broker is down.
+    """
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type="attestor_coi_expiring",
+            title="Your conflict-of-interest declaration is expiring",
+            body=(
+                "Re-sign your conflict-of-interest declaration before it expires "
+                "to keep receiving attestation requests."
+            ),
+            payload={"expires_at": expires_at.isoformat()},
+            link=_attestor_onboarding_link(),
+            dedupe_key=f"attestor_coi_expiring:{user_id}:{expires_at.isoformat()}",
+        )
+    except Exception as exc:
+        logger.bind(
+            module="attestation",
+            action="queue_coi_expiring_notification",
+            user_id=user_id,
+        ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True
+
+
+def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
+    """Notify an Attestor that their CoI declaration has lapsed.
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed. The caller
+        uses this to avoid marking an attestor reminded when the broker is down.
+    """
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type="attestor_coi_lapsed",
+            title="Your conflict-of-interest declaration has lapsed",
+            body=(
+                "Your conflict-of-interest declaration has expired. Re-sign it "
+                "to resume receiving attestation requests."
+            ),
+            payload={"expires_at": expires_at.isoformat()},
+            link=_attestor_onboarding_link(),
+            dedupe_key=f"attestor_coi_lapsed:{user_id}:{expires_at.isoformat()}",
+        )
+    except Exception as exc:
+        logger.bind(
+            module="attestation",
+            action="queue_coi_lapsed_notification",
+            user_id=user_id,
+        ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True

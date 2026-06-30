@@ -238,7 +238,8 @@ async def create_attestor_profile(
     jurisdictions: list[str],
     approved_at: datetime | None = None,
 ) -> None:
-    """Create one active approved matching profile for an Attestor."""
+    """Create one active approved matching profile with a valid signed CoI."""
+    now = datetime.now(UTC)
     async with async_session_factory() as session:
         async with session.begin():
             session.add(
@@ -247,7 +248,9 @@ async def create_attestor_profile(
                     specializations=specializations,
                     jurisdictions=jurisdictions,
                     active=True,
-                    approved_at=approved_at or datetime.now(UTC),
+                    approved_at=approved_at or now,
+                    coi_signed_at=now,
+                    coi_expires_at=now + timedelta(days=365),
                 )
             )
 

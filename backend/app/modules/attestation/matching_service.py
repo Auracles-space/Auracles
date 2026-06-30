@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast as type_cast
 from uuid import UUID
@@ -16,6 +17,7 @@ from sqlalchemy.types import Text
 
 from app.core.audit import write_audit
 from app.modules.attestation import notifications as attestation_notifications
+from app.modules.attestation import scoring
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
@@ -30,6 +32,18 @@ DEFAULT_COHORT_SIZE = 3
 DEFAULT_OFFER_ACCEPT_HOURS = 48
 DEFAULT_COMPLETION_SLA_DAYS = 7
 TERMINAL_OFFER_STATUSES = {"accepted", "declined", "expired", "superseded"}
+ACTIVE_ASSIGNMENT_STATUSES = {"accepted", "report_submitted", "disputed"}
+DEFAULT_CONCURRENCY_CAP = 5
+COI_REMINDER_LEAD_DAYS = 30
+
+
+@dataclass(frozen=True)
+class ScoredCandidate:
+    """A scored, eligible Attestor candidate for one Attestation request."""
+
+    user_id: UUID
+    score: float
+    breakdown: dict[str, float]
 
 
 async def offer_next_cohort(
@@ -74,13 +88,14 @@ async def offer_next_cohort(
         default=DEFAULT_COHORT_SIZE,
         minimum=1,
     )
-    candidate_ids = await _matching_attestor_ids(
+    candidates = await _rank_eligible_attestors(
         db,
         attestation=attestation,
         excluded_ids=excluded_ids,
         limit=cohort_size,
+        now=current_time,
     )
-    if not candidate_ids:
+    if not candidates:
         attestation.status = "needs_admin"
         await write_audit(
             db=db,
@@ -108,13 +123,15 @@ async def offer_next_cohort(
     offers = [
         AttestationOffer(
             attestation_id=attestation.id,
-            attestor_id=attestor_id,
+            attestor_id=candidate.user_id,
             cohort_index=cohort_index,
             status="offered",
             offered_at=current_time,
             expires_at=expires_at,
+            match_score=candidate.score,
+            score_breakdown=candidate.breakdown,
         )
-        for attestor_id in candidate_ids
+        for candidate in candidates
     ]
     db.add_all(offers)
     attestation.status = "offered"
@@ -126,7 +143,10 @@ async def offer_next_cohort(
         target_id=attestation.id,
         metadata={
             "cohort_index": cohort_index,
-            "attestor_ids": [str(attestor_id) for attestor_id in candidate_ids],
+            "attestor_ids": [str(candidate.user_id) for candidate in candidates],
+            "scores": {
+                str(candidate.user_id): candidate.score for candidate in candidates
+            },
             "expires_at": expires_at.isoformat(),
         },
     )
@@ -522,6 +542,75 @@ async def expire_owner_consent(
     return len(cancelled)
 
 
+async def send_coi_resign_reminders(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Send one CoI reminder per active expiry cycle for eligible Attestors.
+
+    Args:
+        db: Async database session.
+        now: Optional current timestamp override for deterministic tests.
+
+    Returns:
+        The number of reminders sent during this sweep.
+    """
+    current_time = now or datetime.now(UTC)
+    lead_window = timedelta(days=COI_REMINDER_LEAD_DAYS)
+    profiles = list(
+        (
+            await db.execute(
+                select(AttestorProfile).where(
+                    AttestorProfile.active.is_(True),
+                    AttestorProfile.coi_expires_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    sent = 0
+    for profile in profiles:
+        expires_at = profile.coi_expires_at
+        if expires_at is None:
+            continue
+        reminder_window_start = expires_at - lead_window
+        already_reminded = (
+            profile.coi_reminder_sent_at is not None
+            and profile.coi_reminder_sent_at >= reminder_window_start
+        )
+        if already_reminded:
+            continue
+        if current_time >= expires_at:
+            dispatched = attestation_notifications.notify_coi_lapsed(
+                profile.user_id,
+                expires_at=expires_at,
+            )
+        elif current_time >= reminder_window_start:
+            dispatched = attestation_notifications.notify_coi_expiring(
+                profile.user_id,
+                expires_at=expires_at,
+            )
+        else:
+            continue
+        # Only mark reminded on a confirmed enqueue — a broker outage must not
+        # silently skip this attestor until their next signing cycle.
+        if not dispatched:
+            continue
+        profile.coi_reminder_sent_at = current_time
+        sent += 1
+
+    if sent:
+        await db.commit()
+    logger.bind(
+        module="attestation",
+        action="send_coi_resign_reminders",
+    ).info("coi_reminders_sent", count=sent)
+    return sent
+
+
 async def _platform_int_config(
     db: AsyncSession,
     *,
@@ -681,16 +770,86 @@ async def _target_owner_id(
     return None
 
 
-async def _matching_attestor_ids(
+def _coi_conflict_subjects(attestation: Attestation, owner_id: UUID | None) -> set[str]:
+    """Return the linked platform ids that would conflict with this request."""
+    subjects = {str(attestation.target_id), str(attestation.requestor_id)}
+    if owner_id is not None:
+        subjects.add(str(owner_id))
+    return subjects
+
+
+def _is_coi_conflicted(
+    coi_declarations: list[dict[str, object]],
+    conflict_subjects: set[str],
+    *,
+    attestor_id: UUID,
+) -> bool:
+    """Return True when any linked CoI declaration conflicts with the request."""
+    for entry in coi_declarations:
+        raw_subject_id = entry.get("subject_id")
+        if raw_subject_id is None:
+            continue
+        try:
+            subject_id = str(UUID(str(raw_subject_id)))
+        except (TypeError, ValueError):
+            logger.bind(
+                module="attestation",
+                action="coi_conflict_screen",
+                attestor_id=attestor_id,
+            ).warning("coi_declaration_malformed_subject_id")
+            continue
+        if subject_id in conflict_subjects:
+            return True
+    return False
+
+
+async def _framework_category(db: AsyncSession, attestation: Attestation) -> str | None:
+    """Return the target framework category, or None for non-framework targets."""
+    if attestation.target_type != "framework":
+        return None
+    return type_cast(
+        str | None,
+        await db.scalar(
+            select(Framework.category).where(Framework.id == attestation.target_id)
+        ),
+    )
+
+
+async def _active_assignment_count(db: AsyncSession, attestor_id: UUID) -> int:
+    """Count one Attestor's active, content-holding assignments."""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Attestation)
+        .where(
+            Attestation.attestor_id == attestor_id,
+            Attestation.status.in_(ACTIVE_ASSIGNMENT_STATUSES),
+        )
+    )
+    return int(count or 0)
+
+
+async def _rank_eligible_attestors(
     db: AsyncSession,
     *,
     attestation: Attestation,
     excluded_ids: set[UUID],
     limit: int,
-) -> list[UUID]:
-    """Find active Attestors whose profile overlaps requested scope."""
+    now: datetime,
+) -> list[ScoredCandidate]:
+    """Score and rank eligible Attestors for one Attestation request.
+
+    Args:
+        db: Async database session.
+        attestation: Request being matched.
+        excluded_ids: Users already excluded from the candidate pool.
+        limit: Maximum number of candidates to return.
+        now: Reference timestamp for CoI-expiry checks.
+
+    Returns:
+        Ranked eligible candidates, best first, capped to ``limit``.
+    """
     query = (
-        select(AttestorProfile.user_id)
+        select(AttestorProfile)
         .where(
             AttestorProfile.active.is_(True),
             AttestorProfile.specializations.op("&&")(
@@ -699,13 +858,69 @@ async def _matching_attestor_ids(
             AttestorProfile.jurisdictions.op("&&")(
                 sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
             ),
+            AttestorProfile.coi_signed_at.is_not(None),
+            AttestorProfile.coi_expires_at > now,
         )
-        .order_by(AttestorProfile.approved_at, AttestorProfile.user_id)
-        .limit(limit)
     )
     if excluded_ids:
         query = query.where(AttestorProfile.user_id.not_in(excluded_ids))
-    return list((await db.execute(query)).scalars().all())
+    profiles = list((await db.execute(query)).scalars().all())
+    if not profiles:
+        return []
+
+    owner_id = await _target_owner_id(db, attestation)
+    conflict_subjects = _coi_conflict_subjects(attestation, owner_id)
+    framework_category = await _framework_category(db, attestation)
+    concurrency_cap = await _platform_int_config(
+        db,
+        key="attestation_concurrency_cap",
+        default=DEFAULT_CONCURRENCY_CAP,
+        minimum=1,
+    )
+
+    scored_profiles: list[tuple[float, datetime, UUID, ScoredCandidate]] = []
+    for profile in profiles:
+        if _is_coi_conflicted(
+            profile.coi_declarations,
+            conflict_subjects,
+            attestor_id=profile.user_id,
+        ):
+            continue
+
+        active_count = await _active_assignment_count(db, profile.user_id)
+        if active_count >= concurrency_cap:
+            continue
+
+        factors = {
+            "sector": scoring.sector_alignment(
+                attestation.requested_specializations,
+                profile.sectors,
+                profile.specializations,
+            ),
+            "category": scoring.category_match(
+                framework_category,
+                profile.framework_categories,
+            ),
+            "credential": scoring.credential_relevance(),
+            "availability": scoring.availability_score(active_count, concurrency_cap),
+            "reputation": scoring.reputation_score(),
+        }
+        score, breakdown = scoring.compute_match_score(factors)
+        scored_profiles.append(
+            (
+                score,
+                profile.approved_at,
+                profile.user_id,
+                ScoredCandidate(
+                    user_id=profile.user_id,
+                    score=score,
+                    breakdown=breakdown,
+                ),
+            )
+        )
+
+    scored_profiles.sort(key=lambda row: (-row[0], row[1], row[2]))
+    return [row[3] for row in scored_profiles[:limit]]
 
 
 async def _next_cohort_index(db: AsyncSession, attestation_id: UUID) -> int:
