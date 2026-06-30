@@ -177,8 +177,19 @@ async def accept_attestation_offer(
     *,
     attestation_id: UUID,
     attestor: User,
+    content_ack: bool,
+    ack_version: str,
 ) -> Attestation:
-    """Accept a cohort offer and atomically assign the Attestation."""
+    """Accept a cohort offer and atomically assign the Attestation.
+
+    Full framework-content access is gated on the content-use acknowledgment,
+    so acceptance requires ``content_ack=True``.
+    """
+    if not content_ack:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Content-use acknowledgment is required to accept.",
+        )
     attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
@@ -214,6 +225,8 @@ async def accept_attestation_offer(
         attestation.status = "accepted"
         attestation.attestor_id = attestor_id
         attestation.accepted_at = current_time
+        attestation.content_ack_at = current_time
+        attestation.content_ack_version = ack_version
         attestation.completion_due_at = current_time + timedelta(days=completion_days)
         offer.status = "accepted"
         offer.responded_at = current_time
@@ -456,6 +469,57 @@ async def revoke_overdue_attestations(
         if attestation.status == "needs_admin":
             attestation_notifications.notify_needs_admin(attestation)
     return revoked_count
+
+
+async def expire_owner_consent(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Cancel operator-initiated requests whose owner-consent window elapsed.
+
+    Args:
+        db: Async database session.
+        now: Optional current timestamp override for deterministic tests.
+
+    Returns:
+        The number of attestation requests cancelled.
+    """
+    current_time = now or datetime.now(UTC)
+    consent_hours = await _platform_int_config(
+        db,
+        key="attestation_owner_consent_hours",
+        default=72,
+        minimum=1,
+    )
+    cutoff = current_time - timedelta(hours=consent_hours)
+    cancelled: list[Attestation] = []
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        rows = await db.execute(
+            select(Attestation)
+            .where(
+                Attestation.status == "pending_owner_consent",
+                Attestation.created_at <= cutoff,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        for attestation in rows.scalars().all():
+            attestation.status = "cancelled"
+            attestation.closed_at = current_time
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="attestation_consent_expired",
+                target_type="attestation",
+                target_id=attestation.id,
+                metadata={"consent_hours": consent_hours},
+            )
+            cancelled.append(attestation)
+    for attestation in cancelled:
+        attestation_notifications.notify_consent_declined(attestation)
+    return len(cancelled)
 
 
 async def _platform_int_config(

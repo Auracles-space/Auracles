@@ -312,7 +312,8 @@ async def _seed_directory_attestor(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_submit_application_starts_submitted_with_taxonomy(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """A submitted application is in 'submitted' state with controlled tags."""
     user_id = await create_user("appl@example.com", roles=["contributor"])
@@ -344,7 +345,8 @@ async def test_submit_application_starts_submitted_with_taxonomy(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_submit_rejects_unknown_sector(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Unknown taxonomy values are rejected with 422."""
     user_id = await create_user("appl2@example.com", roles=["contributor"])
@@ -355,17 +357,23 @@ async def test_submit_rejects_unknown_sector(
                 f"Bearer {create_access_token(user_id, roles=['contributor'])}"
             )
         },
-        json={"legal_name": "X", "sectors": ["Crypto"],
-              "framework_categories": ["Compliance"], "jurisdictions": ["US"],
-              "credentials_summary": "x" * 12, "sample_work": {},
-              "professional_references": "r"},
+        json={
+            "legal_name": "X",
+            "sectors": ["Crypto"],
+            "framework_categories": ["Compliance"],
+            "jurisdictions": ["US"],
+            "credentials_summary": "x" * 12,
+            "sample_work": {},
+            "professional_references": "r",
+        },
     )
     assert resp.status_code == 422
 
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_verify_kyc_advances_to_identity_verified(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Admin KYC verify moves a submitted application to identity_verified."""
     application_id, admin_headers, totp = await _seed_submitted_application(
@@ -384,7 +392,8 @@ async def test_verify_kyc_advances_to_identity_verified(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_verify_kyc_rejects_unverified_applicant(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Admin KYC verify rejects applicants whose platform KYC is not verified."""
     application_id, admin_headers, totp = await _seed_submitted_application(
@@ -403,12 +412,16 @@ async def test_verify_kyc_rejects_unverified_applicant(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_verify_credential_advances_to_professional_verified(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Admin credential cross-check advances identity_verified applications."""
-    application_id, credential_id, admin_headers, totp = (
-        await _seed_identity_verified_application_with_credential()
-    )
+    (
+        application_id,
+        credential_id,
+        admin_headers,
+        totp,
+    ) = await _seed_identity_verified_application_with_credential()
 
     resp = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/verify-credential",
@@ -439,12 +452,16 @@ async def test_verify_credential_advances_to_professional_verified(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_verify_credential_rejects_bad_standing_and_rolls_back(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """A rejected registry check must not persist credential mutations."""
-    application_id, credential_id, admin_headers, totp = (
-        await _seed_identity_verified_application_with_credential()
-    )
+    (
+        application_id,
+        credential_id,
+        admin_headers,
+        totp,
+    ) = await _seed_identity_verified_application_with_credential()
 
     resp = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/verify-credential",
@@ -475,12 +492,15 @@ async def test_verify_credential_rejects_bad_standing_and_rolls_back(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_assign_trial_creates_first_assigned_attempt(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Assigning a calibration trial creates attempt 1 in assigned state."""
-    application_id, admin_headers, totp = (
-        await _seed_professional_verified_application()
-    )
+    (
+        application_id,
+        admin_headers,
+        totp,
+    ) = await _seed_professional_verified_application()
 
     resp = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/trial",
@@ -505,12 +525,15 @@ async def test_assign_trial_creates_first_assigned_attempt(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_decide_trial_pass_promotes_application_to_expert_verified(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Passing a trial promotes the application to expert_verified."""
-    application_id, admin_headers, totp = (
-        await _seed_professional_verified_application()
-    )
+    (
+        application_id,
+        admin_headers,
+        totp,
+    ) = await _seed_professional_verified_application()
 
     assign_resp = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/trial",
@@ -541,12 +564,15 @@ async def test_decide_trial_pass_promotes_application_to_expert_verified(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_decide_trial_fail_twice_holds_application_and_blocks_third_assign(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Two failed trials hold the application and exhaust assignment attempts."""
-    application_id, admin_headers, totp = (
-        await _seed_professional_verified_application()
-    )
+    (
+        application_id,
+        admin_headers,
+        totp,
+    ) = await _seed_professional_verified_application()
 
     first_assign = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/trial",
@@ -588,8 +614,7 @@ async def test_decide_trial_fail_twice_holds_application_and_blocks_third_assign
     )
     assert third_assign.status_code == 409
     assert (
-        third_assign.json()["detail"]
-        == "Trial attempts exhausted; application held."
+        third_assign.json()["detail"] == "Trial attempts exhausted; application held."
     )
 
     async with async_session_factory() as session:
@@ -607,7 +632,8 @@ async def test_decide_trial_fail_twice_holds_application_and_blocks_third_assign
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_sign_coi_sets_timestamps_and_declarations(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Signing CoI stores declarations and sets a one-year expiry window."""
     application_id, applicant_id, owner_headers = await _seed_owner_application()
@@ -653,18 +679,15 @@ async def test_sign_coi_sets_timestamps_and_declarations(
     assert application.coi_signed_at is not None
     assert application.coi_expires_at is not None
     assert len(application.coi_declarations) == 2
-    assert (
-        abs(
-            (application.coi_expires_at - application.coi_signed_at)
-            - timedelta(days=365)
-        )
-        < timedelta(seconds=1)
-    )
+    assert abs(
+        (application.coi_expires_at - application.coi_signed_at) - timedelta(days=365)
+    ) < timedelta(seconds=1)
 
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_sign_coi_requires_policy_acceptance(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Reject signing when the applicant does not accept the CoI policy."""
     application_id, applicant_id, owner_headers = await _seed_owner_application()
@@ -703,8 +726,108 @@ async def test_sign_coi_requires_policy_acceptance(
 
 
 @pytest.mark.usefixtures("migrated_database")
+async def test_sign_confidentiality_sets_timestamp(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """Signing confidentiality stores the timestamp idempotently."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["confidentiality_signed_at"] is not None
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.confidentiality_signed_at is not None
+
+    # Test idempotency (re-sign)
+    resp2 = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+    assert resp2.status_code == 200, resp2.text
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_sign_confidentiality_requires_acceptance(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """Reject signing when the applicant does not accept the confidentiality policy."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": False},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Confidentiality agreement must be accepted."
+
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(AttestorApplication).where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == applicant_id,
+            )
+        )
+
+    assert application is not None
+    assert application.confidentiality_signed_at is None
+
+
+@pytest.mark.usefixtures("migrated_database")
+async def test_sign_confidentiality_rejects_active_application(
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
+) -> None:
+    """Cannot sign confidentiality if application is already active."""
+    from sqlalchemy import update
+
+    application_id, applicant_id, owner_headers = await _seed_owner_application()
+
+    # Manually force the application to active status
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(AttestorApplication)
+                .where(AttestorApplication.id == application_id)
+                .values(status="active")
+            )
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+
+    assert resp.status_code == 422
+    assert (
+        resp.json()["detail"]
+        == "Confidentiality agreement is locked once the application is active."
+    )
+
+
+@pytest.mark.usefixtures("migrated_database")
 async def test_attach_payout_sets_owned_payout_account_on_application(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Applicants can attach one of their own payout accounts to the application."""
     application_id, applicant_id, owner_headers = await _seed_owner_application()
@@ -745,7 +868,8 @@ async def test_attach_payout_sets_owned_payout_account_on_application(
 
 @pytest.mark.usefixtures("migrated_database")
 async def test_attach_payout_rejects_accounts_owned_by_someone_else(
-    client: AsyncClient, attestor_application_context,  # noqa: F811
+    client: AsyncClient,
+    attestor_application_context,  # noqa: F811
 ) -> None:
     """Applicants cannot attach payout accounts they do not own."""
     application_id, applicant_id, owner_headers = await _seed_owner_application()
@@ -980,6 +1104,13 @@ async def test_activate_attestor_promotes_expert_verified_application_to_active(
         },
     )
     assert coi_resp.status_code == 200, coi_resp.text
+
+    nda_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+    assert nda_resp.status_code == 200, nda_resp.text
 
     payout_resp = await client.post(
         f"/v1/attestor/applications/{application_id}/payout",
@@ -1374,3 +1505,198 @@ async def test_second_submitted_application_blocked_by_unique_index(
         async with async_session_factory() as session:
             async with session.begin():
                 session.add(_application())
+
+
+@pytest.mark.asyncio
+async def test_sign_confidentiality_rejects_non_owner_404(
+    client: AsyncClient,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Non-owners receive 404 to avoid exposing application state."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    non_owner_id = await create_user("non-owner@example.com", [])
+    non_owner_headers = auth_headers(non_owner_id, [])
+
+    resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=non_owner_headers,  # Another valid user, but not the owner
+        json={"accept": True},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_activate_attestor_rejects_unsigned_confidentiality(
+    client: AsyncClient,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Activation must fail until the applicant has signed the NDA."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    admin_id, admin_secret = await create_admin_user()
+    admin_headers = auth_headers(admin_id, ["admin"])
+    totp = _admin_totp(admin_secret)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=applicant_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_missing_nda_001",
+                provider_account_lookup_hash="hash-attestor-missing-nda-001",
+                account_type="express",
+                is_default=True,
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout_account_id = payout_account.id
+
+    coi_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={"declarations": [], "accept_policy": True},
+    )
+    assert coi_resp.status_code == 200, coi_resp.text
+
+    payout_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+    assert payout_resp.status_code == 200, payout_resp.text
+
+    tax_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/tax-document",
+        headers=owner_headers,
+        json={
+            "tax_document_type": "w9",
+            "file_name": "Form W-9.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+    )
+    assert tax_resp.status_code == 201, tax_resp.text
+
+    # Activate WITHOUT signing confidentiality
+    resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/activate",
+        headers=admin_headers,
+        json={"totp_code": totp.now()},
+    )
+    assert resp.status_code == 422
+    data = resp.json()
+    assert "confidentiality" in data["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_activate_attestor_profile_mirrors_timestamp(
+    client: AsyncClient,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Activation mirrors the confidentiality_signed_at timestamp to the profile."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    admin_id, admin_secret = await create_admin_user()
+    admin_headers = auth_headers(admin_id, ["admin"])
+    totp = _admin_totp(admin_secret)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=applicant_id,
+                provider="stripe",
+                provider_account_id="acct_attestor_mirrors_nda_001",
+                provider_account_lookup_hash="hash-attestor-mirrors-nda-001",
+                account_type="express",
+                is_default=True,
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout_account_id = payout_account.id
+
+    coi_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/coi",
+        headers=owner_headers,
+        json={"declarations": [], "accept_policy": True},
+    )
+    assert coi_resp.status_code == 200, coi_resp.text
+
+    nda_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+    assert nda_resp.status_code == 200, nda_resp.text
+    nda_time = nda_resp.json()["confidentiality_signed_at"]
+
+    payout_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/payout",
+        headers=owner_headers,
+        json={"payout_account_id": str(payout_account_id)},
+    )
+    assert payout_resp.status_code == 200, payout_resp.text
+
+    tax_resp = await client.post(
+        f"/v1/attestor/applications/{application_id}/tax-document",
+        headers=owner_headers,
+        json={
+            "tax_document_type": "w9",
+            "file_name": "Form W-9.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+    )
+    assert tax_resp.status_code == 201, tax_resp.text
+
+    resp = await client.post(
+        f"/v1/admin/attestor/applications/{application_id}/activate",
+        headers=admin_headers,
+        json={"totp_code": totp.now()},
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(AttestorProfile).where(AttestorProfile.user_id == applicant_id)
+        )
+        profile = result.scalar_one_or_none()
+        assert profile is not None
+        assert profile.confidentiality_signed_at is not None
+        assert profile.confidentiality_signed_at.isoformat().startswith(nda_time[:19])
+
+
+
+
+@pytest.mark.asyncio
+async def test_sign_confidentiality_is_idempotent_re_sign(
+    client: AsyncClient,
+    attestor_application_context: FakeRedis,
+) -> None:
+    """Subsequent valid signatures before activation are idempotent."""
+    application_id, applicant_id, owner_headers = await _seed_owner_application(
+        status="expert_verified",
+    )
+    resp1 = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+    assert resp1.status_code == 200, resp1.text
+
+    resp2 = await client.post(
+        f"/v1/attestor/applications/{application_id}/confidentiality",
+        headers=owner_headers,
+        json={"accept": True},
+    )
+    assert resp2.status_code == 200, resp2.text
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(AttestorApplication).where(AttestorApplication.id == application_id)
+        )
+        app = result.scalar_one()
+        assert app.confidentiality_signed_at is not None

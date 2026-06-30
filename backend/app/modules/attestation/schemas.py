@@ -156,6 +156,12 @@ class CoiDeclarationRequest(BaseModel):
     accept_policy: bool
 
 
+class ConfidentialityAgreementRequest(BaseModel):
+    """Attestor acceptance of the one-time confidentiality / non-use agreement."""
+
+    accept: bool
+
+
 class AttestorPayoutAttachRequest(BaseModel):
     """Request body for attaching an owned payout account to the application."""
 
@@ -189,6 +195,7 @@ class AttestorApplicationResponse(BaseModel):
     professional_references: str
     coi_declarations: list[CoiEntry]
     coi_signed_at: datetime | None
+    confidentiality_signed_at: datetime | None
     coi_expires_at: datetime | None
     payout_account_id: UUID | None
     tax_document_type: str | None
@@ -405,6 +412,13 @@ class AttestationDisputeCreateRequest(BaseModel):
     reason: str = Field(min_length=5, max_length=4000)
 
 
+class AttestationAcceptRequest(BaseModel):
+    """Attestor acceptance with the binding content-use acknowledgment."""
+
+    content_ack: bool
+    ack_version: str = Field(min_length=1, max_length=50)
+
+
 class AttestationDisputeResponse(BaseModel):
     """Attestation dispute details visible to requestors and admins."""
 
@@ -551,6 +565,19 @@ class AttestationFundingResponse(BaseModel):
     client_secret: str
 
 
+class AttestationConsentPendingResponse(BaseModel):
+    """Returned for framework requests awaiting framework-owner consent."""
+
+    id: UUID
+    status: str
+
+
+class AttestationConsentRequest(BaseModel):
+    """Framework-owner decision on an operator-initiated attestation request."""
+
+    decision: Literal["approve", "decline"]
+
+
 class AdminCredentialRejectRequest(BaseModel):
     """Admin request body for rejecting a pending Credential."""
 
@@ -621,3 +648,32 @@ class AttestorDirectoryResponse(BaseModel):
     """Public list response for the Attestor directory."""
 
     attestors: list[AttestorDirectoryEntry]
+
+
+class AttestationPackageArtifact(BaseModel):
+    """One artifact entry in an Attestation access package."""
+
+    id: UUID
+    filename: str | None = None
+
+
+class AttestationPackageResponse(BaseModel):
+    """The read-only Attestation access package scoped to the caller's entitlement."""
+
+    attestation_id: UUID
+    framework_title: str
+    framework_category: str
+    framework_industry: str | None
+    brief: dict[str, Any] | None
+    entitlement: str
+    artifacts: list[AttestationPackageArtifact]
+
+
+class AttestationArtifactAccessResponse(BaseModel):
+    """Presigned access grant for an Attestation framework artifact."""
+
+    artifact_id: UUID
+    attestation_id: UUID
+    scope: str
+    download_url: str
+    expires_in: int

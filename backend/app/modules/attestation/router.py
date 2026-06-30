@@ -6,7 +6,7 @@ from datetime import date as _date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.attestation import (
+    access_service,
     application_service,
     credential_service,
     directory_service,
@@ -31,11 +32,16 @@ from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
+    AttestationAcceptRequest,
+    AttestationArtifactAccessResponse,
+    AttestationConsentPendingResponse,
+    AttestationConsentRequest,
     AttestationDisputeCreateRequest,
     AttestationDisputeResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
+    AttestationPackageResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -58,6 +64,7 @@ from app.modules.attestation.schemas import (
     AttestorTrialDecideRequest,
     AttestorTrialResponse,
     CoiDeclarationRequest,
+    ConfidentialityAgreementRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -79,8 +86,7 @@ ApprovedAttestorUser = Annotated[User, Depends(require_approved_attestor)]
 def _credential_response(credential: _CredentialModel) -> CredentialResponse:
     """Build a CredentialResponse with the derived ``expired`` flag."""
     expired = (
-        credential.expires_date is not None
-        and credential.expires_date < _date.today()
+        credential.expires_date is not None and credential.expires_date < _date.today()
     )
     return CredentialResponse.model_validate(
         {
@@ -110,24 +116,69 @@ def _credential_response(credential: _CredentialModel) -> CredentialResponse:
             "expired": expired,
         }
     )
+
+
 RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
 
 
 @router.post(
     "/attestations",
-    response_model=AttestationFundingResponse,
+    response_model=AttestationFundingResponse | AttestationConsentPendingResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def request_attestation(
     payload: AttestationRequestCreateRequest,
     requestor: RequestorUser,
     db: DatabaseSession,
-) -> AttestationFundingResponse:
-    """Create an escrow-funded Attestation request for an owned target."""
+) -> AttestationFundingResponse | AttestationConsentPendingResponse:
+    """Create an Attestation request; fund now or await owner consent."""
     return await attestation_service.request_attestation(
         db=db,
         requestor=requestor,
         payload=payload,
+    )
+
+
+@router.post(
+    "/attestations/{attestation_id}/consent",
+    response_model=AttestationRequestResponse,
+)
+async def decide_owner_consent(
+    attestation_id: UUID,
+    payload: AttestationConsentRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Approve or decline an operator-initiated attestation as the framework owner."""
+    attestation = await attestation_service.decide_owner_consent(
+        db=db,
+        owner=user,
+        attestation_id=attestation_id,
+        decision=payload.decision,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/fund",
+    response_model=AttestationFundingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Fund an owner-approved attestation request",
+    description=(
+        "Create the Stripe PaymentIntent for an operator-initiated attestation "
+        "after the framework owner has approved consent."
+    ),
+)
+async def fund_attestation(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationFundingResponse:
+    """Fund an owner-approved operator-initiated attestation as the requestor."""
+    return await attestation_service.fund_attestation(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
     )
 
 
@@ -219,14 +270,17 @@ async def get_attestation(
 )
 async def accept_attestation_offer(
     attestation_id: UUID,
+    payload: AttestationAcceptRequest,
     attestor: ApprovedAttestorUser,
     db: DatabaseSession,
 ) -> AttestationRequestResponse:
-    """Accept an open Attestation cohort offer as an approved Attestor."""
+    """Accept an open cohort offer with the content-use acknowledgment."""
     attestation = await matching_service.accept_attestation_offer(
         db=db,
         attestation_id=attestation_id,
         attestor=attestor,
+        content_ack=payload.content_ack,
+        ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
 
@@ -518,6 +572,32 @@ async def sign_attestor_application_coi(
 
 
 @router.post(
+    "/attestor/applications/{application_id}/confidentiality",
+    response_model=AttestorApplicationResponse,
+    summary="Sign confidentiality / non-use agreement",
+    description=(
+        "Record the applicant's acceptance of the one-time confidentiality and "
+        "non-use agreement. This is required before activation but does not "
+        "change the application status."
+    ),
+)
+async def sign_attestor_application_confidentiality(
+    application_id: UUID,
+    payload: ConfidentialityAgreementRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestorApplicationResponse:
+    """Sign the one-time confidentiality agreement for an application."""
+    application = await application_service.sign_confidentiality(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
     "/attestor/applications/{application_id}/payout",
     response_model=AttestorApplicationResponse,
     summary="Attach payout account",
@@ -798,9 +878,7 @@ async def list_credentials(
     """List Credentials owned by the authenticated user."""
     credentials = await credential_service.list_credentials(db=db, user=user)
     return CredentialsResponse(
-        credentials=[
-            _credential_response(credential) for credential in credentials
-        ]
+        credentials=[_credential_response(credential) for credential in credentials]
     )
 
 
@@ -889,4 +967,40 @@ async def create_credential_evidence_upload_session(
         user=user,
         credential_id=credential_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/attestations/{attestation_id}/artifacts/{artifact_id}/access",
+    response_model=AttestationArtifactAccessResponse,
+)
+async def request_attestation_artifact_access(
+    attestation_id: UUID,
+    artifact_id: UUID,
+    request: Request,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationArtifactAccessResponse:
+    """Issue an entitlement-checked presigned URL for an Attestation artifact."""
+    return await access_service.request_artifact_access(
+        db=db,
+        user=user,
+        attestation_id=attestation_id,
+        artifact_id=artifact_id,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/package",
+    response_model=AttestationPackageResponse,
+)
+async def get_attestation_package(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationPackageResponse:
+    """Return the read-only Attestation access package for a participant."""
+    return await access_service.get_attestation_package(
+        db=db, user=user, attestation_id=attestation_id
     )

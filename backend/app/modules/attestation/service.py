@@ -7,6 +7,7 @@ reporting, release, and disputes are layered onto these records in later slices.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -18,8 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation, Credential
 from app.modules.attestation.schemas import (
+    AttestationConsentPendingResponse,
     AttestationFundingResponse,
     AttestationRequestCreateRequest,
 )
@@ -29,6 +32,7 @@ from app.modules.frameworks.models import Framework
 
 IN_FLIGHT_ATTESTATION_STATUSES = {
     "pending_fee",
+    "pending_owner_consent",
     "matching",
     "offered",
     "accepted",
@@ -83,12 +87,9 @@ async def request_attestation(
     db: AsyncSession,
     requestor: User,
     payload: AttestationRequestCreateRequest,
-) -> AttestationFundingResponse:
-    """Create a pending Attestation fee transaction and Stripe PaymentIntent."""
+) -> AttestationFundingResponse | AttestationConsentPendingResponse:
+    """Create an Attestation request; fund now or await owner consent."""
     requestor_id = requestor.id
-    requestor_email = requestor.email
-    requestor_display_name = requestor.display_name
-    customer_id = requestor.stripe_customer_id
 
     initiator_is_owner = await _validate_attestation_target(
         db=db,
@@ -112,92 +113,254 @@ async def request_attestation(
     )
     amount = await _attestation_fee(db, payload.target_type, payload.review_type)
 
-    try:
-        if customer_id is None:
-            customer = await stripe.create_customer(
-                email=requestor_email,
-                name=requestor_display_name,
-                idempotency_key=f"stripe_customer:{requestor_id}",
-            )
-            customer_id = customer.id
-    except StripeProviderError as exc:
+    if not initiator_is_owner:
+        attestation_id = await _create_attestation(
+            db=db,
+            requestor_id=requestor_id,
+            payload=payload,
+            amount=amount,
+            initiator_is_owner=False,
+            status_value="pending_owner_consent",
+        )
+        owner_id = await _target_framework_owner_id(db, payload.target_id)
+        if owner_id is not None:
+            attestation = await db.get(Attestation, attestation_id)
+            if attestation is not None:
+                attestation_notifications.notify_consent_requested(
+                    attestation,
+                    owner_id=owner_id,
+                )
         logger.bind(
             module="attestation",
             action="request_attestation",
             user_id=requestor_id,
+            attestation_id=attestation_id,
+        ).info("attestation_consent_requested")
+        return AttestationConsentPendingResponse(
+            id=attestation_id,
+            status="pending_owner_consent",
+        )
+
+    customer_id = await _ensure_stripe_customer(db, requestor)
+    attestation_id = await _create_attestation(
+        db=db,
+        requestor_id=requestor_id,
+        payload=payload,
+        amount=amount,
+        initiator_is_owner=True,
+        status_value="pending_fee",
+    )
+    return await _fund_attestation(
+        db=db,
+        requestor_id=requestor_id,
+        attestation_id=attestation_id,
+        amount=amount,
+        customer_id=customer_id,
+    )
+
+
+async def decide_owner_consent(
+    db: AsyncSession,
+    owner: User,
+    *,
+    attestation_id: UUID,
+    decision: str,
+) -> Attestation:
+    """Approve or decline an operator-initiated framework attestation request.
+
+    Args:
+        db: Async database session.
+        owner: Authenticated user attempting the consent decision.
+        attestation_id: Attestation awaiting framework-owner consent.
+        decision: Owner decision, either ``approve`` or ``decline``.
+
+    Returns:
+        The updated Attestation row.
+
+    Raises:
+        HTTPException(404): The caller is not the framework owner or the row
+            does not exist.
+        HTTPException(409): The attestation is not awaiting owner consent.
+    """
+    owner_id = owner.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = await db.get(Attestation, attestation_id, with_for_update=True)
+        if attestation is None or attestation.target_type != "framework":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        framework_owner_id = await _target_framework_owner_id(db, attestation.target_id)
+        if framework_owner_id != owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        if attestation.status != "pending_owner_consent":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attestation is not awaiting owner consent.",
+            )
+        if decision == "approve":
+            attestation.status = "pending_fee"
+            audit_action = "attestation_consent_approved"
+        else:
+            attestation.status = "cancelled"
+            attestation.closed_at = datetime.now(UTC)
+            audit_action = "attestation_consent_declined"
+        await write_audit(
+            db=db,
+            actor_id=owner_id,
+            action=audit_action,
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"decision": decision},
+        )
+
+    await db.refresh(attestation)
+    if decision == "approve":
+        attestation_notifications.notify_consent_approved(attestation)
+    else:
+        attestation_notifications.notify_consent_declined(attestation)
+    return attestation
+
+
+async def fund_attestation(
+    db: AsyncSession,
+    requestor: User,
+    *,
+    attestation_id: UUID,
+) -> AttestationFundingResponse:
+    """Fund an owner-approved operator-initiated attestation as the requestor.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated user funding the attestation fee.
+        attestation_id: Attestation awaiting operator payment.
+
+    Returns:
+        Funding details including the Stripe client secret for confirmation.
+
+    Raises:
+        HTTPException(404): The attestation does not exist or is not owned by
+            the requestor.
+        HTTPException(409): The attestation is not awaiting payment or already
+            has a fee transaction.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None or attestation.requestor_id != requestor.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    if attestation.status != "pending_fee":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation is not awaiting payment.",
+        )
+
+    existing_transaction_id = await db.scalar(
+        select(Transaction.id).where(
+            Transaction.ref_id == attestation_id,
+            Transaction.ref_type == "attestation",
+        )
+    )
+    if existing_transaction_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation fee is already being processed.",
+        )
+
+    customer_id = await _ensure_stripe_customer(db, requestor)
+    return await _fund_attestation(
+        db=db,
+        requestor_id=requestor.id,
+        attestation_id=attestation_id,
+        amount=attestation.fee_amount,
+        customer_id=customer_id,
+    )
+
+
+async def _ensure_stripe_customer(db: AsyncSession, requestor: User) -> str:
+    """Return the requestor Stripe customer id, creating one if missing."""
+    if requestor.stripe_customer_id is not None:
+        return requestor.stripe_customer_id
+    try:
+        customer = await stripe.create_customer(
+            email=requestor.email,
+            name=requestor.display_name,
+            idempotency_key=f"stripe_customer:{requestor.id}",
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="attestation",
+            action="request_attestation",
+            user_id=requestor.id,
         ).error("stripe_customer_create_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Payment provider is unavailable.",
         ) from exc
+    return customer.id
 
-    attestation_id, transaction_id = await _create_pending_attestation_fee(
-        db=db,
-        requestor_id=requestor_id,
-        customer_id=customer_id,
-        payload=payload,
-        amount=amount,
-        initiator_is_owner=initiator_is_owner,
+
+async def _target_framework_owner_id(
+    db: AsyncSession,
+    framework_id: UUID,
+) -> UUID | None:
+    """Return the contributor that owns a framework, or None if absent."""
+    owner_id = await db.scalar(
+        select(Framework.contributor_id).where(Framework.id == framework_id)
     )
-    release_conditions = {
-        "kind": "attestation",
-        "attestation_id": str(attestation_id),
-        "requestor_user_id": str(requestor_id),
-    }
+    return owner_id if isinstance(owner_id, UUID) else None
 
-    try:
-        payment_intent = await stripe.create_payment_intent(
-            customer_id=customer_id,
-            amount=amount,
-            currency="USD",
-            metadata={
-                "transaction_id": str(transaction_id),
-                "kind": "escrow",
-                "attestation_id": str(attestation_id),
-                "release_conditions": json.dumps(release_conditions),
-            },
-            idempotency_key=f"attestation_fee:{transaction_id}",
-        )
-    except StripeProviderError as exc:
-        await _mark_attestation_fee_provider_failed(
-            db=db,
+
+async def _create_attestation(
+    db: AsyncSession,
+    *,
+    requestor_id: UUID,
+    payload: AttestationRequestCreateRequest,
+    amount: Decimal,
+    initiator_is_owner: bool,
+    status_value: str,
+) -> UUID:
+    """Persist an Attestation row and request audit without creating a payment."""
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = Attestation(
+            target_type=payload.target_type,
+            target_id=payload.target_id,
             requestor_id=requestor_id,
-            transaction_id=transaction_id,
-            attestation_id=attestation_id,
-            reason="payment_intent_create_failed",
+            status=status_value,
+            review_type=payload.review_type,
+            brief=payload.brief.model_dump() if payload.brief is not None else None,
+            requested_specializations=payload.requested_specializations,
+            requested_jurisdictions=payload.requested_jurisdictions,
+            fee_amount=amount,
+            currency="USD",
         )
-        logger.bind(
-            module="attestation",
-            action="request_attestation",
-            user_id=requestor_id,
-            transaction_id=transaction_id,
-            attestation_id=attestation_id,
-        ).error("stripe_payment_intent_failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
-
-    await _mark_attestation_fee_provider_ref(
-        db=db,
-        requestor_id=requestor_id,
-        transaction_id=transaction_id,
-        attestation_id=attestation_id,
-        provider_ref=payment_intent.id,
-    )
-    logger.bind(
-        module="attestation",
-        action="request_attestation",
-        user_id=requestor_id,
-        transaction_id=transaction_id,
-        attestation_id=attestation_id,
-    ).info("attestation_requested")
-    return AttestationFundingResponse(
-        id=attestation_id,
-        transaction_id=transaction_id,
-        provider="stripe",
-        client_secret=payment_intent.client_secret,
-    )
+        db.add(attestation)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=requestor_id,
+            action="attestation_requested",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "target_type": payload.target_type,
+                "target_id": str(payload.target_id),
+                "review_type": payload.review_type,
+                "brief_provided": payload.brief is not None,
+                "initiator_is_owner": initiator_is_owner,
+            },
+        )
+        return attestation.id
 
 
 async def _validate_attestation_target(
@@ -324,16 +487,15 @@ async def _attestation_fee(
         ) from exc
 
 
-async def _create_pending_attestation_fee(
+async def _fund_attestation(
     db: AsyncSession,
     *,
     requestor_id: UUID,
-    customer_id: str,
-    payload: AttestationRequestCreateRequest,
+    attestation_id: UUID,
     amount: Decimal,
-    initiator_is_owner: bool,
-) -> tuple[UUID, UUID]:
-    """Persist the Attestation and fee transaction before Stripe confirmation."""
+    customer_id: str,
+) -> AttestationFundingResponse:
+    """Create the fee transaction and Stripe PaymentIntent for one attestation."""
     if db.in_transaction():
         await db.rollback()
 
@@ -347,21 +509,6 @@ async def _create_pending_attestation_fee(
         if user.stripe_customer_id is None:
             user.stripe_customer_id = customer_id
 
-        attestation = Attestation(
-            target_type=payload.target_type,
-            target_id=payload.target_id,
-            requestor_id=requestor_id,
-            status="pending_fee",
-            review_type=payload.review_type,
-            brief=payload.brief.model_dump() if payload.brief is not None else None,
-            requested_specializations=payload.requested_specializations,
-            requested_jurisdictions=payload.requested_jurisdictions,
-            fee_amount=amount,
-            currency="USD",
-        )
-        db.add(attestation)
-        await db.flush()
-
         transaction = Transaction(
             payer_id=requestor_id,
             payee_id=None,
@@ -372,27 +519,71 @@ async def _create_pending_attestation_fee(
             transaction_type="attestation_fee",
             status="pending",
             provider="stripe",
-            ref_id=attestation.id,
+            ref_id=attestation_id,
             ref_type="attestation",
         )
         db.add(transaction)
         await db.flush()
-        await write_audit(
-            db=db,
-            actor_id=requestor_id,
-            action="attestation_requested",
-            target_type="attestation",
-            target_id=attestation.id,
+        transaction_id = transaction.id
+
+    release_conditions = {
+        "kind": "attestation",
+        "attestation_id": str(attestation_id),
+        "requestor_user_id": str(requestor_id),
+    }
+    try:
+        payment_intent = await stripe.create_payment_intent(
+            customer_id=customer_id,
+            amount=amount,
+            currency="USD",
             metadata={
-                "target_type": payload.target_type,
-                "target_id": str(payload.target_id),
-                "transaction_id": str(transaction.id),
-                "review_type": payload.review_type,
-                "brief_provided": payload.brief is not None,
-                "initiator_is_owner": initiator_is_owner,
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "attestation_id": str(attestation_id),
+                "release_conditions": json.dumps(release_conditions),
             },
+            idempotency_key=f"attestation_fee:{transaction_id}",
         )
-        return attestation.id, transaction.id
+    except StripeProviderError as exc:
+        await _mark_attestation_fee_provider_failed(
+            db=db,
+            requestor_id=requestor_id,
+            transaction_id=transaction_id,
+            attestation_id=attestation_id,
+            reason="payment_intent_create_failed",
+        )
+        logger.bind(
+            module="attestation",
+            action="fund_attestation",
+            user_id=requestor_id,
+            transaction_id=transaction_id,
+            attestation_id=attestation_id,
+        ).error("stripe_payment_intent_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_attestation_fee_provider_ref(
+        db=db,
+        requestor_id=requestor_id,
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+        provider_ref=payment_intent.id,
+    )
+    logger.bind(
+        module="attestation",
+        action="fund_attestation",
+        user_id=requestor_id,
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+    ).info("attestation_funded")
+    return AttestationFundingResponse(
+        id=attestation_id,
+        transaction_id=transaction_id,
+        provider="stripe",
+        client_secret=payment_intent.client_secret,
+    )
 
 
 async def _mark_attestation_fee_provider_ref(

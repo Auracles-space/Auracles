@@ -1932,7 +1932,7 @@ git commit -m "feat(attestation): presign attestor artifact access with audit lo
 - Consumes: `attestation_access_scope`, `matching_service.get_attestation_for_user`, `Framework`, `Artifact`, `FrameworkVersionArtifact`.
 - Produces: `get_attestation_package(db, user, *, attestation_id) -> AttestationPackageResponse`; endpoint `GET /attestations/{id}/package`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add to `test_attestation_access.py`:
 
@@ -1980,12 +1980,12 @@ async def test_package_outsider_not_found(
 
 (Add a `preview_artifact` fixture: an artifact set as the framework's `preview_artifact_id` or flagged `is_preview` on its version-artifact row.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd backend && uv run pytest tests/integration/test_attestation_access.py -k package -v`
 Expected: FAIL — route undefined.
 
-- [ ] **Step 3: Add schemas**
+- [x] **Step 3: Add schemas**
 
 In `schemas.py`:
 
@@ -2011,7 +2011,7 @@ class AttestationPackageResponse(BaseModel):
 
 (Confirm `Any` is imported in `schemas.py` — it is, used by `AttestationRequestResponse`. Use the artifact's real display field for `filename`; check `Artifact` for a `filename`/`original_filename` column and map it, else drop the field.)
 
-- [ ] **Step 4: Implement the service**
+- [x] **Step 4: Implement the service**
 
 Append to `access_service.py`:
 
@@ -2079,7 +2079,7 @@ async def get_attestation_package(
 
 Import `AttestationPackageResponse`, `AttestationPackageArtifact` in `access_service.py`.
 
-- [ ] **Step 5: Add the endpoint**
+- [x] **Step 5: Add the endpoint**
 
 In `router.py`:
 
@@ -2101,13 +2101,13 @@ async def get_attestation_package(
 
 Import `AttestationPackageResponse`.
 
-- [ ] **Step 6: Run tests + full attestation suite**
+- [x] **Step 6: Run tests + full attestation suite**
 
 Run: `cd backend && uv run pytest tests/integration/test_attestation_access.py tests/unit/modules/test_attestation_access_entitlement.py -v`
 Then: `cd backend && uv run pytest tests/integration/test_attestation_requests.py tests/integration/test_attestation_consent.py -v`
 Expected: all PASS.
 
-- [ ] **Step 7: Gates + commit**
+- [x] **Step 7: Gates + commit**
 
 ```bash
 cd backend && uv run ruff check . && uv run mypy app
@@ -2119,11 +2119,11 @@ git commit -m "feat(attestation): serve the scoped framework access package"
 
 ## Final verification (after all tasks)
 
-- [ ] Full attestation test suite green: `cd backend && uv run pytest tests/unit/modules/test_attestation_access_entitlement.py tests/unit/test_attestation_access_package_migration.py tests/unit/workers/test_attestation_consent_expiry.py tests/integration/test_attestation_requests.py tests/integration/test_attestation_consent.py tests/integration/test_attestation_access.py -v`
-- [ ] Whole-repo gates: `cd backend && uv run ruff check . && uv run mypy app`
-- [ ] Migration round-trip: `cd backend && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head`
-- [ ] Spec coverage: §2.5 deltas 1–4 all implemented (consent gate T2–T5; preview T7/T9; full unlock + ack T6–T9; access log T8). DRM, watermarking, blanket onboarding NDA explicitly out of scope.
-- [ ] OpenAPI: regenerate `contracts/openapi.yaml` from the new endpoints (consent, fund, artifact access, package) per workflow rule 7, then regenerate the frontend client. (Backend-only plan; frontend UI is a later slice.)
+- [x] Full attestation test suite green: `cd backend && uv run pytest tests/unit/modules/test_attestation_access_entitlement.py tests/unit/test_attestation_access_package_migration.py tests/unit/workers/test_attestation_consent_expiry.py tests/integration/test_attestation_requests.py tests/integration/test_attestation_consent.py tests/integration/test_attestation_access.py -v`
+- [x] Whole-repo gates: `cd backend && uv run ruff check . && uv run mypy app`
+- [x] Migration round-trip: `cd backend && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head`
+- [x] Spec coverage: §2.5 deltas 1–4 all implemented (consent gate T2–T5; preview T7/T9; full unlock + ack T6–T9; access log T8). DRM, watermarking, blanket onboarding NDA explicitly out of scope.
+- [x] OpenAPI: regenerate `contracts/openapi.yaml` from the new endpoints (consent, fund, artifact access, package) per workflow rule 7, then regenerate the frontend client. (Backend-only plan; frontend UI is a later slice.)
 
 ## Module 1 follow-up (flagged, not in this plan)
 
