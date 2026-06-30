@@ -230,11 +230,11 @@ async def _validate_attestation_target(
     if target_type == "framework":
         framework = (
             await db.execute(
-            select(Framework.contributor_id, Framework.status).where(
-                Framework.id == target_id,
-                Framework.deleted_at.is_(None),
+                select(Framework.contributor_id, Framework.status).where(
+                    Framework.id == target_id,
+                    Framework.deleted_at.is_(None),
+                )
             )
-        )
         ).one_or_none()
         if framework is None:
             raise HTTPException(
