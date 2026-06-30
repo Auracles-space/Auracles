@@ -398,6 +398,105 @@ async def test_framework_request_requires_review_type_and_brief(
     assert response.status_code == 422
 
 
+async def test_operator_can_request_on_published_framework_they_dont_own(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator may request attestation on a published framework they do not own."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    owner_id = await create_user("fw-author@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "published")
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["operations"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 201
+
+
+async def test_operator_cannot_request_on_unpublished_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-owner requesting on an unpublished framework gets a 404."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    owner_id = await create_user("fw-author-2@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer-2@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "draft")
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["operations"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 404
+
+
+async def test_same_target_different_review_type_allowed(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Different review types on the same framework are independent requests."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-multi@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    base_payload = {
+        "target_type": "framework",
+        "target_id": str(framework_id),
+        "brief": _FRAMEWORK_BRIEF,
+        "requested_specializations": ["compliance"],
+        "requested_jurisdictions": ["US"],
+    }
+
+    first = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={**base_payload, "review_type": "quality"},
+    )
+    second = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={**base_payload, "review_type": "compliance"},
+    )
+    duplicate = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={**base_payload, "review_type": "quality"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert duplicate.status_code == 409
+
+
 async def test_requestor_lists_only_their_attestations(
     client: AsyncClient,
     migrated_database: None,

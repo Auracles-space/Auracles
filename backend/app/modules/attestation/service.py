@@ -207,11 +207,11 @@ async def _validate_attestation_target(
     target_type: str,
     target_id: UUID,
 ) -> bool:
-    """Ensure the requestor owns the target they want independently attested.
+    """Ensure the requestor may request attestation on the target.
 
     Returns:
-        True when the current requestor is the owner or self target. Task 5
-        extends this contract for published non-owner framework requests.
+        True when the requestor owns or is the target. False when the target is
+        a published framework owned by someone else.
     """
     if target_type == "credential":
         credential = await db.scalar(
@@ -228,19 +228,28 @@ async def _validate_attestation_target(
         return True
 
     if target_type == "framework":
-        framework = await db.scalar(
-            select(Framework.id).where(
+        framework = (
+            await db.execute(
+            select(Framework.contributor_id, Framework.status).where(
                 Framework.id == target_id,
-                Framework.contributor_id == requestor_id,
                 Framework.deleted_at.is_(None),
             )
         )
+        ).one_or_none()
         if framework is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Framework not found.",
             )
-        return True
+        contributor_id, framework_status = framework
+        if contributor_id == requestor_id:
+            return True
+        if framework_status == "published":
+            return False
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
 
     if target_type in {"contributor", "operator"} and target_id == requestor_id:
         return True
@@ -259,18 +268,19 @@ async def _reject_duplicate_in_flight_request(
     target_id: UUID,
     review_type: str | None,
 ) -> None:
-    """Reject duplicate in-flight requests by the same requestor and target.
-
-    The widened signature accepts ``review_type`` for the next slice, where
-    duplicate detection becomes review-type aware for framework requests.
-    """
-    del review_type
+    """Reject duplicate in-flight requests by the same requestor and review type."""
+    review_type_predicate = (
+        Attestation.review_type.is_(None)
+        if review_type is None
+        else Attestation.review_type == review_type
+    )
     existing_id = await db.scalar(
         select(Attestation.id)
         .where(
             Attestation.requestor_id == requestor_id,
             Attestation.target_type == target_type,
             Attestation.target_id == target_id,
+            review_type_predicate,
             Attestation.status.in_(IN_FLIGHT_ATTESTATION_STATUSES),
         )
         .limit(1)
