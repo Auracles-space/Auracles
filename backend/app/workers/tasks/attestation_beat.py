@@ -24,6 +24,12 @@ async def _revoke_overdue_attestations() -> int:
         return await matching_service.revoke_overdue_attestations(db)
 
 
+async def _expire_owner_consent() -> int:
+    """Cancel operator-initiated requests past their owner-consent window."""
+    async with async_session_factory() as db:
+        return await matching_service.expire_owner_consent(db)
+
+
 async def _auto_release_attestations() -> int:
     """Release report-submitted Attestations past their dispute window."""
     async with async_session_factory() as db:
@@ -62,6 +68,21 @@ def revoke_overdue_attestations(self: Any) -> dict[str, int]:
     log.info("task_started")
     revoked_count = run_async(_revoke_overdue_attestations())
     result = {"revoked_count": revoked_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def expire_owner_consent(self: Any) -> dict[str, int]:
+    """Celery wrapper for hourly owner-consent expiry."""
+    log = logger.bind(
+        module="attestation",
+        action="expire_owner_consent",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    cancelled_count = run_async(_expire_owner_consent())
+    result = {"cancelled_count": cancelled_count}
     log.info("task_completed", result=result)
     return result
 

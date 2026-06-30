@@ -458,6 +458,57 @@ async def revoke_overdue_attestations(
     return revoked_count
 
 
+async def expire_owner_consent(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Cancel operator-initiated requests whose owner-consent window elapsed.
+
+    Args:
+        db: Async database session.
+        now: Optional current timestamp override for deterministic tests.
+
+    Returns:
+        The number of attestation requests cancelled.
+    """
+    current_time = now or datetime.now(UTC)
+    consent_hours = await _platform_int_config(
+        db,
+        key="attestation_owner_consent_hours",
+        default=72,
+        minimum=1,
+    )
+    cutoff = current_time - timedelta(hours=consent_hours)
+    cancelled: list[Attestation] = []
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        rows = await db.execute(
+            select(Attestation)
+            .where(
+                Attestation.status == "pending_owner_consent",
+                Attestation.created_at <= cutoff,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        for attestation in rows.scalars().all():
+            attestation.status = "cancelled"
+            attestation.closed_at = current_time
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="attestation_consent_expired",
+                target_type="attestation",
+                target_id=attestation.id,
+                metadata={"consent_hours": consent_hours},
+            )
+            cancelled.append(attestation)
+    for attestation in cancelled:
+        attestation_notifications.notify_consent_declined(attestation)
+    return len(cancelled)
+
+
 async def _platform_int_config(
     db: AsyncSession,
     *,
