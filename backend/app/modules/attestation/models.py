@@ -351,6 +351,10 @@ class AttestorProfile(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    coi_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class Credential(UpdatedAtMixin, Base):
@@ -563,6 +567,14 @@ class AttestationOffer(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+    match_score: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 3),
+        nullable=True,
+    )
+    score_breakdown: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
     )
 
 
