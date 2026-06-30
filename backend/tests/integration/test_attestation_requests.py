@@ -194,6 +194,39 @@ async def create_attestation_row(
             return attestation.id
 
 
+async def test_attestation_fee_resolves_by_review_type(
+    migrated_database: None,
+    attestation_context: FakeRedis,
+) -> None:
+    """Framework fees follow the review tier; other targets keep flat fees."""
+    del migrated_database, attestation_context
+    from app.core.database import async_session_factory
+    from app.modules.attestation.service import _attestation_fee
+
+    async with async_session_factory() as session:
+        assert await _attestation_fee(session, "framework", "quality") == Decimal(
+            "500.00"
+        )
+        assert await _attestation_fee(session, "framework", "compliance") == Decimal(
+            "1200.00"
+        )
+        assert await _attestation_fee(session, "framework", "expert") == Decimal(
+            "2500.00"
+        )
+        assert await _attestation_fee(session, "framework", "provenance") == Decimal(
+            "500.00"
+        )
+        assert await _attestation_fee(session, "contributor", None) == Decimal(
+            "300.00"
+        )
+        assert await _attestation_fee(session, "operator", "expert") == Decimal(
+            "300.00"
+        )
+        assert await _attestation_fee(session, "credential", "quality") == Decimal(
+            "100.00"
+        )
+
+
 def test_attestation_brief_rejects_blank_fields() -> None:
     """A brief with an empty required field fails Pydantic validation."""
     from pydantic import ValidationError

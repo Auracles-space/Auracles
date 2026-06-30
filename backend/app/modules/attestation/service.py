@@ -42,6 +42,10 @@ ATTESTATION_FEE_DEFAULTS = {
     "contributor": Decimal("300.00"),
     "operator": Decimal("300.00"),
     "credential": Decimal("100.00"),
+    "review_quality": Decimal("500.00"),
+    "review_compliance": Decimal("1200.00"),
+    "review_expert": Decimal("2500.00"),
+    "review_provenance": Decimal("500.00"),
 }
 
 
@@ -98,7 +102,7 @@ async def request_attestation(
         target_type=payload.target_type,
         target_id=payload.target_id,
     )
-    amount = await _attestation_fee(db, payload.target_type)
+    amount = await _attestation_fee(db, payload.target_type, payload.review_type)
 
     try:
         if customer_id is None:
@@ -258,14 +262,29 @@ async def _reject_duplicate_in_flight_request(
         )
 
 
-async def _attestation_fee(db: AsyncSession, target_type: str) -> Decimal:
-    """Return the configured Attestation fee for a target type."""
-    key = f"attestation_fee_{target_type}"
+async def _attestation_fee(
+    db: AsyncSession,
+    target_type: str,
+    review_type: str | None,
+) -> Decimal:
+    """Return the configured Attestation fee for a target and review type."""
+    if target_type == "framework":
+        if review_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Framework Attestation requests require a review type.",
+            )
+        key = f"attestation_fee_review_{review_type}"
+        default_key = f"review_{review_type}"
+    else:
+        key = f"attestation_fee_{target_type}"
+        default_key = target_type
+
     configured = await db.scalar(
         select(PlatformConfig.value).where(PlatformConfig.key == key)
     )
     if configured is None:
-        return ATTESTATION_FEE_DEFAULTS[target_type]
+        return ATTESTATION_FEE_DEFAULTS[default_key]
     try:
         return _normalise_money(Decimal(configured))
     except Exception as exc:
