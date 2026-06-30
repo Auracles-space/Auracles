@@ -66,6 +66,7 @@ ATTESTATION_TARGET_ENUM = ENUM(
 )
 ATTESTATION_STATUS_ENUM = ENUM(
     "pending_fee",
+    "pending_owner_consent",
     "matching",
     "offered",
     "accepted",
@@ -501,6 +502,11 @@ class Attestation(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    content_ack_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    content_ack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AttestationOffer(Base):
@@ -549,6 +555,47 @@ class AttestationOffer(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+
+
+class AttestationArtifactAccess(Base):
+    """Append-only log of every presigned Attestation artifact access.
+
+    Records who accessed which artifact under what entitlement scope. The trail
+    is the forensic evidence behind the content-use acknowledgment.
+    """
+
+    __tablename__ = "attestation_artifact_access"
+    __table_args__ = (
+        Index("idx_attestation_artifact_access_attestation", "attestation_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id"),
+        nullable=False,
+    )
+    attestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    artifact_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=False,
+    )
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
     )
 
 
