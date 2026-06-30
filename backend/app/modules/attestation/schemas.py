@@ -641,3 +641,13 @@ class AttestorDirectoryResponse(BaseModel):
     """Public list response for the Attestor directory."""
 
     attestors: list[AttestorDirectoryEntry]
+
+
+class AttestationArtifactAccessResponse(BaseModel):
+    """Presigned access grant for an Attestation framework artifact."""
+
+    artifact_id: UUID
+    attestation_id: UUID
+    scope: str
+    download_url: str
+    expires_in: int

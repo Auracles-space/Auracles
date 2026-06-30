@@ -6,7 +6,7 @@ from datetime import date as _date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.attestation import (
+    access_service,
     application_service,
     credential_service,
     directory_service,
@@ -32,6 +33,7 @@ from app.modules.attestation.schemas import (
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
     AttestationAcceptRequest,
+    AttestationArtifactAccessResponse,
     AttestationConsentPendingResponse,
     AttestationConsentRequest,
     AttestationDisputeCreateRequest,
@@ -938,4 +940,25 @@ async def create_credential_evidence_upload_session(
         user=user,
         credential_id=credential_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/attestations/{attestation_id}/artifacts/{artifact_id}/access",
+    response_model=AttestationArtifactAccessResponse,
+)
+async def request_attestation_artifact_access(
+    attestation_id: UUID,
+    artifact_id: UUID,
+    request: Request,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationArtifactAccessResponse:
+    """Issue an entitlement-checked presigned URL for an Attestation artifact."""
+    return await access_service.request_artifact_access(
+        db=db,
+        user=user,
+        attestation_id=attestation_id,
+        artifact_id=artifact_id,
+        ip_address=request.client.host if request.client else None,
     )
