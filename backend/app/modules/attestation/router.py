@@ -32,6 +32,7 @@ from app.modules.attestation.schemas import (
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
     AttestationConsentPendingResponse,
+    AttestationConsentRequest,
     AttestationDisputeCreateRequest,
     AttestationDisputeResponse,
     AttestationEvidenceUploadCreateRequest,
@@ -130,6 +131,26 @@ async def request_attestation(
         requestor=requestor,
         payload=payload,
     )
+
+
+@router.post(
+    "/attestations/{attestation_id}/consent",
+    response_model=AttestationRequestResponse,
+)
+async def decide_owner_consent(
+    attestation_id: UUID,
+    payload: AttestationConsentRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Approve or decline an operator-initiated attestation as the framework owner."""
+    attestation = await attestation_service.decide_owner_consent(
+        db=db,
+        owner=user,
+        attestation_id=attestation_id,
+        decision=payload.decision,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
 
 
 @router.get("/attestations", response_model=AttestationsResponse)

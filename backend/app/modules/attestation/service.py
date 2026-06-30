@@ -7,6 +7,7 @@ reporting, release, and disputes are layered onto these records in later slices.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -156,6 +157,75 @@ async def request_attestation(
         amount=amount,
         customer_id=customer_id,
     )
+
+
+async def decide_owner_consent(
+    db: AsyncSession,
+    owner: User,
+    *,
+    attestation_id: UUID,
+    decision: str,
+) -> Attestation:
+    """Approve or decline an operator-initiated framework attestation request.
+
+    Args:
+        db: Async database session.
+        owner: Authenticated user attempting the consent decision.
+        attestation_id: Attestation awaiting framework-owner consent.
+        decision: Owner decision, either ``approve`` or ``decline``.
+
+    Returns:
+        The updated Attestation row.
+
+    Raises:
+        HTTPException(404): The caller is not the framework owner or the row
+            does not exist.
+        HTTPException(409): The attestation is not awaiting owner consent.
+    """
+    owner_id = owner.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = await db.get(Attestation, attestation_id, with_for_update=True)
+        if attestation is None or attestation.target_type != "framework":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        framework_owner_id = await _target_framework_owner_id(db, attestation.target_id)
+        if framework_owner_id != owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        if attestation.status != "pending_owner_consent":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attestation is not awaiting owner consent.",
+            )
+        if decision == "approve":
+            attestation.status = "pending_fee"
+            audit_action = "attestation_consent_approved"
+        else:
+            attestation.status = "cancelled"
+            attestation.closed_at = datetime.now(UTC)
+            audit_action = "attestation_consent_declined"
+        await write_audit(
+            db=db,
+            actor_id=owner_id,
+            action=audit_action,
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"decision": decision},
+        )
+
+    await db.refresh(attestation)
+    if decision == "approve":
+        attestation_notifications.notify_consent_approved(attestation)
+    else:
+        attestation_notifications.notify_consent_declined(attestation)
+    return attestation
 
 
 async def _ensure_stripe_customer(db: AsyncSession, requestor: User) -> str:

@@ -558,6 +558,12 @@ class AttestationConsentPendingResponse(BaseModel):
     status: str
 
 
+class AttestationConsentRequest(BaseModel):
+    """Framework-owner decision on an operator-initiated attestation request."""
+
+    decision: Literal["approve", "decline"]
+
+
 class AdminCredentialRejectRequest(BaseModel):
     """Admin request body for rejecting a pending Credential."""
 

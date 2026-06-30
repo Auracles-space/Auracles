@@ -114,6 +114,30 @@ def notify_consent_requested(attestation: Attestation, *, owner_id: UUID) -> Non
     )
 
 
+def notify_consent_approved(attestation: Attestation) -> None:
+    """Notify the requestor that framework-owner consent was approved."""
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_consent_approved",
+        title="Framework attestation approved",
+        body="The framework owner approved your attestation request for funding.",
+        attestation=attestation,
+        dedupe_suffix="consent-approved",
+    )
+
+
+def notify_consent_declined(attestation: Attestation) -> None:
+    """Notify the requestor that framework-owner consent was declined."""
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_consent_declined",
+        title="Framework attestation declined",
+        body="The framework owner declined your attestation request.",
+        attestation=attestation,
+        dedupe_suffix="consent-declined",
+    )
+
+
 def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> None:
     """Notify each Attestor in a newly offered cohort."""
     for offer in offers:
