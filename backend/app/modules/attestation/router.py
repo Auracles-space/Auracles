@@ -64,6 +64,7 @@ from app.modules.attestation.schemas import (
     AttestorTrialDecideRequest,
     AttestorTrialResponse,
     CoiDeclarationRequest,
+    ConfidentialityAgreementRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -85,8 +86,7 @@ ApprovedAttestorUser = Annotated[User, Depends(require_approved_attestor)]
 def _credential_response(credential: _CredentialModel) -> CredentialResponse:
     """Build a CredentialResponse with the derived ``expired`` flag."""
     expired = (
-        credential.expires_date is not None
-        and credential.expires_date < _date.today()
+        credential.expires_date is not None and credential.expires_date < _date.today()
     )
     return CredentialResponse.model_validate(
         {
@@ -116,6 +116,8 @@ def _credential_response(credential: _CredentialModel) -> CredentialResponse:
             "expired": expired,
         }
     )
+
+
 RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
 
 
@@ -570,6 +572,32 @@ async def sign_attestor_application_coi(
 
 
 @router.post(
+    "/attestor/applications/{application_id}/confidentiality",
+    response_model=AttestorApplicationResponse,
+    summary="Sign confidentiality / non-use agreement",
+    description=(
+        "Record the applicant's acceptance of the one-time confidentiality and "
+        "non-use agreement. This is required before activation but does not "
+        "change the application status."
+    ),
+)
+async def sign_attestor_application_confidentiality(
+    application_id: UUID,
+    payload: ConfidentialityAgreementRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestorApplicationResponse:
+    """Sign the one-time confidentiality agreement for an application."""
+    application = await application_service.sign_confidentiality(
+        db=db,
+        user=user,
+        application_id=application_id,
+        payload=payload,
+    )
+    return AttestorApplicationResponse.model_validate(application)
+
+
+@router.post(
     "/attestor/applications/{application_id}/payout",
     response_model=AttestorApplicationResponse,
     summary="Attach payout account",
@@ -850,9 +878,7 @@ async def list_credentials(
     """List Credentials owned by the authenticated user."""
     credentials = await credential_service.list_credentials(db=db, user=user)
     return CredentialsResponse(
-        credentials=[
-            _credential_response(credential) for credential in credentials
-        ]
+        credentials=[_credential_response(credential) for credential in credentials]
     )
 
 

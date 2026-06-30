@@ -38,6 +38,7 @@ from app.modules.attestation.schemas import (
     AttestorCredentialCheckRequest,
     AttestorTaxDocumentRequest,
     CoiDeclarationRequest,
+    ConfidentialityAgreementRequest,
     CredentialEvidenceUploadSessionResponse,
 )
 from app.modules.auth import service as auth_service
@@ -312,6 +313,77 @@ async def sign_coi(
             target_id=application.id,
             metadata={"declaration_count": len(payload.declarations)},
         )
+    return application
+
+
+async def sign_confidentiality(
+    db: AsyncSession,
+    user: User,
+    application_id: UUID,
+    payload: ConfidentialityAgreementRequest,
+) -> AttestorApplication:
+    """Sign the one-time confidentiality / non-use agreement.
+
+    Args:
+        db: Async session.
+        user: Authenticated owner of the application.
+        application_id: Application whose agreement is being signed.
+        payload: Agreement acceptance flag.
+
+    Returns:
+        The application with updated confidentiality signature timestamp.
+
+    Raises:
+        HTTPException(404): If the application does not exist for this user.
+        HTTPException(422): If acceptance is missing or the application is active.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        stmt = (
+            select(AttestorApplication)
+            .where(
+                AttestorApplication.id == application_id,
+                AttestorApplication.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        result = await db.execute(stmt)
+        application = result.scalar_one_or_none()
+
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor application not found.",
+            )
+
+        if not payload.accept:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Confidentiality agreement must be accepted.",
+            )
+
+        if application.status == "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Confidentiality agreement is locked "
+                    "once the application is active."
+                ),
+            )
+
+        if application.confidentiality_signed_at is None:
+            application.confidentiality_signed_at = datetime.now(UTC)
+            db.add(application)
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="attestor_confidentiality_signed",
+                target_type="attestor_application",
+                target_id=application.id,
+            )
+
     return application
 
 
@@ -858,6 +930,8 @@ def _missing_activation_prerequisites(
     missing: list[str] = []
     if application.coi_signed_at is None:
         missing.append("coi_signed_at")
+    if application.confidentiality_signed_at is None:
+        missing.append("confidentiality_signed_at")
     if not application.sectors:
         missing.append("sectors")
     if not application.framework_categories:
@@ -922,10 +996,7 @@ async def activate_attestor(
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=(
-                    "Missing activation prerequisites: "
-                    f"{', '.join(missing)}."
-                ),
+                detail=(f"Missing activation prerequisites: {', '.join(missing)}."),
             )
 
         await _create_active_profile(
@@ -991,6 +1062,7 @@ async def _create_active_profile(
             coi_declarations=application.coi_declarations,
             coi_signed_at=application.coi_signed_at,
             coi_expires_at=application.coi_expires_at,
+            confidentiality_signed_at=application.confidentiality_signed_at,
         )
         db.add(profile)
         return
@@ -1005,4 +1077,6 @@ async def _create_active_profile(
     profile.coi_declarations = application.coi_declarations
     profile.coi_signed_at = application.coi_signed_at
     profile.coi_expires_at = application.coi_expires_at
+    profile.confidentiality_signed_at = application.confidentiality_signed_at
 
+    db.add(profile)

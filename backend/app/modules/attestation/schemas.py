@@ -156,6 +156,12 @@ class CoiDeclarationRequest(BaseModel):
     accept_policy: bool
 
 
+class ConfidentialityAgreementRequest(BaseModel):
+    """Attestor acceptance of the one-time confidentiality / non-use agreement."""
+
+    accept: bool
+
+
 class AttestorPayoutAttachRequest(BaseModel):
     """Request body for attaching an owned payout account to the application."""
 
@@ -189,6 +195,7 @@ class AttestorApplicationResponse(BaseModel):
     professional_references: str
     coi_declarations: list[CoiEntry]
     coi_signed_at: datetime | None
+    confidentiality_signed_at: datetime | None
     coi_expires_at: datetime | None
     payout_account_id: UUID | None
     tax_document_type: str | None

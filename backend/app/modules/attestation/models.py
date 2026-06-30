@@ -240,6 +240,10 @@ class AttestorApplication(CreatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     coi_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -336,6 +340,10 @@ class AttestorProfile(UpdatedAtMixin, Base):
         server_default=text("'[]'::jsonb"),
     )
     coi_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
