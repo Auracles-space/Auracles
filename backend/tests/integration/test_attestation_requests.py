@@ -194,6 +194,66 @@ async def create_attestation_row(
             return attestation.id
 
 
+async def _stub_stripe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch Stripe customer and PaymentIntent creation with test doubles."""
+
+    async def fake_create_customer(
+        *,
+        email: str,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> FakeStripeCustomer:
+        """Return a deterministic fake Stripe customer."""
+        del email, name, idempotency_key
+        return FakeStripeCustomer("cus_framework_attestation")
+
+    async def fake_create_payment_intent(
+        *,
+        customer_id: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        idempotency_key: str | None = None,
+    ) -> FakeStripePaymentIntent:
+        """Return a deterministic fake Stripe PaymentIntent."""
+        del customer_id, amount, currency, metadata, idempotency_key
+        return FakeStripePaymentIntent(
+            "pi_framework_attestation",
+            "pi_framework_attestation_secret",
+        )
+
+    monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
+    monkeypatch.setattr(stripe, "create_payment_intent", fake_create_payment_intent)
+
+
+async def _create_framework(owner_id: UUID, status_value: str = "published") -> UUID:
+    """Create a Framework row that satisfies current model requirements."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=owner_id,
+                title="KYC Onboarding Framework",
+                description="Standardises KYC onboarding for operators.",
+                status=status_value,
+                category="compliance",
+                tags=["kyc", "aml"],
+                price=Decimal("199.00"),
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+            return framework.id
+
+
+_FRAMEWORK_BRIEF = {
+    "what_it_does": "Standardises KYC onboarding",
+    "use_case": "Compliance team at a mid-size fund",
+    "jurisdiction": "US",
+    "focus_areas": "AML completeness",
+    "desired_outcome": "Compliance sign-off badge",
+}
+
+
 async def test_attestation_fee_resolves_by_review_type(
     migrated_database: None,
     attestation_context: FakeRedis,
@@ -264,6 +324,78 @@ def test_attestation_request_accepts_review_type_and_brief() -> None:
     assert payload.review_type == "compliance"
     assert payload.brief is not None
     assert payload.brief.jurisdiction == "US"
+
+
+async def test_framework_request_persists_review_type_and_brief(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A framework attestation stores review_type, brief, and audit flags."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-owner@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["compliance"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 201
+    attestation_id = UUID(response.json()["id"])
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_requested",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    assert attestation is not None
+    assert attestation.review_type == "compliance"
+    assert attestation.brief == _FRAMEWORK_BRIEF
+    assert attestation.fee_amount == Decimal("1200.00")
+    assert audit is not None
+    assert audit.metadata_["review_type"] == "compliance"
+    assert audit.metadata_["brief_provided"] is True
+    assert audit.metadata_["initiator_is_owner"] is True
+
+
+async def test_framework_request_requires_review_type_and_brief(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A framework request missing review_type and brief must fail with 422."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-owner-2@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "requested_specializations": ["compliance"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 async def test_requestor_lists_only_their_attestations(

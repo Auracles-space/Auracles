@@ -90,17 +90,25 @@ async def request_attestation(
     requestor_display_name = requestor.display_name
     customer_id = requestor.stripe_customer_id
 
-    await _validate_attestation_target(
+    initiator_is_owner = await _validate_attestation_target(
         db=db,
         requestor_id=requestor_id,
         target_type=payload.target_type,
         target_id=payload.target_id,
     )
+    if payload.target_type == "framework" and (
+        payload.review_type is None or payload.brief is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Framework attestation requires a review type and brief.",
+        )
     await _reject_duplicate_in_flight_request(
         db=db,
         requestor_id=requestor_id,
         target_type=payload.target_type,
         target_id=payload.target_id,
+        review_type=payload.review_type,
     )
     amount = await _attestation_fee(db, payload.target_type, payload.review_type)
 
@@ -129,6 +137,7 @@ async def request_attestation(
         customer_id=customer_id,
         payload=payload,
         amount=amount,
+        initiator_is_owner=initiator_is_owner,
     )
     release_conditions = {
         "kind": "attestation",
@@ -197,8 +206,13 @@ async def _validate_attestation_target(
     requestor_id: UUID,
     target_type: str,
     target_id: UUID,
-) -> None:
-    """Ensure the requestor owns the target they want independently attested."""
+) -> bool:
+    """Ensure the requestor owns the target they want independently attested.
+
+    Returns:
+        True when the current requestor is the owner or self target. Task 5
+        extends this contract for published non-owner framework requests.
+    """
     if target_type == "credential":
         credential = await db.scalar(
             select(Credential.id).where(
@@ -211,7 +225,7 @@ async def _validate_attestation_target(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Credential not found.",
             )
-        return
+        return True
 
     if target_type == "framework":
         framework = await db.scalar(
@@ -226,10 +240,10 @@ async def _validate_attestation_target(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Framework not found.",
             )
-        return
+        return True
 
     if target_type in {"contributor", "operator"} and target_id == requestor_id:
-        return
+        return True
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -243,8 +257,14 @@ async def _reject_duplicate_in_flight_request(
     requestor_id: UUID,
     target_type: str,
     target_id: UUID,
+    review_type: str | None,
 ) -> None:
-    """Reject duplicate in-flight requests by the same requestor and target."""
+    """Reject duplicate in-flight requests by the same requestor and target.
+
+    The widened signature accepts ``review_type`` for the next slice, where
+    duplicate detection becomes review-type aware for framework requests.
+    """
+    del review_type
     existing_id = await db.scalar(
         select(Attestation.id)
         .where(
@@ -301,6 +321,7 @@ async def _create_pending_attestation_fee(
     customer_id: str,
     payload: AttestationRequestCreateRequest,
     amount: Decimal,
+    initiator_is_owner: bool,
 ) -> tuple[UUID, UUID]:
     """Persist the Attestation and fee transaction before Stripe confirmation."""
     if db.in_transaction():
@@ -321,6 +342,8 @@ async def _create_pending_attestation_fee(
             target_id=payload.target_id,
             requestor_id=requestor_id,
             status="pending_fee",
+            review_type=payload.review_type,
+            brief=payload.brief.model_dump() if payload.brief is not None else None,
             requested_specializations=payload.requested_specializations,
             requested_jurisdictions=payload.requested_jurisdictions,
             fee_amount=amount,
@@ -354,6 +377,9 @@ async def _create_pending_attestation_fee(
                 "target_type": payload.target_type,
                 "target_id": str(payload.target_id),
                 "transaction_id": str(transaction.id),
+                "review_type": payload.review_type,
+                "brief_provided": payload.brief is not None,
+                "initiator_is_owner": initiator_is_owner,
             },
         )
         return attestation.id, transaction.id
