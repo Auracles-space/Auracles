@@ -73,25 +73,20 @@ def upgrade() -> None:
                 """
             ).bindparams(key=key, value=value)
         )
+    sla_update = sa.text("UPDATE platform_config SET value = '10' WHERE key = :key")
     for key in SLA_KEYS:
-        op.execute(
-            sa.text("UPDATE platform_config SET value = '10' WHERE key = :key").bindparams(
-                key=key
-            )
-        )
+        op.execute(sla_update.bindparams(key=key))
 
 
 def downgrade() -> None:
     """Drop the review-type columns/enum, remove fees, restore 7-day SLA."""
     bind = op.get_bind()
+    sla_revert = sa.text("UPDATE platform_config SET value = '7' WHERE key = :key")
     for key in SLA_KEYS:
-        op.execute(
-            sa.text("UPDATE platform_config SET value = '7' WHERE key = :key").bindparams(
-                key=key
-            )
-        )
+        op.execute(sla_revert.bindparams(key=key))
+    fee_delete = sa.text("DELETE FROM platform_config WHERE key = :key")
     for key in REVIEW_FEE_SEEDS:
-        op.execute(sa.text("DELETE FROM platform_config WHERE key = :key").bindparams(key=key))
+        op.execute(fee_delete.bindparams(key=key))
     op.drop_column("attestations", "brief")
     op.drop_column("attestations", "review_type")
     REVIEW_TYPE_ENUM.drop(bind, checkfirst=True)

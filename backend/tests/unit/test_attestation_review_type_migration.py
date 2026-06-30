@@ -45,10 +45,8 @@ def test_review_type_columns_enum_and_config(migrated_engine: Engine) -> None:
                 )
             )
         }
-        config = {
-            row.key: row.value
-            for row in connection.execute(text("SELECT key, value FROM platform_config"))
-        }
+        config_rows = connection.execute(text("SELECT key, value FROM platform_config"))
+        config = {row.key: row.value for row in config_rows}
 
     assert {"review_type", "brief"}.issubset(columns)
     assert "attestation_review_type_enum" in enums
