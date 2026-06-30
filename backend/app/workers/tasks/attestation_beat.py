@@ -42,6 +42,12 @@ async def _escalate_attestation_disputes() -> int:
         return await dispute_service.escalate_attestation_disputes(db)
 
 
+async def _send_coi_resign_reminders() -> int:
+    """Send CoI re-sign reminders for expiring or lapsed Attestor declarations."""
+    async with async_session_factory() as db:
+        return await matching_service.send_coi_resign_reminders(db)
+
+
 @app.task(bind=True)  # type: ignore[untyped-decorator]
 def expire_attestation_offers(self: Any) -> dict[str, int]:
     """Celery wrapper for hourly Attestation offer expiry."""
@@ -113,5 +119,20 @@ def escalate_attestation_disputes(self: Any) -> dict[str, int]:
     log.info("task_started")
     escalated_count = run_async(_escalate_attestation_disputes())
     result = {"escalated_count": escalated_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def send_coi_resign_reminders(self: Any) -> dict[str, int]:
+    """Celery wrapper for the daily CoI re-sign reminder sweep."""
+    log = logger.bind(
+        module="attestation",
+        action="send_coi_resign_reminders",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    reminded_count = run_async(_send_coi_resign_reminders())
+    result = {"reminded_count": reminded_count}
     log.info("task_completed", result=result)
     return result

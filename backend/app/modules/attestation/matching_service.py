@@ -34,6 +34,7 @@ DEFAULT_COMPLETION_SLA_DAYS = 7
 TERMINAL_OFFER_STATUSES = {"accepted", "declined", "expired", "superseded"}
 ACTIVE_ASSIGNMENT_STATUSES = {"accepted", "report_submitted", "disputed"}
 DEFAULT_CONCURRENCY_CAP = 5
+COI_REMINDER_LEAD_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -539,6 +540,71 @@ async def expire_owner_consent(
     for attestation in cancelled:
         attestation_notifications.notify_consent_declined(attestation)
     return len(cancelled)
+
+
+async def send_coi_resign_reminders(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Send one CoI reminder per active expiry cycle for eligible Attestors.
+
+    Args:
+        db: Async database session.
+        now: Optional current timestamp override for deterministic tests.
+
+    Returns:
+        The number of reminders sent during this sweep.
+    """
+    current_time = now or datetime.now(UTC)
+    lead_window = timedelta(days=COI_REMINDER_LEAD_DAYS)
+    profiles = list(
+        (
+            await db.execute(
+                select(AttestorProfile).where(
+                    AttestorProfile.active.is_(True),
+                    AttestorProfile.coi_expires_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    sent = 0
+    for profile in profiles:
+        expires_at = profile.coi_expires_at
+        if expires_at is None:
+            continue
+        reminder_window_start = expires_at - lead_window
+        already_reminded = (
+            profile.coi_reminder_sent_at is not None
+            and profile.coi_reminder_sent_at >= reminder_window_start
+        )
+        if already_reminded:
+            continue
+        if current_time >= expires_at:
+            attestation_notifications.notify_coi_lapsed(
+                profile.user_id,
+                expires_at=expires_at,
+            )
+        elif current_time >= reminder_window_start:
+            attestation_notifications.notify_coi_expiring(
+                profile.user_id,
+                expires_at=expires_at,
+            )
+        else:
+            continue
+        profile.coi_reminder_sent_at = current_time
+        sent += 1
+
+    if sent:
+        await db.commit()
+    logger.bind(
+        module="attestation",
+        action="send_coi_resign_reminders",
+    ).info("coi_reminders_sent", count=sent)
+    return sent
 
 
 async def _platform_int_config(

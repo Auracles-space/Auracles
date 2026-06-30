@@ -45,6 +45,7 @@ from app.workers.tasks.attestation_beat import (
     expire_attestation_offers,
     expire_owner_consent,
     revoke_overdue_attestations,
+    send_coi_resign_reminders,
 )
 
 
@@ -166,6 +167,15 @@ def test_expire_owner_consent_task_is_registered_in_beat_schedule() -> None:
     assert schedule["schedule"] == 3600.0
 
 
+def test_coi_resign_reminder_task_is_registered_in_beat_schedule() -> None:
+    """Celery Beat includes the daily CoI re-sign reminder task."""
+    schedule = BEAT_SCHEDULE["coi-resign-reminders-daily"]
+
+    assert schedule["task"] == (
+        "app.workers.tasks.attestation_beat.send_coi_resign_reminders"
+    )
+
+
 async def test_expire_attestation_offers_runs_cleanly_and_is_idempotent(
     migrated_database: None,
     empty_attestation_state: None,
@@ -254,3 +264,15 @@ async def test_escalate_attestation_disputes_runs_cleanly(
     result = await _run_beat(escalate_attestation_disputes)
 
     assert result == {"escalated_count": 0}
+
+
+async def test_send_coi_resign_reminders_runs_cleanly(
+    migrated_database: None,
+    empty_attestation_state: None,
+) -> None:
+    """The daily CoI reminder task no-ops when no Attestor profiles are due."""
+    del migrated_database, empty_attestation_state
+
+    result = await _run_beat(send_coi_resign_reminders)
+
+    assert result == {"reminded_count": 0}
