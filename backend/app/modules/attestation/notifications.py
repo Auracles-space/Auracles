@@ -326,8 +326,13 @@ def notify_manual_assignment(attestation: Attestation, attestor_id: UUID) -> Non
     )
 
 
-def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> None:
-    """Notify an Attestor that their CoI declaration expires within 30 days."""
+def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> bool:
+    """Notify an Attestor that their CoI declaration expires within 30 days.
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed. The caller
+        uses this to avoid marking an attestor reminded when the broker is down.
+    """
     try:
         dispatch_project_notification.delay(
             user_id=str(user_id),
@@ -347,10 +352,17 @@ def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> None:
             action="queue_coi_expiring_notification",
             user_id=user_id,
         ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True
 
 
-def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> None:
-    """Notify an Attestor that their CoI declaration has lapsed."""
+def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
+    """Notify an Attestor that their CoI declaration has lapsed.
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed. The caller
+        uses this to avoid marking an attestor reminded when the broker is down.
+    """
     try:
         dispatch_project_notification.delay(
             user_id=str(user_id),
@@ -370,3 +382,5 @@ def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> None:
             action="queue_coi_lapsed_notification",
             user_id=user_id,
         ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True

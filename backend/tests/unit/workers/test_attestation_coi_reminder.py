@@ -104,15 +104,20 @@ async def _attestor_with_expiry(expires_at: datetime, signed_at: datetime) -> UU
 def _stub_notifications(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, UUID]]:
     """Capture reminder notifications instead of dispatching real fanout."""
     sent: list[tuple[str, UUID]] = []
+
+    def _expiring(user_id: UUID, *, expires_at: datetime) -> bool:
+        sent.append(("expiring", user_id))
+        return True
+
+    def _lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
+        sent.append(("lapsed", user_id))
+        return True
+
     monkeypatch.setattr(
-        matching_service.attestation_notifications,
-        "notify_coi_expiring",
-        lambda user_id, *, expires_at: sent.append(("expiring", user_id)),
+        matching_service.attestation_notifications, "notify_coi_expiring", _expiring
     )
     monkeypatch.setattr(
-        matching_service.attestation_notifications,
-        "notify_coi_lapsed",
-        lambda user_id, *, expires_at: sent.append(("lapsed", user_id)),
+        matching_service.attestation_notifications, "notify_coi_lapsed", _lapsed
     )
     return sent
 
@@ -167,6 +172,37 @@ async def test_reminder_idempotent_same_cycle(db_session, _stub_notifications) -
 
     assert first == 1
     assert second == 0
+
+
+async def test_failed_dispatch_does_not_mark_reminded(
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed enqueue must not stamp the cycle-dedup timestamp.
+
+    Guards against a transient broker outage silently marking an attestor
+    reminded and skipping them until their next signing cycle.
+    """
+    now = datetime.now(UTC)
+    user_id = await _attestor_with_expiry(
+        now + timedelta(days=10),
+        now - timedelta(days=355),
+    )
+    monkeypatch.setattr(
+        matching_service.attestation_notifications,
+        "notify_coi_expiring",
+        lambda user_id, *, expires_at: False,
+    )
+
+    count = await matching_service.send_coi_resign_reminders(db_session, now=now)
+
+    assert count == 0
+    reminder_sent_at = await db_session.scalar(
+        select(AttestorProfile.coi_reminder_sent_at).where(
+            AttestorProfile.user_id == user_id
+        )
+    )
+    assert reminder_sent_at is None
 
 
 async def test_no_reminder_when_far_from_expiry(

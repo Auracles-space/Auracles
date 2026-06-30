@@ -28,7 +28,7 @@ from app.modules.attestation.models import (
     AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -44,6 +44,7 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestorProfile))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
+            await session.execute(delete(PlatformConfig))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
 
@@ -136,6 +137,47 @@ async def _make_attestation(requestor_id: UUID) -> Attestation:
         await session.commit()
         await session.refresh(attestation)
     return attestation
+
+
+async def test_all_screened_out_marks_needs_admin(db_session) -> None:
+    """When every eligible Attestor is screened out, the request needs admin.
+
+    Exercises the offer_next_cohort empty-candidate branch via the new
+    availability gate: the only matching Attestor is already at the cap.
+    """
+    requestor = await _make_user("operator", "req")
+    busy = await _make_user("attestor", "busy")
+    await _make_profile(busy.id)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(PlatformConfig(key="attestation_concurrency_cap", value="1"))
+            session.add(
+                Attestation(
+                    target_type="contributor",
+                    target_id=uuid4(),
+                    requestor_id=requestor.id,
+                    attestor_id=busy.id,
+                    status="accepted",
+                    review_type="quality",
+                    fee_amount=Decimal("500.00"),
+                    currency="USD",
+                    requested_specializations=["tax"],
+                    requested_jurisdictions=["US"],
+                )
+            )
+
+    attestation = await _make_attestation(requestor.id)
+
+    offers = await matching_service.offer_next_cohort(
+        db_session,
+        attestation_id=attestation.id,
+    )
+
+    assert offers == []
+    refreshed = await db_session.get(Attestation, attestation.id)
+    assert refreshed is not None
+    assert refreshed.status == "needs_admin"
 
 
 async def test_offer_persists_match_score(db_session) -> None:

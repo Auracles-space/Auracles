@@ -584,16 +584,20 @@ async def send_coi_resign_reminders(
         if already_reminded:
             continue
         if current_time >= expires_at:
-            attestation_notifications.notify_coi_lapsed(
+            dispatched = attestation_notifications.notify_coi_lapsed(
                 profile.user_id,
                 expires_at=expires_at,
             )
         elif current_time >= reminder_window_start:
-            attestation_notifications.notify_coi_expiring(
+            dispatched = attestation_notifications.notify_coi_expiring(
                 profile.user_id,
                 expires_at=expires_at,
             )
         else:
+            continue
+        # Only mark reminded on a confirmed enqueue — a broker outage must not
+        # silently skip this attestor until their next signing cycle.
+        if not dispatched:
             continue
         profile.coi_reminder_sent_at = current_time
         sent += 1

@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery.schedules import crontab
 from sqlalchemy import create_engine, delete
 
 from app.core.database import async_session_factory, engine
@@ -174,6 +175,7 @@ def test_coi_resign_reminder_task_is_registered_in_beat_schedule() -> None:
     assert schedule["task"] == (
         "app.workers.tasks.attestation_beat.send_coi_resign_reminders"
     )
+    assert schedule["schedule"] == crontab(hour=2, minute=0)
 
 
 async def test_expire_attestation_offers_runs_cleanly_and_is_idempotent(
