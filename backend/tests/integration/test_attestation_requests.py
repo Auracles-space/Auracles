@@ -110,6 +110,14 @@ async def reset_attestation_state() -> None:
                 "attestation_fee_contributor": "300.00",
                 "attestation_fee_operator": "300.00",
                 "attestation_fee_credential": "100.00",
+                "attestation_fee_review_quality": "500.00",
+                "attestation_fee_review_compliance": "1200.00",
+                "attestation_fee_review_expert": "2500.00",
+                "attestation_fee_review_provenance": "500.00",
+                "attestation_completion_sla_days_framework": "10",
+                "attestation_completion_sla_days_contributor": "10",
+                "attestation_completion_sla_days_operator": "10",
+                "attestation_completion_sla_days_credential": "10",
             }.items():
                 row = await session.get(PlatformConfig, key)
                 if row is None:

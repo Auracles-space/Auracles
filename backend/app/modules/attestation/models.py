@@ -125,6 +125,14 @@ ATTESTATION_UPLOAD_SCAN_STATUS_ENUM = ENUM(
     name="attestation_upload_scan_status_enum",
     create_type=False,
 )
+ATTESTATION_REVIEW_TYPE_ENUM = ENUM(
+    "quality",
+    "compliance",
+    "expert",
+    "provenance",
+    name="attestation_review_type_enum",
+    create_type=False,
+)
 CREDENTIAL_VERIFICATION_STATUS_ENUM = ENUM(
     "unverified",
     "pending",
@@ -440,6 +448,11 @@ class Attestation(UpdatedAtMixin, Base):
         server_default="pending_fee",
     )
     outcome: Mapped[str | None] = mapped_column(ATTESTATION_OUTCOME_ENUM, nullable=True)
+    review_type: Mapped[str | None] = mapped_column(
+        ATTESTATION_REVIEW_TYPE_ENUM,
+        nullable=True,
+    )
+    brief: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     requested_specializations: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
         nullable=False,
