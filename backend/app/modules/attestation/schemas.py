@@ -460,11 +460,23 @@ class AdminAttestationRefundRequest(BaseModel):
     totp_code: str = Field(min_length=6, max_length=16)
 
 
+class AttestationBrief(BaseModel):
+    """Structured review brief shown to the cohort during the offer phase."""
+
+    what_it_does: str = Field(min_length=1, max_length=2000)
+    use_case: str = Field(min_length=1, max_length=2000)
+    jurisdiction: str = Field(min_length=1, max_length=200)
+    focus_areas: str = Field(min_length=1, max_length=2000)
+    desired_outcome: str = Field(min_length=1, max_length=2000)
+
+
 class AttestationRequestCreateRequest(BaseModel):
     """Request body for creating an escrow-funded Attestation request."""
 
     target_type: Literal["framework", "contributor", "operator", "credential"]
     target_id: UUID
+    review_type: Literal["quality", "compliance", "expert", "provenance"] | None = None
+    brief: AttestationBrief | None = None
     requested_specializations: list[str] = Field(min_length=1, max_length=25)
     requested_jurisdictions: list[str] = Field(min_length=1, max_length=25)
 
@@ -479,6 +491,8 @@ class AttestationRequestResponse(BaseModel):
     attestor_id: UUID | None
     status: str
     outcome: str | None
+    review_type: str | None = None
+    brief: dict[str, Any] | None = None
     requested_specializations: list[str]
     requested_jurisdictions: list[str]
     summary: str | None = None

@@ -194,6 +194,45 @@ async def create_attestation_row(
             return attestation.id
 
 
+def test_attestation_brief_rejects_blank_fields() -> None:
+    """A brief with an empty required field fails Pydantic validation."""
+    from pydantic import ValidationError
+
+    from app.modules.attestation.schemas import AttestationBrief
+
+    with pytest.raises(ValidationError):
+        AttestationBrief(
+            what_it_does="",
+            use_case="growth team",
+            jurisdiction="US",
+            focus_areas="AML coverage",
+            desired_outcome="compliance sign-off",
+        )
+
+
+def test_attestation_request_accepts_review_type_and_brief() -> None:
+    """The create schema accepts a review_type and a structured brief."""
+    from app.modules.attestation.schemas import AttestationRequestCreateRequest
+
+    payload = AttestationRequestCreateRequest(
+        target_type="framework",
+        target_id="11111111-1111-1111-1111-111111111111",
+        review_type="compliance",
+        brief={
+            "what_it_does": "Standardises KYC onboarding",
+            "use_case": "Compliance team at a mid-size fund",
+            "jurisdiction": "US",
+            "focus_areas": "AML completeness",
+            "desired_outcome": "Compliance sign-off badge",
+        },
+        requested_specializations=["compliance"],
+        requested_jurisdictions=["US"],
+    )
+    assert payload.review_type == "compliance"
+    assert payload.brief is not None
+    assert payload.brief.jurisdiction == "US"
+
+
 async def test_requestor_lists_only_their_attestations(
     client: AsyncClient,
     migrated_database: None,
