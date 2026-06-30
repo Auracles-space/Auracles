@@ -75,6 +75,88 @@ async def test_owner_approve_moves_to_pending_fee(
     assert response.json()["status"] == "pending_fee"
 
 
+async def test_operator_funds_after_approval(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: object,
+    pending_consent_attestation: dict[str, UUID | str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After owner approval, the operator funds and receives a client secret."""
+    del migrated_database, attestation_context
+    await request_tests._stub_stripe(monkeypatch)
+    await client.post(
+        f"/v1/attestations/{pending_consent_attestation['attestation_id']}/consent",
+        headers=request_tests.auth_headers(
+            pending_consent_attestation["owner_id"],  # type: ignore[arg-type]
+            ["contributor"],
+        ),
+        json={"decision": "approve"},
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{pending_consent_attestation['attestation_id']}/fund",
+        headers=request_tests.auth_headers(
+            pending_consent_attestation["operator_id"],  # type: ignore[arg-type]
+            ["operator"],
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["client_secret"]
+
+
+async def test_fund_rejects_when_not_pending_fee(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: object,
+    pending_consent_attestation: dict[str, UUID | str],
+) -> None:
+    """Funding before consent approval returns a state-conflict error."""
+    del migrated_database, attestation_context
+    response = await client.post(
+        f"/v1/attestations/{pending_consent_attestation['attestation_id']}/fund",
+        headers=request_tests.auth_headers(
+            pending_consent_attestation["operator_id"],  # type: ignore[arg-type]
+            ["operator"],
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Attestation is not awaiting payment."
+
+
+async def test_fund_rejects_non_requestor(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: object,
+    pending_consent_attestation: dict[str, UUID | str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the operator requestor may fund an approved attestation."""
+    del migrated_database, attestation_context
+    await request_tests._stub_stripe(monkeypatch)
+    await client.post(
+        f"/v1/attestations/{pending_consent_attestation['attestation_id']}/consent",
+        headers=request_tests.auth_headers(
+            pending_consent_attestation["owner_id"],  # type: ignore[arg-type]
+            ["contributor"],
+        ),
+        json={"decision": "approve"},
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{pending_consent_attestation['attestation_id']}/fund",
+        headers=request_tests.auth_headers(
+            pending_consent_attestation["owner_id"],  # type: ignore[arg-type]
+            ["contributor"],
+        ),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Attestation not found."
+
+
 async def test_owner_decline_cancels(
     client: AsyncClient,
     migrated_database: None,

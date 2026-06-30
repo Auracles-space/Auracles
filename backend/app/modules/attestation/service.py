@@ -228,6 +228,62 @@ async def decide_owner_consent(
     return attestation
 
 
+async def fund_attestation(
+    db: AsyncSession,
+    requestor: User,
+    *,
+    attestation_id: UUID,
+) -> AttestationFundingResponse:
+    """Fund an owner-approved operator-initiated attestation as the requestor.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated user funding the attestation fee.
+        attestation_id: Attestation awaiting operator payment.
+
+    Returns:
+        Funding details including the Stripe client secret for confirmation.
+
+    Raises:
+        HTTPException(404): The attestation does not exist or is not owned by
+            the requestor.
+        HTTPException(409): The attestation is not awaiting payment or already
+            has a fee transaction.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None or attestation.requestor_id != requestor.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    if attestation.status != "pending_fee":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation is not awaiting payment.",
+        )
+
+    existing_transaction_id = await db.scalar(
+        select(Transaction.id).where(
+            Transaction.ref_id == attestation_id,
+            Transaction.ref_type == "attestation",
+        )
+    )
+    if existing_transaction_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation fee is already being processed.",
+        )
+
+    customer_id = await _ensure_stripe_customer(db, requestor)
+    return await _fund_attestation(
+        db=db,
+        requestor_id=requestor.id,
+        attestation_id=attestation_id,
+        amount=attestation.fee_amount,
+        customer_id=customer_id,
+    )
+
+
 async def _ensure_stripe_customer(db: AsyncSession, requestor: User) -> str:
     """Return the requestor Stripe customer id, creating one if missing."""
     if requestor.stripe_customer_id is not None:

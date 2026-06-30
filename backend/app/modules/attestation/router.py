@@ -153,6 +153,29 @@ async def decide_owner_consent(
     return AttestationRequestResponse.model_validate(attestation)
 
 
+@router.post(
+    "/attestations/{attestation_id}/fund",
+    response_model=AttestationFundingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Fund an owner-approved attestation request",
+    description=(
+        "Create the Stripe PaymentIntent for an operator-initiated attestation "
+        "after the framework owner has approved consent."
+    ),
+)
+async def fund_attestation(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationFundingResponse:
+    """Fund an owner-approved operator-initiated attestation as the requestor."""
+    return await attestation_service.fund_attestation(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+    )
+
+
 @router.get("/attestations", response_model=AttestationsResponse)
 async def list_attestations(
     user: CurrentUser,
