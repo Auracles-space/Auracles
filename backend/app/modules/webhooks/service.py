@@ -546,7 +546,15 @@ async def _mark_attestation_fee_funded(
         },
     )
     offers = await matching_service.offer_next_cohort(db, attestation_id=attestation.id)
-    return [
+    owner_id: UUID | None = None
+    if attestation.target_type == "framework":
+        owner_id = await db.scalar(
+            select(Framework.contributor_id).where(
+                Framework.id == attestation.target_id
+            )
+        )
+
+    callbacks: list[Callable[[], None]] = [
         lambda: attestation_notifications.notify_fee_funded(attestation),
         lambda: attestation_notifications.notify_offers(attestation, offers),
         lambda: (
@@ -555,6 +563,15 @@ async def _mark_attestation_fee_funded(
             else None
         ),
     ]
+    if owner_id is not None and owner_id != attestation.requestor_id:
+        resolved_owner_id = owner_id
+        callbacks.append(
+            lambda: attestation_notifications.notify_request_received_for_owner(
+                attestation,
+                owner_id=resolved_owner_id,
+            )
+        )
+    return callbacks
 
 
 async def _mark_project_milestone_funded(

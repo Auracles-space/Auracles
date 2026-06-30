@@ -42,6 +42,10 @@ ATTESTATION_FEE_DEFAULTS = {
     "contributor": Decimal("300.00"),
     "operator": Decimal("300.00"),
     "credential": Decimal("100.00"),
+    "review_quality": Decimal("500.00"),
+    "review_compliance": Decimal("1200.00"),
+    "review_expert": Decimal("2500.00"),
+    "review_provenance": Decimal("500.00"),
 }
 
 
@@ -86,19 +90,27 @@ async def request_attestation(
     requestor_display_name = requestor.display_name
     customer_id = requestor.stripe_customer_id
 
-    await _validate_attestation_target(
+    initiator_is_owner = await _validate_attestation_target(
         db=db,
         requestor_id=requestor_id,
         target_type=payload.target_type,
         target_id=payload.target_id,
     )
+    if payload.target_type == "framework" and (
+        payload.review_type is None or payload.brief is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Framework attestation requires a review type and brief.",
+        )
     await _reject_duplicate_in_flight_request(
         db=db,
         requestor_id=requestor_id,
         target_type=payload.target_type,
         target_id=payload.target_id,
+        review_type=payload.review_type,
     )
-    amount = await _attestation_fee(db, payload.target_type)
+    amount = await _attestation_fee(db, payload.target_type, payload.review_type)
 
     try:
         if customer_id is None:
@@ -125,6 +137,7 @@ async def request_attestation(
         customer_id=customer_id,
         payload=payload,
         amount=amount,
+        initiator_is_owner=initiator_is_owner,
     )
     release_conditions = {
         "kind": "attestation",
@@ -193,8 +206,13 @@ async def _validate_attestation_target(
     requestor_id: UUID,
     target_type: str,
     target_id: UUID,
-) -> None:
-    """Ensure the requestor owns the target they want independently attested."""
+) -> bool:
+    """Ensure the requestor may request attestation on the target.
+
+    Returns:
+        True when the requestor owns or is the target. False when the target is
+        a published framework owned by someone else.
+    """
     if target_type == "credential":
         credential = await db.scalar(
             select(Credential.id).where(
@@ -207,25 +225,34 @@ async def _validate_attestation_target(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Credential not found.",
             )
-        return
+        return True
 
     if target_type == "framework":
-        framework = await db.scalar(
-            select(Framework.id).where(
-                Framework.id == target_id,
-                Framework.contributor_id == requestor_id,
-                Framework.deleted_at.is_(None),
+        framework = (
+            await db.execute(
+                select(Framework.contributor_id, Framework.status).where(
+                    Framework.id == target_id,
+                    Framework.deleted_at.is_(None),
+                )
             )
-        )
+        ).one_or_none()
         if framework is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Framework not found.",
             )
-        return
+        contributor_id, framework_status = framework
+        if contributor_id == requestor_id:
+            return True
+        if framework_status == "published":
+            return False
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
 
     if target_type in {"contributor", "operator"} and target_id == requestor_id:
-        return
+        return True
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -239,14 +266,21 @@ async def _reject_duplicate_in_flight_request(
     requestor_id: UUID,
     target_type: str,
     target_id: UUID,
+    review_type: str | None,
 ) -> None:
-    """Reject duplicate in-flight requests by the same requestor and target."""
+    """Reject duplicate in-flight requests by the same requestor and review type."""
+    review_type_predicate = (
+        Attestation.review_type.is_(None)
+        if review_type is None
+        else Attestation.review_type == review_type
+    )
     existing_id = await db.scalar(
         select(Attestation.id)
         .where(
             Attestation.requestor_id == requestor_id,
             Attestation.target_type == target_type,
             Attestation.target_id == target_id,
+            review_type_predicate,
             Attestation.status.in_(IN_FLIGHT_ATTESTATION_STATUSES),
         )
         .limit(1)
@@ -258,14 +292,29 @@ async def _reject_duplicate_in_flight_request(
         )
 
 
-async def _attestation_fee(db: AsyncSession, target_type: str) -> Decimal:
-    """Return the configured Attestation fee for a target type."""
-    key = f"attestation_fee_{target_type}"
+async def _attestation_fee(
+    db: AsyncSession,
+    target_type: str,
+    review_type: str | None,
+) -> Decimal:
+    """Return the configured Attestation fee for a target and review type."""
+    if target_type == "framework":
+        if review_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Framework Attestation requests require a review type.",
+            )
+        key = f"attestation_fee_review_{review_type}"
+        default_key = f"review_{review_type}"
+    else:
+        key = f"attestation_fee_{target_type}"
+        default_key = target_type
+
     configured = await db.scalar(
         select(PlatformConfig.value).where(PlatformConfig.key == key)
     )
     if configured is None:
-        return ATTESTATION_FEE_DEFAULTS[target_type]
+        return ATTESTATION_FEE_DEFAULTS[default_key]
     try:
         return _normalise_money(Decimal(configured))
     except Exception as exc:
@@ -282,6 +331,7 @@ async def _create_pending_attestation_fee(
     customer_id: str,
     payload: AttestationRequestCreateRequest,
     amount: Decimal,
+    initiator_is_owner: bool,
 ) -> tuple[UUID, UUID]:
     """Persist the Attestation and fee transaction before Stripe confirmation."""
     if db.in_transaction():
@@ -302,6 +352,8 @@ async def _create_pending_attestation_fee(
             target_id=payload.target_id,
             requestor_id=requestor_id,
             status="pending_fee",
+            review_type=payload.review_type,
+            brief=payload.brief.model_dump() if payload.brief is not None else None,
             requested_specializations=payload.requested_specializations,
             requested_jurisdictions=payload.requested_jurisdictions,
             fee_amount=amount,
@@ -335,6 +387,9 @@ async def _create_pending_attestation_fee(
                 "target_type": payload.target_type,
                 "target_id": str(payload.target_id),
                 "transaction_id": str(transaction.id),
+                "review_type": payload.review_type,
+                "brief_provided": payload.brief is not None,
+                "initiator_is_owner": initiator_is_owner,
             },
         )
         return attestation.id, transaction.id
