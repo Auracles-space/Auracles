@@ -405,6 +405,13 @@ class AttestationDisputeCreateRequest(BaseModel):
     reason: str = Field(min_length=5, max_length=4000)
 
 
+class AttestationAcceptRequest(BaseModel):
+    """Attestor acceptance with the binding content-use acknowledgment."""
+
+    content_ack: bool
+    ack_version: str = Field(min_length=1, max_length=50)
+
+
 class AttestationDisputeResponse(BaseModel):
     """Attestation dispute details visible to requestors and admins."""
 

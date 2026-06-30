@@ -408,10 +408,12 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     accept_response = await client.post(
         f"/v1/attestations/{attestation_id}/accept",
         headers=auth_headers(first_attestor_id, ["attestor"]),
+        json={"content_ack": True, "ack_version": "v1"},
     )
     late_accept_response = await client.post(
         f"/v1/attestations/{attestation_id}/accept",
         headers=auth_headers(second_attestor_id, ["attestor"]),
+        json={"content_ack": True, "ack_version": "v1"},
     )
 
     async with async_session_factory() as session:
@@ -445,6 +447,8 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     assert attestation.status == "accepted"
     assert attestation.attestor_id == first_attestor_id
     assert attestation.accepted_at is not None
+    assert attestation.content_ack_at is not None
+    assert attestation.content_ack_version == "v1"
     assert attestation.completion_due_at is not None
     assert transaction is not None
     assert transaction.status == "completed"
@@ -474,6 +478,49 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         str(second_attestor_id),
     }
     assert notification_calls[3]["user_id"] == str(requestor_id)
+
+
+async def test_accept_requires_content_use_acknowledgment(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Accepting an attestation offer without the acknowledgment returns 422."""
+    del migrated_database
+    requestor_id = await create_user(
+        "ack-requestor@auracles.space",
+        ["operator"],
+    )
+    attestor_id = await create_user("ack-attestor@auracles.space", ["attestor"])
+    await create_attestor_profile(
+        attestor_id,
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    matching_context["event"] = payment_intent_event(
+        "evt_attestation_ack_required",
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+        requestor_id=requestor_id,
+    )
+    webhook_response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    accept_response = await client.post(
+        f"/v1/attestations/{attestation_id}/accept",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={"content_ack": False, "ack_version": "v1"},
+    )
+
+    assert webhook_response.status_code == 200
+    assert accept_response.status_code == 422
+    assert accept_response.json()["detail"] == (
+        "Content-use acknowledgment is required to accept."
+    )
 
 
 async def test_attestation_decline_advances_to_next_cohort(

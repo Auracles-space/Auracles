@@ -31,6 +31,7 @@ from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
+    AttestationAcceptRequest,
     AttestationConsentPendingResponse,
     AttestationConsentRequest,
     AttestationDisputeCreateRequest,
@@ -264,14 +265,17 @@ async def get_attestation(
 )
 async def accept_attestation_offer(
     attestation_id: UUID,
+    payload: AttestationAcceptRequest,
     attestor: ApprovedAttestorUser,
     db: DatabaseSession,
 ) -> AttestationRequestResponse:
-    """Accept an open Attestation cohort offer as an approved Attestor."""
+    """Accept an open cohort offer with the content-use acknowledgment."""
     attestation = await matching_service.accept_attestation_offer(
         db=db,
         attestation_id=attestation_id,
         attestor=attestor,
+        content_ack=payload.content_ack,
+        ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
 

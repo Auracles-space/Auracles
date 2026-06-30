@@ -177,8 +177,19 @@ async def accept_attestation_offer(
     *,
     attestation_id: UUID,
     attestor: User,
+    content_ack: bool,
+    ack_version: str,
 ) -> Attestation:
-    """Accept a cohort offer and atomically assign the Attestation."""
+    """Accept a cohort offer and atomically assign the Attestation.
+
+    Full framework-content access is gated on the content-use acknowledgment,
+    so acceptance requires ``content_ack=True``.
+    """
+    if not content_ack:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Content-use acknowledgment is required to accept.",
+        )
     attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
@@ -214,6 +225,8 @@ async def accept_attestation_offer(
         attestation.status = "accepted"
         attestation.attestor_id = attestor_id
         attestation.accepted_at = current_time
+        attestation.content_ack_at = current_time
+        attestation.content_ack_version = ack_version
         attestation.completion_due_at = current_time + timedelta(days=completion_days)
         offer.status = "accepted"
         offer.responded_at = current_time
