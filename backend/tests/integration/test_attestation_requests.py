@@ -440,6 +440,45 @@ async def test_operator_can_request_on_published_framework_they_dont_own(
     assert response.status_code == 201
 
 
+async def test_operator_initiated_request_enters_consent_unpaid(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-owner framework request waits for owner consent before funding."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    owner_id = await create_user("fw-author-consent@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer-consent@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "published")
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["operations"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending_owner_consent"
+    assert "client_secret" not in body
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(
+            select(Transaction).where(Transaction.ref_id == UUID(body["id"]))
+        )
+
+    assert transaction is None
+
+
 async def test_operator_cannot_request_on_unpublished_framework(
     client: AsyncClient,
     migrated_database: None,
@@ -510,12 +549,12 @@ async def test_same_target_different_review_type_allowed(
     assert duplicate.status_code == 409
 
 
-async def test_owner_notified_on_operator_initiated_funding(
+async def test_owner_not_notified_again_on_operator_initiated_funding(
     migrated_database: None,
     attestation_context: FakeRedis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Funding a non-owner framework request notifies the framework owner."""
+    """Funding after owner consent must not notify the framework owner again."""
     del migrated_database, attestation_context
     from app.modules.attestation import notifications
     from app.modules.webhooks import service as webhook_service
@@ -587,7 +626,6 @@ async def test_owner_notified_on_operator_initiated_funding(
             await session.flush()
             transaction_id = transaction.id
             escrow_id = escrow.id
-            attestation_id = attestation.id
 
     async with async_session_factory() as session:
         async with session.begin():
@@ -607,30 +645,9 @@ async def test_owner_notified_on_operator_initiated_funding(
     owner_notifications = [
         call
         for call in notification_calls
-        if call["notification_type"] == "attestation_requested_on_your_framework"
+        if call["user_id"] == str(owner_id)
     ]
-    assert owner_notifications == [
-        {
-            "user_id": str(owner_id),
-            "notification_type": "attestation_requested_on_your_framework",
-            "title": "Attestation requested on your framework",
-            "body": (
-                "Someone requested an independent attestation on your published "
-                "framework."
-            ),
-            "payload": {
-                "attestation_id": str(attestation_id),
-                "target_type": "framework",
-                "target_id": str(framework_id),
-                "status": "matching",
-            },
-            "link": f"/attestations/{attestation_id}",
-            "dedupe_key": (
-                "attestation_requested_on_your_framework:"
-                f"{attestation_id}:owner"
-            ),
-        }
-    ]
+    assert owner_notifications == []
 
 
 async def test_requestor_lists_only_their_attestations(

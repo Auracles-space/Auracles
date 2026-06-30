@@ -99,6 +99,21 @@ def notify_request_received_for_owner(
     )
 
 
+def notify_consent_requested(attestation: Attestation, *, owner_id: UUID) -> None:
+    """Notify a framework owner that consent is required before funding starts."""
+    _dispatch(
+        user_id=owner_id,
+        notification_type="attestation_consent_requested",
+        title="Consent requested for framework attestation",
+        body=(
+            "An operator requested attestation on your published framework and "
+            "needs your consent before payment can begin."
+        ),
+        attestation=attestation,
+        dedupe_suffix="consent",
+    )
+
+
 def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> None:
     """Notify each Attestor in a newly offered cohort."""
     for offer in offers:

@@ -551,6 +551,13 @@ class AttestationFundingResponse(BaseModel):
     client_secret: str
 
 
+class AttestationConsentPendingResponse(BaseModel):
+    """Returned for framework requests awaiting framework-owner consent."""
+
+    id: UUID
+    status: str
+
+
 class AdminCredentialRejectRequest(BaseModel):
     """Admin request body for rejecting a pending Credential."""
 

@@ -31,6 +31,7 @@ from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
+    AttestationConsentPendingResponse,
     AttestationDisputeCreateRequest,
     AttestationDisputeResponse,
     AttestationEvidenceUploadCreateRequest,
@@ -115,15 +116,15 @@ RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))
 
 @router.post(
     "/attestations",
-    response_model=AttestationFundingResponse,
+    response_model=AttestationFundingResponse | AttestationConsentPendingResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def request_attestation(
     payload: AttestationRequestCreateRequest,
     requestor: RequestorUser,
     db: DatabaseSession,
-) -> AttestationFundingResponse:
-    """Create an escrow-funded Attestation request for an owned target."""
+) -> AttestationFundingResponse | AttestationConsentPendingResponse:
+    """Create an Attestation request; fund now or await owner consent."""
     return await attestation_service.request_attestation(
         db=db,
         requestor=requestor,
