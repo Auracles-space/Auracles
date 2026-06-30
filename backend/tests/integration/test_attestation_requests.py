@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -54,6 +55,18 @@ class FakeStripeCustomer:
     def __init__(self, customer_id: str) -> None:
         """Store fake provider customer id."""
         self.id = customer_id
+
+
+class FakeNotificationTask:
+    """Celery-task-shaped test double for attestation notifications."""
+
+    def __init__(self, calls: list[dict[str, Any]]) -> None:
+        """Store delayed notification dispatches in the provided list."""
+        self.calls = calls
+
+    def delay(self, **kwargs: Any) -> None:
+        """Capture notification dispatch parameters without Redis or email."""
+        self.calls.append(kwargs)
 
 
 @pytest.fixture
@@ -495,6 +508,129 @@ async def test_same_target_different_review_type_allowed(
     assert first.status_code == 201
     assert second.status_code == 201
     assert duplicate.status_code == 409
+
+
+async def test_owner_notified_on_operator_initiated_funding(
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Funding a non-owner framework request notifies the framework owner."""
+    del migrated_database, attestation_context
+    from app.modules.attestation import notifications
+    from app.modules.webhooks import service as webhook_service
+
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    async def fake_offer_next_cohort(*args: Any, **kwargs: Any) -> list[object]:
+        """Keep the test focused on owner notification, not cohort matching."""
+        del args, kwargs
+        return []
+
+    monkeypatch.setattr(
+        webhook_service.matching_service,
+        "offer_next_cohort",
+        fake_offer_next_cohort,
+    )
+
+    owner_id = await create_user("fw-owner-notify@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer-notify@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "published")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="framework",
+                target_id=framework_id,
+                requestor_id=operator_id,
+                status="pending_fee",
+                review_type="quality",
+                brief=_FRAMEWORK_BRIEF,
+                requested_specializations=["operations"],
+                requested_jurisdictions=["US"],
+                fee_amount=Decimal("500.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=None,
+                amount=Decimal("500.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("500.00"),
+                transaction_type="attestation_fee",
+                status="completed",
+                provider="stripe",
+                provider_ref="pi_owner_notify",
+                ref_id=attestation.id,
+                ref_type="attestation",
+            )
+            session.add(transaction)
+            await session.flush()
+            escrow = Escrow(
+                ref_id=attestation.id,
+                ref_type="attestation",
+                amount=Decimal("500.00"),
+                currency="USD",
+                status="held",
+                release_conditions={},
+                transaction_id=transaction.id,
+            )
+            session.add(escrow)
+            await session.flush()
+            transaction_id = transaction.id
+            escrow_id = escrow.id
+            attestation_id = attestation.id
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = await session.get(Transaction, transaction_id)
+            escrow = await session.get(Escrow, escrow_id)
+            assert transaction is not None
+            assert escrow is not None
+            callbacks = await webhook_service._mark_attestation_fee_funded(
+                db=session,
+                transaction=transaction,
+                escrow=escrow,
+            )
+
+    for callback in callbacks:
+        callback()
+
+    owner_notifications = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "attestation_requested_on_your_framework"
+    ]
+    assert owner_notifications == [
+        {
+            "user_id": str(owner_id),
+            "notification_type": "attestation_requested_on_your_framework",
+            "title": "Attestation requested on your framework",
+            "body": (
+                "Someone requested an independent attestation on your published "
+                "framework."
+            ),
+            "payload": {
+                "attestation_id": str(attestation_id),
+                "target_type": "framework",
+                "target_id": str(framework_id),
+                "status": "matching",
+            },
+            "link": f"/attestations/{attestation_id}",
+            "dedupe_key": (
+                "attestation_requested_on_your_framework:"
+                f"{attestation_id}:owner"
+            ),
+        }
+    ]
 
 
 async def test_requestor_lists_only_their_attestations(

@@ -80,6 +80,25 @@ def notify_fee_funded(attestation: Attestation) -> None:
     )
 
 
+def notify_request_received_for_owner(
+    attestation: Attestation,
+    *,
+    owner_id: UUID,
+) -> None:
+    """Notify a framework owner when someone else funds an Attestation request."""
+    _dispatch(
+        user_id=owner_id,
+        notification_type="attestation_requested_on_your_framework",
+        title="Attestation requested on your framework",
+        body=(
+            "Someone requested an independent attestation on your published "
+            "framework."
+        ),
+        attestation=attestation,
+        dedupe_suffix="owner",
+    )
+
+
 def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> None:
     """Notify each Attestor in a newly offered cohort."""
     for offer in offers:
