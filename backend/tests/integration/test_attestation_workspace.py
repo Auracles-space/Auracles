@@ -280,3 +280,53 @@ async def test_upsert_rubric_score_rejects_foreign_dimension(db_session) -> None
         )
 
     assert exc.value.status_code == 422
+
+
+async def test_create_and_delete_annotation(db_session) -> None:
+    """The assigned Attestor can add and remove a free-anchor annotation."""
+    attestor, attestation = await _in_review_attestation(db_session)
+
+    annotation = await workspace_service.create_annotation(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        artifact_id=None,
+        location_label="Section 3.2",
+        quoted_excerpt="the clause text",
+        annotation_type="concern",
+        comment="Ambiguous scope.",
+    )
+    assert annotation.annotation_type == "concern"
+
+    await workspace_service.delete_annotation(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        annotation_id=annotation.id,
+    )
+    remaining = await workspace_service.list_annotations(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+    )
+
+    assert remaining == []
+
+
+async def test_create_annotation_rejects_bad_type(db_session) -> None:
+    """Unknown annotation types are rejected with 422."""
+    attestor, attestation = await _in_review_attestation(db_session)
+
+    with pytest.raises(HTTPException) as exc:
+        await workspace_service.create_annotation(
+            db_session,
+            attestor=attestor,
+            attestation_id=attestation.id,
+            artifact_id=None,
+            location_label="x",
+            quoted_excerpt=None,
+            annotation_type="applause",
+            comment="c",
+        )
+
+    assert exc.value.status_code == 422
