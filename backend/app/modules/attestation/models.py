@@ -713,6 +713,47 @@ class AttestationDispute(CreatedAtMixin, Base):
     )
 
 
+class AttestationRating(Base):
+    """Requestor's 1-5 quality rating of a stood attestation report.
+
+    One immutable rating per attestation. Stored in Module 5; consumed by
+    Module 6.4 reputation scoring. Maps to workflow section 5.3.
+    """
+
+    __tablename__ = "attestation_ratings"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id", name="uq_attestation_ratings_attestation"
+        ),
+        CheckConstraint(
+            "stars BETWEEN 1 AND 5", name="ck_attestation_ratings_stars_range"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rated_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
 class AttestationRubricDimension(Base):
     """Seeded, versioned rubric dimension for one attestation review type."""
 
