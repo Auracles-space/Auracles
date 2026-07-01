@@ -1271,14 +1271,17 @@ async def get_attestation_package(
     "/attestations/{attestation_id}/rating",
     response_model=AttestationRatingResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Rate a completed attestation",
-    description="Submit a 1-5 quality rating for a stood attestation report. Only callable by the requestor when the attestation is closed/approved.",
+    summary="Rate a stood attestation report",
+    description=(
+        "Record the requestor's one-time 1-5 rating of a stood report. Only "
+        "callable by the attestation's requestor once the report has stood."
+    ),
 )
 async def rate_attestation(
     attestation_id: UUID,
     payload: AttestationRatingCreate,
-    requestor: Annotated[User, Depends(require_role("operator"))],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    requestor: RequestorUser,
+    db: DatabaseSession,
 ) -> AttestationRatingResponse:
     """Submit a rating for an attestation."""
     rating = await rating_service.submit_rating(

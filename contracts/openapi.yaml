@@ -3349,9 +3349,9 @@ paths:
     post:
       tags:
       - Attestation
-      summary: Rate a completed attestation
-      description: Submit a 1-5 quality rating for a stood attestation report. Only
-        callable by the requestor when the attestation is closed/approved.
+      summary: Rate a stood attestation report
+      description: Record the requestor's one-time 1-5 rating of a stood report. Only
+        callable by the attestation's requestor once the report has stood.
       operationId: rate_attestation_v1_attestations__attestation_id__rating_post
       security:
       - HTTPBearer: []

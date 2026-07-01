@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
@@ -26,7 +26,6 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationRating,
-    AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
     AttestorProfile,
@@ -130,8 +129,29 @@ async def _closed_after_accept(db_session) -> Attestation:
     return attestation
 
 
-async def _closed_after_refund(db_session) -> Attestation:
+async def _closed_conditional(db_session) -> Attestation:
+    """Create a closed attestation whose determination was conditional."""
     attestor = await _make_user("attestor", "attestor")
+    requestor = await _make_user("operator", "requestor")
+    attestation = Attestation(
+        target_type="contributor",
+        target_id=uuid4(),
+        requestor_id=requestor.id,
+        attestor_id=attestor.id,
+        status="closed",
+        outcome="conditional",
+        fee_amount=Decimal("500.00"),
+        currency="USD",
+        requested_specializations=[],
+        requested_jurisdictions=[],
+    )
+    db_session.add(attestation)
+    await db_session.commit()
+    await db_session.refresh(attestation)
+    return attestation
+
+
+async def _closed_after_refund(db_session) -> Attestation:
     requestor = await _make_user("operator", "requestor")
     attestation = Attestation(
         target_type="contributor",
@@ -187,6 +207,23 @@ async def test_requestor_rates_closed_accepted_report(db_session) -> None:
     assert rating.stars == 5
 
 
+async def test_closed_conditional_report_is_rateable(db_session) -> None:
+    """A stood report is rateable regardless of a non-approved determination.
+
+    Enforces spec section 4.3 — eligibility keys off the report standing, not
+    the attestor's approve/conditional/reject determination.
+    """
+    attestation = await _closed_conditional(db_session)
+    rating = await rating_service.submit_rating(
+        db=db_session,
+        requestor=await db_session.get(User, attestation.requestor_id),
+        attestation_id=attestation.id,
+        stars=4,
+        comment=None,
+    )
+    assert rating.stars == 4
+
+
 async def test_duplicate_rating_conflicts(db_session) -> None:
     """A second rating on the same attestation is rejected 409."""
     attestation = await _closed_after_accept(db_session)
@@ -195,6 +232,9 @@ async def test_duplicate_rating_conflicts(db_session) -> None:
         db=db_session, requestor=requestor,
         attestation_id=attestation.id, stars=4, comment=None,
     )
+    # Each rating attempt is a fresh request with a freshly loaded user; the
+    # service commits, expiring ORM instances, so reload before the retry.
+    requestor = await db_session.get(User, attestation.requestor_id)
     with pytest.raises(HTTPException) as exc:
         await rating_service.submit_rating(
             db=db_session, requestor=requestor,

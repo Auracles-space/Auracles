@@ -776,7 +776,9 @@ class AttestationRatingCreate(BaseModel):
     """Payload for submitting a rating."""
 
     stars: int = Field(..., ge=1, le=5, description="1-5 star rating.")
-    comment: str | None = Field(None, max_length=1000, description="Optional text feedback.")
+    comment: str | None = Field(
+        None, max_length=1000, description="Optional text feedback."
+    )
 
 
 class AttestationRatingResponse(BaseModel):
