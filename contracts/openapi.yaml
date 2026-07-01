@@ -1472,6 +1472,287 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/start-review:
+    post:
+      tags:
+      - Attestation
+      summary: Open the review workspace
+      description: Move an accepted assigned attestation into the in_review workspace
+        state for the approved Attestor.
+      operationId: start_attestation_review_v1_attestations__attestation_id__start_review_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/rubric/{dimension_key}:
+    put:
+      tags:
+      - Attestation
+      summary: Score one rubric dimension
+      description: Create or update the assigned Attestor's draft score and comment
+        for one rubric dimension during in_review work.
+      operationId: upsert_attestation_rubric_score_v1_attestations__attestation_id__rubric__dimension_key__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: dimension_key
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dimension Key
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RubricScoreUpsertRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RubricScoreResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/annotations:
+    get:
+      tags:
+      - Attestation
+      summary: List workspace annotations
+      description: Return the assigned Attestor's clause-level annotations for one
+        attestation workspace.
+      operationId: list_attestation_annotations_v1_attestations__attestation_id__annotations_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationResponse'
+                type: array
+                title: Response List Attestation Annotations
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Attestation
+      summary: Create a workspace annotation
+      description: Attach a clause-level free-anchor annotation to an in-review
+        attestation workspace.
+      operationId: create_attestation_annotation_v1_attestations__attestation_id__annotations_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationCreateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/annotations/{annotation_id}:
+    patch:
+      tags:
+      - Attestation
+      summary: Update a workspace annotation
+      description: Replace the editable fields of one assigned Attestor annotation
+        while the attestation remains in_review.
+      operationId: update_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: annotation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Annotation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Attestation
+      summary: Delete a workspace annotation
+      description: Remove one assigned Attestor annotation from an in-review attestation
+        workspace.
+      operationId: delete_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: annotation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Annotation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/decline:
     post:
       tags:
@@ -12060,6 +12341,121 @@ components:
       - desired_outcome
       title: AttestationBrief
       description: Structured review brief shown to the cohort during the offer phase.
+    AnnotationCreateRequest:
+      properties:
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          enum:
+          - endorsement
+          - concern
+          - jurisdictional_caveat
+          - revision_recommended
+          title: Annotation Type
+        comment:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Comment
+      type: object
+      required:
+      - location_label
+      - annotation_type
+      - comment
+      title: AnnotationCreateRequest
+      description: Request body for creating one free-anchor workspace annotation.
+    AnnotationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          title: Annotation Type
+        comment:
+          type: string
+          title: Comment
+      type: object
+      required:
+      - id
+      - artifact_id
+      - location_label
+      - quoted_excerpt
+      - annotation_type
+      - comment
+      title: AnnotationResponse
+      description: One persisted attestation annotation row.
+    AnnotationUpdateRequest:
+      properties:
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          enum:
+          - endorsement
+          - concern
+          - jurisdictional_caveat
+          - revision_recommended
+          title: Annotation Type
+        comment:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Comment
+      type: object
+      required:
+      - location_label
+      - annotation_type
+      - comment
+      title: AnnotationUpdateRequest
+      description: Request body for replacing a workspace annotation's editable
+        fields.
     AttestationConsentPendingResponse:
       properties:
         id:
@@ -12561,6 +12957,47 @@ components:
       - attestations
       title: AttestationsResponse
       description: List response for Attestations visible to the authenticated user.
+    RubricScoreResponse:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - dimension_id
+      - score
+      - comment
+      title: RubricScoreResponse
+      description: One persisted attestation rubric-score row.
+    RubricScoreUpsertRequest:
+      properties:
+        score:
+          anyOf:
+          - type: integer
+            maximum: 5.0
+            minimum: 1.0
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Comment
+      type: object
+      title: RubricScoreUpsertRequest
+      description: Draft score and comment for one rubric dimension.
     AttestorActivateRequest:
       properties:
         totp_code:

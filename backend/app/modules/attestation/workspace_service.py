@@ -96,6 +96,7 @@ async def start_review(
         HTTPException: 404 when the attestation is hidden from the caller, 409
             for invalid states, or 422 when prerequisites are not satisfied.
     """
+    attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
 
@@ -104,7 +105,7 @@ async def start_review(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor.id,
+            attestor_id=attestor_id,
             allowed_statuses={"accepted", "in_review"},
         )
         if attestation.status == "in_review":
@@ -117,7 +118,7 @@ async def start_review(
 
         profile = await db.scalar(
             select(AttestorProfile).where(
-                AttestorProfile.user_id == attestor.id,
+                AttestorProfile.user_id == attestor_id,
                 AttestorProfile.active.is_(True),
             )
         )
@@ -136,7 +137,7 @@ async def start_review(
         attestation.review_started_at = current_time
         await write_audit(
             db=db,
-            actor_id=attestor.id,
+            actor_id=attestor_id,
             action="attestation_review_started",
             target_type="attestation",
             target_id=attestation.id,
@@ -178,6 +179,7 @@ async def upsert_rubric_score(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Score must be between 1 and 5.",
         )
+    attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
 
@@ -185,7 +187,7 @@ async def upsert_rubric_score(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor.id,
+            attestor_id=attestor_id,
             allowed_statuses={"in_review"},
         )
         dimension = await db.scalar(
@@ -243,10 +245,11 @@ async def list_annotations(
     Raises:
         HTTPException: 404 on assignee mismatch or 409 outside readable states.
     """
+    attestor_id = attestor.id
     await load_workspace_attestation(
         db,
         attestation_id=attestation_id,
-        attestor_id=attestor.id,
+        attestor_id=attestor_id,
         allowed_statuses={"in_review", "report_submitted"},
         lock=False,
     )
@@ -288,6 +291,7 @@ async def create_annotation(
         HTTPException: 404 on assignee mismatch, 409 outside `in_review`, or
             422 for an invalid annotation type.
     """
+    attestor_id = attestor.id
     if annotation_type not in ANNOTATION_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -300,7 +304,7 @@ async def create_annotation(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor.id,
+            attestor_id=attestor_id,
             allowed_statuses={"in_review"},
         )
         annotation = AttestationAnnotation(
@@ -321,7 +325,7 @@ async def create_annotation(
 async def _load_owned_annotation(
     db: AsyncSession,
     *,
-    attestor: User,
+    attestor_id: UUID,
     attestation_id: UUID,
     annotation_id: UUID,
 ) -> AttestationAnnotation:
@@ -329,7 +333,7 @@ async def _load_owned_annotation(
 
     Args:
         db: Async database session.
-        attestor: Authenticated assigned attestor.
+        attestor_id: Assigned attestor expected to own the workspace.
         attestation_id: Parent workspace attestation.
         annotation_id: Annotation row to load.
 
@@ -343,7 +347,7 @@ async def _load_owned_annotation(
     await load_workspace_attestation(
         db,
         attestation_id=attestation_id,
-        attestor_id=attestor.id,
+        attestor_id=attestor_id,
         allowed_statuses={"in_review"},
     )
     annotation = await db.scalar(
@@ -395,13 +399,14 @@ async def update_annotation(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unknown annotation type.",
         )
+    attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
         annotation = await _load_owned_annotation(
             db,
-            attestor=attestor,
+            attestor_id=attestor_id,
             attestation_id=attestation_id,
             annotation_id=annotation_id,
         )
@@ -433,13 +438,14 @@ async def delete_annotation(
     Raises:
         HTTPException: 404 on hidden resources or 409 outside `in_review`.
     """
+    attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
         annotation = await _load_owned_annotation(
             db,
-            attestor=attestor,
+            attestor_id=attestor_id,
             attestation_id=attestation_id,
             annotation_id=annotation_id,
         )

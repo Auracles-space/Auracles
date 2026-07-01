@@ -21,6 +21,7 @@ from app.modules.attestation import (
     dispute_service,
     matching_service,
     release_service,
+    workspace_service,
 )
 from app.modules.attestation import (
     report as report_service,
@@ -32,6 +33,9 @@ from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
+    AnnotationCreateRequest,
+    AnnotationResponse,
+    AnnotationUpdateRequest,
     AttestationAcceptRequest,
     AttestationArtifactAccessResponse,
     AttestationConsentPendingResponse,
@@ -72,6 +76,8 @@ from app.modules.attestation.schemas import (
     CredentialResponse,
     CredentialsResponse,
     CredentialUpdateRequest,
+    RubricScoreResponse,
+    RubricScoreUpsertRequest,
 )
 from app.modules.auth.models import User
 
@@ -283,6 +289,163 @@ async def accept_attestation_offer(
         ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/start-review",
+    response_model=AttestationRequestResponse,
+    summary="Open the review workspace",
+    description=(
+        "Move an accepted assigned attestation into the in_review workspace "
+        "state for the approved Attestor."
+    ),
+)
+async def start_attestation_review(
+    attestation_id: UUID,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Open the assigned Attestor's review workspace."""
+    attestation = await workspace_service.start_review(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.put(
+    "/attestations/{attestation_id}/rubric/{dimension_key}",
+    response_model=RubricScoreResponse,
+    summary="Score one rubric dimension",
+    description=(
+        "Create or update the assigned Attestor's draft score and comment for "
+        "one rubric dimension during in_review work."
+    ),
+)
+async def upsert_attestation_rubric_score(
+    attestation_id: UUID,
+    dimension_key: str,
+    payload: RubricScoreUpsertRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> RubricScoreResponse:
+    """Create or update one rubric score in the review workspace."""
+    score = await workspace_service.upsert_rubric_score(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        dimension_key=dimension_key,
+        score=payload.score,
+        comment=payload.comment,
+    )
+    return RubricScoreResponse.model_validate(score)
+
+
+@router.get(
+    "/attestations/{attestation_id}/annotations",
+    response_model=list[AnnotationResponse],
+    summary="List workspace annotations",
+    description=(
+        "Return the assigned Attestor's clause-level annotations for one "
+        "attestation workspace."
+    ),
+)
+async def list_attestation_annotations(
+    attestation_id: UUID,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> list[AnnotationResponse]:
+    """List the assigned Attestor's workspace annotations."""
+    annotations = await workspace_service.list_annotations(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+    )
+    return [AnnotationResponse.model_validate(annotation) for annotation in annotations]
+
+
+@router.post(
+    "/attestations/{attestation_id}/annotations",
+    response_model=AnnotationResponse,
+    summary="Create a workspace annotation",
+    description=(
+        "Attach a clause-level free-anchor annotation to an in-review "
+        "attestation workspace."
+    ),
+)
+async def create_attestation_annotation(
+    attestation_id: UUID,
+    payload: AnnotationCreateRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AnnotationResponse:
+    """Create one clause-level annotation in the review workspace."""
+    annotation = await workspace_service.create_annotation(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        artifact_id=payload.artifact_id,
+        location_label=payload.location_label,
+        quoted_excerpt=payload.quoted_excerpt,
+        annotation_type=payload.annotation_type,
+        comment=payload.comment,
+    )
+    return AnnotationResponse.model_validate(annotation)
+
+
+@router.patch(
+    "/attestations/{attestation_id}/annotations/{annotation_id}",
+    response_model=AnnotationResponse,
+    summary="Update a workspace annotation",
+    description=(
+        "Replace the editable fields of one assigned Attestor annotation while "
+        "the attestation remains in_review."
+    ),
+)
+async def update_attestation_annotation(
+    attestation_id: UUID,
+    annotation_id: UUID,
+    payload: AnnotationUpdateRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> AnnotationResponse:
+    """Update one clause-level workspace annotation."""
+    annotation = await workspace_service.update_annotation(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        annotation_id=annotation_id,
+        location_label=payload.location_label,
+        quoted_excerpt=payload.quoted_excerpt,
+        annotation_type=payload.annotation_type,
+        comment=payload.comment,
+    )
+    return AnnotationResponse.model_validate(annotation)
+
+
+@router.delete(
+    "/attestations/{attestation_id}/annotations/{annotation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a workspace annotation",
+    description=(
+        "Remove one assigned Attestor annotation from an in-review attestation "
+        "workspace."
+    ),
+)
+async def delete_attestation_annotation(
+    attestation_id: UUID,
+    annotation_id: UUID,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> None:
+    """Delete one clause-level workspace annotation."""
+    await workspace_service.delete_annotation(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        annotation_id=annotation_id,
+    )
 
 
 @router.post(

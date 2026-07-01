@@ -413,6 +413,55 @@ class AttestationReportSubmitRequest(BaseModel):
     evidence_references: dict[str, Any] = Field(default_factory=dict)
 
 
+class RubricScoreUpsertRequest(BaseModel):
+    """Draft score and comment for one rubric dimension."""
+
+    score: int | None = Field(default=None, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=5000)
+
+
+class RubricScoreResponse(BaseModel):
+    """One persisted attestation rubric-score row."""
+
+    dimension_id: UUID
+    score: int | None
+    comment: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AnnotationCreateRequest(BaseModel):
+    """Request body for creating one free-anchor workspace annotation."""
+
+    artifact_id: UUID | None = None
+    location_label: str = Field(min_length=1, max_length=500)
+    quoted_excerpt: str | None = Field(default=None, max_length=5000)
+    annotation_type: Literal[
+        "endorsement",
+        "concern",
+        "jurisdictional_caveat",
+        "revision_recommended",
+    ]
+    comment: str = Field(min_length=1, max_length=5000)
+
+
+class AnnotationUpdateRequest(AnnotationCreateRequest):
+    """Request body for replacing a workspace annotation's editable fields."""
+
+
+class AnnotationResponse(BaseModel):
+    """One persisted attestation annotation row."""
+
+    id: UUID
+    artifact_id: UUID | None
+    location_label: str
+    quoted_excerpt: str | None
+    annotation_type: str
+    comment: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AttestationDisputeCreateRequest(BaseModel):
     """Request body for raising an Attestation report dispute."""
 

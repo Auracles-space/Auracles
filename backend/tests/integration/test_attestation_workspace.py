@@ -11,10 +11,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
+from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, func, select
 
 from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.security import create_access_token, hash_password
 from app.core.database import async_session_factory, engine
 from app.modules.attestation import rubrics
 from app.modules.attestation import workspace_service
@@ -106,6 +107,12 @@ async def _make_user(role: str, prefix: str) -> User:
         await session.commit()
         await session.refresh(user)
     return user
+
+
+def _auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
+    """Build bearer auth headers for one test user."""
+    token = create_access_token(user_id=user_id, roles=roles)
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _make_attestor(prefix: str) -> User:
@@ -330,3 +337,130 @@ async def test_create_annotation_rejects_bad_type(db_session) -> None:
         )
 
     assert exc.value.status_code == 422
+
+
+async def test_start_review_endpoint_flips_status(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """POST start-review returns 200 and reports the in_review status."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "in_review"
+
+
+async def test_upsert_rubric_score_endpoint_returns_score(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """PUT rubric persists the score/comment for the assigned Attestor."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+
+    response = await client.put(
+        f"/v1/attestations/{attestation.id}/rubric/completeness",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+        json={"score": 4, "comment": "Complete enough."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["score"] == 4
+    assert response.json()["comment"] == "Complete enough."
+
+
+async def test_workspace_endpoints_hide_non_assigned_attestations(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """A non-assigned Attestor receives 404 from workspace endpoints."""
+    del clean_state
+    _attestor, attestation = await _accepted_attestation()
+    intruder = await _make_attestor("intruder-endpoint")
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(intruder.id, ["attestor"]),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_workspace_endpoints_require_authentication(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """Unauthenticated workspace requests are rejected before service logic."""
+    del clean_state
+    _attestor, attestation = await _accepted_attestation()
+
+    response = await client.post(f"/v1/attestations/{attestation.id}/start-review")
+
+    assert response.status_code == 401
+
+
+async def test_annotation_endpoints_crud_round_trip(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """Annotation POST, GET, PATCH, and DELETE operate on the workspace."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    headers = _auth_headers(attestor.id, ["attestor"])
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=headers,
+    )
+    assert start.status_code == 200
+
+    created = await client.post(
+        f"/v1/attestations/{attestation.id}/annotations",
+        headers=headers,
+        json={
+            "artifact_id": None,
+            "location_label": "Section 4",
+            "quoted_excerpt": "quoted text",
+            "annotation_type": "concern",
+            "comment": "Needs clarification.",
+        },
+    )
+    assert created.status_code == 200
+    annotation_id = created.json()["id"]
+
+    listed = await client.get(
+        f"/v1/attestations/{attestation.id}/annotations",
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    updated = await client.patch(
+        f"/v1/attestations/{attestation.id}/annotations/{annotation_id}",
+        headers=headers,
+        json={
+            "artifact_id": None,
+            "location_label": "Section 4.1",
+            "quoted_excerpt": "updated quote",
+            "annotation_type": "revision_recommended",
+            "comment": "Revise this clause.",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["annotation_type"] == "revision_recommended"
+
+    deleted = await client.delete(
+        f"/v1/attestations/{attestation.id}/annotations/{annotation_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 204
