@@ -437,6 +437,7 @@ class AttestationReportSubmitRequest(BaseModel):
     outcome: Literal["approved", "conditional", "rejected"]
     summary: str = Field(min_length=20, max_length=10000)
     scope: str = Field(min_length=10, max_length=10000)
+    conditions: str | None = Field(default=None, max_length=10000)
     evidence_references: dict[str, Any] = Field(default_factory=dict)
 
 

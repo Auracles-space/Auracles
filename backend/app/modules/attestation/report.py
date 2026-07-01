@@ -20,7 +20,12 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation import notifications as attestation_notifications
-from app.modules.attestation.models import Attestation, AttestationUploadSession
+from app.modules.attestation import quality_gate, rubrics
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationUploadSession,
+    AttestorProfile,
+)
 from app.modules.attestation.schemas import (
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
@@ -129,8 +134,21 @@ async def submit_report(
             db=db,
             attestation_id=attestation_id,
             attestor_id=attestor_id,
-            allowed_statuses={"accepted"},
+            allowed_statuses={"in_review"},
         )
+        failures = await quality_gate.evaluate_quality_gate(
+            db,
+            attestation=attestation,
+            summary=payload.summary,
+            scope=payload.scope,
+            conditions=payload.conditions,
+            outcome=payload.outcome,
+        )
+        if failures:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=failures,
+            )
         evidence_file_keys = _evidence_file_keys(payload.evidence_references)
         if evidence_file_keys:
             await _consume_report_evidence_sessions(
@@ -150,10 +168,32 @@ async def submit_report(
         attestation.outcome = payload.outcome
         attestation.summary = payload.summary
         attestation.scope = payload.scope
+        attestation.conditions = payload.conditions
         attestation.evidence_references = payload.evidence_references
         attestation.report_key = report_key
         attestation.issued_at = now
         attestation.dispute_window_ends_at = now + timedelta(days=dispute_window_days)
+        attestation.rubric_version = rubrics.RUBRIC_VERSION
+        if (
+            attestation.completion_due_at is not None
+            and now > attestation.completion_due_at
+        ):
+            attestation.submitted_late = True
+            profile = await db.scalar(
+                select(AttestorProfile)
+                .where(AttestorProfile.user_id == attestor_id)
+                .with_for_update()
+            )
+            if profile is not None:
+                profile.late_submission_count += 1
+            await write_audit(
+                db=db,
+                actor_id=attestor_id,
+                action="attestation_late_submission",
+                target_type="attestation",
+                target_id=attestation.id,
+                metadata={"submitted_late": True},
+            )
         await write_audit(
             db=db,
             actor_id=attestor_id,
@@ -289,8 +329,8 @@ async def _load_assigned_attestation_for_update(
         )
     if attestation.attestor_id != attestor_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the assigned Attestor can manage this report.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
         )
     if attestation.status not in allowed_statuses:
         raise HTTPException(
