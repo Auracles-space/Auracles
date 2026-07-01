@@ -149,6 +149,7 @@ async def send_clarification(
     attestation_notifications.notify_clarification_requested(
         attestation,
         requestor_id=attestation.requestor_id,
+        clarification_id=clarification.id,
     )
     return clarification
 
@@ -275,6 +276,7 @@ async def respond_to_clarification(
         attestation_notifications.notify_clarification_answered(
             attestation,
             attestor_id=attestation.attestor_id,
+            clarification_id=clarification.id,
         )
     return clarification
 
@@ -341,6 +343,7 @@ async def expire_clarifications(
             attestation_notifications.notify_clarification_answered(
                 attestation,
                 attestor_id=attestation.attestor_id,
+                clarification_id=clarification_id,
             )
 
     return expired_count
