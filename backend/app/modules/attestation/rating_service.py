@@ -20,11 +20,6 @@ from app.core.audit import write_audit
 from app.modules.attestation.models import Attestation, AttestationRating
 from app.modules.auth.models import User
 
-# Outcomes where the report did NOT stand and so cannot be rated. The Slice-2
-# form keys off status + outcome; Slice 4 replaces this with the explicit
-# ``report_published_eligible`` flag.
-_NON_STOOD_OUTCOMES = {"upheld_refund", "refunded"}
-
 
 async def submit_rating(
     *,
@@ -124,12 +119,9 @@ async def submit_rating(
 def _report_stood(attestation: Attestation) -> bool:
     """Return whether the attestation's report stood and is thus rateable.
 
-    Slice-2 form: ``closed`` AND not a refund/CoI-upheld outcome. This admits
-    reports that stood via acceptance, auto-acceptance, or a rejected dispute
-    (any determination). Slice 4 (Task 15) tightens this to read
-    ``attestation.report_published_eligible``.
+    A report stands when it becomes publication-eligible: closed via accept /
+    auto-accept, or a rejected dispute. Refund/CoI-upheld outcomes leave the
+    flag false. Reads the single ``report_published_eligible`` stamp set on
+    every release path (Module 5 spec section 4.9).
     """
-    if attestation.status != "closed":
-        return False
-    outcome = getattr(attestation, "outcome", None)
-    return outcome not in _NON_STOOD_OUTCOMES
+    return bool(attestation.report_published_eligible)

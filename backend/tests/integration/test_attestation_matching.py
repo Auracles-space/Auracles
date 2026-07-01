@@ -1202,6 +1202,7 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     assert attestation is not None
     assert attestation.status == "closed"
     assert attestation.closed_at is not None
+    assert attestation.report_published_eligible is True
     assert transaction is not None
     assert transaction.status == "completed"
     assert transaction.payee_id == attestor_id
@@ -1275,6 +1276,7 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
     assert releasable is not None
     assert releasable.status == "closed"
     assert releasable.closed_at is not None
+    assert releasable.report_published_eligible is True
     assert releasable_escrow is not None
     assert releasable_escrow.status == "released"
     assert disputed is not None

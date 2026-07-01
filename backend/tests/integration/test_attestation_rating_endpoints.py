@@ -105,6 +105,7 @@ async def _stood_attestation(requestor_id: UUID) -> UUID:
             attestor_id=attestor.id,
             status="closed",
             outcome="approved",
+            report_published_eligible=True,
             fee_amount=Decimal("500.00"),
             currency="USD",
             requested_specializations=[],
