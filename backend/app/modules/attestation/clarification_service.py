@@ -153,6 +153,42 @@ async def send_clarification(
     return clarification
 
 
+async def list_clarifications(
+    db: AsyncSession,
+    *,
+    user: User,
+    attestation_id: UUID,
+) -> list[AttestationClarification]:
+    """List clarification rows visible to one involved attestation user.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user requesting the clarification list.
+        attestation_id: Attestation whose clarification thread is requested.
+
+    Returns:
+        Clarification rows ordered oldest-first.
+
+    Raises:
+        HTTPException: 404 when the attestation is not visible to this user.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None or user.id not in {
+        attestation.requestor_id,
+        attestation.attestor_id,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    rows = await db.execute(
+        select(AttestationClarification)
+        .where(AttestationClarification.attestation_id == attestation_id)
+        .order_by(AttestationClarification.sent_at, AttestationClarification.id)
+    )
+    return list(rows.scalars().all())
+
+
 async def respond_to_clarification(
     db: AsyncSession,
     *,

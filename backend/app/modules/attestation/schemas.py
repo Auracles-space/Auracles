@@ -286,6 +286,33 @@ class AttestorTrialResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClarificationCreateRequest(BaseModel):
+    """Request body for sending one attestation clarification question."""
+
+    question: str = Field(min_length=1, max_length=5000)
+
+
+class ClarificationRespondRequest(BaseModel):
+    """Request body for responding to one attestation clarification."""
+
+    response: str = Field(min_length=1, max_length=5000)
+
+
+class ClarificationResponse(BaseModel):
+    """One persisted attestation clarification row."""
+
+    id: UUID
+    attestation_id: UUID
+    question: str
+    response: str | None
+    sent_at: datetime
+    response_due_at: datetime
+    responded_at: datetime | None
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CredentialCreateRequest(BaseModel):
     """Request body for creating a user-owned Credential."""
 

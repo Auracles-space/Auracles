@@ -16,6 +16,7 @@ from app.core.redis import get_redis
 from app.modules.attestation import (
     access_service,
     application_service,
+    clarification_service,
     credential_service,
     directory_service,
     dispute_service,
@@ -68,6 +69,9 @@ from app.modules.attestation.schemas import (
     AttestorTrialDecideRequest,
     AttestorTrialResponse,
     CoiDeclarationRequest,
+    ClarificationCreateRequest,
+    ClarificationRespondRequest,
+    ClarificationResponse,
     ConfidentialityAgreementRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
@@ -446,6 +450,85 @@ async def delete_attestation_annotation(
         attestation_id=attestation_id,
         annotation_id=annotation_id,
     )
+
+
+@router.get(
+    "/attestations/{attestation_id}/clarifications",
+    response_model=list[ClarificationResponse],
+    summary="List workspace clarifications",
+    description=(
+        "Return attestation clarification rows visible to the assigned "
+        "attestor or the requestor."
+    ),
+)
+async def list_attestation_clarifications(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> list[ClarificationResponse]:
+    """List clarification rows for one visible attestation thread."""
+    clarifications = await clarification_service.list_clarifications(
+        db=db,
+        user=user,
+        attestation_id=attestation_id,
+    )
+    return [
+        ClarificationResponse.model_validate(clarification)
+        for clarification in clarifications
+    ]
+
+
+@router.post(
+    "/attestations/{attestation_id}/clarifications",
+    response_model=ClarificationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Send a workspace clarification",
+    description=(
+        "Allow the assigned attestor to ask the requestor one clarification "
+        "question during in_review work."
+    ),
+)
+async def create_attestation_clarification(
+    attestation_id: UUID,
+    payload: ClarificationCreateRequest,
+    attestor: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> ClarificationResponse:
+    """Create one attestation clarification from the assigned attestor."""
+    clarification = await clarification_service.send_clarification(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        question=payload.question,
+    )
+    return ClarificationResponse.model_validate(clarification)
+
+
+@router.post(
+    "/attestations/{attestation_id}/clarifications/{clarification_id}/respond",
+    response_model=ClarificationResponse,
+    summary="Respond to a workspace clarification",
+    description=(
+        "Allow the attestation requestor to answer one open clarification and "
+        "return the unused SLA remainder."
+    ),
+)
+async def respond_to_attestation_clarification(
+    attestation_id: UUID,
+    clarification_id: UUID,
+    payload: ClarificationRespondRequest,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> ClarificationResponse:
+    """Respond to one open attestation clarification as the requestor."""
+    clarification = await clarification_service.respond_to_clarification(
+        db=db,
+        requestor=user,
+        attestation_id=attestation_id,
+        clarification_id=clarification_id,
+        response=payload.response,
+    )
+    return ClarificationResponse.model_validate(clarification)
 
 
 @router.post(
