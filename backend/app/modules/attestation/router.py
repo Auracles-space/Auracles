@@ -651,6 +651,7 @@ async def resolve_attestation_dispute(
         outcome=payload.outcome,
         resolution_notes=payload.resolution_notes,
         totp_code=payload.totp_code,
+        is_complex=payload.is_complex,
     )
     return AttestationDisputeResponse.model_validate(dispute)
 

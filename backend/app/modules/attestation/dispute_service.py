@@ -38,6 +38,8 @@ ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
 DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
 DEFAULT_REVISION_SLA_BUSINESS_DAYS = 5
+RESOLUTION_SLA_STANDARD_BUSINESS_DAYS = 5
+RESOLUTION_SLA_COMPLEX_BUSINESS_DAYS = 15
 REQUESTOR_FLAG_THRESHOLD = 3
 REQUESTOR_FLAG_WINDOW_DAYS = 365
 SUSPENSION_REVIEW_THRESHOLD = 2
@@ -90,6 +92,9 @@ async def create_dispute(
             raised_by=requestor_id,
             category=payload.category,
             reason=evidence,
+            resolution_due_at=add_business_days(
+                current_time, RESOLUTION_SLA_STANDARD_BUSINESS_DAYS
+            ),
         )
         db.add(dispute)
         attestation.status = "disputed"
@@ -116,6 +121,7 @@ async def resolve_dispute(
     outcome: str,
     resolution_notes: str,
     totp_code: str,
+    is_complex: bool = False,
 ) -> AttestationDispute:
     """Resolve an Attestation dispute with a three-outcome verdict.
 
@@ -178,6 +184,13 @@ async def resolve_dispute(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Attestation is not in dispute.",
+            )
+        if is_complex and not dispute.is_complex:
+            # Complex disputes get the extended 15-business-day resolution SLA,
+            # measured from when the dispute was raised.
+            dispute.is_complex = True
+            dispute.resolution_due_at = add_business_days(
+                dispute.created_at, RESOLUTION_SLA_COMPLEX_BUSINESS_DAYS
             )
         notes = resolution_notes.strip()
         now = datetime.now(UTC)
@@ -477,7 +490,7 @@ async def requestor_rejected_dispute_count(
         .where(
             AttestationDispute.raised_by == requestor_id,
             AttestationDispute.status == "resolved",
-            # TODO(module5-slice4): tighten to AttestationDispute.outcome == "rejected"
+            AttestationDispute.outcome == "rejected",
             AttestationDispute.resolved_at.is_not(None),
             AttestationDispute.resolved_at >= cutoff,
         )

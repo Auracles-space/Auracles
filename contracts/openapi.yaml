@@ -10870,6 +10870,10 @@ components:
           maxLength: 16
           minLength: 6
           title: Totp Code
+        is_complex:
+          type: boolean
+          title: Is Complex
+          default: false
       type: object
       required:
       - outcome

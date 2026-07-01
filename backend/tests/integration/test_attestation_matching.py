@@ -1395,6 +1395,7 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
             "outcome": "rejected",
             "resolution_notes": "Report is sound; the findings stand on review.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
+            "is_complex": True,
         },
     )
     double_resolve = await client.post(
@@ -1425,6 +1426,7 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     assert attestation.report_published_eligible is True
     assert dispute is not None
     assert dispute.outcome == "rejected"
+    assert dispute.is_complex is True
     assert escrow is not None
     assert escrow.status == "released"
     assert escrow.released_by == admin_id

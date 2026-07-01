@@ -177,6 +177,31 @@ async def test_dispute_stores_category(db_session) -> None:
     assert dispute.category == "material_inaccuracy"
 
 
+async def test_new_dispute_sets_standard_resolution_sla(db_session) -> None:
+    """A newly raised dispute stamps a 5-business-day resolution due date."""
+    from app.shared.business_days import add_business_days
+
+    attestation = await _report_submitted_within_window(db_session)
+    requestor = await db_session.get(User, attestation.requestor_id)
+    dispute = await dispute_service.create_dispute(
+        db=db_session,
+        requestor=requestor,
+        attestation_id=attestation.id,
+        payload=AttestationDisputeCreateRequest(
+            category="material_inaccuracy",
+            reason="Finding 3 misstates the 2025 revenue by a factor of ten, p.4.",
+        ),
+    )
+    assert dispute.resolution_due_at is not None
+    # created_at (DB now()) and the service's current_time (Python now()) differ
+    # by microseconds, so compare the business-day-shifted calendar dates.
+    expected = add_business_days(
+        dispute.created_at,
+        dispute_service.RESOLUTION_SLA_STANDARD_BUSINESS_DAYS,
+    )
+    assert dispute.resolution_due_at.date() == expected.date()
+
+
 async def _seed_rejected_disputes(
     db_session: AsyncSession, *, requestor_id: UUID, count: int, resolved_at: datetime
 ) -> None:
@@ -191,6 +216,7 @@ async def _seed_rejected_disputes(
                 category="material_inaccuracy",
                 reason="Test reason",
                 status="resolved",
+                outcome="rejected",
                 resolved_at=resolved_at,
             )
         )

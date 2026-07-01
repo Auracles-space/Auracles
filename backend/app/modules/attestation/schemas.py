@@ -541,6 +541,7 @@ class AdminAttestationDisputeResolveRequest(BaseModel):
     outcome: Literal["rejected", "upheld_refund", "upheld_revise"]
     resolution_notes: str = Field(min_length=5, max_length=4000)
     totp_code: str = Field(min_length=6, max_length=16)
+    is_complex: bool = False
 
 
 class AdminAttestationAssignRequest(BaseModel):
