@@ -1600,10 +1600,11 @@ paths:
           content:
             application/json:
               schema:
+                type: array
                 items:
                   $ref: '#/components/schemas/AnnotationResponse'
-                type: array
-                title: Response List Attestation Annotations
+                title: Response List Attestation Annotations V1 Attestations  Attestation
+                  Id  Annotations Get
         '422':
           description: Validation Error
           content:
@@ -1614,8 +1615,8 @@ paths:
       tags:
       - Attestation
       summary: Create a workspace annotation
-      description: Attach a clause-level free-anchor annotation to an in-review
-        attestation workspace.
+      description: Attach a clause-level free-anchor annotation to an in-review attestation
+        workspace.
       operationId: create_attestation_annotation_v1_attestations__attestation_id__annotations_post
       security:
       - HTTPBearer: []
@@ -1656,13 +1657,110 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/annotations/{annotation_id}:
+    patch:
+      tags:
+      - Attestation
+      summary: Update a workspace annotation
+      description: Replace the editable fields of one assigned Attestor annotation
+        while the attestation remains in_review.
+      operationId: update_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: annotation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Annotation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Attestation
+      summary: Delete a workspace annotation
+      description: Remove one assigned Attestor annotation from an in-review attestation
+        workspace.
+      operationId: delete_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: annotation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Annotation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/clarifications:
     get:
       tags:
       - Attestation
       summary: List workspace clarifications
-      description: Return attestation clarification rows visible to the assigned
-        attestor or the requestor.
+      description: Return attestation clarification rows visible to the assigned attestor
+        or the requestor.
       operationId: list_attestation_clarifications_v1_attestations__attestation_id__clarifications_get
       security:
       - HTTPBearer: []
@@ -1690,10 +1788,11 @@ paths:
           content:
             application/json:
               schema:
+                type: array
                 items:
                   $ref: '#/components/schemas/ClarificationResponse'
-                type: array
-                title: Response List Attestation Clarifications
+                title: Response List Attestation Clarifications V1 Attestations  Attestation
+                  Id  Clarifications Get
         '422':
           description: Validation Error
           content:
@@ -1794,103 +1893,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClarificationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/{attestation_id}/annotations/{annotation_id}:
-    patch:
-      tags:
-      - Attestation
-      summary: Update a workspace annotation
-      description: Replace the editable fields of one assigned Attestor annotation
-        while the attestation remains in_review.
-      operationId: update_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      - name: annotation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Annotation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnnotationUpdateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnotationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Attestation
-      summary: Delete a workspace annotation
-      description: Remove one assigned Attestor annotation from an in-review attestation
-        workspace.
-      operationId: delete_attestation_annotation_v1_attestations__attestation_id__annotations__annotation_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      - name: annotation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Annotation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
-      responses:
-        '204':
-          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -3337,6 +3339,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestationPackageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/rating:
+    post:
+      tags:
+      - Attestation
+      summary: Rate a completed attestation
+      description: Submit a 1-5 quality rating for a stood attestation report. Only
+        callable by the requestor when the attestation is closed/approved.
+      operationId: rate_attestation_v1_attestations__attestation_id__rating_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRatingCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRatingResponse'
         '422':
           description: Validation Error
           content:
@@ -10948,7 +10997,7 @@ components:
           - attestation_completion_sla_days_operator
           - attestation_completion_sla_days_credential
           - attestation_offer_accept_hours
-          - attestation_dispute_window_days
+          - attestation_dispute_window_business_days
           - saved_search_alert_cadence_hours
           - consent_version_terms_of_service
           - consent_version_privacy_policy
@@ -12057,6 +12106,120 @@ components:
       - created_at
       title: AmendmentResponse
       description: Proposal amendment response returned to Project members.
+    AnnotationCreateRequest:
+      properties:
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          enum:
+          - endorsement
+          - concern
+          - jurisdictional_caveat
+          - revision_recommended
+          title: Annotation Type
+        comment:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Comment
+      type: object
+      required:
+      - location_label
+      - annotation_type
+      - comment
+      title: AnnotationCreateRequest
+      description: Request body for creating one free-anchor workspace annotation.
+    AnnotationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          title: Annotation Type
+        comment:
+          type: string
+          title: Comment
+      type: object
+      required:
+      - id
+      - artifact_id
+      - location_label
+      - quoted_excerpt
+      - annotation_type
+      - comment
+      title: AnnotationResponse
+      description: One persisted attestation annotation row.
+    AnnotationUpdateRequest:
+      properties:
+        artifact_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Artifact Id
+        location_label:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Location Label
+        quoted_excerpt:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Quoted Excerpt
+        annotation_type:
+          type: string
+          enum:
+          - endorsement
+          - concern
+          - jurisdictional_caveat
+          - revision_recommended
+          title: Annotation Type
+        comment:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Comment
+      type: object
+      required:
+      - location_label
+      - annotation_type
+      - comment
+      title: AnnotationUpdateRequest
+      description: Request body for replacing a workspace annotation's editable fields.
     ApiKeyCreateRequest:
       properties:
         name:
@@ -12485,121 +12648,6 @@ components:
       - desired_outcome
       title: AttestationBrief
       description: Structured review brief shown to the cohort during the offer phase.
-    AnnotationCreateRequest:
-      properties:
-        artifact_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Artifact Id
-        location_label:
-          type: string
-          maxLength: 500
-          minLength: 1
-          title: Location Label
-        quoted_excerpt:
-          anyOf:
-          - type: string
-            maxLength: 5000
-          - type: 'null'
-          title: Quoted Excerpt
-        annotation_type:
-          type: string
-          enum:
-          - endorsement
-          - concern
-          - jurisdictional_caveat
-          - revision_recommended
-          title: Annotation Type
-        comment:
-          type: string
-          maxLength: 5000
-          minLength: 1
-          title: Comment
-      type: object
-      required:
-      - location_label
-      - annotation_type
-      - comment
-      title: AnnotationCreateRequest
-      description: Request body for creating one free-anchor workspace annotation.
-    AnnotationResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        artifact_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Artifact Id
-        location_label:
-          type: string
-          title: Location Label
-        quoted_excerpt:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Quoted Excerpt
-        annotation_type:
-          type: string
-          title: Annotation Type
-        comment:
-          type: string
-          title: Comment
-      type: object
-      required:
-      - id
-      - artifact_id
-      - location_label
-      - quoted_excerpt
-      - annotation_type
-      - comment
-      title: AnnotationResponse
-      description: One persisted attestation annotation row.
-    AnnotationUpdateRequest:
-      properties:
-        artifact_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Artifact Id
-        location_label:
-          type: string
-          maxLength: 500
-          minLength: 1
-          title: Location Label
-        quoted_excerpt:
-          anyOf:
-          - type: string
-            maxLength: 5000
-          - type: 'null'
-          title: Quoted Excerpt
-        annotation_type:
-          type: string
-          enum:
-          - endorsement
-          - concern
-          - jurisdictional_caveat
-          - revision_recommended
-          title: Annotation Type
-        comment:
-          type: string
-          maxLength: 5000
-          minLength: 1
-          title: Comment
-      type: object
-      required:
-      - location_label
-      - annotation_type
-      - comment
-      title: AnnotationUpdateRequest
-      description: Request body for replacing a workspace annotation's editable
-        fields.
     AttestationConsentPendingResponse:
       properties:
         id:
@@ -12630,6 +12678,14 @@ components:
       description: Framework-owner decision on an operator-initiated attestation request.
     AttestationDisputeCreateRequest:
       properties:
+        category:
+          type: string
+          enum:
+          - scope_error
+          - process_violation
+          - material_inaccuracy
+          - conflict_of_interest
+          title: Category
         reason:
           type: string
           maxLength: 4000
@@ -12637,6 +12693,7 @@ components:
           title: Reason
       type: object
       required:
+      - category
       - reason
       title: AttestationDisputeCreateRequest
       description: Request body for raising an Attestation report dispute.
@@ -12654,6 +12711,9 @@ components:
           type: string
           format: uuid
           title: Raised By
+        category:
+          type: string
+          title: Category
         reason:
           type: string
           title: Reason
@@ -12709,6 +12769,7 @@ components:
       - id
       - attestation_id
       - raised_by
+      - category
       - reason
       - status
       - resolution_type
@@ -12867,6 +12928,62 @@ components:
       title: AttestationPackageResponse
       description: The read-only Attestation access package scoped to the caller's
         entitlement.
+    AttestationRatingCreate:
+      properties:
+        stars:
+          type: integer
+          maximum: 5.0
+          minimum: 1.0
+          title: Stars
+          description: 1-5 star rating.
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Comment
+          description: Optional text feedback.
+      type: object
+      required:
+      - stars
+      title: AttestationRatingCreate
+      description: Payload for submitting a rating.
+    AttestationRatingResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        attestation_id:
+          type: string
+          format: uuid
+          title: Attestation Id
+        rated_by:
+          type: string
+          format: uuid
+          title: Rated By
+        stars:
+          type: integer
+          title: Stars
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - attestation_id
+      - rated_by
+      - stars
+      - comment
+      - created_at
+      title: AttestationRatingResponse
+      description: Response showing a saved rating.
     AttestationReportSubmitRequest:
       properties:
         outcome:
@@ -13107,47 +13224,6 @@ components:
       - attestations
       title: AttestationsResponse
       description: List response for Attestations visible to the authenticated user.
-    RubricScoreResponse:
-      properties:
-        dimension_id:
-          type: string
-          format: uuid
-          title: Dimension Id
-        score:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          title: Score
-        comment:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Comment
-      type: object
-      required:
-      - dimension_id
-      - score
-      - comment
-      title: RubricScoreResponse
-      description: One persisted attestation rubric-score row.
-    RubricScoreUpsertRequest:
-      properties:
-        score:
-          anyOf:
-          - type: integer
-            maximum: 5.0
-            minimum: 1.0
-          - type: 'null'
-          title: Score
-        comment:
-          anyOf:
-          - type: string
-            maxLength: 5000
-          - type: 'null'
-          title: Comment
-      type: object
-      title: RubricScoreUpsertRequest
-      description: Draft score and comment for one rubric dimension.
     AttestorActivateRequest:
       properties:
         totp_code:
@@ -13762,77 +13838,6 @@ components:
       - attempt
       title: AttestorTrialResponse
       description: Calibration trial details returned to admins.
-    ClarificationCreateRequest:
-      properties:
-        question:
-          type: string
-          maxLength: 5000
-          minLength: 1
-          title: Question
-      type: object
-      required:
-      - question
-      title: ClarificationCreateRequest
-      description: Request body for sending one attestation clarification question.
-    ClarificationRespondRequest:
-      properties:
-        response:
-          type: string
-          maxLength: 5000
-          minLength: 1
-          title: Response
-      type: object
-      required:
-      - response
-      title: ClarificationRespondRequest
-      description: Request body for responding to one attestation clarification.
-    ClarificationResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        attestation_id:
-          type: string
-          format: uuid
-          title: Attestation Id
-        question:
-          type: string
-          title: Question
-        response:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Response
-        sent_at:
-          type: string
-          format: date-time
-          title: Sent At
-        response_due_at:
-          type: string
-          format: date-time
-          title: Response Due At
-        responded_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Responded At
-        status:
-          type: string
-          title: Status
-      type: object
-      required:
-      - id
-      - attestation_id
-      - question
-      - response
-      - sent_at
-      - response_due_at
-      - responded_at
-      - status
-      title: ClarificationResponse
-      description: One persisted attestation clarification row.
     AvatarConfirmRequest:
       properties:
         file_key:
@@ -13989,6 +13994,77 @@ components:
         \ object will be served at once uploaded.\n    max_size: Maximum allowed size\
         \ in bytes (also enforced by S3).\n    expires_in: Seconds until the presigned\
         \ target expires."
+    ClarificationCreateRequest:
+      properties:
+        question:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Question
+      type: object
+      required:
+      - question
+      title: ClarificationCreateRequest
+      description: Request body for sending one attestation clarification question.
+    ClarificationRespondRequest:
+      properties:
+        response:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Response
+      type: object
+      required:
+      - response
+      title: ClarificationRespondRequest
+      description: Request body for responding to one attestation clarification.
+    ClarificationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        attestation_id:
+          type: string
+          format: uuid
+          title: Attestation Id
+        question:
+          type: string
+          title: Question
+        response:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Response
+        sent_at:
+          type: string
+          format: date-time
+          title: Sent At
+        response_due_at:
+          type: string
+          format: date-time
+          title: Response Due At
+        responded_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Responded At
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - id
+      - attestation_id
+      - question
+      - response
+      - sent_at
+      - response_due_at
+      - responded_at
+      - status
+      title: ClarificationResponse
+      description: One persisted attestation clarification row.
     CoiDeclarationRequest:
       properties:
         declarations:
@@ -14027,6 +14103,20 @@ components:
         within_24mo:
           type: boolean
           title: Within 24Mo
+        subject_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Subject Id
+        subject_kind:
+          anyOf:
+          - type: string
+            enum:
+            - user
+            - framework
+          - type: 'null'
+          title: Subject Kind
       type: object
       required:
       - entity
@@ -14034,8 +14124,15 @@ components:
       - relationship
       - within_24mo
       title: CoiEntry
-      description: One declared conflict-of-interest relationship disclosed by an
+      description: 'One declared conflict-of-interest relationship disclosed by an
         applicant.
+
+
+        ``subject_id`` optionally links the declaration to a known platform entity
+
+        so the matching engine can screen exact conflicts without relying on
+
+        brittle free-text matching.'
     CollectionCreateRequest:
       properties:
         title:
@@ -19848,6 +19945,47 @@ components:
       - approved
       title: RoleAssignmentResponse
       description: Response body for role assignment endpoints.
+    RubricScoreResponse:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - dimension_id
+      - score
+      - comment
+      title: RubricScoreResponse
+      description: One persisted attestation rubric-score row.
+    RubricScoreUpsertRequest:
+      properties:
+        score:
+          anyOf:
+          - type: integer
+            maximum: 5.0
+            minimum: 1.0
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Comment
+      type: object
+      title: RubricScoreUpsertRequest
+      description: Draft score and comment for one rubric dimension.
     SavedSearchCreateRequest:
       properties:
         name:

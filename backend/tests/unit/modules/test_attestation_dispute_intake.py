@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
+from app.modules.attestation import dispute_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
@@ -29,6 +30,7 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
     AttestorProfile,
 )
+from app.modules.attestation.schemas import AttestationDisputeCreateRequest
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.shared.models.audit_log import AuditLog
@@ -144,3 +146,31 @@ async def test_dispute_requires_category(db_session) -> None:
     )
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+async def test_dispute_below_min_evidence_length_is_422(db_session) -> None:
+    """Evidence shorter than the configured minimum is rejected (vexatious guard)."""
+    attestation = await _report_submitted_within_window(db_session)
+    requestor = await db_session.get(User, attestation.requestor_id)
+    with pytest.raises(HTTPException) as exc:
+        await dispute_service.create_dispute(
+            db=db_session, requestor=requestor, attestation_id=attestation.id,
+            payload=AttestationDisputeCreateRequest(
+                category="scope_error", reason="too short",
+            ),
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_dispute_stores_category(db_session) -> None:
+    """A valid dispute persists the chosen category."""
+    attestation = await _report_submitted_within_window(db_session)
+    requestor = await db_session.get(User, attestation.requestor_id)
+    dispute = await dispute_service.create_dispute(
+        db=db_session, requestor=requestor, attestation_id=attestation.id,
+        payload=AttestationDisputeCreateRequest(
+            category="material_inaccuracy",
+            reason="Finding 3 misstates the 2025 revenue by a factor of ten, see p.4.",
+        ),
+    )
+    assert dispute.category == "material_inaccuracy"

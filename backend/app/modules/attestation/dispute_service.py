@@ -35,6 +35,7 @@ from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
+DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
@@ -75,10 +76,18 @@ async def create_dispute(
                 detail="Attestation dispute window has closed.",
             )
         await _reject_duplicate_active_dispute(db, attestation.id)
+        evidence = payload.reason.strip()
+        min_length = await _evidence_min_length(db)
+        if len(evidence) < min_length:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Dispute evidence is too short to substantiate the claim.",
+            )
         dispute = AttestationDispute(
             attestation_id=attestation.id,
             raised_by=requestor_id,
-            reason=payload.reason.strip(),
+            category=payload.category,
+            reason=evidence,
         )
         db.add(dispute)
         attestation.status = "disputed"
@@ -496,6 +505,16 @@ async def _next_cohort_index(db: AsyncSession, attestation_id: UUID) -> int:
     if current_max is None:
         return 0
     return int(current_max) + 1
+
+
+async def _evidence_min_length(db: AsyncSession) -> int:
+    """Return the configured minimum dispute-evidence character length."""
+    return await _platform_int_config(
+        db,
+        key="attestation_dispute_evidence_min_length",
+        default=DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH,
+        minimum=1,
+    )
 
 
 async def _platform_int_config(

@@ -493,6 +493,12 @@ class AnnotationResponse(BaseModel):
 class AttestationDisputeCreateRequest(BaseModel):
     """Request body for raising an Attestation report dispute."""
 
+    category: Literal[
+        "scope_error",
+        "process_violation",
+        "material_inaccuracy",
+        "conflict_of_interest",
+    ]
     reason: str = Field(min_length=5, max_length=4000)
 
 
@@ -509,6 +515,7 @@ class AttestationDisputeResponse(BaseModel):
     id: UUID
     attestation_id: UUID
     raised_by: UUID
+    category: str
     reason: str
     status: str
     resolution_type: str | None
@@ -779,5 +786,7 @@ class AttestationRatingResponse(BaseModel):
     stars: int
     comment: str | None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
