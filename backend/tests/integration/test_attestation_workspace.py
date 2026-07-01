@@ -157,6 +157,19 @@ async def _accepted_attestation() -> tuple[User, Attestation]:
     return attestor, attestation
 
 
+async def _in_review_attestation(
+    db_session,
+) -> tuple[User, Attestation]:
+    """Create one attestation already transitioned into the workspace state."""
+    attestor, attestation = await _accepted_attestation()
+    started = await workspace_service.start_review(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+    )
+    return attestor, started
+
+
 async def test_rubric_dimensions_seeded(migrated_database) -> None:
     """All review-type rubric dimensions and methodology rows are seeded."""
     del migrated_database
@@ -224,3 +237,46 @@ async def test_start_review_404_for_non_assigned(db_session) -> None:
         )
 
     assert exc.value.status_code == 404
+
+
+async def test_upsert_rubric_score_creates_then_updates(db_session) -> None:
+    """Scoring one dimension upserts a single row per attestation and dimension."""
+    attestor, attestation = await _in_review_attestation(db_session)
+
+    first = await workspace_service.upsert_rubric_score(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        dimension_key="completeness",
+        score=4,
+        comment="Thorough.",
+    )
+    assert first.score == 4
+
+    second = await workspace_service.upsert_rubric_score(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        dimension_key="completeness",
+        score=5,
+        comment="Revised up.",
+    )
+    assert second.id == first.id
+    assert second.score == 5
+
+
+async def test_upsert_rubric_score_rejects_foreign_dimension(db_session) -> None:
+    """A dimension key outside the attestation review type is rejected."""
+    attestor, attestation = await _in_review_attestation(db_session)
+
+    with pytest.raises(HTTPException) as exc:
+        await workspace_service.upsert_rubric_score(
+            db_session,
+            attestor=attestor,
+            attestation_id=attestation.id,
+            dimension_key="chain_of_custody",
+            score=3,
+            comment="Not valid for quality reviews.",
+        )
+
+    assert exc.value.status_code == 422

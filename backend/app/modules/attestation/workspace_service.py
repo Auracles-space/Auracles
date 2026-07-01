@@ -17,7 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.modules.attestation.models import Attestation, AttestorProfile
+from app.modules.attestation import rubrics
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationRubricDimension,
+    AttestationRubricScore,
+    AttestorProfile,
+)
 from app.modules.auth.models import User
 
 
@@ -97,7 +103,7 @@ async def start_review(
             return attestation
         if attestation.content_ack_at is None or not attestation.content_ack_version:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Content acknowledgment is required before review starts.",
             )
 
@@ -114,7 +120,7 @@ async def start_review(
             or profile.coi_expires_at <= current_time
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="A valid current CoI declaration is required.",
             )
 
@@ -131,3 +137,80 @@ async def start_review(
 
     await db.refresh(attestation)
     return attestation
+
+
+async def upsert_rubric_score(
+    db: AsyncSession,
+    *,
+    attestor: User,
+    attestation_id: UUID,
+    dimension_key: str,
+    score: int | None,
+    comment: str | None,
+) -> AttestationRubricScore:
+    """Create or update the attestor's draft score for one rubric dimension.
+
+    Args:
+        db: Async database session.
+        attestor: Authenticated assigned attestor.
+        attestation_id: Workspace attestation receiving the score.
+        dimension_key: Stable rubric key within the attestation review type.
+        score: Optional draft score in the 1-5 range.
+        comment: Optional draft comment.
+
+    Returns:
+        The created or updated rubric-score row.
+
+    Raises:
+        HTTPException: 404 on assignee mismatch, 409 outside `in_review`, or
+            422 for an invalid score or dimension key.
+    """
+    if score is not None and not 1 <= score <= 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Score must be between 1 and 5.",
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = await load_workspace_attestation(
+            db,
+            attestation_id=attestation_id,
+            attestor_id=attestor.id,
+            allowed_statuses={"in_review"},
+        )
+        dimension = await db.scalar(
+            select(AttestationRubricDimension).where(
+                AttestationRubricDimension.review_type == attestation.review_type,
+                AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                AttestationRubricDimension.key == dimension_key,
+            )
+        )
+        if dimension is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Unknown rubric dimension for this review type.",
+            )
+
+        row = await db.scalar(
+            select(AttestationRubricScore).where(
+                AttestationRubricScore.attestation_id == attestation.id,
+                AttestationRubricScore.dimension_id == dimension.id,
+            )
+        )
+        if row is None:
+            row = AttestationRubricScore(
+                attestation_id=attestation.id,
+                dimension_id=dimension.id,
+                score=score,
+                comment=comment,
+            )
+            db.add(row)
+        else:
+            row.score = score
+            row.comment = comment
+        await db.flush()
+
+    await db.refresh(row)
+    return row
