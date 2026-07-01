@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
+from app.modules.attestation import rating_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
@@ -137,7 +138,7 @@ async def _closed_after_refund(db_session) -> Attestation:
         target_id=uuid4(),
         requestor_id=requestor.id,
         status="refunded",
-        outcome="upheld_refund",
+        outcome="rejected",
         fee_amount=Decimal("500.00"),
         currency="USD",
         requested_specializations=[],
@@ -171,3 +172,56 @@ async def test_rating_row_persists_and_is_unique(db_session) -> None:
     )
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+async def test_requestor_rates_closed_accepted_report(db_session) -> None:
+    """A requestor can rate a report that stood via acceptance."""
+    attestation = await _closed_after_accept(db_session)
+    rating = await rating_service.submit_rating(
+        db=db_session,
+        requestor=await db_session.get(User, attestation.requestor_id),
+        attestation_id=attestation.id,
+        stars=5,
+        comment="Clear and rigorous.",
+    )
+    assert rating.stars == 5
+
+
+async def test_duplicate_rating_conflicts(db_session) -> None:
+    """A second rating on the same attestation is rejected 409."""
+    attestation = await _closed_after_accept(db_session)
+    requestor = await db_session.get(User, attestation.requestor_id)
+    await rating_service.submit_rating(
+        db=db_session, requestor=requestor,
+        attestation_id=attestation.id, stars=4, comment=None,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await rating_service.submit_rating(
+            db=db_session, requestor=requestor,
+            attestation_id=attestation.id, stars=3, comment=None,
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_non_requestor_gets_404(db_session) -> None:
+    """A non-requestor cannot rate; existence is hidden with 404."""
+    attestation = await _closed_after_accept(db_session)
+    stranger = await _make_user("operator", "stranger")
+    with pytest.raises(HTTPException) as exc:
+        await rating_service.submit_rating(
+            db=db_session, requestor=stranger,
+            attestation_id=attestation.id, stars=5, comment=None,
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_refunded_attestation_not_rateable(db_session) -> None:
+    """A refunded (CoI-upheld) attestation's report did not stand — 409."""
+    attestation = await _closed_after_refund(db_session)
+    requestor = await db_session.get(User, attestation.requestor_id)
+    with pytest.raises(HTTPException) as exc:
+        await rating_service.submit_rating(
+            db=db_session, requestor=requestor,
+            attestation_id=attestation.id, stars=5, comment=None,
+        )
+    assert exc.value.status_code == 409

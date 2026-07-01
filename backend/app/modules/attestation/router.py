@@ -21,6 +21,7 @@ from app.modules.attestation import (
     directory_service,
     dispute_service,
     matching_service,
+    rating_service,
     release_service,
     workspace_service,
 )
@@ -47,6 +48,8 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
     AttestationPackageResponse,
+    AttestationRatingCreate,
+    AttestationRatingResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -1250,3 +1253,27 @@ async def get_attestation_package(
     return await access_service.get_attestation_package(
         db=db, user=user, attestation_id=attestation_id
     )
+
+
+@router.post(
+    "/attestations/{attestation_id}/rating",
+    response_model=AttestationRatingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Rate a completed attestation",
+    description="Submit a 1-5 quality rating for a stood attestation report. Only callable by the requestor when the attestation is closed/approved.",
+)
+async def rate_attestation(
+    attestation_id: UUID,
+    payload: AttestationRatingCreate,
+    requestor: Annotated[User, Depends(require_role("operator"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AttestationRatingResponse:
+    """Submit a rating for an attestation."""
+    rating = await rating_service.submit_rating(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+        stars=payload.stars,
+        comment=payload.comment,
+    )
+    return AttestationRatingResponse.model_validate(rating)

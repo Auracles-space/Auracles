@@ -761,3 +761,23 @@ class AttestationArtifactAccessResponse(BaseModel):
     scope: str
     download_url: str
     expires_in: int
+
+
+class AttestationRatingCreate(BaseModel):
+    """Payload for submitting a rating."""
+
+    stars: int = Field(..., ge=1, le=5, description="1-5 star rating.")
+    comment: str | None = Field(None, max_length=1000, description="Optional text feedback.")
+
+
+class AttestationRatingResponse(BaseModel):
+    """Response showing a saved rating."""
+
+    id: UUID
+    attestation_id: UUID
+    rated_by: UUID
+    stars: int
+    comment: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
