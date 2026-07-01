@@ -36,7 +36,33 @@ Reviewer: this session (backend reviewer)
 - T5–T7/Minor (test completeness): uncovered branches — `start_review` 422 paths (missing content_ack, absent/expired CoI); the 409 wrong-state gate on scoring/annotation against a non-`in_review` attestation; RBAC 403 for a non-attestor role on workspace endpoints (only 401/404 covered); update/list against `report_submitted`. Slice 3/4 submit-gate work likely exercises some state gates — confirm then, else backfill.
 - T7/Note: `AnnotationUpdateRequest(AnnotationCreateRequest)` lets update replace `artifact_id`. Intended (full-field replace). No action.
 
+## Slice 3 (clarifications + SLA pause + grace revoke) — commits 4d5d6aa..4fc0c14 — verdict: PASS after fixes. 1 Critical + 1 Important, both fixed in review.
+
+- Range: 5 commits (4d5d6aa send+SLA extend, f78f7d2 respond+SLA remainder trim, 7991a08 expiry sweep + grace-aware revoke, 847ab09 endpoints, 4fc0c14 format). 12 files, +1435/-7.
+- Gates after review fixes: 40 slice+regression tests pass; full `-k "attestation or notification"` sweep 177 pass (see migration-isolation note); whole-repo `ruff check .` clean; `mypy app` clean (213 files).
+- SLA accounting verified: send extends `completion_due_at` by full `response_hours` up front and sets clarification `response_due_at`; respond returns the unused remainder (`completion_due_at -= (response_due_at - now)` when positive) → net SLA cost = time actually consumed; expiry keeps the full extension (whole window legitimately spent waiting). None-safe on `completion_due_at`.
+- Concurrency verified: send locks attestation FOR UPDATE (serializes the open/limit count checks); respond locks attestation then clarification FOR UPDATE; expiry is per-row FOR UPDATE with `status=='open'` recheck → idempotent.
+- Grace revoke (§4.8) verified: reads `attestation_completion_grace_hours` (default 24, min 0); cutoff = now − grace; status filter widened `{accepted}→{accepted, in_review}`; cutoff applied in both candidate select and locked recheck. New tests cover past-grace revoke and in-grace no-op.
+
+### CRITICAL (fixed in review — 4117fb9)
+
+- Grace widening broke pre-existing Module 3 test `test_revoke_overdue_attestation_reoffers_and_clears_payee` (test_attestation_matching.py): it set `completion_due_at = now-1h`, now inside the 24h grace → revoke no longer fires → `assert 0 == 1`. The implementer's slice gate ran only the new slice files and missed the broader-suite regression — exactly the carried-forward watch item. Fixed: pushed the fixture to `now-25h` (past grace), preserving original intent. This is a reviewer-caught gate failure; the committed slice was NOT green across the module.
+
+### IMPORTANT (fixed in review — 5ebae5f)
+
+- Clarification notification dedupe was too coarse. Dedupe key is `(user_id, dedupe_key, channel)` unique-enforced; the notify helpers used a static suffix (`clarification-requested` / `clarification-answered`). With two clarifications allowed per attestation, the second event collapsed to the same key and its notification was silently dropped; expiry reused the `answered` suffix and collided further. Fixed: threaded `clarification_id` into the dedupe suffix (helpers + 3 call sites). No test asserted the old behavior.
+
+### Minor findings (Slice 3)
+
+- Slice3/Minor: `ClarificationCreateRequest.question` and `ClarificationRespondRequest.response` skip the module's `_ensure_safe_prose` hardening (`<>`/control-char reject) applied to other attestation prose fields. Stored and shown in-thread to the other party. Defense-in-depth inconsistency — add the validator for parity. (Notification bodies are static, so not reflected there.)
+- Slice3/Minor: on expiry, the attestor is notified via `notify_clarification_answered` ("The requestor answered your clarification question") — factually wrong for an unanswered/expired clarification. Copy-only; consider a distinct "clarification expired" notification in Slice 4/polish.
+
 ## Carry-forward watch items (later slices)
 
-- §4.8 grace-then-revoke: Slice 3 widens `revoke_overdue_attestations` from {accepted} to {accepted, in_review} AND adds +24h grace before revoke — a Module 3 behavior change (instant → +grace). Verify existing revoke tests updated, not masked.
-- `submit_report` precondition moves accepted → in_review (Slice 4). Existing report tests must be re-pointed.
+- ~~§4.8 grace-then-revoke widening~~ — RESOLVED in Slice 3. Widened + grace confirmed; the masked Module 3 revoke test was caught and fixed (4117fb9).
+- `submit_report` precondition moves accepted → in_review (Slice 4). Existing report tests must be re-pointed. Same lesson as the Slice 3 Critical: run the BROADER report/matching suite, not just new slice files, or a status-precondition change silently breaks existing tests.
+- Slice 4 open items to fold in: add `_ensure_safe_prose` to clarification question/response (Slice 3 Minor); consider a distinct clarification-expired notification (Slice 3 Minor); `RubricScoreResponse` echo key not just dimension_id (Slice 2 Minor).
+
+## Note: migration-test batch isolation
+
+Running `pytest -k "attestation or notification"` reports 2 failures in `test_attestation_review_type_migration.py`; both PASS in isolation. Migration tests downgrade/upgrade the shared DB and interfere when batched with other DB tests. Pre-existing harness quirk, unrelated to Slice 3. When gating, run migration-cycle tests separately.
