@@ -81,7 +81,7 @@ async def create_report_evidence_upload_session(
             db=db,
             attestation_id=attestation_id,
             attestor_id=attestor_id,
-            allowed_statuses={"in_review"},
+            allowed_statuses={"in_review", "revision_requested"},
         )
         upload_session = AttestationUploadSession(
             attestation_id=attestation_id,
@@ -135,7 +135,7 @@ async def submit_report(
             db=db,
             attestation_id=attestation_id,
             attestor_id=attestor_id,
-            allowed_statuses={"in_review"},
+            allowed_statuses={"in_review", "revision_requested"},
         )
         failures = await quality_gate.evaluate_quality_gate(
             db,
