@@ -1768,54 +1768,63 @@ async def test_admin_refunds_needs_admin_attestation(
     assert audit is not None
 
 
-async def test_escalate_attestation_disputes_moves_stale_open_disputes_under_review(
+async def test_escalate_attestation_disputes_flags_overdue_resolutions(
     migrated_database: None,
     matching_context: dict[str, Any],
 ) -> None:
-    """Open Attestation disputes older than seven days escalate once."""
+    """A dispute past its resolution SLA is flagged overdue, never auto-resolved.
+
+    Enforces Module 5 spec section 4.8 (money stays human — no auto-resolve).
+    """
     del migrated_database, matching_context
     requestor_id = await create_user(
-        "stale-dispute-requestor@auracles.space",
+        "overdue-dispute-requestor@auracles.space",
         ["operator"],
     )
     attestor_id = await create_user(
-        "stale-dispute-attestor@auracles.space",
+        "overdue-dispute-attestor@auracles.space",
         ["attestor"],
     )
     attestation_id, _, _ = await create_report_submitted_attestation(
         requestor_id,
         attestor_id,
     )
+    frozen_now = datetime.now(UTC)
     async with async_session_factory() as session:
         async with session.begin():
             dispute = AttestationDispute(
                 attestation_id=attestation_id,
                 raised_by=requestor_id,
                 category="process_violation",
-                reason="This old dispute needs admin attention.",
+                reason="This dispute passed its resolution SLA without a decision.",
                 status="open",
-                created_at=datetime.now(UTC) - timedelta(days=8),
+                resolution_due_at=frozen_now - timedelta(minutes=1),
             )
             session.add(dispute)
             await session.flush()
             dispute_id = dispute.id
 
     async with async_session_factory() as session:
-        escalated_count = await dispute_service.escalate_attestation_disputes(session)
-        second_count = await dispute_service.escalate_attestation_disputes(session)
+        flagged = await dispute_service.escalate_attestation_disputes(
+            session, now=frozen_now
+        )
+        second_count = await dispute_service.escalate_attestation_disputes(
+            session, now=frozen_now
+        )
 
     async with async_session_factory() as session:
         dispute = await session.get(AttestationDispute, dispute_id)
         audit = await session.scalar(
             select(AuditLog).where(
-                AuditLog.action == "attestation_dispute_escalated",
+                AuditLog.action == "attestation_dispute_resolution_overdue",
                 AuditLog.target_id == dispute_id,
             )
         )
 
-    assert escalated_count == 1
+    assert flagged == 1
     assert second_count == 0
     assert dispute is not None
+    assert dispute.resolution_overdue_at is not None
+    assert dispute.status != "resolved"  # never auto-resolved
     assert dispute.status == "under_review"
-    assert dispute.escalated_at is not None
     assert audit is not None

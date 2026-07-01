@@ -48,7 +48,7 @@ async def _auto_release_attestations() -> int:
 
 
 async def _escalate_attestation_disputes() -> int:
-    """Move stale open Attestation disputes into admin review."""
+    """Flag Attestation disputes that missed their resolution SLA."""
     async with async_session_factory() as db:
         return await dispute_service.escalate_attestation_disputes(db)
 

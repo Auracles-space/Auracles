@@ -435,9 +435,23 @@ async def escalate_attestation_disputes(
     *,
     now: datetime | None = None,
 ) -> int:
-    """Move stale open Attestation disputes into admin review."""
+    """Flag Attestation disputes that missed their resolution SLA.
+
+    Selects active disputes (``open`` or ``under_review``) whose
+    ``resolution_due_at`` has passed and that are not already flagged, stamps
+    ``resolution_overdue_at``, moves ``open`` disputes to ``under_review``, and
+    audits the miss for admin attention. Money never moves here — there is no
+    auto-resolve. Idempotent: a dispute already carrying
+    ``resolution_overdue_at`` is skipped (spec section 4.8).
+
+    Args:
+        db: Async database session.
+        now: Optional clock override for tests.
+
+    Returns:
+        The number of disputes newly flagged overdue.
+    """
     current_time = now or datetime.now(UTC)
-    cutoff = current_time - timedelta(days=7)
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -446,8 +460,10 @@ async def escalate_attestation_disputes(
                 await db.execute(
                     select(AttestationDispute)
                     .where(
-                        AttestationDispute.status == "open",
-                        AttestationDispute.created_at < cutoff,
+                        AttestationDispute.status.in_(ACTIVE_DISPUTE_STATUSES),
+                        AttestationDispute.resolution_due_at.is_not(None),
+                        AttestationDispute.resolution_due_at <= current_time,
+                        AttestationDispute.resolution_overdue_at.is_(None),
                     )
                     .with_for_update()
                 )
@@ -456,16 +472,23 @@ async def escalate_attestation_disputes(
             .all()
         )
         for dispute in disputes:
-            dispute.status = "under_review"
-            dispute.escalated_at = current_time
+            dispute.resolution_overdue_at = current_time
+            if dispute.status == "open":
+                dispute.status = "under_review"
+                dispute.escalated_at = current_time
             await write_audit(
                 db=db,
                 actor_id=None,
-                action="attestation_dispute_escalated",
+                action="attestation_dispute_resolution_overdue",
                 target_type="attestation_dispute",
                 target_id=dispute.id,
                 metadata={"attestation_id": str(dispute.attestation_id)},
             )
+            logger.bind(
+                module="attestation",
+                action="attestation_dispute_resolution_overdue",
+                dispute_id=dispute.id,
+            ).warning("attestation_dispute_resolution_overdue")
     return len(disputes)
 
 
