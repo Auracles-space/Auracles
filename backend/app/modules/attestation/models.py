@@ -72,6 +72,7 @@ ATTESTATION_STATUS_ENUM = ENUM(
     "accepted",
     "in_review",
     "report_submitted",
+    "revision_requested",
     "released",
     "disputed",
     "resolved",
@@ -113,11 +114,11 @@ ATTESTATION_DISPUTE_STATUS_ENUM = ENUM(
     name="attestation_dispute_status_enum",
     create_type=False,
 )
-ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
-    "release",
-    "refund",
-    "split",
-    name="attestation_dispute_resolution_enum",
+ATTESTATION_DISPUTE_OUTCOME_ENUM = ENUM(
+    "rejected",
+    "upheld_refund",
+    "upheld_revise",
+    name="attestation_dispute_outcome_enum",
     create_type=False,
 )
 ATTESTATION_ANNOTATION_TYPE_ENUM = ENUM(
@@ -559,6 +560,16 @@ class Attestation(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("false"),
     )
+    revision_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    report_published_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
 
 
 class AttestationOffer(Base):
@@ -660,15 +671,14 @@ class AttestationArtifactAccess(Base):
 
 
 class AttestationDispute(CreatedAtMixin, Base):
-    """Requestor-raised challenge to an attestation report."""
+    """Requestor-raised challenge to an attestation report.
+
+    Module 5 replaces the old resolution_type/split model with a three-outcome
+    enum (rejected, upheld_refund, upheld_revise) and adds SLA tracking columns.
+    """
 
     __tablename__ = "attestation_disputes"
     __table_args__ = (
-        CheckConstraint(
-            "resolution_type != 'split' "
-            "OR (release_amount IS NOT NULL AND refund_amount IS NOT NULL)",
-            name="ck_attestation_disputes_split_has_amounts",
-        ),
         Index("idx_attestation_disputes_status_created_at", "status", "created_at"),
         Index(
             "idx_attestation_disputes_raised_by_status_resolved",
@@ -703,16 +713,21 @@ class AttestationDispute(CreatedAtMixin, Base):
         nullable=False,
         server_default="open",
     )
-    resolution_type: Mapped[str | None] = mapped_column(
-        ATTESTATION_DISPUTE_RESOLUTION_ENUM,
+    outcome: Mapped[str | None] = mapped_column(
+        ATTESTATION_DISPUTE_OUTCOME_ENUM,
         nullable=True,
     )
-    release_amount: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2),
+    is_complex: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    resolution_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
-    refund_amount: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2),
+    resolution_overdue_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     admin_id: Mapped[UUID | None] = mapped_column(
