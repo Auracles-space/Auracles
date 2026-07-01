@@ -12886,6 +12886,12 @@ components:
           maxLength: 10000
           minLength: 10
           title: Scope
+        conditions:
+          anyOf:
+          - type: string
+            maxLength: 10000
+          - type: 'null'
+          title: Conditions
         evidence_references:
           additionalProperties: true
           type: object

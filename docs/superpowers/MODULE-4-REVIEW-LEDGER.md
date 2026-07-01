@@ -57,11 +57,38 @@ Reviewer: this session (backend reviewer)
 - Slice3/Minor: `ClarificationCreateRequest.question` and `ClarificationRespondRequest.response` skip the module's `_ensure_safe_prose` hardening (`<>`/control-char reject) applied to other attestation prose fields. Stored and shown in-thread to the other party. Defense-in-depth inconsistency — add the validator for parity. (Notification bodies are static, so not reflected there.)
 - Slice3/Minor: on expiry, the attestor is notified via `notify_clarification_answered` ("The requestor answered your clarification question") — factually wrong for an unanswered/expired clarification. Copy-only; consider a distinct "clarification expired" notification in Slice 4/polish.
 
+## Slice 4 (submit gate + 8-section report PDF + late/grace finalization) — commits 7f26c89..b8717b8 — verdict: PASS after fix. 0 Critical, 1 Important (fixed in review).
+
+- Range: 4 commits (14fc86e quality gate, 3201b9c gated submit + conditions + late-flag, 5cf6089 eight-section report PDF, b8717b8 workspace submission regression fixes). 8 files, +1348/-44.
+- Gates after review fix: 25 slice tests pass; broad attestation suite 106 pass (integration access/clarifications/consent/offers/requests/workspace + unit rubrics/scoring/workspace/clarifications/ranking/beat/coi/upload); whole-repo `ruff check .` clean; `mypy app` clean (214 files). Migration-cycle files excluded per the batch-isolation note below.
+- Watch item RESOLVED: `submit_report` precondition moved `accepted → in_review`. Implementer correctly re-pointed the two existing report tests in test_attestation_matching.py — `test_assigned_attestor_uploads_evidence_and_submits_report` (fixture → `in_review`, `review_type="quality"`, seeds full rubric scores + long summary) and `test_unassigned_attestor_cannot_submit_report` (403→404). Broad suite ran green; the Slice-3-Critical failure mode did not recur.
+- Quality gate (§4.7) verified: returns ALL failures at once; enforces every dimension scored+commented, conditions-required-iff-conditional, non-approved-requires-annotation, min-words (config `attestation_report_min_words`, default 150), contact-info block (config `attestation_report_block_contact_info`, default on), no open clarification. Config readers default safely on non-int. Unit tests assert real per-rule failure content + aggregation (≥3).
+- Submit path verified: gate runs inside the txn before any state write, 422 with itemized `detail` list on failure; sets `conditions`, `rubric_version`; late path stamps `submitted_late`, increments `AttestorProfile.late_submission_count` under `with_for_update()`, audits `attestation_late_submission`; `_load_assigned_attestation_for_update` now 404-hides on assignee mismatch (was 403) — consistent with module existence-hiding. `report_key` is deterministic (`attestation-reports/{id}/report.pdf`) and matches the PDF task key → no orphaned S3 object.
+- PDF (8 sections) verified: split into `_build_report_context` / `_build_report_html`; dimension table, weighted overall, findings from annotations, conditions, attestor identity + credentials + verification level, supplementary notes. Column attrs are read after session close but none are lazy relationships (no DetachedInstanceError); pdf unit test confirms.
+
+### IMPORTANT (fixed in review — pending commit)
+
+- OpenAPI contract drift. `conditions: str | None` was added to the `AttestationReportSubmitRequest` Pydantic model but NOT to `contracts/openapi.yaml`. The frontend client is generated from that contract (CLAUDE.md rule 7 "OpenAPI first"), so a conditional/rejected outcome — which the gate REQUIRES conditions/annotations for — could not be submitted from the generated client. Fixed by adding the field to the contract, matching FastAPI's actual generated shape (`anyOf: [{type: string, maxLength: 10000}, {type: 'null'}]`, not required). Verified against `app.openapi()` output; YAML re-parsed clean.
+
+### Minor findings (Slice 4)
+
+- Slice4/Minor: contact-info phone pattern `(?:\+?\d[\d\s().-]{7,}\d)` false-positives on legitimate numeric spans — e.g. a report citing "fiscal years 2020-2021" or a long figure matches and is blocked with the misleading "Report contains contact information" message. Config-disableable and the block itself is spec-mandated (§4.7), so NOT auto-changed — human decides whether to tighten the phone heuristic or reword the failure message. Untested/latent (passing tests use `a@b.com` + digit-free `_long_text`).
+- Slice4/Minor: PDF `weighted_overall(score_map, attestation.review_type or "")` raises `ValueError` when `review_type` is empty or a dimension is unscored. Any pre-Module-4 `released`/`closed` attestation regenerating its PDF (no review_type, no rubric scores) would crash the task. Greenfield/pre-launch so latent — guard with a default/skip when the rubric context is absent.
+- Slice4/Minor: `min_words` counts summary + rubric comments + conditions but excludes `scope`, while the contact check includes `scope`. Confirm the asymmetry is intended.
+- Slice4/Minor: `supplementary_notes` renders `str(attestation.evidence_references)` — a raw Python dict repr in the PDF. Cosmetic; render structured or a labeled key list.
+
+### Un-folded earlier-slice items (still open at module close)
+
+The three "Slice 4 open items to fold in" from earlier slices were NOT addressed in Slice 4 (diff did not touch clarification_service/notifications/workspace schemas). Still open — human decides whether they block merge:
+- `_ensure_safe_prose` on clarification question/response (Slice 3 Minor).
+- distinct "clarification expired" notification instead of reusing "answered" copy (Slice 3 Minor).
+- `RubricScoreResponse` echo `dimension_key` not just `dimension_id` (Slice 2 Minor).
+
 ## Carry-forward watch items (later slices)
 
 - ~~§4.8 grace-then-revoke widening~~ — RESOLVED in Slice 3. Widened + grace confirmed; the masked Module 3 revoke test was caught and fixed (4117fb9).
-- `submit_report` precondition moves accepted → in_review (Slice 4). Existing report tests must be re-pointed. Same lesson as the Slice 3 Critical: run the BROADER report/matching suite, not just new slice files, or a status-precondition change silently breaks existing tests.
-- Slice 4 open items to fold in: add `_ensure_safe_prose` to clarification question/response (Slice 3 Minor); consider a distinct clarification-expired notification (Slice 3 Minor); `RubricScoreResponse` echo key not just dimension_id (Slice 2 Minor).
+- ~~`submit_report` precondition moves accepted → in_review (Slice 4)~~ — RESOLVED in Slice 4. Both existing report tests re-pointed; broad report/matching suite ran green. The lesson held: running the broader suite (not just new slice files) confirmed no silent status-precondition regression.
+- ~~Slice 4 open items to fold in~~ — NOT folded in during Slice 4; carried to module-close decision (see Slice 4 "Un-folded earlier-slice items"). All Module 4 slices reviewed; no further slices.
 
 ## Note: migration-test batch isolation
 
