@@ -36,7 +36,9 @@ async def test_rubric_dimensions_seeded(migrated_database) -> None:
     del migrated_database
     await engine.dispose()
 
-    expected_dimensions = sum(len(dimensions) for dimensions in rubrics.RUBRICS.values())
+    expected_dimensions = sum(
+        len(dimensions) for dimensions in rubrics.RUBRICS.values()
+    )
     async with async_session_factory() as session:
         dimension_count = await session.scalar(
             select(func.count()).select_from(AttestationRubricDimension)
