@@ -385,6 +385,10 @@ class AttestorProfile(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("0"),
     )
+    suspension_review_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class Credential(UpdatedAtMixin, Base):
@@ -780,6 +784,46 @@ class AttestationRating(Base):
     )
     stars: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class AttestorWarning(Base):
+    """Formal warning recorded against an attestor on an upheld dispute.
+
+    Every upheld dispute (refund or revise) records one warning. Two warnings
+    inside a rolling 12 months flag the attestor's profile for human suspension
+    review — never an automatic deactivation. Maps to spec section 4.7.
+    """
+
+    __tablename__ = "attestor_warnings"
+    __table_args__ = (
+        Index(
+            "idx_attestor_warnings_attestor_created",
+            "attestor_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    dispute_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestation_disputes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

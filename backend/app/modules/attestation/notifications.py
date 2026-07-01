@@ -339,6 +339,39 @@ def notify_dispute_resolved(attestation: Attestation, *, outcome: str) -> None:
         )
 
 
+def notify_attestor_warning(user_id: UUID, *, reason: str) -> bool:
+    """Notify an attestor that an upheld dispute recorded a formal warning.
+
+    Args:
+        user_id: The warned attestor.
+        reason: Short human-readable warning reason (no PII).
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed.
+    """
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type="attestor_warning_issued",
+            title="A dispute was upheld against your attestation",
+            body=(
+                "An admin upheld a dispute on one of your attestations and "
+                "recorded a formal warning. Repeated warnings trigger a review."
+            ),
+            payload={"reason": reason},
+            link=_attestor_onboarding_link(),
+            dedupe_key=f"attestor_warning_issued:{user_id}:{reason}",
+        )
+    except Exception as exc:
+        logger.bind(
+            module="attestation",
+            action="queue_attestor_warning_notification",
+            user_id=user_id,
+        ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True
+
+
 def notify_refunded(attestation: Attestation, *, reason: str) -> None:
     """Notify the requestor that an Attestation fee was refunded."""
     _dispatch(

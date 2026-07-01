@@ -14,7 +14,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -37,6 +37,7 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
     AttestorApplication,
     AttestorProfile,
+    AttestorWarning,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
@@ -159,6 +160,7 @@ async def reset_matching_state() -> None:
             await session.execute(delete(WorkspaceMessage))
             await session.execute(delete(AttestationUploadSession))
             await session.execute(delete(AttestationOffer))
+            await session.execute(delete(AttestorWarning))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
             await session.execute(delete(AttestorProfile))
@@ -1500,12 +1502,18 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
         dispute = await session.get(AttestationDispute, UUID(dispute_id))
         escrow = await session.get(Escrow, escrow_id)
         transaction = await session.get(Transaction, transaction_id)
+        warning_count = await session.scalar(
+            select(func.count())
+            .select_from(AttestorWarning)
+            .where(AttestorWarning.attestor_id == attestor_id)
+        )
 
     app.dependency_overrides.pop(get_redis, None)
 
     assert raised.status_code == 201
     assert resolved.status_code == 200
     assert resolved.json()["outcome"] == "upheld_refund"
+    assert warning_count == 1
     assert attestation is not None
     assert attestation.status == "closed"
     assert attestation.report_published_eligible is False
@@ -1576,12 +1584,18 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
         attestation = await session.get(Attestation, attestation_id)
         dispute = await session.get(AttestationDispute, UUID(dispute_id))
         escrow = await session.get(Escrow, escrow_id)
+        warning_count = await session.scalar(
+            select(func.count())
+            .select_from(AttestorWarning)
+            .where(AttestorWarning.attestor_id == attestor_id)
+        )
 
     app.dependency_overrides.pop(get_redis, None)
 
     assert raised.status_code == 201
     assert resolved.status_code == 200
     assert resolved.json()["outcome"] == "upheld_revise"
+    assert warning_count == 1
     assert attestation is not None
     assert attestation.status == "revision_requested"
     assert attestation.revision_count == 1

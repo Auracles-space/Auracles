@@ -25,6 +25,7 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestorProfile,
+    AttestorWarning,
 )
 from app.modules.attestation.schemas import AttestationDisputeCreateRequest
 from app.modules.auth import service as auth_service
@@ -39,6 +40,9 @@ DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
 DEFAULT_REVISION_SLA_BUSINESS_DAYS = 5
 REQUESTOR_FLAG_THRESHOLD = 3
 REQUESTOR_FLAG_WINDOW_DAYS = 365
+SUSPENSION_REVIEW_THRESHOLD = 2
+SUSPENSION_REVIEW_WINDOW_DAYS = 365
+_UPHELD_OUTCOMES = ("upheld_refund", "upheld_revise")
 
 
 async def create_dispute(
@@ -178,6 +182,7 @@ async def resolve_dispute(
         notes = resolution_notes.strip()
         now = datetime.now(UTC)
         escrow_id_value: str | None = None
+        warned_attestor_id: UUID | None = None
         if outcome == "rejected":
             escrow = await _load_attestation_escrow(db=db, attestation=attestation)
             escrow_id_value = str(escrow.id)
@@ -224,6 +229,15 @@ async def resolve_dispute(
         dispute.admin_id = admin_id
         dispute.resolution_notes = notes
         dispute.resolved_at = now
+        if outcome in _UPHELD_OUTCOMES and attestation.attestor_id is not None:
+            warned_attestor_id = attestation.attestor_id
+            await _write_warning(
+                db,
+                attestor_id=attestation.attestor_id,
+                dispute_id=dispute.id,
+                reason=f"Dispute upheld ({outcome}): {notes}",
+                now=now,
+            )
         resolution_metadata: dict[str, str] = {
             "attestation_id": str(attestation.id),
             "outcome": outcome,
@@ -253,6 +267,10 @@ async def resolve_dispute(
         await db.flush()
         await db.refresh(dispute)
     attestation_notifications.notify_dispute_resolved(attestation, outcome=outcome)
+    if warned_attestor_id is not None:
+        attestation_notifications.notify_attestor_warning(
+            warned_attestor_id, reason=f"Dispute upheld ({outcome})."
+        )
     return dispute
 
 
@@ -617,6 +635,79 @@ async def _revision_sla_business_days(db: AsyncSession) -> int:
         default=DEFAULT_REVISION_SLA_BUSINESS_DAYS,
         minimum=1,
     )
+
+
+async def attestor_upheld_warning_count(
+    db: AsyncSession,
+    *,
+    attestor_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Count an attestor's formal warnings in the trailing 12 months.
+
+    Warnings accrue on every upheld dispute (refund or revise). The rolling
+    count drives the suspension-review flag. Maps to spec section 4.7.
+    """
+    current_time = now or datetime.now(UTC)
+    cutoff = current_time - timedelta(days=SUSPENSION_REVIEW_WINDOW_DAYS)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AttestorWarning)
+        .where(
+            AttestorWarning.attestor_id == attestor_id,
+            AttestorWarning.created_at >= cutoff,
+        )
+    )
+    return int(count or 0)
+
+
+async def _write_warning(
+    db: AsyncSession,
+    *,
+    attestor_id: UUID,
+    dispute_id: UUID,
+    reason: str,
+    now: datetime,
+) -> None:
+    """Record one attestor warning and flag suspension review if due.
+
+    Writes the warning, notifies the attestor, and — when the rolling count
+    reaches ``SUSPENSION_REVIEW_THRESHOLD`` — stamps the profile's
+    ``suspension_review_at`` and audits it. Never deactivates an attestor; the
+    flag is a human-review signal only (spec section 4.7).
+    """
+    db.add(
+        AttestorWarning(
+            attestor_id=attestor_id,
+            dispute_id=dispute_id,
+            reason=reason,
+        )
+    )
+    await db.flush()
+    count = await attestor_upheld_warning_count(db, attestor_id=attestor_id, now=now)
+    if count < SUSPENSION_REVIEW_THRESHOLD:
+        return
+    profile = await db.scalar(
+        select(AttestorProfile)
+        .where(AttestorProfile.user_id == attestor_id)
+        .with_for_update()
+    )
+    if profile is None or profile.suspension_review_at is not None:
+        return
+    profile.suspension_review_at = now
+    await write_audit(
+        db=db,
+        actor_id=None,
+        action="attestor_suspension_review_flagged",
+        target_type="attestor_profile",
+        target_id=profile.id,
+        metadata={"upheld_warnings": count},
+    )
+    logger.bind(
+        module="attestation",
+        action="attestor_suspension_review_flagged",
+        attestor_id=attestor_id,
+    ).warning("attestor_suspension_review_flagged")
 
 
 async def _load_attestation_escrow(
