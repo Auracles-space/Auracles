@@ -44,7 +44,10 @@ ATTESTATION_ENUMS = {
     "attestation_outcome_enum",
     "attestation_offer_status_enum",
     "attestation_dispute_status_enum",
-    "attestation_dispute_resolution_enum",
+    # Module 5 replaced the release/refund/split resolution enum with a
+    # category enum (intake) and an outcome enum (resolution).
+    "attestation_dispute_category_enum",
+    "attestation_dispute_outcome_enum",
     "attestation_upload_purpose_enum",
     "attestation_upload_scan_status_enum",
     "attestation_review_type_enum",
@@ -64,7 +67,7 @@ ATTESTATION_CONFIG_SEEDS = {
     "attestation_completion_sla_days_operator": "10",
     "attestation_completion_sla_days_credential": "10",
     "attestation_offer_accept_hours": "48",
-    "attestation_dispute_window_days": "14",
+    "attestation_dispute_window_business_days": "5",
 }
 
 

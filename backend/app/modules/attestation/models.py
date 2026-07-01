@@ -72,6 +72,7 @@ ATTESTATION_STATUS_ENUM = ENUM(
     "accepted",
     "in_review",
     "report_submitted",
+    "revision_requested",
     "released",
     "disputed",
     "resolved",
@@ -87,6 +88,14 @@ ATTESTATION_OUTCOME_ENUM = ENUM(
     "conditional",
     "rejected",
     name="attestation_outcome_enum",
+    create_type=False,
+)
+ATTESTATION_DISPUTE_CATEGORY_ENUM = ENUM(
+    "scope_error",
+    "process_violation",
+    "material_inaccuracy",
+    "conflict_of_interest",
+    name="attestation_dispute_category_enum",
     create_type=False,
 )
 ATTESTATION_OFFER_STATUS_ENUM = ENUM(
@@ -105,11 +114,11 @@ ATTESTATION_DISPUTE_STATUS_ENUM = ENUM(
     name="attestation_dispute_status_enum",
     create_type=False,
 )
-ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
-    "release",
-    "refund",
-    "split",
-    name="attestation_dispute_resolution_enum",
+ATTESTATION_DISPUTE_OUTCOME_ENUM = ENUM(
+    "rejected",
+    "upheld_refund",
+    "upheld_revise",
+    name="attestation_dispute_outcome_enum",
     create_type=False,
 )
 ATTESTATION_ANNOTATION_TYPE_ENUM = ENUM(
@@ -376,6 +385,10 @@ class AttestorProfile(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("0"),
     )
+    suspension_review_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class Credential(UpdatedAtMixin, Base):
@@ -551,6 +564,16 @@ class Attestation(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("false"),
     )
+    revision_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    report_published_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
 
 
 class AttestationOffer(Base):
@@ -652,16 +675,21 @@ class AttestationArtifactAccess(Base):
 
 
 class AttestationDispute(CreatedAtMixin, Base):
-    """Requestor-raised challenge to an attestation report."""
+    """Requestor-raised challenge to an attestation report.
+
+    Module 5 replaces the old resolution_type/split model with a three-outcome
+    enum (rejected, upheld_refund, upheld_revise) and adds SLA tracking columns.
+    """
 
     __tablename__ = "attestation_disputes"
     __table_args__ = (
-        CheckConstraint(
-            "resolution_type != 'split' "
-            "OR (release_amount IS NOT NULL AND refund_amount IS NOT NULL)",
-            name="ck_attestation_disputes_split_has_amounts",
-        ),
         Index("idx_attestation_disputes_status_created_at", "status", "created_at"),
+        Index(
+            "idx_attestation_disputes_raised_by_status_resolved",
+            "raised_by",
+            "status",
+            "resolved_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -679,22 +707,31 @@ class AttestationDispute(CreatedAtMixin, Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    category: Mapped[str] = mapped_column(
+        ATTESTATION_DISPUTE_CATEGORY_ENUM,
+        nullable=False,
+    )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         ATTESTATION_DISPUTE_STATUS_ENUM,
         nullable=False,
         server_default="open",
     )
-    resolution_type: Mapped[str | None] = mapped_column(
-        ATTESTATION_DISPUTE_RESOLUTION_ENUM,
+    outcome: Mapped[str | None] = mapped_column(
+        ATTESTATION_DISPUTE_OUTCOME_ENUM,
         nullable=True,
     )
-    release_amount: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2),
+    is_complex: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    resolution_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
-    refund_amount: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2),
+    resolution_overdue_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     admin_id: Mapped[UUID | None] = mapped_column(
@@ -710,6 +747,87 @@ class AttestationDispute(CreatedAtMixin, Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+
+class AttestationRating(Base):
+    """Requestor's 1-5 quality rating of a stood attestation report.
+
+    One immutable rating per attestation. Stored in Module 5; consumed by
+    Module 6.4 reputation scoring. Maps to workflow section 5.3.
+    """
+
+    __tablename__ = "attestation_ratings"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id", name="uq_attestation_ratings_attestation"
+        ),
+        CheckConstraint(
+            "stars BETWEEN 1 AND 5", name="ck_attestation_ratings_stars_range"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rated_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class AttestorWarning(Base):
+    """Formal warning recorded against an attestor on an upheld dispute.
+
+    Every upheld dispute (refund or revise) records one warning. Two warnings
+    inside a rolling 12 months flag the attestor's profile for human suspension
+    review — never an automatic deactivation. Maps to spec section 4.7.
+    """
+
+    __tablename__ = "attestor_warnings"
+    __table_args__ = (
+        Index(
+            "idx_attestor_warnings_attestor_created",
+            "attestor_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    dispute_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestation_disputes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
     )
 
 

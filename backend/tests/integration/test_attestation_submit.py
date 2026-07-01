@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import freezegun
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -134,6 +135,8 @@ async def _seed_in_review_attestation_with_rubric(
     *,
     missing_dimension_key: str | None = None,
     completion_due_at: datetime | None = None,
+    status: str = "in_review",
+    revision_count: int = 0,
 ) -> tuple[UUID, UUID]:
     """Create one in-review quality attestation with rubric rows for submission."""
     attestor = await _make_user("attestor", "attestor")
@@ -161,7 +164,7 @@ async def _seed_in_review_attestation_with_rubric(
             target_id=uuid4(),
             requestor_id=requestor.id,
             attestor_id=attestor.id,
-            status="in_review",
+            status=status,
             review_type="quality",
             fee_amount=Decimal("500.00"),
             currency="USD",
@@ -169,6 +172,7 @@ async def _seed_in_review_attestation_with_rubric(
             requested_jurisdictions=["US"],
             review_started_at=now,
             completion_due_at=completion_due_at or (now + timedelta(days=7)),
+            revision_count=revision_count,
         )
         session.add(attestation)
         await session.flush()
@@ -301,3 +305,93 @@ async def test_submit_past_deadline_within_grace_stamps_late(
     assert profile.late_submission_count == 1
     assert "attestation_late_submission" in audits
     assert FakeRenderTask.calls == [str(attestation_id)]
+
+
+@freezegun.freeze_time("2026-07-06T12:00:00Z")
+async def test_submit_sets_business_day_dispute_window(
+    client: AsyncClient,
+    clean_state,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report submit sets dispute_window_ends_at 5 business days out.
+
+    Enforces Module 5 spec section 4.2 (weekend-skipping window).
+    """
+    del clean_state
+    attestor_id, attestation_id = await _seed_in_review_attestation_with_rubric()
+    monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask,
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=_auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": " ".join(["summary"] * 200),
+            "scope": "Credential, process, and sample evidence review.",
+            "conditions": None,
+            "evidence_references": {},
+        },
+    )
+
+    assert response.status_code == 200
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    # 5 business days from Mon 2026-07-06 == Mon 2026-07-13.
+    expected_window = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    assert attestation.dispute_window_ends_at == expected_window
+
+
+@freezegun.freeze_time("2026-07-06T12:00:00Z")
+async def test_resubmit_from_revision_requested_reopens_window(
+    client: AsyncClient,
+    clean_state,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A revised report re-enters report_submitted with a fresh dispute window.
+
+    Enforces Module 5 spec section 4.6 (revise-resubmit loop): an admin who
+    upholds a dispute as ``upheld_revise`` reopens the attestation, and the
+    attestor may resubmit through the same report endpoint.
+    """
+    del clean_state
+    attestor_id, attestation_id = await _seed_in_review_attestation_with_rubric(
+        status="revision_requested",
+        revision_count=1,
+    )
+    monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask,
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=_auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": " ".join(["summary"] * 200),
+            "scope": "Credential, process, and sample evidence review.",
+            "conditions": None,
+            "evidence_references": {},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "report_submitted"
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    assert attestation is not None
+    assert attestation.status == "report_submitted"
+    # 5 business days from Mon 2026-07-06 == Mon 2026-07-13.
+    expected_window = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    assert attestation.dispute_window_ends_at == expected_window

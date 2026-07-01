@@ -21,6 +21,7 @@ from app.modules.attestation import (
     directory_service,
     dispute_service,
     matching_service,
+    rating_service,
     release_service,
     workspace_service,
 )
@@ -47,6 +48,8 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingResponse,
     AttestationPackageResponse,
+    AttestationRatingCreate,
+    AttestationRatingResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -645,11 +648,10 @@ async def resolve_attestation_dispute(
         redis=redis,
         admin=admin,
         dispute_id=dispute_id,
-        resolution_type=payload.resolution_type,
-        release_amount=payload.release_amount,
-        refund_amount=payload.refund_amount,
+        outcome=payload.outcome,
         resolution_notes=payload.resolution_notes,
         totp_code=payload.totp_code,
+        is_complex=payload.is_complex,
     )
     return AttestationDisputeResponse.model_validate(dispute)
 
@@ -714,6 +716,17 @@ async def list_attestor_assignments(
         db=db,
         attestor=attestor,
     )
+    # Compute requestor abuse flags in batch (one count per distinct requestor).
+    # Only the derived boolean is surfaced to the attestor; the requestor id is
+    # never exposed on this offer/preview payload (design section 4.5).
+    requestor_ids = {attestation.requestor_id for _, attestation in assignments}
+    flags: dict[UUID, bool] = {}
+    for r_id in requestor_ids:
+        count = await dispute_service.requestor_rejected_dispute_count(
+            db=db, requestor_id=r_id
+        )
+        flags[r_id] = count >= dispute_service.REQUESTOR_FLAG_THRESHOLD
+
     return AttestorAssignmentsResponse(
         assignments=[
             AttestorAssignmentResponse(
@@ -724,6 +737,7 @@ async def list_attestor_assignments(
                 attestation_status=attestation.status,
                 offer_status=offer.status,
                 cohort_index=offer.cohort_index,
+                requestor_flagged=flags[attestation.requestor_id],
                 requested_specializations=attestation.requested_specializations,
                 requested_jurisdictions=attestation.requested_jurisdictions,
                 expires_at=offer.expires_at,
@@ -1250,3 +1264,30 @@ async def get_attestation_package(
     return await access_service.get_attestation_package(
         db=db, user=user, attestation_id=attestation_id
     )
+
+
+@router.post(
+    "/attestations/{attestation_id}/rating",
+    response_model=AttestationRatingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Rate a stood attestation report",
+    description=(
+        "Record the requestor's one-time 1-5 rating of a stood report. Only "
+        "callable by the attestation's requestor once the report has stood."
+    ),
+)
+async def rate_attestation(
+    attestation_id: UUID,
+    payload: AttestationRatingCreate,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationRatingResponse:
+    """Submit a rating for an attestation."""
+    rating = await rating_service.submit_rating(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+        stars=payload.stars,
+        comment=payload.comment,
+    )
+    return AttestationRatingResponse.model_validate(rating)

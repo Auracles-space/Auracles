@@ -316,8 +316,14 @@ def notify_dispute_raised(attestation: Attestation) -> None:
     )
 
 
-def notify_dispute_resolved(attestation: Attestation, *, resolution_type: str) -> None:
-    """Notify both parties when an Attestation dispute is resolved."""
+def notify_dispute_resolved(attestation: Attestation, *, outcome: str) -> None:
+    """Notify both parties when an Attestation dispute is resolved.
+
+    Args:
+        attestation: The disputed attestation.
+        outcome: The resolution verdict — ``rejected``, ``upheld_refund``, or
+            ``upheld_revise``.
+    """
     recipients = [attestation.requestor_id]
     if attestation.attestor_id is not None:
         recipients.append(attestation.attestor_id)
@@ -328,9 +334,42 @@ def notify_dispute_resolved(attestation: Attestation, *, resolution_type: str) -
             title="Attestation dispute resolved",
             body="Admin resolved an Attestation dispute.",
             attestation=attestation,
-            dedupe_suffix=f"{resolution_type}:{user_id}",
-            extra_payload={"resolution_type": resolution_type},
+            dedupe_suffix=f"{outcome}:{user_id}",
+            extra_payload={"outcome": outcome},
         )
+
+
+def notify_attestor_warning(user_id: UUID, *, reason: str) -> bool:
+    """Notify an attestor that an upheld dispute recorded a formal warning.
+
+    Args:
+        user_id: The warned attestor.
+        reason: Short human-readable warning reason (no PII).
+
+    Returns:
+        True if the reminder was enqueued; False if dispatch failed.
+    """
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type="attestor_warning_issued",
+            title="A dispute was upheld against your attestation",
+            body=(
+                "An admin upheld a dispute on one of your attestations and "
+                "recorded a formal warning. Repeated warnings trigger a review."
+            ),
+            payload={"reason": reason},
+            link=_attestor_onboarding_link(),
+            dedupe_key=f"attestor_warning_issued:{user_id}:{reason}",
+        )
+    except Exception as exc:
+        logger.bind(
+            module="attestation",
+            action="queue_attestor_warning_notification",
+            user_id=user_id,
+        ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True
 
 
 def notify_refunded(attestation: Attestation, *, reason: str) -> None:

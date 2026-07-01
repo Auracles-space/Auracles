@@ -65,7 +65,7 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "attestation_completion_sla_days_operator",
     "attestation_completion_sla_days_credential",
     "attestation_offer_accept_hours",
-    "attestation_dispute_window_days",
+    "attestation_dispute_window_business_days",
     "saved_search_alert_cadence_hours",
     "consent_version_terms_of_service",
     "consent_version_privacy_policy",
@@ -121,7 +121,7 @@ ATTESTATION_INTEGER_RANGES = {
     "attestation_completion_sla_days_operator": (1, 30),
     "attestation_completion_sla_days_credential": (1, 30),
     "attestation_offer_accept_hours": (1, 168),
-    "attestation_dispute_window_days": (1, 30),
+    "attestation_dispute_window_business_days": (1, 30),
 }
 GMV_SOURCE_KEYS = (
     "framework_purchase",

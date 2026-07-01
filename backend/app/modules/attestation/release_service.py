@@ -123,6 +123,8 @@ async def _release_and_close(
     )
     attestation.status = "closed"
     attestation.closed_at = now
+    # A released report stood — stamp it publication-eligible for Module 6.
+    attestation.report_published_eligible = True
     await write_audit(
         db=db,
         actor_id=actor_id,

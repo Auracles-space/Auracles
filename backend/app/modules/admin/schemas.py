@@ -238,7 +238,7 @@ class AdminConfigUpdateItem(BaseModel):
         "attestation_completion_sla_days_operator",
         "attestation_completion_sla_days_credential",
         "attestation_offer_accept_hours",
-        "attestation_dispute_window_days",
+        "attestation_dispute_window_business_days",
         "saved_search_alert_cadence_hours",
         "consent_version_terms_of_service",
         "consent_version_privacy_policy",

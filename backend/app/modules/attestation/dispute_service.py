@@ -8,13 +8,12 @@ manually handle `needs_admin` Attestations without drifting escrow state.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -26,20 +25,26 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestorProfile,
+    AttestorWarning,
 )
 from app.modules.attestation.schemas import AttestationDisputeCreateRequest
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.shared.business_days import add_business_days
 
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
-
-
-def _normalise_money(amount: Decimal) -> Decimal:
-    """Return a two-decimal money value for dispute comparisons."""
-    return amount.quantize(Decimal("0.01"))
+DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
+DEFAULT_REVISION_SLA_BUSINESS_DAYS = 5
+RESOLUTION_SLA_STANDARD_BUSINESS_DAYS = 5
+RESOLUTION_SLA_COMPLEX_BUSINESS_DAYS = 15
+REQUESTOR_FLAG_THRESHOLD = 3
+REQUESTOR_FLAG_WINDOW_DAYS = 365
+SUSPENSION_REVIEW_THRESHOLD = 2
+SUSPENSION_REVIEW_WINDOW_DAYS = 365
+_UPHELD_OUTCOMES = ("upheld_refund", "upheld_revise")
 
 
 async def create_dispute(
@@ -75,10 +80,21 @@ async def create_dispute(
                 detail="Attestation dispute window has closed.",
             )
         await _reject_duplicate_active_dispute(db, attestation.id)
+        evidence = payload.reason.strip()
+        min_length = await _evidence_min_length(db)
+        if len(evidence) < min_length:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Dispute evidence is too short to substantiate the claim.",
+            )
         dispute = AttestationDispute(
             attestation_id=attestation.id,
             raised_by=requestor_id,
-            reason=payload.reason.strip(),
+            category=payload.category,
+            reason=evidence,
+            resolution_due_at=add_business_days(
+                current_time, RESOLUTION_SLA_STANDARD_BUSINESS_DAYS
+            ),
         )
         db.add(dispute)
         attestation.status = "disputed"
@@ -102,13 +118,41 @@ async def resolve_dispute(
     redis: Redis,
     admin: User,
     dispute_id: UUID,
-    resolution_type: str,
-    release_amount: Decimal | None,
-    refund_amount: Decimal | None,
+    outcome: str,
     resolution_notes: str,
     totp_code: str,
+    is_complex: bool = False,
 ) -> AttestationDispute:
-    """Resolve an Attestation dispute and synchronize escrow state."""
+    """Resolve an Attestation dispute with a three-outcome verdict.
+
+    Module 5 replaces the release/refund/split money-split model with a single
+    ``outcome``:
+
+    * ``rejected`` — the report stands. Escrow releases to the attestor, the
+      attestation closes, and it becomes publication-eligible.
+    * ``upheld_refund`` — the dispute is upheld with a refund. Escrow is refunded
+      to the requestor, the attestation closes, and publication is suppressed.
+    * ``upheld_revise`` — the dispute is upheld requiring a revision. Escrow stays
+      held, the attestation reopens as ``revision_requested`` with a fresh
+      revision SLA, and ``revision_count`` increments.
+
+    Args:
+        db: Async database session.
+        redis: Redis client for admin TOTP verification.
+        admin: Authenticated admin performing the resolution.
+        dispute_id: Dispute being resolved.
+        outcome: One of ``rejected``, ``upheld_refund``, ``upheld_revise``.
+        resolution_notes: Admin's rationale (audited).
+        totp_code: Admin TOTP for the sensitive action.
+
+    Returns:
+        The resolved dispute row.
+
+    Raises:
+        HTTPException(404): Dispute not found.
+        HTTPException(409): Dispute already resolved, or attestation not disputed.
+        HTTPException(502): Stripe refund failure on ``upheld_refund``.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
@@ -141,20 +185,20 @@ async def resolve_dispute(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Attestation is not in dispute.",
             )
-        escrow = await _load_attestation_escrow(
-            db=db,
-            attestation=attestation,
-        )
-        transaction = await _load_escrow_transaction(db=db, escrow=escrow)
-        normalized_release, normalized_refund = _validate_resolution_amounts(
-            resolution_type=resolution_type,
-            attestation_fee=attestation.fee_amount,
-            release_amount=release_amount,
-            refund_amount=refund_amount,
-        )
+        if is_complex and not dispute.is_complex:
+            # Complex disputes get the extended 15-business-day resolution SLA,
+            # measured from when the dispute was raised.
+            dispute.is_complex = True
+            dispute.resolution_due_at = add_business_days(
+                dispute.created_at, RESOLUTION_SLA_COMPLEX_BUSINESS_DAYS
+            )
         notes = resolution_notes.strip()
         now = datetime.now(UTC)
-        if resolution_type == "release":
+        escrow_id_value: str | None = None
+        warned_attestor_id: UUID | None = None
+        if outcome == "rejected":
+            escrow = await _load_attestation_escrow(db=db, attestation=attestation)
+            escrow_id_value = str(escrow.id)
             await escrow_service.release(
                 db,
                 escrow_id=escrow.id,
@@ -162,8 +206,14 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            audit_action = "attestation_released"
-        elif resolution_type == "refund":
+            attestation.status = "closed"
+            attestation.closed_at = now
+            attestation.report_published_eligible = True
+            attestation_audit_action = "attestation_released"
+        elif outcome == "upheld_refund":
+            escrow = await _load_attestation_escrow(db=db, attestation=attestation)
+            escrow_id_value = str(escrow.id)
+            transaction = await _load_escrow_transaction(db=db, escrow=escrow)
             await _refund_escrow_to_stripe(
                 escrow=escrow,
                 transaction=transaction,
@@ -176,60 +226,64 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            audit_action = "attestation_refunded"
-        else:
-            assert normalized_release is not None
-            assert normalized_refund is not None
-            await escrow_service.split(
-                db,
-                escrow_id=escrow.id,
-                actor_id=admin_id,
-                release_amount=normalized_release,
-                refund_amount=normalized_refund,
-                reason=notes,
-                admin_override=True,
-            )
-            audit_action = "attestation_released"
+            attestation.status = "closed"
+            attestation.closed_at = now
+            attestation.report_published_eligible = False
+            attestation_audit_action = "attestation_refunded"
+        else:  # upheld_revise — escrow stays held, report goes back for revision
+            revision_sla = await _revision_sla_business_days(db)
+            attestation.status = "revision_requested"
+            attestation.revision_count += 1
+            attestation.completion_due_at = add_business_days(now, revision_sla)
+            attestation_audit_action = "attestation_revision_requested"
 
         dispute.status = "resolved"
-        dispute.resolution_type = resolution_type
-        dispute.release_amount = normalized_release
-        dispute.refund_amount = normalized_refund
+        dispute.outcome = outcome
         dispute.admin_id = admin_id
         dispute.resolution_notes = notes
         dispute.resolved_at = now
-        attestation.status = "closed"
-        attestation.closed_at = now
+        if outcome in _UPHELD_OUTCOMES and attestation.attestor_id is not None:
+            warned_attestor_id = attestation.attestor_id
+            await _write_warning(
+                db,
+                attestor_id=attestation.attestor_id,
+                dispute_id=dispute.id,
+                reason=f"Dispute upheld ({outcome}): {notes}",
+                now=now,
+            )
+        resolution_metadata: dict[str, str] = {
+            "attestation_id": str(attestation.id),
+            "outcome": outcome,
+        }
+        if escrow_id_value is not None:
+            resolution_metadata["escrow_id"] = escrow_id_value
         await write_audit(
             db=db,
             actor_id=admin_id,
             action="attestation_dispute_resolved",
             target_type="attestation_dispute",
             target_id=dispute.id,
-            metadata={
-                "attestation_id": str(attestation.id),
-                "resolution_type": resolution_type,
-                "escrow_id": str(escrow.id),
-            },
+            metadata=resolution_metadata,
         )
         await write_audit(
             db=db,
             actor_id=admin_id,
-            action=audit_action,
+            action=attestation_audit_action,
             target_type="attestation",
             target_id=attestation.id,
             metadata={
                 "reason": "dispute_resolution",
-                "resolution_type": resolution_type,
+                "outcome": outcome,
                 "dispute_id": str(dispute.id),
             },
         )
         await db.flush()
         await db.refresh(dispute)
-    attestation_notifications.notify_dispute_resolved(
-        attestation,
-        resolution_type=resolution_type,
-    )
+    attestation_notifications.notify_dispute_resolved(attestation, outcome=outcome)
+    if warned_attestor_id is not None:
+        attestation_notifications.notify_attestor_warning(
+            warned_attestor_id, reason=f"Dispute upheld ({outcome})."
+        )
     return dispute
 
 
@@ -381,9 +435,23 @@ async def escalate_attestation_disputes(
     *,
     now: datetime | None = None,
 ) -> int:
-    """Move stale open Attestation disputes into admin review."""
+    """Flag Attestation disputes that missed their resolution SLA.
+
+    Selects active disputes (``open`` or ``under_review``) whose
+    ``resolution_due_at`` has passed and that are not already flagged, stamps
+    ``resolution_overdue_at``, moves ``open`` disputes to ``under_review``, and
+    audits the miss for admin attention. Money never moves here — there is no
+    auto-resolve. Idempotent: a dispute already carrying
+    ``resolution_overdue_at`` is skipped (spec section 4.8).
+
+    Args:
+        db: Async database session.
+        now: Optional clock override for tests.
+
+    Returns:
+        The number of disputes newly flagged overdue.
+    """
     current_time = now or datetime.now(UTC)
-    cutoff = current_time - timedelta(days=7)
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -392,8 +460,10 @@ async def escalate_attestation_disputes(
                 await db.execute(
                     select(AttestationDispute)
                     .where(
-                        AttestationDispute.status == "open",
-                        AttestationDispute.created_at < cutoff,
+                        AttestationDispute.status.in_(ACTIVE_DISPUTE_STATUSES),
+                        AttestationDispute.resolution_due_at.is_not(None),
+                        AttestationDispute.resolution_due_at <= current_time,
+                        AttestationDispute.resolution_overdue_at.is_(None),
                     )
                     .with_for_update()
                 )
@@ -402,17 +472,53 @@ async def escalate_attestation_disputes(
             .all()
         )
         for dispute in disputes:
-            dispute.status = "under_review"
-            dispute.escalated_at = current_time
+            dispute.resolution_overdue_at = current_time
+            if dispute.status == "open":
+                dispute.status = "under_review"
+                dispute.escalated_at = current_time
             await write_audit(
                 db=db,
                 actor_id=None,
-                action="attestation_dispute_escalated",
+                action="attestation_dispute_resolution_overdue",
                 target_type="attestation_dispute",
                 target_id=dispute.id,
                 metadata={"attestation_id": str(dispute.attestation_id)},
             )
+            logger.bind(
+                module="attestation",
+                action="attestation_dispute_resolution_overdue",
+                dispute_id=dispute.id,
+            ).warning("attestation_dispute_resolution_overdue")
     return len(disputes)
+
+
+async def requestor_rejected_dispute_count(
+    db: AsyncSession,
+    *,
+    requestor_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Count a requestor's rejected disputes in the trailing 12 months.
+
+    Rejected disputes (report stood against the requestor) are the abuse
+    signal surfaced to attestors at match time. Derived, never stored.
+
+    Maps to: Module 5 design spec section 4.5.
+    """
+    current_time = now or datetime.now(UTC)
+    cutoff = current_time - timedelta(days=REQUESTOR_FLAG_WINDOW_DAYS)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AttestationDispute)
+        .where(
+            AttestationDispute.raised_by == requestor_id,
+            AttestationDispute.status == "resolved",
+            AttestationDispute.outcome == "rejected",
+            AttestationDispute.resolved_at.is_not(None),
+            AttestationDispute.resolved_at >= cutoff,
+        )
+    )
+    return int(count or 0)
 
 
 async def _load_attestation_for_update(
@@ -498,6 +604,16 @@ async def _next_cohort_index(db: AsyncSession, attestation_id: UUID) -> int:
     return int(current_max) + 1
 
 
+async def _evidence_min_length(db: AsyncSession) -> int:
+    """Return the configured minimum dispute-evidence character length."""
+    return await _platform_int_config(
+        db,
+        key="attestation_dispute_evidence_min_length",
+        default=DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH,
+        minimum=1,
+    )
+
+
 async def _platform_int_config(
     db: AsyncSession,
     *,
@@ -547,35 +663,87 @@ async def _verify_admin_2fa(
     )
 
 
-def _validate_resolution_amounts(
+async def _revision_sla_business_days(db: AsyncSession) -> int:
+    """Return the configured revision-resubmission SLA in business days."""
+    return await _platform_int_config(
+        db,
+        key="attestation_revision_sla_business_days",
+        default=DEFAULT_REVISION_SLA_BUSINESS_DAYS,
+        minimum=1,
+    )
+
+
+async def attestor_upheld_warning_count(
+    db: AsyncSession,
     *,
-    resolution_type: str,
-    attestation_fee: Decimal,
-    release_amount: Decimal | None,
-    refund_amount: Decimal | None,
-) -> tuple[Decimal | None, Decimal | None]:
-    """Validate resolution amounts against the Attestation fee amount."""
-    fee = _normalise_money(attestation_fee)
-    if resolution_type == "split":
-        if release_amount is None or refund_amount is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Split resolution requires release and refund amounts.",
-            )
-        normalized_release = _normalise_money(release_amount)
-        normalized_refund = _normalise_money(refund_amount)
-        if normalized_release + normalized_refund != fee:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Split amounts must equal the Attestation fee.",
-            )
-        return normalized_release, normalized_refund
-    if release_amount is not None or refund_amount is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Amounts are only accepted for split resolution.",
+    attestor_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Count an attestor's formal warnings in the trailing 12 months.
+
+    Warnings accrue on every upheld dispute (refund or revise). The rolling
+    count drives the suspension-review flag. Maps to spec section 4.7.
+    """
+    current_time = now or datetime.now(UTC)
+    cutoff = current_time - timedelta(days=SUSPENSION_REVIEW_WINDOW_DAYS)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AttestorWarning)
+        .where(
+            AttestorWarning.attestor_id == attestor_id,
+            AttestorWarning.created_at >= cutoff,
         )
-    return None, None
+    )
+    return int(count or 0)
+
+
+async def _write_warning(
+    db: AsyncSession,
+    *,
+    attestor_id: UUID,
+    dispute_id: UUID,
+    reason: str,
+    now: datetime,
+) -> None:
+    """Record one attestor warning and flag suspension review if due.
+
+    Writes the warning, notifies the attestor, and — when the rolling count
+    reaches ``SUSPENSION_REVIEW_THRESHOLD`` — stamps the profile's
+    ``suspension_review_at`` and audits it. Never deactivates an attestor; the
+    flag is a human-review signal only (spec section 4.7).
+    """
+    db.add(
+        AttestorWarning(
+            attestor_id=attestor_id,
+            dispute_id=dispute_id,
+            reason=reason,
+        )
+    )
+    await db.flush()
+    count = await attestor_upheld_warning_count(db, attestor_id=attestor_id, now=now)
+    if count < SUSPENSION_REVIEW_THRESHOLD:
+        return
+    profile = await db.scalar(
+        select(AttestorProfile)
+        .where(AttestorProfile.user_id == attestor_id)
+        .with_for_update()
+    )
+    if profile is None or profile.suspension_review_at is not None:
+        return
+    profile.suspension_review_at = now
+    await write_audit(
+        db=db,
+        actor_id=None,
+        action="attestor_suspension_review_flagged",
+        target_type="attestor_profile",
+        target_id=profile.id,
+        metadata={"upheld_warnings": count},
+    )
+    logger.bind(
+        module="attestation",
+        action="attestor_suspension_review_flagged",
+        attestor_id=attestor_id,
+    ).warning("attestor_suspension_review_flagged")
 
 
 async def _load_attestation_escrow(

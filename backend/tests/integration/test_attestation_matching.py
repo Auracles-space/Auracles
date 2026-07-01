@@ -14,7 +14,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -37,10 +37,10 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
     AttestorApplication,
     AttestorProfile,
+    AttestorWarning,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
-from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.projects.models import Milestone, Project, Proposal
@@ -160,6 +160,7 @@ async def reset_matching_state() -> None:
             await session.execute(delete(WorkspaceMessage))
             await session.execute(delete(AttestationUploadSession))
             await session.execute(delete(AttestationOffer))
+            await session.execute(delete(AttestorWarning))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
             await session.execute(delete(AttestorProfile))
@@ -177,7 +178,7 @@ async def reset_matching_state() -> None:
                 "attestation_cohort_size": "2",
                 "attestation_offer_accept_hours": "48",
                 "attestation_completion_sla_days_operator": "7",
-                "attestation_dispute_window_days": "14",
+                "attestation_dispute_window_business_days": "5",
             }.items():
                 row = await session.get(PlatformConfig, key)
                 if row is None:
@@ -1203,6 +1204,7 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     assert attestation is not None
     assert attestation.status == "closed"
     assert attestation.closed_at is not None
+    assert attestation.report_published_eligible is True
     assert transaction is not None
     assert transaction.status == "completed"
     assert transaction.payee_id == attestor_id
@@ -1247,6 +1249,7 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
                 AttestationDispute(
                     attestation_id=disputed_id,
                     raised_by=requestor_id,
+                    category="process_violation",
                     reason="The evidence does not match the report.",
                     status="open",
                 )
@@ -1275,6 +1278,7 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
     assert releasable is not None
     assert releasable.status == "closed"
     assert releasable.closed_at is not None
+    assert releasable.report_published_eligible is True
     assert releasable_escrow is not None
     assert releasable_escrow.status == "released"
     assert disputed is not None
@@ -1308,12 +1312,18 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     response = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"reason": "The public report omits evidence we submitted."},
+        json={
+            "category": "scope_error",
+            "reason": "The public report omits evidence we submitted.",
+        },
     )
     duplicate = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"reason": "Duplicate active dispute should be blocked."},
+        json={
+            "category": "scope_error",
+            "reason": "Duplicate active dispute should be blocked.",
+        },
     )
 
     async with async_session_factory() as session:
@@ -1341,13 +1351,94 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert notification_calls[0]["user_id"] == str(attestor_id)
 
 
-async def test_admin_resolves_attestation_dispute_with_split(
+async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     client: AsyncClient,
     migrated_database: None,
     matching_context: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Admin split resolution releases part of an Attestation fee and refunds rest."""
+    """Rejecting a dispute releases escrow and marks the report publishable."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+    notification_calls: list[dict[str, Any]] = []
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    requestor_id = await create_user("reject-req@auracles.space", ["operator"])
+    attestor_id = await create_user("reject-att@auracles.space", ["attestor"])
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, _, escrow_id = await create_report_submitted_attestation(
+        requestor_id, attestor_id
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "scope_error",
+            "reason": "The report partly overstates what was verified here.",
+        },
+    )
+    dispute_id = raised.json()["id"]
+    resolved = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "outcome": "rejected",
+            "resolution_notes": "Report is sound; the findings stand on review.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "is_complex": True,
+        },
+    )
+    double_resolve = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "outcome": "rejected",
+            "resolution_notes": "Duplicate resolution should be blocked.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        dispute = await session.get(AttestationDispute, UUID(dispute_id))
+        escrow = await session.get(Escrow, escrow_id)
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert raised.status_code == 201
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["outcome"] == "rejected"
+    assert double_resolve.status_code == 409
+    assert attestation is not None
+    assert attestation.status == "closed"
+    assert attestation.closed_at is not None
+    assert attestation.report_published_eligible is True
+    assert dispute is not None
+    assert dispute.outcome == "rejected"
+    assert dispute.is_complex is True
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert escrow.released_by == admin_id
+
+
+async def test_admin_upholds_refund_refunds_and_suppresses_publication(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uphold-with-refund refunds escrow and suppresses report publication."""
     del migrated_database, matching_context
     fake_redis = FakeRedis()
     refund_calls: list[dict[str, Any]] = []
@@ -1364,7 +1455,7 @@ async def test_admin_resolves_attestation_dispute_with_split(
         currency: str,
         idempotency_key: str,
     ) -> FakeStripeRefund:
-        """Record the Stripe refund portion of a split resolution."""
+        """Record the Stripe refund of an upheld-refund resolution."""
         refund_calls.append(
             {
                 "payment_intent_id": payment_intent_id,
@@ -1373,24 +1464,18 @@ async def test_admin_resolves_attestation_dispute_with_split(
                 "idempotency_key": idempotency_key,
             }
         )
-        return FakeStripeRefund("re_attestation_split_123")
+        return FakeStripeRefund("re_attestation_refund_123")
 
     app.dependency_overrides[get_redis] = override_redis
-    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
     monkeypatch.setattr(
         notifications,
         "dispatch_project_notification",
         FakeNotificationTask(notification_calls),
     )
 
-    requestor_id = await create_user(
-        "split-dispute-requestor@auracles.space",
-        ["operator"],
-    )
-    attestor_id = await create_user(
-        "split-dispute-attestor@auracles.space",
-        ["attestor"],
-    )
+    requestor_id = await create_user("refund-req@auracles.space", ["operator"])
+    attestor_id = await create_user("refund-att@auracles.space", ["attestor"])
     admin_id, totp_secret = await create_admin_user()
     attestation_id, transaction_id, escrow_id = (
         await create_report_submitted_attestation(requestor_id, attestor_id)
@@ -1398,37 +1483,18 @@ async def test_admin_resolves_attestation_dispute_with_split(
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"reason": "The report partly overstates what was verified."},
-    )
-    dispute_id = raised.json()["id"]
-    bad_split = await client.post(
-        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
-        headers=auth_headers(admin_id, ["admin"]),
         json={
-            "resolution_type": "split",
-            "release_amount": "200.00",
-            "refund_amount": "50.00",
-            "resolution_notes": "Amounts do not match the attestation fee.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "category": "conflict_of_interest",
+            "reason": "The attestor had an undisclosed conflict with the target.",
         },
     )
+    dispute_id = raised.json()["id"]
     resolved = await client.post(
         f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
         headers=auth_headers(admin_id, ["admin"]),
         json={
-            "resolution_type": "split",
-            "release_amount": "180.00",
-            "refund_amount": "120.00",
-            "resolution_notes": "Report partially accepted after review.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
-        },
-    )
-    double_resolve = await client.post(
-        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
-        headers=auth_headers(admin_id, ["admin"]),
-        json={
-            "resolution_type": "release",
-            "resolution_notes": "Duplicate resolution should be blocked.",
+            "outcome": "upheld_refund",
+            "resolution_notes": "Undisclosed conflict confirmed; refund the fee.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
@@ -1437,80 +1503,109 @@ async def test_admin_resolves_attestation_dispute_with_split(
         attestation = await session.get(Attestation, attestation_id)
         dispute = await session.get(AttestationDispute, UUID(dispute_id))
         escrow = await session.get(Escrow, escrow_id)
-        transactions = (
-            (
-                await session.execute(
-                    select(Transaction).where(
-                        Transaction.ref_id == attestation_id,
-                        Transaction.ref_type == "attestation",
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestation_dispute_resolved",
-                AuditLog.target_id == UUID(dispute_id),
-            )
+        transaction = await session.get(Transaction, transaction_id)
+        warning_count = await session.scalar(
+            select(func.count())
+            .select_from(AttestorWarning)
+            .where(AttestorWarning.attestor_id == attestor_id)
         )
 
     app.dependency_overrides.pop(get_redis, None)
 
     assert raised.status_code == 201
-    assert bad_split.status_code == 422
     assert resolved.status_code == 200
-    assert resolved.json()["status"] == "resolved"
-    assert resolved.json()["resolution_type"] == "split"
-    assert double_resolve.status_code == 409
+    assert resolved.json()["outcome"] == "upheld_refund"
+    assert warning_count == 1
     assert attestation is not None
     assert attestation.status == "closed"
-    assert attestation.closed_at is not None
+    assert attestation.report_published_eligible is False
     assert dispute is not None
-    assert dispute.status == "resolved"
-    assert dispute.release_amount == Decimal("180.00")
-    assert dispute.refund_amount == Decimal("120.00")
+    assert dispute.outcome == "upheld_refund"
     assert escrow is not None
-    assert escrow.status == "released"
-    assert escrow.released_by == admin_id
-    assert sorted(
-        (
-            transaction.id == transaction_id,
-            transaction.transaction_type,
-            transaction.amount,
-            transaction.status,
-        )
-        for transaction in transactions
-    ) == sorted(
-        [
-            (True, "attestation_fee", Decimal("300.00"), "refunded"),
-            (False, "attestation_fee", Decimal("180.00"), "completed"),
-            (False, "refund", Decimal("120.00"), "refunded"),
-        ]
-    )
+    assert escrow.status == "refunded"
+    assert transaction is not None
+    assert transaction.status == "refunded"
     assert refund_calls == [
         {
-            "payment_intent_id": next(
-                transaction.provider_ref
-                for transaction in transactions
-                if transaction.id == transaction_id
-            ),
-            "amount": Decimal("120.00"),
+            "payment_intent_id": transaction.provider_ref,
+            "amount": Decimal("300.00"),
             "currency": "USD",
-            "idempotency_key": f"escrow_split_refund:{escrow_id}",
+            "idempotency_key": f"attestation_dispute_refund:{escrow_id}",
         }
     ]
-    assert audit is not None
-    assert [call["notification_type"] for call in notification_calls] == [
-        "attestation_disputed",
-        "attestation_dispute_resolved",
-        "attestation_dispute_resolved",
-    ]
-    assert {call["user_id"] for call in notification_calls[1:]} == {
-        str(requestor_id),
-        str(attestor_id),
-    }
+
+
+async def test_admin_upholds_revise_reopens_for_resubmission(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uphold-with-revise reopens the attestation and leaves escrow held."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+    notification_calls: list[dict[str, Any]] = []
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    requestor_id = await create_user("revise-req@auracles.space", ["operator"])
+    attestor_id = await create_user("revise-att@auracles.space", ["attestor"])
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, _, escrow_id = await create_report_submitted_attestation(
+        requestor_id, attestor_id
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "scope_error",
+            "reason": "The wrong version of the framework was reviewed here.",
+        },
+    )
+    dispute_id = raised.json()["id"]
+    resolved = await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "outcome": "upheld_revise",
+            "resolution_notes": "Wrong version reviewed; revise against v2.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        dispute = await session.get(AttestationDispute, UUID(dispute_id))
+        escrow = await session.get(Escrow, escrow_id)
+        warning_count = await session.scalar(
+            select(func.count())
+            .select_from(AttestorWarning)
+            .where(AttestorWarning.attestor_id == attestor_id)
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert raised.status_code == 201
+    assert resolved.status_code == 200
+    assert resolved.json()["outcome"] == "upheld_revise"
+    assert warning_count == 1
+    assert attestation is not None
+    assert attestation.status == "revision_requested"
+    assert attestation.revision_count == 1
+    assert attestation.completion_due_at is not None
+    assert dispute is not None
+    assert dispute.outcome == "upheld_revise"
+    assert escrow is not None
+    assert escrow.status == "held"
 
 
 async def test_admin_manually_assigns_needs_admin_attestation(
@@ -1673,53 +1768,63 @@ async def test_admin_refunds_needs_admin_attestation(
     assert audit is not None
 
 
-async def test_escalate_attestation_disputes_moves_stale_open_disputes_under_review(
+async def test_escalate_attestation_disputes_flags_overdue_resolutions(
     migrated_database: None,
     matching_context: dict[str, Any],
 ) -> None:
-    """Open Attestation disputes older than seven days escalate once."""
+    """A dispute past its resolution SLA is flagged overdue, never auto-resolved.
+
+    Enforces Module 5 spec section 4.8 (money stays human — no auto-resolve).
+    """
     del migrated_database, matching_context
     requestor_id = await create_user(
-        "stale-dispute-requestor@auracles.space",
+        "overdue-dispute-requestor@auracles.space",
         ["operator"],
     )
     attestor_id = await create_user(
-        "stale-dispute-attestor@auracles.space",
+        "overdue-dispute-attestor@auracles.space",
         ["attestor"],
     )
     attestation_id, _, _ = await create_report_submitted_attestation(
         requestor_id,
         attestor_id,
     )
+    frozen_now = datetime.now(UTC)
     async with async_session_factory() as session:
         async with session.begin():
             dispute = AttestationDispute(
                 attestation_id=attestation_id,
                 raised_by=requestor_id,
-                reason="This old dispute needs admin attention.",
+                category="process_violation",
+                reason="This dispute passed its resolution SLA without a decision.",
                 status="open",
-                created_at=datetime.now(UTC) - timedelta(days=8),
+                resolution_due_at=frozen_now - timedelta(minutes=1),
             )
             session.add(dispute)
             await session.flush()
             dispute_id = dispute.id
 
     async with async_session_factory() as session:
-        escalated_count = await dispute_service.escalate_attestation_disputes(session)
-        second_count = await dispute_service.escalate_attestation_disputes(session)
+        flagged = await dispute_service.escalate_attestation_disputes(
+            session, now=frozen_now
+        )
+        second_count = await dispute_service.escalate_attestation_disputes(
+            session, now=frozen_now
+        )
 
     async with async_session_factory() as session:
         dispute = await session.get(AttestationDispute, dispute_id)
         audit = await session.scalar(
             select(AuditLog).where(
-                AuditLog.action == "attestation_dispute_escalated",
+                AuditLog.action == "attestation_dispute_resolution_overdue",
                 AuditLog.target_id == dispute_id,
             )
         )
 
-    assert escalated_count == 1
+    assert flagged == 1
     assert second_count == 0
     assert dispute is not None
+    assert dispute.resolution_overdue_at is not None
+    assert dispute.status != "resolved"  # never auto-resolved
     assert dispute.status == "under_review"
-    assert dispute.escalated_at is not None
     assert audit is not None
