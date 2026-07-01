@@ -89,6 +89,14 @@ ATTESTATION_OUTCOME_ENUM = ENUM(
     name="attestation_outcome_enum",
     create_type=False,
 )
+ATTESTATION_DISPUTE_CATEGORY_ENUM = ENUM(
+    "scope_error",
+    "process_violation",
+    "material_inaccuracy",
+    "conflict_of_interest",
+    name="attestation_dispute_category_enum",
+    create_type=False,
+)
 ATTESTATION_OFFER_STATUS_ENUM = ENUM(
     "offered",
     "accepted",
@@ -662,6 +670,12 @@ class AttestationDispute(CreatedAtMixin, Base):
             name="ck_attestation_disputes_split_has_amounts",
         ),
         Index("idx_attestation_disputes_status_created_at", "status", "created_at"),
+        Index(
+            "idx_attestation_disputes_raised_by_status_resolved",
+            "raised_by",
+            "status",
+            "resolved_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -677,6 +691,10 @@ class AttestationDispute(CreatedAtMixin, Base):
     raised_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(
+        ATTESTATION_DISPUTE_CATEGORY_ENUM,
         nullable=False,
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
