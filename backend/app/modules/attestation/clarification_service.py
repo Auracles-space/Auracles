@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.attestation import notifications as attestation_notifications
-from app.modules.attestation.models import AttestationClarification
+from app.modules.attestation.models import Attestation, AttestationClarification
 from app.modules.attestation.workspace_service import load_workspace_attestation
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig
@@ -150,4 +150,94 @@ async def send_clarification(
         attestation,
         requestor_id=attestation.requestor_id,
     )
+    return clarification
+
+
+async def respond_to_clarification(
+    db: AsyncSession,
+    *,
+    requestor: User,
+    attestation_id: UUID,
+    clarification_id: UUID,
+    response: str,
+    now: datetime | None = None,
+) -> AttestationClarification:
+    """Record the requestor response and return unused SLA time.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated requestor responding to the clarification.
+        attestation_id: Attestation containing the clarification.
+        clarification_id: Clarification being answered.
+        response: Requestor answer text.
+        now: Optional timestamp override for deterministic tests.
+
+    Returns:
+        The updated clarification row.
+
+    Raises:
+        HTTPException: 404 when the attestation is not visible to the requestor
+            or the clarification does not exist, and 409 when the
+            clarification is no longer open.
+    """
+    current_time = now or datetime.now(UTC)
+    requestor_id = requestor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = await db.scalar(
+            select(Attestation)
+            .where(Attestation.id == attestation_id)
+            .with_for_update()
+        )
+        if attestation is None or attestation.requestor_id != requestor_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+
+        clarification = await db.scalar(
+            select(AttestationClarification)
+            .where(
+                AttestationClarification.id == clarification_id,
+                AttestationClarification.attestation_id == attestation_id,
+            )
+            .with_for_update()
+        )
+        if clarification is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Clarification not found.",
+            )
+        if clarification.status != "open":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Clarification is no longer open.",
+            )
+
+        clarification.response = response
+        clarification.responded_at = current_time
+        clarification.status = "answered"
+
+        remainder = clarification.response_due_at - current_time
+        if remainder.total_seconds() > 0 and attestation.completion_due_at is not None:
+            attestation.completion_due_at = attestation.completion_due_at - remainder
+
+        await write_audit(
+            db=db,
+            actor_id=requestor_id,
+            action="attestation_clarification_answered",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"clarification_id": str(clarification.id)},
+        )
+        await db.flush()
+
+    await db.refresh(clarification)
+    if attestation.attestor_id is not None:
+        attestation_notifications.notify_clarification_answered(
+            attestation,
+            attestor_id=attestation.attestor_id,
+        )
     return clarification

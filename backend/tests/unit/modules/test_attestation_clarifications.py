@@ -154,6 +154,14 @@ async def _force_answer(db_session, clarification_id: UUID) -> None:
     await db_session.commit()
 
 
+async def _requestor_of(attestation: Attestation) -> User:
+    """Load the requestor for one attestation."""
+    async with async_session_factory() as session:
+        requestor = await session.get(User, attestation.requestor_id)
+        assert requestor is not None
+        return requestor
+
+
 async def test_send_extends_completion_deadline(db_session) -> None:
     """Sending a clarification pushes completion_due_at out by the 48h window."""
     attestor, _requestor, attestation = await _in_review_attestation()
@@ -197,3 +205,57 @@ async def test_third_clarification_rejected(db_session) -> None:
         )
 
     assert exc.value.status_code == 422
+
+
+async def test_respond_trims_unused_remainder(db_session) -> None:
+    """Answering early returns the unused clarification remainder to the SLA."""
+    attestor, _requestor, attestation = await _in_review_attestation()
+    sent_at = datetime.now(UTC)
+    clarification = await clarification_service.send_clarification(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        question="Which version is in scope?",
+        now=sent_at,
+    )
+    refreshed = await db_session.get(Attestation, attestation.id)
+    assert refreshed is not None
+    extended_due_at = refreshed.completion_due_at
+    assert extended_due_at is not None
+
+    responded_at = sent_at + timedelta(hours=10)
+    requestor = await _requestor_of(attestation)
+    await clarification_service.respond_to_clarification(
+        db_session,
+        requestor=requestor,
+        attestation_id=attestation.id,
+        clarification_id=clarification.id,
+        response="Use version 2.",
+        now=responded_at,
+    )
+
+    refreshed = await db_session.get(Attestation, attestation.id)
+    assert refreshed is not None
+    assert refreshed.completion_due_at == extended_due_at - timedelta(hours=38)
+
+
+async def test_only_requestor_can_respond(db_session) -> None:
+    """A non-requestor cannot answer a clarification on the assignment."""
+    attestor, _requestor, attestation = await _in_review_attestation()
+    clarification = await clarification_service.send_clarification(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        question="Which version is in scope?",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await clarification_service.respond_to_clarification(
+            db_session,
+            requestor=attestor,
+            attestation_id=attestation.id,
+            clarification_id=clarification.id,
+            response="Version 2.",
+        )
+
+    assert exc.value.status_code == 404
