@@ -696,7 +696,9 @@ async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
             attestation.status = "accepted"
             attestation.attestor_id = first_attestor_id
             attestation.accepted_at = current_time - timedelta(days=8)
-            attestation.completion_due_at = current_time - timedelta(hours=1)
+            # Past SLA *and* past the 24h completion grace window (§4.8), so the
+            # grace-aware revoke beat fires.
+            attestation.completion_due_at = current_time - timedelta(hours=25)
             transaction.status = "completed"
             transaction.payee_id = first_attestor_id
             session.add(
