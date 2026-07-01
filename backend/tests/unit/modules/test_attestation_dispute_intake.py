@@ -13,6 +13,7 @@ from alembic.config import Config
 from fastapi import HTTPException
 from sqlalchemy import create_engine, delete
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
@@ -85,7 +86,7 @@ async def clean_state(migrated_database) -> AsyncIterator[None]:
 
 
 @pytest.fixture
-async def db_session(clean_state) -> AsyncIterator:
+async def db_session(clean_state) -> AsyncIterator[AsyncSession]:
     """Provide an async session for tests."""
     del clean_state
     async with async_session_factory() as session:
@@ -174,3 +175,43 @@ async def test_dispute_stores_category(db_session) -> None:
         ),
     )
     assert dispute.category == "material_inaccuracy"
+
+
+async def _seed_rejected_disputes(
+    db_session: AsyncSession, *, requestor_id: UUID, count: int, resolved_at: datetime
+) -> None:
+    for _ in range(count):
+        attestation = await _report_submitted_within_window(db_session)
+        attestation.requestor_id = requestor_id
+        await db_session.flush()
+        db_session.add(
+            AttestationDispute(
+                attestation_id=attestation.id,
+                raised_by=requestor_id,
+                category="material_inaccuracy",
+                reason="Test reason",
+                status="resolved",
+                resolved_at=resolved_at,
+            )
+        )
+    await db_session.commit()
+
+
+async def test_requestor_flag_threshold(db_session) -> None:
+    """Three rejected disputes inside 12 months flags the requestor."""
+    frozen_now = datetime.now(UTC)
+    requestor = await _make_user("operator", "serial")
+    await _seed_rejected_disputes(db_session, requestor_id=requestor.id, count=2,
+                                  resolved_at=frozen_now)
+    
+    count_2 = await dispute_service.requestor_rejected_dispute_count(
+        db_session, requestor_id=requestor.id, now=frozen_now
+    )
+    assert count_2 < dispute_service.REQUESTOR_FLAG_THRESHOLD
+
+    await _seed_rejected_disputes(db_session, requestor_id=requestor.id, count=1,
+                                  resolved_at=frozen_now)
+    count_3 = await dispute_service.requestor_rejected_dispute_count(
+        db_session, requestor_id=requestor.id, now=frozen_now
+    )
+    assert count_3 >= dispute_service.REQUESTOR_FLAG_THRESHOLD

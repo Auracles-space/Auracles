@@ -634,6 +634,8 @@ class AttestorAssignmentResponse(BaseModel):
     attestation_status: str
     offer_status: str
     cohort_index: int
+    requestor_id: UUID
+    requestor_flagged: bool
     requested_specializations: list[str]
     requested_jurisdictions: list[str]
     expires_at: datetime

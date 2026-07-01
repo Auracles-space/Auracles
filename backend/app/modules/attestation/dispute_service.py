@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -32,10 +32,11 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
-
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
 DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
+REQUESTOR_FLAG_THRESHOLD = 3
+REQUESTOR_FLAG_WINDOW_DAYS = 365
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
@@ -422,6 +423,35 @@ async def escalate_attestation_disputes(
                 metadata={"attestation_id": str(dispute.attestation_id)},
             )
     return len(disputes)
+
+
+async def requestor_rejected_dispute_count(
+    db: AsyncSession,
+    *,
+    requestor_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Count a requestor's rejected disputes in the trailing 12 months.
+
+    Rejected disputes (report stood against the requestor) are the abuse
+    signal surfaced to attestors at match time. Derived, never stored.
+
+    Maps to: Module 5 design spec section 4.5.
+    """
+    current_time = now or datetime.now(UTC)
+    cutoff = current_time - timedelta(days=REQUESTOR_FLAG_WINDOW_DAYS)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AttestationDispute)
+        .where(
+            AttestationDispute.raised_by == requestor_id,
+            AttestationDispute.status == "resolved",
+            # TODO(module5-slice4): tighten to AttestationDispute.outcome == "rejected"
+            AttestationDispute.resolved_at.is_not(None),
+            AttestationDispute.resolved_at >= cutoff,
+        )
+    )
+    return int(count or 0)
 
 
 async def _load_attestation_for_update(

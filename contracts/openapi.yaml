@@ -13562,6 +13562,13 @@ components:
         cohort_index:
           type: integer
           title: Cohort Index
+        requestor_id:
+          type: string
+          format: uuid
+          title: Requestor Id
+        requestor_flagged:
+          type: boolean
+          title: Requestor Flagged
         requested_specializations:
           items:
             type: string
@@ -13597,6 +13604,8 @@ components:
       - attestation_status
       - offer_status
       - cohort_index
+      - requestor_id
+      - requestor_flagged
       - requested_specializations
       - requested_jurisdictions
       - expires_at

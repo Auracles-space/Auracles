@@ -717,6 +717,16 @@ async def list_attestor_assignments(
         db=db,
         attestor=attestor,
     )
+    
+    # Compute requestor abuse flags in batch
+    requestor_ids = {attestation.requestor_id for _, attestation in assignments}
+    flags = {}
+    for r_id in requestor_ids:
+        count = await dispute_service.requestor_rejected_dispute_count(
+            db=db, requestor_id=r_id
+        )
+        flags[r_id] = count >= dispute_service.REQUESTOR_FLAG_THRESHOLD
+
     return AttestorAssignmentsResponse(
         assignments=[
             AttestorAssignmentResponse(
@@ -727,6 +737,8 @@ async def list_attestor_assignments(
                 attestation_status=attestation.status,
                 offer_status=offer.status,
                 cohort_index=offer.cohort_index,
+                requestor_id=attestation.requestor_id,
+                requestor_flagged=flags[attestation.requestor_id],
                 requested_specializations=attestation.requested_specializations,
                 requested_jurisdictions=attestation.requested_jurisdictions,
                 expires_at=offer.expires_at,
