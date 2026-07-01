@@ -70,6 +70,7 @@ ATTESTATION_STATUS_ENUM = ENUM(
     "matching",
     "offered",
     "accepted",
+    "in_review",
     "report_submitted",
     "released",
     "disputed",
@@ -109,6 +110,21 @@ ATTESTATION_DISPUTE_RESOLUTION_ENUM = ENUM(
     "refund",
     "split",
     name="attestation_dispute_resolution_enum",
+    create_type=False,
+)
+ATTESTATION_ANNOTATION_TYPE_ENUM = ENUM(
+    "endorsement",
+    "concern",
+    "jurisdictional_caveat",
+    "revision_recommended",
+    name="attestation_annotation_type_enum",
+    create_type=False,
+)
+ATTESTATION_CLARIFICATION_STATUS_ENUM = ENUM(
+    "open",
+    "answered",
+    "expired",
+    name="attestation_clarification_status_enum",
     create_type=False,
 )
 ATTESTATION_UPLOAD_PURPOSE_ENUM = ENUM(
@@ -355,6 +371,11 @@ class AttestorProfile(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    late_submission_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
 
 
 class Credential(UpdatedAtMixin, Base):
@@ -519,6 +540,17 @@ class Attestation(UpdatedAtMixin, Base):
         nullable=True,
     )
     content_ack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    rubric_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_late: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
 
 
 class AttestationOffer(Base):
@@ -678,6 +710,186 @@ class AttestationDispute(CreatedAtMixin, Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+
+class AttestationRubricDimension(Base):
+    """Seeded, versioned rubric dimension for one attestation review type."""
+
+    __tablename__ = "attestation_rubric_dimensions"
+    __table_args__ = (
+        UniqueConstraint(
+            "review_type",
+            "version",
+            "key",
+            name="uq_attestation_rubric_dimensions_type_version_key",
+        ),
+        Index(
+            "idx_attestation_rubric_dimensions_type_version_order",
+            "review_type",
+            "version",
+            "display_order",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    review_type: Mapped[str] = mapped_column(
+        ATTESTATION_REVIEW_TYPE_ENUM,
+        nullable=False,
+    )
+    key: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+
+
+class AttestationRubricMethodology(Base):
+    """Seeded canned methodology text per review type and rubric version."""
+
+    __tablename__ = "attestation_rubric_methodology"
+    __table_args__ = (
+        UniqueConstraint(
+            "review_type",
+            "version",
+            name="uq_attestation_rubric_methodology_type_version",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    review_type: Mapped[str] = mapped_column(
+        ATTESTATION_REVIEW_TYPE_ENUM,
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    text_body: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AttestationRubricScore(UpdatedAtMixin, CreatedAtMixin, Base):
+    """One stored score and comment for a rubric dimension on an attestation."""
+
+    __tablename__ = "attestation_rubric_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id",
+            "dimension_id",
+            name="uq_attestation_rubric_scores_attestation_dimension",
+        ),
+        CheckConstraint(
+            "score IS NULL OR (score BETWEEN 1 AND 5)",
+            name="ck_attestation_rubric_scores_range",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dimension_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestation_rubric_dimensions.id"),
+        nullable=False,
+    )
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AttestationAnnotation(UpdatedAtMixin, CreatedAtMixin, Base):
+    """Free-anchor annotation attached to one attestation workspace."""
+
+    __tablename__ = "attestation_annotations"
+    __table_args__ = (
+        Index("idx_attestation_annotations_attestation", "attestation_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    artifact_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=True,
+    )
+    location_label: Mapped[str] = mapped_column(Text, nullable=False)
+    quoted_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annotation_type: Mapped[str] = mapped_column(
+        ATTESTATION_ANNOTATION_TYPE_ENUM,
+        nullable=False,
+    )
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AttestationClarification(Base):
+    """Attestor-to-requestor clarification with tracked response deadline."""
+
+    __tablename__ = "attestation_clarifications"
+    __table_args__ = (
+        Index(
+            "idx_attestation_clarifications_status_due",
+            "status",
+            "response_due_at",
+        ),
+        Index("idx_attestation_clarifications_attestation", "attestation_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    response_due_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        ATTESTATION_CLARIFICATION_STATUS_ENUM,
+        nullable=False,
+        server_default="open",
     )
 
 
