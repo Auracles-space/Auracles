@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import freezegun
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -301,3 +302,43 @@ async def test_submit_past_deadline_within_grace_stamps_late(
     assert profile.late_submission_count == 1
     assert "attestation_late_submission" in audits
     assert FakeRenderTask.calls == [str(attestation_id)]
+
+
+@freezegun.freeze_time("2026-07-06T12:00:00Z")
+async def test_submit_sets_business_day_dispute_window(
+    client: AsyncClient,
+    clean_state,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report submit sets dispute_window_ends_at 5 business days out.
+
+    Enforces Module 5 spec section 4.2 (weekend-skipping window).
+    """
+    del clean_state
+    attestor_id, attestation_id = await _seed_in_review_attestation_with_rubric()
+    monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask,
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=_auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": " ".join(["summary"] * 200),
+            "scope": "Credential, process, and sample evidence review.",
+            "conditions": None,
+            "evidence_references": {},
+        },
+    )
+
+    assert response.status_code == 200
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    # 5 business days from Mon 2026-07-06 == Mon 2026-07-13.
+    assert attestation.dispute_window_ends_at == datetime(2026, 7, 13, 12, 0, tzinfo=UTC)

@@ -33,12 +33,13 @@ from app.modules.attestation.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig
+from app.shared.business_days import add_business_days
 from app.workers.tasks.attestation_pdf import render_attestation_report_pdf
 from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 
 REPORT_EVIDENCE_UPLOAD_TTL_SECONDS = 300
 REPORT_EVIDENCE_MAX_BYTES = 25 * 1024 * 1024
-DEFAULT_DISPUTE_WINDOW_DAYS = 14
+DEFAULT_DISPUTE_WINDOW_BUSINESS_DAYS = 5
 
 
 def attestation_report_key(attestation_id: UUID | str) -> str:
@@ -158,10 +159,10 @@ async def submit_report(
                 file_keys=evidence_file_keys,
                 now=now,
             )
-        dispute_window_days = await _platform_int_config(
+        dispute_window_business_days = await _platform_int_config(
             db,
-            key="attestation_dispute_window_days",
-            default=DEFAULT_DISPUTE_WINDOW_DAYS,
+            key="attestation_dispute_window_business_days",
+            default=DEFAULT_DISPUTE_WINDOW_BUSINESS_DAYS,
             minimum=1,
         )
         attestation.status = "report_submitted"
@@ -172,7 +173,9 @@ async def submit_report(
         attestation.evidence_references = payload.evidence_references
         attestation.report_key = report_key
         attestation.issued_at = now
-        attestation.dispute_window_ends_at = now + timedelta(days=dispute_window_days)
+        attestation.dispute_window_ends_at = add_business_days(
+            now, dispute_window_business_days
+        )
         attestation.rubric_version = rubrics.RUBRIC_VERSION
         if (
             attestation.completion_due_at is not None
