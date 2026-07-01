@@ -80,7 +80,7 @@ async def create_report_evidence_upload_session(
             db=db,
             attestation_id=attestation_id,
             attestor_id=attestor_id,
-            allowed_statuses={"accepted"},
+            allowed_statuses={"in_review"},
         )
         upload_session = AttestationUploadSession(
             attestation_id=attestation_id,

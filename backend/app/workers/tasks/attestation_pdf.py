@@ -107,7 +107,10 @@ REPORT_TEMPLATE = Environment(autoescape=True).from_string(
         {% if findings %}
           {% for finding in findings %}
             <div class="block">
-              <p><strong>{{ finding.annotation_type }}</strong> · {{ finding.location_label }}</p>
+              <p>
+                <strong>{{ finding.annotation_type }}</strong> ·
+                {{ finding.location_label }}
+              </p>
               {% if finding.quoted_excerpt %}
                 <p>{{ finding.quoted_excerpt }}</p>
               {% endif %}
@@ -198,7 +201,8 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
                     )
                     .where(
                         AttestationRubricScore.attestation_id == attestation.id,
-                        AttestationRubricDimension.review_type == attestation.review_type,
+                        AttestationRubricDimension.review_type
+                        == attestation.review_type,
                         AttestationRubricDimension.version == rubric_version,
                     )
                     .order_by(AttestationRubricDimension.display_order)
@@ -240,7 +244,10 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         for dimension, score in dimension_rows
         if score.score is not None
     }
-    weighted_overall = rubrics.weighted_overall(score_map, attestation.review_type or "")
+    weighted_overall = rubrics.weighted_overall(
+        score_map,
+        attestation.review_type or "",
+    )
     supplementary_notes = None
     if attestation.evidence_references:
         supplementary_notes = str(attestation.evidence_references)

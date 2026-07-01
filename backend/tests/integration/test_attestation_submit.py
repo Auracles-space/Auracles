@@ -17,9 +17,8 @@ from sqlalchemy import create_engine, delete, select
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
+from app.modules.attestation import notifications, rubrics
 from app.modules.attestation import report as report_service
-from app.modules.attestation import rubrics
-from app.modules.attestation import notifications
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
@@ -254,7 +253,7 @@ async def test_submit_past_deadline_within_grace_stamps_late(
     clean_state,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Submitting after completion_due_at marks the report late and increments the profile."""
+    """Submitting after completion_due_at marks late and increments the profile."""
     del clean_state
     due_at = datetime.now(UTC) - timedelta(hours=1)
     attestor_id, attestation_id = await _seed_in_review_attestation_with_rubric(

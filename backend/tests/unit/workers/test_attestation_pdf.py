@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -101,7 +101,7 @@ async def _make_user(role: str, prefix: str) -> User:
 
 
 async def _seed_submitted_attestation() -> UUID:
-    """Create one submitted attestation with full rubric, findings, and identity data."""
+    """Create one submitted attestation with full rubric and identity data."""
     attestor = await _make_user("attestor", "attestor")
     requestor = await _make_user("operator", "requestor")
     now = datetime.now(UTC)

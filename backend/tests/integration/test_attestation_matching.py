@@ -25,12 +25,15 @@ from app.modules.attestation import (
     matching_service,
     notifications,
     release_service,
+    rubrics,
 )
 from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationDispute,
     AttestationOffer,
+    AttestationRubricDimension,
+    AttestationRubricScore,
     AttestationUploadSession,
     AttestorApplication,
     AttestorProfile,
@@ -307,6 +310,37 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
     return {"Authorization": f"Bearer {token}"}
+
+
+async def seed_quality_rubric_scores(attestation_id: UUID) -> None:
+    """Populate a quality workspace with complete rubric scores and comments."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            dimensions = (
+                (
+                    await session.execute(
+                        select(AttestationRubricDimension).where(
+                            AttestationRubricDimension.review_type == "quality",
+                            AttestationRubricDimension.version
+                            == rubrics.RUBRIC_VERSION,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for dimension in dimensions:
+                session.add(
+                    AttestationRubricScore(
+                        attestation_id=attestation_id,
+                        dimension_id=dimension.id,
+                        score=5,
+                        comment=(
+                            f"{dimension.label} is fully covered in this review "
+                            "with detailed evidence and implementation notes."
+                        ),
+                    )
+                )
 
 
 def payment_intent_event(
@@ -814,6 +848,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
         "dispatch_project_notification",
         FakeNotificationTask(notification_calls),
     )
+    report_summary = " ".join(["reviewed"] * 80)
 
     current_time = datetime.now(UTC)
     async with async_session_factory() as session:
@@ -822,9 +857,11 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
             transaction = await session.get(Transaction, transaction_id)
             assert attestation is not None
             assert transaction is not None
-            attestation.status = "accepted"
+            attestation.status = "in_review"
             attestation.attestor_id = attestor_id
             attestation.accepted_at = current_time
+            attestation.review_type = "quality"
+            attestation.review_started_at = current_time
             attestation.completion_due_at = current_time + timedelta(days=7)
             transaction.status = "completed"
             transaction.payee_id = attestor_id
@@ -839,6 +876,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
                     expires_at=current_time + timedelta(hours=47),
                 )
             )
+    await seed_quality_rubric_scores(attestation_id)
 
     upload_response = await client.post(
         f"/v1/attestations/{attestation_id}/uploads",
@@ -855,7 +893,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
         headers=auth_headers(attestor_id, ["attestor"]),
         json={
             "outcome": "approved",
-            "summary": "The reviewed operator evidence supports approval.",
+            "summary": report_summary,
             "scope": "Credential, process, and sample evidence review.",
             "evidence_references": {"file_keys": [evidence_key]},
         },
@@ -885,7 +923,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
         headers=auth_headers(attestor_id, ["attestor"]),
         json={
             "outcome": "approved",
-            "summary": "The reviewed operator evidence supports approval.",
+            "summary": report_summary,
             "scope": "Credential, process, and sample evidence review.",
             "evidence_references": {"file_keys": [evidence_key]},
         },
@@ -914,9 +952,7 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
     assert report_response.status_code == 200
     assert report_response.json()["status"] == "report_submitted"
     assert report_response.json()["outcome"] == "approved"
-    assert report_response.json()["summary"] == (
-        "The reviewed operator evidence supports approval."
-    )
+    assert report_response.json()["summary"] == report_summary
     assert report_response.json()["report_key"] == (
         f"attestation-reports/{attestation_id}/report.pdf"
     )
@@ -1004,8 +1040,8 @@ async def test_unassigned_attestor_cannot_submit_report(
         },
     )
 
-    assert upload_response.status_code == 403
-    assert report_response.status_code == 403
+    assert upload_response.status_code == 404
+    assert report_response.status_code == 404
 
 
 async def create_report_submitted_attestation(

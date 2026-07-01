@@ -110,12 +110,13 @@ async def evaluate_quality_gate(
 
     for dimension in dimensions:
         row = scores_by_dimension.get(dimension.id)
-        if row is None or row.score is None or not (row.comment or "").strip():
+        comment_text = (row.comment or "") if row is not None else ""
+        if row is None or row.score is None or not comment_text.strip():
             failures.append(
                 f"Rubric dimension '{dimension.label}' needs a score and comment."
             )
             continue
-        comment_word_count += len(row.comment.split())
+        comment_word_count += len(comment_text.split())
 
     stripped_conditions = (conditions or "").strip()
     if outcome == "conditional" and not stripped_conditions:
