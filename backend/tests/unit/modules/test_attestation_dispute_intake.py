@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -203,7 +203,7 @@ async def test_requestor_flag_threshold(db_session) -> None:
     requestor = await _make_user("operator", "serial")
     await _seed_rejected_disputes(db_session, requestor_id=requestor.id, count=2,
                                   resolved_at=frozen_now)
-    
+
     count_2 = await dispute_service.requestor_rejected_dispute_count(
         db_session, requestor_id=requestor.id, now=frozen_now
     )
@@ -215,3 +215,24 @@ async def test_requestor_flag_threshold(db_session) -> None:
         db_session, requestor_id=requestor.id, now=frozen_now
     )
     assert count_3 >= dispute_service.REQUESTOR_FLAG_THRESHOLD
+
+
+async def test_requestor_flag_ignores_disputes_older_than_window(
+    db_session,
+) -> None:
+    """Disputes resolved more than 12 months ago fall outside the count.
+
+    Enforces spec section 4.5 — the abuse signal is a trailing-12-month
+    rolling window, not a lifetime tally.
+    """
+    frozen_now = datetime.now(UTC)
+    aged = frozen_now - timedelta(days=dispute_service.REQUESTOR_FLAG_WINDOW_DAYS + 1)
+    requestor = await _make_user("operator", "reformed")
+    await _seed_rejected_disputes(
+        db_session, requestor_id=requestor.id, count=3, resolved_at=aged
+    )
+
+    count = await dispute_service.requestor_rejected_dispute_count(
+        db_session, requestor_id=requestor.id, now=frozen_now
+    )
+    assert count == 0

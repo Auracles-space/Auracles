@@ -717,10 +717,11 @@ async def list_attestor_assignments(
         db=db,
         attestor=attestor,
     )
-    
-    # Compute requestor abuse flags in batch
+    # Compute requestor abuse flags in batch (one count per distinct requestor).
+    # Only the derived boolean is surfaced to the attestor; the requestor id is
+    # never exposed on this offer/preview payload (design section 4.5).
     requestor_ids = {attestation.requestor_id for _, attestation in assignments}
-    flags = {}
+    flags: dict[UUID, bool] = {}
     for r_id in requestor_ids:
         count = await dispute_service.requestor_rejected_dispute_count(
             db=db, requestor_id=r_id
@@ -737,7 +738,6 @@ async def list_attestor_assignments(
                 attestation_status=attestation.status,
                 offer_status=offer.status,
                 cohort_index=offer.cohort_index,
-                requestor_id=attestation.requestor_id,
                 requestor_flagged=flags[attestation.requestor_id],
                 requested_specializations=attestation.requested_specializations,
                 requested_jurisdictions=attestation.requested_jurisdictions,

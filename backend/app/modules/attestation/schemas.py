@@ -634,7 +634,6 @@ class AttestorAssignmentResponse(BaseModel):
     attestation_status: str
     offer_status: str
     cohort_index: int
-    requestor_id: UUID
     requestor_flagged: bool
     requested_specializations: list[str]
     requested_jurisdictions: list[str]
@@ -790,7 +789,5 @@ class AttestationRatingResponse(BaseModel):
     stars: int
     comment: str | None
     created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)

@@ -32,6 +32,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
 DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40

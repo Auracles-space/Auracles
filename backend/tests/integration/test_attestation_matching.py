@@ -1309,12 +1309,18 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     response = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"category": "scope_error", "reason": "The public report omits evidence we submitted."},
+        json={
+            "category": "scope_error",
+            "reason": "The public report omits evidence we submitted.",
+        },
     )
     duplicate = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"category": "scope_error", "reason": "Duplicate active dispute should be blocked."},
+        json={
+            "category": "scope_error",
+            "reason": "Duplicate active dispute should be blocked.",
+        },
     )
 
     async with async_session_factory() as session:
@@ -1399,7 +1405,10 @@ async def test_admin_resolves_attestation_dispute_with_split(
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
-        json={"category": "scope_error", "reason": "The report partly overstates what was verified."},
+        json={
+            "category": "scope_error",
+            "reason": "The report partly overstates what was verified.",
+        },
     )
     dispute_id = raised.json()["id"]
     bad_split = await client.post(
