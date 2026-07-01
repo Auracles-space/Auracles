@@ -10853,29 +10853,13 @@ components:
       description: Admin request body for manually assigning a needs-admin Attestation.
     AdminAttestationDisputeResolveRequest:
       properties:
-        resolution_type:
+        outcome:
           type: string
           enum:
-          - release
-          - refund
-          - split
-          title: Resolution Type
-        release_amount:
-          anyOf:
-          - type: number
-            exclusiveMinimum: 0.0
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
-          - type: 'null'
-          title: Release Amount
-        refund_amount:
-          anyOf:
-          - type: number
-            exclusiveMinimum: 0.0
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
-          - type: 'null'
-          title: Refund Amount
+          - rejected
+          - upheld_refund
+          - upheld_revise
+          title: Outcome
         resolution_notes:
           type: string
           maxLength: 4000
@@ -10888,11 +10872,18 @@ components:
           title: Totp Code
       type: object
       required:
-      - resolution_type
+      - outcome
       - resolution_notes
       - totp_code
       title: AdminAttestationDisputeResolveRequest
-      description: Admin request body for resolving an Attestation dispute.
+      description: 'Admin request body for resolving an Attestation dispute.
+
+
+        Module 5 replaces the old release/refund/split money-split model with a
+
+        three-outcome verdict: reject the dispute (report stands, release escrow),
+
+        uphold with a refund, or uphold requiring the attestor to revise.'
     AdminAttestationRefundRequest:
       properties:
         reason:
@@ -12720,23 +12711,20 @@ components:
         status:
           type: string
           title: Status
-        resolution_type:
+        outcome:
           anyOf:
           - type: string
           - type: 'null'
-          title: Resolution Type
-        release_amount:
+          title: Outcome
+        is_complex:
+          type: boolean
+          title: Is Complex
+        resolution_due_at:
           anyOf:
           - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            format: date-time
           - type: 'null'
-          title: Release Amount
-        refund_amount:
-          anyOf:
-          - type: string
-            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-          - type: 'null'
-          title: Refund Amount
+          title: Resolution Due At
         admin_id:
           anyOf:
           - type: string
@@ -12772,9 +12760,9 @@ components:
       - category
       - reason
       - status
-      - resolution_type
-      - release_amount
-      - refund_amount
+      - outcome
+      - is_complex
+      - resolution_due_at
       - admin_id
       - resolution_notes
       - escalated_at

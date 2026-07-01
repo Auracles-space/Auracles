@@ -8,7 +8,6 @@ manually handle `needs_admin` Attestations without drifting escrow state.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -32,17 +31,14 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.shared.business_days import add_business_days
 
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
 DEFAULT_DISPUTE_EVIDENCE_MIN_LENGTH = 40
+DEFAULT_REVISION_SLA_BUSINESS_DAYS = 5
 REQUESTOR_FLAG_THRESHOLD = 3
 REQUESTOR_FLAG_WINDOW_DAYS = 365
-
-
-def _normalise_money(amount: Decimal) -> Decimal:
-    """Return a two-decimal money value for dispute comparisons."""
-    return amount.quantize(Decimal("0.01"))
 
 
 async def create_dispute(
@@ -113,13 +109,40 @@ async def resolve_dispute(
     redis: Redis,
     admin: User,
     dispute_id: UUID,
-    resolution_type: str,
-    release_amount: Decimal | None,
-    refund_amount: Decimal | None,
+    outcome: str,
     resolution_notes: str,
     totp_code: str,
 ) -> AttestationDispute:
-    """Resolve an Attestation dispute and synchronize escrow state."""
+    """Resolve an Attestation dispute with a three-outcome verdict.
+
+    Module 5 replaces the release/refund/split money-split model with a single
+    ``outcome``:
+
+    * ``rejected`` — the report stands. Escrow releases to the attestor, the
+      attestation closes, and it becomes publication-eligible.
+    * ``upheld_refund`` — the dispute is upheld with a refund. Escrow is refunded
+      to the requestor, the attestation closes, and publication is suppressed.
+    * ``upheld_revise`` — the dispute is upheld requiring a revision. Escrow stays
+      held, the attestation reopens as ``revision_requested`` with a fresh
+      revision SLA, and ``revision_count`` increments.
+
+    Args:
+        db: Async database session.
+        redis: Redis client for admin TOTP verification.
+        admin: Authenticated admin performing the resolution.
+        dispute_id: Dispute being resolved.
+        outcome: One of ``rejected``, ``upheld_refund``, ``upheld_revise``.
+        resolution_notes: Admin's rationale (audited).
+        totp_code: Admin TOTP for the sensitive action.
+
+    Returns:
+        The resolved dispute row.
+
+    Raises:
+        HTTPException(404): Dispute not found.
+        HTTPException(409): Dispute already resolved, or attestation not disputed.
+        HTTPException(502): Stripe refund failure on ``upheld_refund``.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
@@ -152,20 +175,12 @@ async def resolve_dispute(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Attestation is not in dispute.",
             )
-        escrow = await _load_attestation_escrow(
-            db=db,
-            attestation=attestation,
-        )
-        transaction = await _load_escrow_transaction(db=db, escrow=escrow)
-        normalized_release, normalized_refund = _validate_resolution_amounts(
-            resolution_type=resolution_type,
-            attestation_fee=attestation.fee_amount,
-            release_amount=release_amount,
-            refund_amount=refund_amount,
-        )
         notes = resolution_notes.strip()
         now = datetime.now(UTC)
-        if resolution_type == "release":
+        escrow_id_value: str | None = None
+        if outcome == "rejected":
+            escrow = await _load_attestation_escrow(db=db, attestation=attestation)
+            escrow_id_value = str(escrow.id)
             await escrow_service.release(
                 db,
                 escrow_id=escrow.id,
@@ -173,8 +188,14 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            audit_action = "attestation_released"
-        elif resolution_type == "refund":
+            attestation.status = "closed"
+            attestation.closed_at = now
+            attestation.report_published_eligible = True
+            attestation_audit_action = "attestation_released"
+        elif outcome == "upheld_refund":
+            escrow = await _load_attestation_escrow(db=db, attestation=attestation)
+            escrow_id_value = str(escrow.id)
+            transaction = await _load_escrow_transaction(db=db, escrow=escrow)
             await _refund_escrow_to_stripe(
                 escrow=escrow,
                 transaction=transaction,
@@ -187,60 +208,51 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            audit_action = "attestation_refunded"
-        else:
-            assert normalized_release is not None
-            assert normalized_refund is not None
-            await escrow_service.split(
-                db,
-                escrow_id=escrow.id,
-                actor_id=admin_id,
-                release_amount=normalized_release,
-                refund_amount=normalized_refund,
-                reason=notes,
-                admin_override=True,
-            )
-            audit_action = "attestation_released"
+            attestation.status = "closed"
+            attestation.closed_at = now
+            attestation.report_published_eligible = False
+            attestation_audit_action = "attestation_refunded"
+        else:  # upheld_revise — escrow stays held, report goes back for revision
+            revision_sla = await _revision_sla_business_days(db)
+            attestation.status = "revision_requested"
+            attestation.revision_count += 1
+            attestation.completion_due_at = add_business_days(now, revision_sla)
+            attestation_audit_action = "attestation_revision_requested"
 
         dispute.status = "resolved"
-        dispute.resolution_type = resolution_type
-        dispute.release_amount = normalized_release
-        dispute.refund_amount = normalized_refund
+        dispute.outcome = outcome
         dispute.admin_id = admin_id
         dispute.resolution_notes = notes
         dispute.resolved_at = now
-        attestation.status = "closed"
-        attestation.closed_at = now
+        resolution_metadata: dict[str, str] = {
+            "attestation_id": str(attestation.id),
+            "outcome": outcome,
+        }
+        if escrow_id_value is not None:
+            resolution_metadata["escrow_id"] = escrow_id_value
         await write_audit(
             db=db,
             actor_id=admin_id,
             action="attestation_dispute_resolved",
             target_type="attestation_dispute",
             target_id=dispute.id,
-            metadata={
-                "attestation_id": str(attestation.id),
-                "resolution_type": resolution_type,
-                "escrow_id": str(escrow.id),
-            },
+            metadata=resolution_metadata,
         )
         await write_audit(
             db=db,
             actor_id=admin_id,
-            action=audit_action,
+            action=attestation_audit_action,
             target_type="attestation",
             target_id=attestation.id,
             metadata={
                 "reason": "dispute_resolution",
-                "resolution_type": resolution_type,
+                "outcome": outcome,
                 "dispute_id": str(dispute.id),
             },
         )
         await db.flush()
         await db.refresh(dispute)
-    attestation_notifications.notify_dispute_resolved(
-        attestation,
-        resolution_type=resolution_type,
-    )
+    attestation_notifications.notify_dispute_resolved(attestation, outcome=outcome)
     return dispute
 
 
@@ -597,35 +609,14 @@ async def _verify_admin_2fa(
     )
 
 
-def _validate_resolution_amounts(
-    *,
-    resolution_type: str,
-    attestation_fee: Decimal,
-    release_amount: Decimal | None,
-    refund_amount: Decimal | None,
-) -> tuple[Decimal | None, Decimal | None]:
-    """Validate resolution amounts against the Attestation fee amount."""
-    fee = _normalise_money(attestation_fee)
-    if resolution_type == "split":
-        if release_amount is None or refund_amount is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Split resolution requires release and refund amounts.",
-            )
-        normalized_release = _normalise_money(release_amount)
-        normalized_refund = _normalise_money(refund_amount)
-        if normalized_release + normalized_refund != fee:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Split amounts must equal the Attestation fee.",
-            )
-        return normalized_release, normalized_refund
-    if release_amount is not None or refund_amount is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Amounts are only accepted for split resolution.",
-        )
-    return None, None
+async def _revision_sla_business_days(db: AsyncSession) -> int:
+    """Return the configured revision-resubmission SLA in business days."""
+    return await _platform_int_config(
+        db,
+        key="attestation_revision_sla_business_days",
+        default=DEFAULT_REVISION_SLA_BUSINESS_DAYS,
+        minimum=1,
+    )
 
 
 async def _load_attestation_escrow(

@@ -648,9 +648,7 @@ async def resolve_attestation_dispute(
         redis=redis,
         admin=admin,
         dispute_id=dispute_id,
-        resolution_type=payload.resolution_type,
-        release_amount=payload.release_amount,
-        refund_amount=payload.refund_amount,
+        outcome=payload.outcome,
         resolution_notes=payload.resolution_notes,
         totp_code=payload.totp_code,
     )

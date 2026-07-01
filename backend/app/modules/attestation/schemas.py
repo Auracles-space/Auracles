@@ -518,9 +518,9 @@ class AttestationDisputeResponse(BaseModel):
     category: str
     reason: str
     status: str
-    resolution_type: str | None
-    release_amount: Decimal | None
-    refund_amount: Decimal | None
+    outcome: str | None
+    is_complex: bool
+    resolution_due_at: datetime | None
     admin_id: UUID | None
     resolution_notes: str | None
     escalated_at: datetime | None
@@ -531,21 +531,14 @@ class AttestationDisputeResponse(BaseModel):
 
 
 class AdminAttestationDisputeResolveRequest(BaseModel):
-    """Admin request body for resolving an Attestation dispute."""
+    """Admin request body for resolving an Attestation dispute.
 
-    resolution_type: Literal["release", "refund", "split"]
-    release_amount: Decimal | None = Field(
-        default=None,
-        gt=0,
-        max_digits=12,
-        decimal_places=2,
-    )
-    refund_amount: Decimal | None = Field(
-        default=None,
-        gt=0,
-        max_digits=12,
-        decimal_places=2,
-    )
+    Module 5 replaces the old release/refund/split money-split model with a
+    three-outcome verdict: reject the dispute (report stands, release escrow),
+    uphold with a refund, or uphold requiring the attestor to revise.
+    """
+
+    outcome: Literal["rejected", "upheld_refund", "upheld_revise"]
     resolution_notes: str = Field(min_length=5, max_length=4000)
     totp_code: str = Field(min_length=6, max_length=16)
 
