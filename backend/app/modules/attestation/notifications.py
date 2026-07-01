@@ -253,6 +253,40 @@ def notify_report_submitted(attestation: Attestation) -> None:
     )
 
 
+def notify_clarification_requested(
+    attestation: Attestation,
+    *,
+    requestor_id: UUID,
+    clarification_id: UUID,
+) -> None:
+    """Notify the requestor that the assigned attestor asked a question."""
+    _dispatch(
+        user_id=requestor_id,
+        notification_type="attestation_clarification_requested",
+        title="Clarification requested",
+        body="The assigned attestor asked a question about your request.",
+        attestation=attestation,
+        dedupe_suffix=f"clarification-requested:{clarification_id}",
+    )
+
+
+def notify_clarification_answered(
+    attestation: Attestation,
+    *,
+    attestor_id: UUID,
+    clarification_id: UUID,
+) -> None:
+    """Notify the attestor that the requestor answered a clarification."""
+    _dispatch(
+        user_id=attestor_id,
+        notification_type="attestation_clarification_answered",
+        title="Clarification answered",
+        body="The requestor answered your clarification question.",
+        attestation=attestation,
+        dedupe_suffix=f"clarification-answered:{clarification_id}",
+    )
+
+
 def notify_released(attestation: Attestation, *, reason: str) -> None:
     """Notify the assigned Attestor that escrow has been released."""
     if attestation.attestor_id is None:

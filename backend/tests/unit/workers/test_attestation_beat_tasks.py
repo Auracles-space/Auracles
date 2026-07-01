@@ -43,6 +43,7 @@ from app.workers.beat_schedule import BEAT_SCHEDULE
 from app.workers.tasks.attestation_beat import (
     auto_release_attestations,
     escalate_attestation_disputes,
+    expire_attestation_clarifications,
     expire_attestation_offers,
     expire_owner_consent,
     revoke_overdue_attestations,
@@ -178,6 +179,16 @@ def test_coi_resign_reminder_task_is_registered_in_beat_schedule() -> None:
     assert schedule["schedule"] == crontab(hour=2, minute=0)
 
 
+def test_clarification_expiry_task_is_registered_in_beat_schedule() -> None:
+    """Celery Beat includes the hourly clarification-expiry task."""
+    schedule = BEAT_SCHEDULE["expire-attestation-clarifications-hourly"]
+
+    assert schedule["task"] == (
+        "app.workers.tasks.attestation_beat.expire_attestation_clarifications"
+    )
+    assert schedule["schedule"] == 3600.0
+
+
 async def test_expire_attestation_offers_runs_cleanly_and_is_idempotent(
     migrated_database: None,
     empty_attestation_state: None,
@@ -242,6 +253,18 @@ async def test_revoke_overdue_attestations_runs_cleanly(
     result = await _run_beat(revoke_overdue_attestations)
 
     assert result == {"revoked_count": 0}
+
+
+async def test_expire_attestation_clarifications_runs_cleanly(
+    migrated_database: None,
+    empty_attestation_state: None,
+) -> None:
+    """The clarification-expiry task no-ops when no clarifications are overdue."""
+    del migrated_database, empty_attestation_state
+
+    result = await _run_beat(expire_attestation_clarifications)
+
+    assert result == {"expired_count": 0}
 
 
 async def test_auto_release_attestations_runs_cleanly(
