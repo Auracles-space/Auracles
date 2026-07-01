@@ -341,4 +341,5 @@ async def test_submit_sets_business_day_dispute_window(
         attestation = await session.get(Attestation, attestation_id)
 
     # 5 business days from Mon 2026-07-06 == Mon 2026-07-13.
-    assert attestation.dispute_window_ends_at == datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    expected_window = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+    assert attestation.dispute_window_ends_at == expected_window

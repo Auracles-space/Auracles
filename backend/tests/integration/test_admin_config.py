@@ -37,7 +37,7 @@ DEFAULT_PLATFORM_CONFIG = {
     "attestation_completion_sla_days_operator": "7",
     "attestation_completion_sla_days_credential": "7",
     "attestation_offer_accept_hours": "48",
-    "attestation_dispute_window_days": "14",
+    "attestation_dispute_window_business_days": "5",
     "saved_search_alert_cadence_hours": "24",
     "consent_version_terms_of_service": "1.0",
     "consent_version_privacy_policy": "1.0",
@@ -415,7 +415,7 @@ async def test_admin_updates_attestation_config_with_range_validation(
                 {"key": "attestation_fee_framework", "value": "275"},
                 {"key": "attestation_cohort_size", "value": "5"},
                 {"key": "attestation_offer_accept_hours", "value": "72"},
-                {"key": "attestation_dispute_window_days", "value": "21"},
+                {"key": "attestation_dispute_window_business_days", "value": "21"},
             ],
         },
     )
@@ -451,7 +451,7 @@ async def test_admin_updates_attestation_config_with_range_validation(
     assert response_config["attestation_fee_framework"]["value"] == "275"
     assert response_config["attestation_cohort_size"]["value"] == "5"
     assert response_config["attestation_offer_accept_hours"]["value"] == "72"
-    assert response_config["attestation_dispute_window_days"]["value"] == "21"
+    assert response_config["attestation_dispute_window_business_days"]["value"] == "21"
     assert config_rows["attestation_fee_framework"] == "275"
     assert config_rows["attestation_cohort_size"] == "5"
     assert invalid_fee.status_code == 422
