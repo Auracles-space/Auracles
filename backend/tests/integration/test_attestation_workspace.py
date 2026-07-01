@@ -15,10 +15,9 @@ from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, func, select
 
 from app.core.config import get_settings
-from app.core.security import create_access_token, hash_password
 from app.core.database import async_session_factory, engine
-from app.modules.attestation import rubrics
-from app.modules.attestation import workspace_service
+from app.core.security import create_access_token, hash_password
+from app.modules.attestation import rubrics, workspace_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
