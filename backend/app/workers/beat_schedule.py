@@ -78,6 +78,10 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.attestation_beat.revoke_overdue_attestations",
         "schedule": 3600.0,
     },
+    "expire-attestation-clarifications-hourly": {
+        "task": "app.workers.tasks.attestation_beat.expire_attestation_clarifications",
+        "schedule": 3600.0,
+    },
     "auto-release-attestations-hourly": {
         "task": "app.workers.tasks.attestation_beat.auto_release_attestations",
         "schedule": 3600.0,

@@ -241,3 +241,70 @@ async def respond_to_clarification(
             attestor_id=attestation.attestor_id,
         )
     return clarification
+
+
+async def expire_clarifications(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Expire overdue open clarifications.
+
+    Args:
+        db: Async database session.
+        now: Optional timestamp override for deterministic tests.
+
+    Returns:
+        The number of clarifications expired during this sweep.
+    """
+    current_time = now or datetime.now(UTC)
+    if db.in_transaction():
+        await db.rollback()
+
+    overdue_ids = list(
+        (
+            await db.execute(
+                select(AttestationClarification.id).where(
+                    AttestationClarification.status == "open",
+                    AttestationClarification.response_due_at <= current_time,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    expired_count = 0
+    for clarification_id in overdue_ids:
+        if db.in_transaction():
+            await db.rollback()
+        attestation: Attestation | None = None
+        async with db.begin():
+            clarification = await db.scalar(
+                select(AttestationClarification)
+                .where(AttestationClarification.id == clarification_id)
+                .with_for_update()
+            )
+            if clarification is None or clarification.status != "open":
+                continue
+
+            clarification.status = "expired"
+            clarification.responded_at = current_time
+            attestation = await db.get(Attestation, clarification.attestation_id)
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="attestation_clarification_expired",
+                target_type="attestation",
+                target_id=clarification.attestation_id,
+                metadata={"clarification_id": str(clarification.id)},
+            )
+            expired_count += 1
+
+        if attestation is not None and attestation.attestor_id is not None:
+            attestation_notifications.notify_clarification_answered(
+                attestation,
+                attestor_id=attestation.attestor_id,
+            )
+
+    return expired_count

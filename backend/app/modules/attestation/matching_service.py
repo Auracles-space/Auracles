@@ -35,6 +35,7 @@ TERMINAL_OFFER_STATUSES = {"accepted", "declined", "expired", "superseded"}
 ACTIVE_ASSIGNMENT_STATUSES = {"accepted", "report_submitted", "disputed"}
 DEFAULT_CONCURRENCY_CAP = 5
 COI_REMINDER_LEAD_DAYS = 30
+DEFAULT_COMPLETION_GRACE_HOURS = 24
 
 
 @dataclass(frozen=True)
@@ -417,13 +418,20 @@ async def revoke_overdue_attestations(
 ) -> int:
     """Revoke accepted Attestations past SLA and advance them to matching."""
     current_time = now or datetime.now(UTC)
+    grace_hours = await _platform_int_config(
+        db,
+        key="attestation_completion_grace_hours",
+        default=DEFAULT_COMPLETION_GRACE_HOURS,
+        minimum=0,
+    )
+    cutoff = current_time - timedelta(hours=grace_hours)
     overdue_ids = list(
         (
             await db.execute(
                 select(Attestation.id).where(
-                    Attestation.status == "accepted",
+                    Attestation.status.in_(("accepted", "in_review")),
                     Attestation.completion_due_at.is_not(None),
-                    Attestation.completion_due_at <= current_time,
+                    Attestation.completion_due_at <= cutoff,
                 )
             )
         )
@@ -439,9 +447,9 @@ async def revoke_overdue_attestations(
         async with db.begin():
             attestation = await _load_locked_attestation(db, attestation_id)
             if (
-                attestation.status != "accepted"
+                attestation.status not in {"accepted", "in_review"}
                 or attestation.completion_due_at is None
-                or attestation.completion_due_at > current_time
+                or attestation.completion_due_at > cutoff
                 or attestation.attestor_id is None
             ):
                 continue

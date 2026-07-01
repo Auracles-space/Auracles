@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, select
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
@@ -30,6 +30,7 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
+from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
 
@@ -38,6 +39,7 @@ async def _reset_state() -> None:
     """Remove ranking-test rows in FK-safe order."""
     async with async_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
             await session.execute(delete(AttestorProfile))
@@ -156,6 +158,63 @@ async def _make_attestation(
             requested_jurisdictions=jurisdictions,
         )
         session.add(attestation)
+        await session.commit()
+        await session.refresh(attestation)
+    return attestation
+
+
+async def _make_assigned_attestation_with_funding(
+    requestor_id: UUID,
+    attestor_id: UUID,
+    *,
+    status_value: str,
+    completion_due_at: datetime,
+) -> Attestation:
+    """Create one funded assigned attestation for revoke-beat tests."""
+    async with async_session_factory() as session:
+        attestation = Attestation(
+            target_type="contributor",
+            target_id=requestor_id,
+            requestor_id=requestor_id,
+            attestor_id=attestor_id,
+            status=status_value,
+            review_type="quality",
+            fee_amount=Decimal("500.00"),
+            currency="USD",
+            requested_specializations=["tax"],
+            requested_jurisdictions=["US"],
+            accepted_at=datetime.now(UTC) - timedelta(days=1),
+            completion_due_at=completion_due_at,
+        )
+        session.add(attestation)
+        await session.flush()
+        offer = AttestationOffer(
+            attestation_id=attestation.id,
+            attestor_id=attestor_id,
+            cohort_index=1,
+            status="accepted",
+            offered_at=datetime.now(UTC) - timedelta(days=2),
+            responded_at=datetime.now(UTC) - timedelta(days=1),
+            expires_at=datetime.now(UTC) - timedelta(days=1, hours=1),
+            match_score=0.950,
+            score_breakdown={"fit": 0.950},
+        )
+        session.add(offer)
+        transaction = Transaction(
+            payer_id=requestor_id,
+            payee_id=attestor_id,
+            amount=Decimal("500.00"),
+            currency="USD",
+            platform_commission=Decimal("0.00"),
+            net_amount=Decimal("500.00"),
+            transaction_type="attestation_fee",
+            status="completed",
+            provider="stripe",
+            provider_ref=f"pi_attestation_{uuid4()}",
+            ref_id=attestation.id,
+            ref_type="attestation",
+        )
+        session.add(transaction)
         await session.commit()
         await session.refresh(attestation)
     return attestation
@@ -359,3 +418,70 @@ async def test_ranking_orders_by_score_then_fifo(db_session) -> None:
     order = [candidate.user_id for candidate in ranked]
     assert order[0] == high.id
     assert order.index(older.id) < order.index(low.id)
+
+
+async def test_revoke_overdue_attestations_includes_in_review_past_grace(
+    db_session,
+) -> None:
+    """An in-review assignment past the grace window is revoked."""
+    requestor = await _make_user("operator", "req")
+    attestor = await _make_user("attestor", "att")
+    await _make_profile(attestor.id, specializations=["tax"], jurisdictions=["US"])
+    attestation = await _make_assigned_attestation_with_funding(
+        requestor.id,
+        attestor.id,
+        status_value="in_review",
+        completion_due_at=datetime.now(UTC) - timedelta(hours=25),
+    )
+
+    count = await matching_service.revoke_overdue_attestations(db_session)
+    refreshed = await db_session.get(Attestation, attestation.id)
+    transaction = await db_session.scalar(
+        select(Transaction).where(Transaction.ref_id == attestation.id)
+    )
+    offer = await db_session.scalar(
+        select(AttestationOffer).where(AttestationOffer.attestation_id == attestation.id)
+    )
+    assert refreshed is not None
+    assert transaction is not None
+    assert offer is not None
+
+    assert count == 1
+    assert refreshed.attestor_id is None
+    assert refreshed.completion_due_at is None
+    assert refreshed.status == "needs_admin"
+    assert transaction.payee_id is None
+    assert offer.status == "superseded"
+
+
+async def test_revoke_overdue_attestations_respects_completion_grace(
+    db_session,
+) -> None:
+    """An in-review assignment inside the grace window is left untouched."""
+    requestor = await _make_user("operator", "req")
+    attestor = await _make_user("attestor", "att")
+    await _make_profile(attestor.id, specializations=["tax"], jurisdictions=["US"])
+    attestation = await _make_assigned_attestation_with_funding(
+        requestor.id,
+        attestor.id,
+        status_value="in_review",
+        completion_due_at=datetime.now(UTC) - timedelta(hours=23),
+    )
+
+    count = await matching_service.revoke_overdue_attestations(db_session)
+    refreshed = await db_session.get(Attestation, attestation.id)
+    transaction = await db_session.scalar(
+        select(Transaction).where(Transaction.ref_id == attestation.id)
+    )
+    offer = await db_session.scalar(
+        select(AttestationOffer).where(AttestationOffer.attestation_id == attestation.id)
+    )
+    assert refreshed is not None
+    assert transaction is not None
+    assert offer is not None
+
+    assert count == 0
+    assert refreshed.attestor_id == attestor.id
+    assert refreshed.status == "in_review"
+    assert transaction.payee_id == attestor.id
+    assert offer.status == "accepted"

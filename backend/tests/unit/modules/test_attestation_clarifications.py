@@ -259,3 +259,23 @@ async def test_only_requestor_can_respond(db_session) -> None:
         )
 
     assert exc.value.status_code == 404
+
+
+async def test_expire_closes_overdue_open(db_session) -> None:
+    """An open clarification past its due time is expired by the sweep."""
+    attestor, _requestor, attestation = await _in_review_attestation()
+    now = datetime.now(UTC)
+    clarification = await clarification_service.send_clarification(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        question="Which version is in scope?",
+        now=now - timedelta(hours=49),
+    )
+
+    count = await clarification_service.expire_clarifications(db_session, now=now)
+    refreshed = await db_session.get(AttestationClarification, clarification.id)
+    assert refreshed is not None
+
+    assert count == 1
+    assert refreshed.status == "expired"
