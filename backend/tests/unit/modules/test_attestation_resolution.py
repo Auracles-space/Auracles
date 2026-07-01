@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Iterator
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -134,7 +134,8 @@ async def test_split_resolution_enum_type_dropped(db_session: AsyncSession) -> N
     """The old attestation_dispute_resolution_enum type no longer exists in the DB."""
     result = await db_session.execute(
         text(
-            "SELECT 1 FROM pg_type WHERE typname = 'attestation_dispute_resolution_enum'"
+            "SELECT 1 FROM pg_type "
+            "WHERE typname = 'attestation_dispute_resolution_enum'"
         )
     )
     assert result.scalar() is None, (

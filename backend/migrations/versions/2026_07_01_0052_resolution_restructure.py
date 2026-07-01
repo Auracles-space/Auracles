@@ -1,9 +1,10 @@
 """Restructure dispute resolution: outcome enum, drop split, add revision fields.
 
 [HUMAN REVIEW REQUIRED]: This migration drops shipped columns (resolution_type,
-release_amount, refund_amount) and the constraint ck_attestation_disputes_split_has_amounts
-from attestation_disputes. The 'split' resolution type has been deliberately removed
-from the product design per Module 5 spec.
+release_amount, refund_amount) and the constraint
+ck_attestation_disputes_split_has_amounts from attestation_disputes. The 'split'
+resolution type has been deliberately removed from the product design per the
+Module 5 spec.
 
 Downgrade note: The 'revision_requested' value added to attestation_status_enum
 cannot be removed on downgrade — Postgres does not support removing enum values.
@@ -20,8 +21,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "2026_07_01_0052"
