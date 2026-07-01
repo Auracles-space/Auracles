@@ -440,7 +440,9 @@ async def test_revoke_overdue_attestations_includes_in_review_past_grace(
         select(Transaction).where(Transaction.ref_id == attestation.id)
     )
     offer = await db_session.scalar(
-        select(AttestationOffer).where(AttestationOffer.attestation_id == attestation.id)
+        select(AttestationOffer).where(
+            AttestationOffer.attestation_id == attestation.id
+        )
     )
     assert refreshed is not None
     assert transaction is not None
@@ -474,7 +476,9 @@ async def test_revoke_overdue_attestations_respects_completion_grace(
         select(Transaction).where(Transaction.ref_id == attestation.id)
     )
     offer = await db_session.scalar(
-        select(AttestationOffer).where(AttestationOffer.attestation_id == attestation.id)
+        select(AttestationOffer).where(
+            AttestationOffer.attestation_id == attestation.id
+        )
     )
     assert refreshed is not None
     assert transaction is not None
