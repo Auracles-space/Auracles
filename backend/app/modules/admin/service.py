@@ -74,6 +74,7 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "reputation_weights_framework",
     "reputation_weights_contributor",
     "reputation_weights_operator",
+    "reputation_weights_attestor",
     "reputation_min_activity_framework",
     "reputation_min_activity_contributor",
     "reputation_min_activity_operator",
@@ -102,6 +103,7 @@ REPUTATION_WEIGHT_KEYS = {
     "reputation_weights_framework",
     "reputation_weights_contributor",
     "reputation_weights_operator",
+    "reputation_weights_attestor",
 }
 REPUTATION_MIN_ACTIVITY_KEYS = {
     "reputation_min_activity_framework",

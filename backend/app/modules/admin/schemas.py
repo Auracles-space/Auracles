@@ -247,6 +247,7 @@ class AdminConfigUpdateItem(BaseModel):
         "reputation_weights_framework",
         "reputation_weights_contributor",
         "reputation_weights_operator",
+        "reputation_weights_attestor",
         "reputation_min_activity_framework",
         "reputation_min_activity_contributor",
         "reputation_min_activity_operator",
@@ -268,7 +269,7 @@ class AdminConfigPatchRequest(BaseModel):
 class AdminReputationRecomputeRequest(BaseModel):
     """Request body for an audited single-subject reputation recompute."""
 
-    subject_type: Literal["framework", "contributor", "operator"]
+    subject_type: Literal["framework", "contributor", "operator", "attestor"]
     subject_id: UUID
     reason: str = Field(min_length=1, max_length=500)
     totp_code: str = Field(min_length=6, max_length=16)

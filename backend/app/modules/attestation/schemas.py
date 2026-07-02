@@ -728,6 +728,7 @@ class AttestorDirectoryEntry(BaseModel):
     credentials: list[PublicCredentialResponse]
     completed_attestations: int
     reputation: float | None
+    certified: bool = False
 
 
 class AttestorDirectoryResponse(BaseModel):

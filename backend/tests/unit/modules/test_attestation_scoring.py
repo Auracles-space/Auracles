@@ -87,3 +87,9 @@ def test_compute_match_score_weights_and_breakdown():
     score, breakdown = scoring.compute_match_score(factors)
     assert score == 0.85
     assert breakdown == factors
+
+
+def test_reputation_score_returns_normalized_value() -> None:
+    """reputation_score echoes the supplied normalized value and defaults to 0.5."""
+    assert scoring.reputation_score(0.8) == 0.8
+    assert scoring.reputation_score() == 0.5

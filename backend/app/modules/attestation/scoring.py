@@ -89,9 +89,18 @@ def credential_relevance() -> float:
     return CREDENTIAL_RELEVANCE_BASELINE
 
 
-def reputation_score() -> float:
-    """Return the neutral reputation swap point."""
-    return REPUTATION_BASELINE
+def reputation_score(normalized: float = 0.5) -> float:
+    """Return normalized attestor reputation, defaulting to the neutral swap point.
+
+    Args:
+        normalized: Attestor reputation normalized into the inclusive range
+            ``[0.0, 1.0]``. Defaults to ``0.5`` so unscored or provisional
+            attestors are neither rewarded nor penalized in matching.
+
+    Returns:
+        The supplied normalized reputation value.
+    """
+    return normalized
 
 
 def compute_match_score(factors: dict[str, float]) -> tuple[float, dict[str, float]]:
