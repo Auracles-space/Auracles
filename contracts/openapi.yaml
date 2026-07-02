@@ -3423,6 +3423,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/invoice:
+    get:
+      tags:
+      - Attestation
+      summary: Fetch the requestor tax invoice for a settled attestation
+      description: Return the requestor-facing tax invoice PDF for a settled attestation.
+        If the PDF has not been rendered yet, queue generation and return 202.
+      operationId: get_attestation_invoice_v1_attestations__attestation_id__invoice_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '302':
+          description: Private presigned tax-invoice download URL.
+        '202':
+          description: Invoice PDF generation queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceGenerationResponse'
+        '403':
+          description: Caller is not allowed to fetch this attestation invoice.
+        '404':
+          description: Attestation or attestation fee transaction not found.
+        '409':
+          description: Invoice is only available for settled attestations.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/earnings-statement:
+    get:
+      tags:
+      - Attestation
+      summary: Fetch the attestor earnings statement for a settled attestation
+      description: Return the attestor-facing earnings statement PDF for a settled
+        attestation. If the PDF has not been rendered yet, queue generation and
+        return 202.
+      operationId: get_attestation_earnings_statement_v1_attestations__attestation_id__earnings_statement_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '302':
+          description: Private presigned earnings-statement download URL.
+        '202':
+          description: Earnings-statement PDF generation queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceGenerationResponse'
+        '403':
+          description: Caller is not allowed to fetch this earnings statement.
+        '404':
+          description: Attestation, attestor, or attestation fee transaction not
+            found.
+        '409':
+          description: Earnings statements are only available for settled attestations.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/earnings/annual/{year}:
+    get:
+      tags:
+      - Attestation
+      summary: Fetch the caller's annual attestation earnings summary
+      description: Return the approved attestor's annual earnings summary PDF for
+        the requested year when the Jan-2 batch has generated it.
+      operationId: get_attestation_annual_summary_v1_attestations_earnings_annual__year__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: year
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Year
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '302':
+          description: Private presigned annual-summary download URL.
+        '403':
+          description: Approved Attestor profile required.
+        '404':
+          description: No earnings summary exists for the requested year.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/google/start:
     get:
       tags:
@@ -17324,6 +17464,21 @@ components:
       - components
       title: HealthResponse
       description: Platform readiness response for external health checks.
+    InvoiceGenerationResponse:
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+          title: Invoice Id
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - invoice_id
+      - status
+      title: InvoiceGenerationResponse
+      description: Async invoice-document generation acknowledgement.
     KycDocumentResponse:
       properties:
         id:
