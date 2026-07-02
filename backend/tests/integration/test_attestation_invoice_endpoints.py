@@ -274,3 +274,71 @@ async def test_attestor_cannot_fetch_tax_invoice(
     )
 
     assert response.status_code == 403
+
+
+async def test_attestor_gets_earnings_statement(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """Attestor GET returns 202 then 302 with a netted earnings statement."""
+    del clean_state
+    seeded = await _seed_attestation("closed")
+    attestor_headers = _auth_headers(seeded["attestor_id"], ["attestor"])
+
+    first = await client.get(
+        f"/v1/attestations/{seeded['attestation_id']}/earnings-statement",
+        headers=attestor_headers,
+    )
+
+    assert first.status_code == 202
+    async with async_session_factory() as session:
+        invoice = await session.scalar(
+            select(Invoice).where(
+                Invoice.source_ref_type == "attestation",
+                Invoice.source_ref_id == seeded["attestation_id"],
+                Invoice.doc_type == "earnings_statement",
+            )
+        )
+
+    assert invoice is not None
+    assert invoice.series == "AUR-ERN"
+    assert invoice.commission_rate == Decimal("0.1000")
+    assert invoice.net_amount == Decimal("450.00")
+
+    invoice_key, pdf_bytes = await invoicing_tasks._generate_invoice_document(
+        str(invoice.id)
+    )
+    fake_document_storage.upload_bytes(
+        "auracles-reports-dev",
+        invoice_key,
+        pdf_bytes,
+        "application/pdf",
+    )
+
+    second = await client.get(
+        f"/v1/attestations/{seeded['attestation_id']}/earnings-statement",
+        headers=attestor_headers,
+    )
+
+    assert second.status_code == 302
+    assert second.headers["location"] == (
+        f"https://s3.test/auracles-reports-dev/{invoice.s3_key}?expires=900"
+    )
+
+
+async def test_requestor_cannot_fetch_earnings_statement(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """The requestor cannot fetch the attestor-only earnings statement."""
+    del clean_state, fake_document_storage
+    seeded = await _seed_attestation("closed")
+
+    response = await client.get(
+        f"/v1/attestations/{seeded['attestation_id']}/earnings-statement",
+        headers=_auth_headers(seeded["requestor_id"], ["operator"]),
+    )
+
+    assert response.status_code == 403

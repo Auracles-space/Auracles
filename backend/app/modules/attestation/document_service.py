@@ -9,6 +9,7 @@ Maps to: FR-FIN-003 and FR-FIN-004.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -22,7 +23,7 @@ from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Transaction
+from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.financials.service import INVOICE_URL_TTL_SECONDS
 from app.modules.invoicing import service as invoicing_service
 from app.workers.tasks.invoicing import generate_invoice_document
@@ -180,9 +181,87 @@ async def get_earnings_statement(
     attestation_id: UUID,
     user: User,
 ) -> Response:
-    """Placeholder for Task 5 earnings-statement delivery."""
-    del db, attestation_id, user
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Earnings statement endpoint not implemented yet.",
+    """Deliver the attestor earnings statement for one settled attestation.
+
+    Args:
+        db: Async database session.
+        attestation_id: Attestation being settled.
+        user: Authenticated caller.
+
+    Returns:
+        A redirect to the private PDF if ready, else a 202 enqueue response.
+
+    Raises:
+        HTTPException: If the attestation is missing, unsettled, or forbidden.
+    """
+    attestation = await _load_settled_attestation(db, attestation_id)
+    is_admin = await _is_admin(db, user)
+    if user.id != attestation.attestor_id and not is_admin:
+        logger.bind(
+            module="attestation",
+            action="attestation_earnings_statement_denied",
+            user_id=user.id,
+            attestation_id=attestation_id,
+        ).warning("access_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not permitted.",
+        )
+
+    transaction = await _attestation_fee_transaction(db, attestation_id)
+    if attestation.attestor_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestor not found.",
+        )
+    attestor = await db.get(User, attestation.attestor_id)
+    if attestor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestor not found.",
+        )
+
+    commission_rate = await _attestation_commission_rate(db)
+    net_amount = (transaction.amount * (Decimal("1") - commission_rate)).quantize(
+        Decimal("0.01")
     )
+    settings = get_settings()
+    invoice = await invoicing_service.issue_invoice(
+        db,
+        doc_type=invoicing_service.DOC_EARNINGS_STATEMENT,
+        series=invoicing_service.SERIES_EARNINGS,
+        source_ref_type="attestation",
+        source_ref_id=attestation.id,
+        currency=transaction.currency,
+        subtotal=transaction.amount,
+        seller=invoicing_service.seller_identity(settings),
+        buyer_name=attestor.display_name,
+        buyer_email=attestor.email,
+        commission_rate=commission_rate,
+        net_amount=net_amount,
+    )
+    await db.commit()
+
+    if is_admin and user.id != attestation.attestor_id:
+        await write_audit(
+            db=db,
+            actor_id=user.id,
+            action="attestation_earnings_statement_admin_accessed",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"invoice_id": str(invoice.id)},
+        )
+
+    return await _deliver_invoice(invoice.id, invoice.s3_key)
+
+
+async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
+    """Return the configured attestation commission rate."""
+    value = await db.scalar(
+        select(PlatformConfig.value).where(
+            PlatformConfig.key == "attestation_commission_rate"
+        )
+    )
+    if value is None:
+        return Decimal("0.10")
+    return Decimal(value)

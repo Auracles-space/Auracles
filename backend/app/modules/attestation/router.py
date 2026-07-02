@@ -1329,3 +1329,25 @@ async def get_attestation_invoice(
         attestation_id=attestation_id,
         user=user,
     )
+
+
+@router.get(
+    "/attestations/{attestation_id}/earnings-statement",
+    summary="Fetch the attestor earnings statement for a settled attestation",
+    description=(
+        "Return the attestor-facing earnings statement PDF for a settled "
+        "attestation. If the PDF has not been rendered yet, queue generation "
+        "and return 202."
+    ),
+)
+async def get_attestation_earnings_statement(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> Response:
+    """Deliver the attestor earnings statement for a settled attestation."""
+    return await document_service.get_earnings_statement(
+        db,
+        attestation_id=attestation_id,
+        user=user,
+    )
