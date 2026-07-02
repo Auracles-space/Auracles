@@ -584,6 +584,56 @@ async def test_mixed_marketplace_and_attestation_earnings_blend_commission(
     }
 
 
+async def test_attestor_withdraws_attestation_earnings_at_ten_percent_gross_up(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """An Attestor withdraws attestation earnings; gross-up uses the 10% rate.
+
+    Enforces Module 6a design §9 tests 7-8: attestation earnings are
+    withdrawable via the existing KYC/2FA/$50-minimum payout path, and the
+    payout's commission bookkeeping reflects the 10% attestation rate.
+    """
+    del migrated_database
+    attestor_id, totp_secret = await create_user_with_roles(
+        "attestor-withdraw@auracles.space",
+        ["contributor", "attestor"],
+    )
+    payout_account_id = await create_verified_payout_account(attestor_id)
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("600.00"),
+        created_at=datetime.now(UTC),
+    )
+    assert totp_secret is not None
+    code = pyotp.TOTP(totp_secret).now()
+
+    response = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(attestor_id, ["contributor", "attestor"]),
+        json={
+            "amount": "100.00",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+            "totp_code": code,
+        },
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.scalar(select(Payout))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["net_amount"] == "100.00"
+    assert body["commission_deducted"] == "11.11"
+    assert payout is not None
+    assert payout.amount == Decimal("111.11")
+    assert payout.net_amount == Decimal("100.00")
+    assert payout_context["payout_task"].dispatched == [str(payout.id)]
+
+
 async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
     client: AsyncClient,
     migrated_database: None,
