@@ -161,7 +161,6 @@ async def get_tax_invoice(
         buyer_name=requestor.display_name,
         buyer_email=requestor.email,
     )
-    await db.commit()
 
     if is_admin and user.id != attestation.requestor_id:
         await write_audit(
@@ -172,6 +171,8 @@ async def get_tax_invoice(
             target_id=attestation.id,
             metadata={"invoice_id": str(invoice.id)},
         )
+
+    await db.commit()
 
     return await _deliver_invoice(invoice.id, invoice.s3_key)
 
@@ -241,7 +242,6 @@ async def get_earnings_statement(
         commission_rate=commission_rate,
         net_amount=net_amount,
     )
-    await db.commit()
 
     if is_admin and user.id != attestation.attestor_id:
         await write_audit(
@@ -252,6 +252,8 @@ async def get_earnings_statement(
             target_id=attestation.id,
             metadata={"invoice_id": str(invoice.id)},
         )
+
+    await db.commit()
 
     return await _deliver_invoice(invoice.id, invoice.s3_key)
 

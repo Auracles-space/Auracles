@@ -294,6 +294,34 @@ async def test_attestor_cannot_fetch_tax_invoice(
     assert response.status_code == 403
 
 
+async def test_admin_tax_invoice_access_is_audited(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """Admin cross-party tax-invoice access persists a committed audit row."""
+    del fake_document_storage
+    seeded = await _seed_attestation("closed")
+    admin = await _make_user("admin", "admin")
+
+    response = await client.get(
+        f"/v1/attestations/{seeded['attestation_id']}/invoice",
+        headers=_auth_headers(admin.id, ["admin"]),
+    )
+
+    assert response.status_code == 202
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.actor_id == admin.id,
+                AuditLog.action == "attestation_invoice_admin_accessed",
+                AuditLog.target_id == seeded["attestation_id"],
+            )
+        )
+
+    assert audit is not None
+
+
 async def test_attestor_gets_earnings_statement(
     client: AsyncClient,
     clean_state,
@@ -360,6 +388,34 @@ async def test_requestor_cannot_fetch_earnings_statement(
     )
 
     assert response.status_code == 403
+
+
+async def test_admin_earnings_statement_access_is_audited(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """Admin cross-party earnings-statement access persists a committed audit row."""
+    del fake_document_storage
+    seeded = await _seed_attestation("closed")
+    admin = await _make_user("admin", "admin")
+
+    response = await client.get(
+        f"/v1/attestations/{seeded['attestation_id']}/earnings-statement",
+        headers=_auth_headers(admin.id, ["admin"]),
+    )
+
+    assert response.status_code == 202
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.actor_id == admin.id,
+                AuditLog.action == "attestation_earnings_statement_admin_accessed",
+                AuditLog.target_id == seeded["attestation_id"],
+            )
+        )
+
+    assert audit is not None
 
 
 async def test_approved_attestor_gets_annual_summary(
