@@ -578,6 +578,11 @@ class Attestation(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("false"),
     )
+    framework_version_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("framework_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
 
 class AttestationOffer(Base):
@@ -1149,3 +1154,65 @@ class AttestorTrial(CreatedAtMixin, Base):
         nullable=True,
     )
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AttestationBadge(CreatedAtMixin, Base):
+    """Immutable published-badge / provenance snapshot for one Attestation.
+
+    Written once when a framework-target Attestation closes and becomes
+    publication-eligible. Renders the public trust badge and the private
+    provenance record without reading live profile, framework, or credential
+    tables, so the badge is tamper-evident against later mutation.
+
+    Maps to: Module 6c design spec sections 4.2 and 5.1.
+    """
+
+    __tablename__ = "attestation_badges"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id",
+            name="uq_attestation_badges_attestation",
+        ),
+        Index("idx_attestation_badges_framework", "framework_id"),
+        Index("idx_attestation_badges_attestor", "attestor_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    framework_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("frameworks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    review_type: Mapped[str] = mapped_column(
+        ATTESTATION_REVIEW_TYPE_ENUM,
+        nullable=False,
+    )
+    outcome: Mapped[str] = mapped_column(
+        ATTESTATION_OUTCOME_ENUM,
+        nullable=False,
+    )
+    attestor_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    attestor_display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    credentials_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    framework_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
