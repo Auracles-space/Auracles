@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.modules.attestation import badge_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User
@@ -133,6 +134,7 @@ async def _release_and_close(
         target_id=attestation.id,
         metadata={"reason": reason, "escrow_id": str(attestation.escrow_id)},
     )
+    await badge_service.publish_badge(db=db, attestation=attestation)
 
 
 async def _load_releasable_attestation(

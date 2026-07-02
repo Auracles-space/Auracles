@@ -16,6 +16,7 @@ from app.core.redis import get_redis
 from app.modules.attestation import (
     access_service,
     application_service,
+    badge_service,
     clarification_service,
     credential_service,
     directory_service,
@@ -62,6 +63,7 @@ from app.modules.attestation.schemas import (
     AttestorApplicationUpdateRequest,
     AttestorAssignmentResponse,
     AttestorAssignmentsResponse,
+    AttestorCompletedAttestation,
     AttestorCredentialCheckRequest,
     AttestorDirectoryEntry,
     AttestorDirectoryResponse,
@@ -240,6 +242,19 @@ async def list_public_attestor_directory(
         level=level,
     )
     return AttestorDirectoryResponse(attestors=attestors)
+
+
+@router.get(
+    "/attestors/{user_id}/completed",
+    response_model=list[AttestorCompletedAttestation],
+    summary="List an attestor's public completed attestations",
+)
+async def list_attestor_completed_attestations(
+    user_id: UUID,
+    db: DatabaseSession,
+) -> list[AttestorCompletedAttestation]:
+    """Return the attestor's public positive completed attestations."""
+    return await badge_service.list_attestor_completed(db, attestor_id=user_id)
 
 
 @router.get(

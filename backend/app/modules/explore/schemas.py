@@ -38,6 +38,20 @@ class ExploreAttestationBadge(BaseModel):
     attestation_count: int = 1
 
 
+class AttestationBadgeDetail(BaseModel):
+    """Full version-locked attestation badge for the framework page."""
+
+    id: UUID
+    review_type: str
+    outcome: Literal["approved", "conditional", "rejected"]
+    attestor_id: UUID
+    attestor_display_name: str
+    credentials: list[PublicCredentialResponse] = Field(default_factory=list)
+    issued_at: datetime
+    framework_version: str | None
+    newer_version_exists: bool
+
+
 class ExploreFrameworkCard(BaseModel):
     """Public catalog card for one published Framework."""
 
@@ -168,6 +182,7 @@ class ExploreFrameworkDetail(ExploreFrameworkCard):
     preview_artifact_id: UUID | None
     preview_url: str | None
     artifacts: list[ExploreArtifactSummary]
+    attestation_badges: list[AttestationBadgeDetail] = Field(default_factory=list)
 
 
 class ExploreContributorProfile(BaseModel):

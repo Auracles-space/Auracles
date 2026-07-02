@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation import badge_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
@@ -209,6 +210,7 @@ async def resolve_dispute(
             attestation.status = "closed"
             attestation.closed_at = now
             attestation.report_published_eligible = True
+            await badge_service.publish_badge(db=db, attestation=attestation)
             attestation_audit_action = "attestation_released"
         elif outcome == "upheld_refund":
             escrow = await _load_attestation_escrow(db=db, attestation=attestation)

@@ -540,6 +540,7 @@ async def test_admin_dashboard_reports_current_state_counts(
                         AttestationDispute(
                             attestation_id=recent_attestation.id,
                             raised_by=operator.id,
+                            category="material_inaccuracy",
                             reason="Attestation under review.",
                             status="under_review",
                             created_at=now - timedelta(hours=6),
@@ -547,9 +548,10 @@ async def test_admin_dashboard_reports_current_state_counts(
                         AttestationDispute(
                             attestation_id=week_attestation.id,
                             raised_by=operator.id,
+                            category="material_inaccuracy",
                             reason="Closed dispute.",
                             status="resolved",
-                            resolution_type="release",
+                            outcome="rejected",
                             created_at=now - timedelta(days=1),
                         ),
                     ]

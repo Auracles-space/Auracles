@@ -14,6 +14,30 @@ from app.core.config import get_settings
 
 PRIOR_HEAD = "2026_06_29_0043"
 
+# The 10-day-SLA config keys are seeded far below PRIOR_HEAD (migration 0013)
+# and only ever UPDATEd by 0044 — never re-inserted. Sibling suites that run
+# `delete(PlatformConfig)` can wipe them, leaving 0044's UPDATE a no-op. Re-seed
+# the pre-0044 state ('7') so this migration test is independent of that
+# ambient pollution.
+_SLA_SEED_KEYS = (
+    "attestation_completion_sla_days_framework",
+    "attestation_completion_sla_days_contributor",
+    "attestation_completion_sla_days_operator",
+    "attestation_completion_sla_days_credential",
+)
+
+
+def _seed_sla_defaults(engine: Engine) -> None:
+    """Ensure the completion-SLA config rows exist at their pre-0044 value."""
+    with engine.begin() as connection:
+        for key in _SLA_SEED_KEYS:
+            connection.execute(
+                text(
+                    "INSERT INTO platform_config (key, value) VALUES (:key, '7') "
+                    "ON CONFLICT (key) DO NOTHING"
+                ).bindparams(key=key)
+            )
+
 
 @pytest.fixture
 def migrated_engine() -> Iterator[Engine]:
@@ -22,6 +46,7 @@ def migrated_engine() -> Iterator[Engine]:
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     alembic_config = Config("alembic.ini")
     command.downgrade(alembic_config, PRIOR_HEAD)
+    _seed_sla_defaults(engine)
     command.upgrade(alembic_config, "head")
     try:
         yield engine
@@ -64,6 +89,7 @@ def test_downgrade_reverts_review_type_changes() -> None:
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     alembic_config = Config("alembic.ini")
     command.downgrade(alembic_config, PRIOR_HEAD)
+    _seed_sla_defaults(engine)
     command.upgrade(alembic_config, "head")
     command.downgrade(alembic_config, PRIOR_HEAD)
     try:
