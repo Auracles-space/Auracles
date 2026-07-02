@@ -18,8 +18,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attestation.models import Attestation, AttestationBadge, Credential
+from app.modules.attestation.schemas import AttestorCompletedAttestation
 from app.modules.auth.models import User
-from app.modules.frameworks.models import FrameworkVersion
+from app.modules.frameworks.models import Framework, FrameworkVersion
+
+_PUBLIC_BADGE_OUTCOMES = ("approved", "conditional")
 
 
 async def _public_credentials_snapshot(
@@ -115,3 +118,41 @@ async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
         attestation_id=attestation.id,
         framework_id=attestation.target_id,
     ).info("badge_published", outcome=attestation.outcome)
+
+
+async def list_attestor_completed(
+    db: AsyncSession,
+    *,
+    attestor_id: UUID,
+) -> list[AttestorCompletedAttestation]:
+    """Return an attestor's public positive completed attestations, newest first.
+
+    Args:
+        db: Async SQLAlchemy session.
+        attestor_id: User id of the attestor.
+
+    Returns:
+        Positive completed-attestation entries with framework titles.
+    """
+    rows = (
+        await db.execute(
+            select(AttestationBadge, Framework.title)
+            .join(Framework, Framework.id == AttestationBadge.framework_id)
+            .where(
+                AttestationBadge.attestor_id == attestor_id,
+                AttestationBadge.outcome.in_(_PUBLIC_BADGE_OUTCOMES),
+            )
+            .order_by(AttestationBadge.issued_at.desc())
+        )
+    ).all()
+    return [
+        AttestorCompletedAttestation(
+            framework_id=badge.framework_id,
+            framework_title=title,
+            review_type=badge.review_type,
+            outcome=badge.outcome,
+            issued_at=badge.issued_at,
+            framework_version=badge.framework_version,
+        )
+        for badge, title in rows
+    ]

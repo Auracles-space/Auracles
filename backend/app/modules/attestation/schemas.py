@@ -731,6 +731,17 @@ class AttestorDirectoryEntry(BaseModel):
     certified: bool = False
 
 
+class AttestorCompletedAttestation(BaseModel):
+    """One public entry in an Attestor's Completed Attestations list."""
+
+    framework_id: UUID
+    framework_title: str
+    review_type: str
+    outcome: Literal["approved", "conditional"]
+    issued_at: datetime
+    framework_version: str | None
+
+
 class AttestorDirectoryResponse(BaseModel):
     """Public list response for the Attestor directory."""
 
