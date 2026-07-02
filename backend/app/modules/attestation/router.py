@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from app.modules.attestation import (
     credential_service,
     directory_service,
     dispute_service,
+    document_service,
     matching_service,
     rating_service,
     release_service,
@@ -1306,3 +1308,24 @@ async def rate_attestation(
         comment=payload.comment,
     )
     return AttestationRatingResponse.model_validate(rating)
+
+
+@router.get(
+    "/attestations/{attestation_id}/invoice",
+    summary="Fetch the requestor tax invoice for a settled attestation",
+    description=(
+        "Return the requestor-facing tax invoice PDF for a settled attestation. "
+        "If the PDF has not been rendered yet, queue generation and return 202."
+    ),
+)
+async def get_attestation_invoice(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> Response:
+    """Deliver the requestor tax invoice for a settled attestation."""
+    return await document_service.get_tax_invoice(
+        db,
+        attestation_id=attestation_id,
+        user=user,
+    )

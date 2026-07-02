@@ -1,0 +1,188 @@
+"""Attestation invoice-document delivery services.
+
+Resolves settled attestation billing documents through the shared invoicing
+ledger and delivers them lazily via private S3 redirects. Tax invoices are for
+the requestor; earnings statements are for the attestor.
+
+Maps to: FR-FIN-003 and FR-FIN-004.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import HTTPException, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.audit import write_audit
+from app.core.config import get_settings
+from app.integrations import s3
+from app.modules.attestation.models import Attestation
+from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Transaction
+from app.modules.financials.service import INVOICE_URL_TTL_SECONDS
+from app.modules.invoicing import service as invoicing_service
+from app.workers.tasks.invoicing import generate_invoice_document
+
+
+async def _load_settled_attestation(
+    db: AsyncSession,
+    attestation_id: UUID,
+) -> Attestation:
+    """Return one closed attestation or raise a typed HTTP error."""
+    attestation = await db.scalar(
+        select(Attestation).where(Attestation.id == attestation_id)
+    )
+    if attestation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    if attestation.status != "closed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invoice is only available for settled attestations.",
+        )
+    return attestation
+
+
+async def _is_admin(db: AsyncSession, user: User) -> bool:
+    """Return whether the caller has an approved admin role row."""
+    return (
+        await db.scalar(
+            select(UserRole.id).where(
+                UserRole.user_id == user.id,
+                UserRole.role == "admin",
+                UserRole.approved_at.is_not(None),
+            )
+        )
+        is not None
+    )
+
+
+async def _attestation_fee_transaction(
+    db: AsyncSession,
+    attestation_id: UUID,
+) -> Transaction:
+    """Load the fee transaction backing one attestation request."""
+    transaction = await db.scalar(
+        select(Transaction).where(
+            Transaction.transaction_type == "attestation_fee",
+            Transaction.ref_type == "attestation",
+            Transaction.ref_id == attestation_id,
+        )
+    )
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation fee transaction not found.",
+        )
+    return transaction
+
+
+async def _deliver_invoice(invoice_id: UUID, key: str) -> Response:
+    """Return a presigned redirect or queue document generation."""
+    settings = get_settings()
+    if s3.storage.object_exists(settings.s3_reports_bucket, key):
+        document_url = s3.storage.presigned_get(
+            settings.s3_reports_bucket,
+            key,
+            INVOICE_URL_TTL_SECONDS,
+        )
+        return RedirectResponse(url=document_url, status_code=status.HTTP_302_FOUND)
+
+    generate_invoice_document.delay(str(invoice_id))
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+        content={"invoice_id": str(invoice_id), "status": "generating"},
+    )
+
+
+async def get_tax_invoice(
+    db: AsyncSession,
+    *,
+    attestation_id: UUID,
+    user: User,
+) -> Response:
+    """Deliver the requestor's tax invoice for one settled attestation.
+
+    Args:
+        db: Async database session.
+        attestation_id: Attestation being invoiced.
+        user: Authenticated caller.
+
+    Returns:
+        A redirect to the private PDF if ready, else a 202 enqueue response.
+
+    Raises:
+        HTTPException: If the attestation is missing, unsettled, or forbidden.
+    """
+    attestation = await _load_settled_attestation(db, attestation_id)
+    is_admin = await _is_admin(db, user)
+    if user.id != attestation.requestor_id and not is_admin:
+        logger.bind(
+            module="attestation",
+            action="attestation_tax_invoice_denied",
+            user_id=user.id,
+            attestation_id=attestation_id,
+        ).warning("access_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not permitted.",
+        )
+
+    transaction = await _attestation_fee_transaction(db, attestation_id)
+    requestor = await db.get(User, attestation.requestor_id)
+    if requestor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Requestor not found.",
+        )
+    settings = get_settings()
+    invoice = await invoicing_service.issue_invoice(
+        db,
+        doc_type=invoicing_service.DOC_SALES_INVOICE,
+        series=invoicing_service.SERIES_SALES,
+        source_ref_type="attestation",
+        source_ref_id=attestation.id,
+        currency=transaction.currency,
+        subtotal=transaction.amount,
+        seller=invoicing_service.seller_identity(settings),
+        buyer_name=requestor.display_name,
+        buyer_email=requestor.email,
+    )
+    await db.commit()
+
+    if is_admin and user.id != attestation.requestor_id:
+        await write_audit(
+            db=db,
+            actor_id=user.id,
+            action="attestation_invoice_admin_accessed",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"invoice_id": str(invoice.id)},
+        )
+
+    return await _deliver_invoice(invoice.id, invoice.s3_key)
+
+
+async def get_earnings_statement(
+    db: AsyncSession,
+    *,
+    attestation_id: UUID,
+    user: User,
+) -> Response:
+    """Placeholder for Task 5 earnings-statement delivery."""
+    del db, attestation_id, user
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Earnings statement endpoint not implemented yet.",
+    )
