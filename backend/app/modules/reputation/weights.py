@@ -39,8 +39,17 @@ _DEFAULT_WEIGHTS: dict[str, dict[str, str]] = {
         "review_quality": "0.20",
         "engagement": "0.15",
     },
+    "attestor": {
+        "rating": "0.75",
+        "reliability": "0.25",
+    },
 }
-_DEFAULT_MIN_ACTIVITY = {"framework": 3, "contributor": 1, "operator": 1}
+_DEFAULT_MIN_ACTIVITY = {
+    "framework": 3,
+    "contributor": 1,
+    "operator": 1,
+    "attestor": 3,
+}
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,9 @@ class ReputationConfig:
     prior_strength_k: Decimal
     decay_halflife_days: int
     dispute_penalty: Decimal
+    reliability_penalty: Decimal = Decimal("0.10")
+    cert_min_attestations: int = 10
+    cert_min_avg_rating: Decimal = Decimal("4.5")
 
 
 def validate_weight_map(weights_map: dict[str, Decimal], *, subject_type: str) -> None:
@@ -113,6 +125,15 @@ async def load_config(
         await _raw(db, "reputation_decay_halflife_days") or "180"
     )
     dispute_penalty = Decimal(await _raw(db, "reputation_dispute_penalty") or "0.20")
+    reliability_penalty = Decimal(
+        await _raw(db, "attestor_reliability_penalty") or "0.10"
+    )
+    cert_min_attestations = int(
+        await _raw(db, "attestor_certification_min_attestations") or "10"
+    )
+    cert_min_avg_rating = Decimal(
+        await _raw(db, "attestor_certification_min_avg_rating") or "4.5"
+    )
 
     if min_activity < 1 or prior_strength_k < 0 or decay_halflife_days < 1:
         raise ValueError(
@@ -121,6 +142,17 @@ async def load_config(
     if prior < 0 or prior > 1 or dispute_penalty < 0 or dispute_penalty > 1:
         raise ValueError(
             "reputation prior and dispute penalty must be between 0 and 1"
+        )
+    if (
+        reliability_penalty < 0
+        or reliability_penalty > 1
+        or cert_min_attestations < 1
+        or cert_min_avg_rating < 1
+        or cert_min_avg_rating > 5
+    ):
+        raise ValueError(
+            "attestor reliability_penalty must be 0-1, cert_min_attestations >= 1, "
+            "and cert_min_avg_rating 1-5"
         )
 
     return ReputationConfig(
@@ -131,4 +163,7 @@ async def load_config(
         prior_strength_k=prior_strength_k,
         decay_halflife_days=decay_halflife_days,
         dispute_penalty=dispute_penalty,
+        reliability_penalty=reliability_penalty,
+        cert_min_attestations=cert_min_attestations,
+        cert_min_avg_rating=cert_min_avg_rating,
     )

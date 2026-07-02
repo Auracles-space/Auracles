@@ -45,6 +45,30 @@ async def test_load_config_uses_defaults_when_platform_config_is_unset(
     assert config.dispute_penalty == Decimal("0.20")
 
 
+@pytest.mark.asyncio
+async def test_attestor_config_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Attestor config loads default weights, activity floor, and cert thresholds."""
+
+    async def fake_raw(_db: object, _key: str) -> str | None:
+        """Simulate a database with no attestor reputation overrides."""
+        return None
+
+    monkeypatch.setattr(weights, "_raw", fake_raw)
+
+    config = await weights.load_config(object(), subject_type="attestor")
+
+    assert config.weights == {
+        "rating": Decimal("0.75"),
+        "reliability": Decimal("0.25"),
+    }
+    assert config.min_activity == 3
+    assert config.reliability_penalty == Decimal("0.10")
+    assert config.cert_min_attestations == 10
+    assert config.cert_min_avg_rating == Decimal("4.5")
+
+
 def test_validate_weight_map_rejects_non_unit_sum() -> None:
     """Weight validation rejects factor sets that do not sum to one."""
     with pytest.raises(ValueError, match="sum to 1.0"):
