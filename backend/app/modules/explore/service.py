@@ -16,11 +16,12 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import get_settings
 from app.integrations import s3
-from app.modules.attestation.models import Attestation, Credential
+from app.modules.attestation.models import Attestation, AttestationBadge, Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
 from app.modules.collections.models import CollectionFramework, FrameworkCollection
 from app.modules.explore.schemas import (
+    AttestationBadgeDetail,
     ExploreArtifactSummary,
     ExploreAttestationBadge,
     ExploreAttestationStatus,
@@ -538,6 +539,46 @@ async def _framework_attestation_badges(
         target_ids=framework_ids,
     )
     return badges
+
+
+async def _framework_badge_details(
+    db: AsyncSession,
+    framework: Framework,
+) -> list[AttestationBadgeDetail]:
+    """Return public positive immutable badge snapshots for one framework."""
+    rows = (
+        await db.execute(
+            select(AttestationBadge)
+            .where(
+                AttestationBadge.framework_id == framework.id,
+                AttestationBadge.outcome.in_(PUBLIC_POSITIVE_ATTESTATION_OUTCOMES),
+            )
+            .order_by(
+                AttestationBadge.issued_at.desc(),
+                AttestationBadge.id.desc(),
+            )
+        )
+    ).scalars()
+    return [
+        AttestationBadgeDetail(
+            id=badge.id,
+            review_type=badge.review_type,
+            outcome=badge.outcome,
+            attestor_id=badge.attestor_id,
+            attestor_display_name=badge.attestor_display_name,
+            credentials=[
+                PublicCredentialResponse.model_validate(item)
+                for item in badge.credentials_snapshot
+            ],
+            issued_at=badge.issued_at,
+            framework_version=badge.framework_version,
+            newer_version_exists=(
+                badge.framework_version is not None
+                and framework.version != badge.framework_version
+            ),
+        )
+        for badge in rows.all()
+    ]
 
 
 async def list_catalog(
@@ -1087,6 +1128,7 @@ async def get_detail(
             )
             for artifact in artifacts
         ],
+        attestation_badges=await _framework_badge_details(db, framework),
     )
 
 
