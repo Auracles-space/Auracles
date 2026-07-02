@@ -28,7 +28,7 @@ from app.modules.attestation.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig, Transaction
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, FrameworkVersion
 
 IN_FLIGHT_ATTESTATION_STATUSES = {
     "pending_fee",
@@ -318,6 +318,23 @@ async def _target_framework_owner_id(
     return owner_id if isinstance(owner_id, UUID) else None
 
 
+async def _current_framework_version_id(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+) -> UUID | None:
+    """Resolve the immutable version row for a framework's current version."""
+    version_id = await db.scalar(
+        select(FrameworkVersion.id)
+        .join(Framework, Framework.id == FrameworkVersion.framework_id)
+        .where(
+            FrameworkVersion.framework_id == framework_id,
+            FrameworkVersion.version == Framework.version,
+        )
+    )
+    return version_id if isinstance(version_id, UUID) else None
+
+
 async def _create_attestation(
     db: AsyncSession,
     *,
@@ -332,6 +349,12 @@ async def _create_attestation(
         await db.rollback()
 
     async with db.begin():
+        framework_version_id = None
+        if payload.target_type == "framework":
+            framework_version_id = await _current_framework_version_id(
+                db,
+                framework_id=payload.target_id,
+            )
         attestation = Attestation(
             target_type=payload.target_type,
             target_id=payload.target_id,
@@ -343,6 +366,7 @@ async def _create_attestation(
             requested_jurisdictions=payload.requested_jurisdictions,
             fee_amount=amount,
             currency="USD",
+            framework_version_id=framework_version_id,
         )
         db.add(attestation)
         await db.flush()
