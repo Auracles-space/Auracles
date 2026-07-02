@@ -389,6 +389,10 @@ class AttestorProfile(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    certified_attestor_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class Credential(UpdatedAtMixin, Base):
