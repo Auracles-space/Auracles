@@ -876,6 +876,23 @@ async def _rank_eligible_attestors(
     if not profiles:
         return []
 
+    from app.modules.reputation.models import ReputationScore
+
+    reputation_rows = await db.execute(
+        select(
+            ReputationScore.subject_id,
+            ReputationScore.score,
+            ReputationScore.is_provisional,
+        ).where(
+            ReputationScore.subject_type == "attestor",
+            ReputationScore.subject_id.in_([profile.user_id for profile in profiles]),
+        )
+    )
+    reputation_by_user = {
+        subject_id: (score, is_provisional)
+        for subject_id, score, is_provisional in reputation_rows.all()
+    }
+
     owner_id = await _target_owner_id(db, attestation)
     conflict_subjects = _coi_conflict_subjects(attestation, owner_id)
     framework_category = await _framework_category(db, attestation)
@@ -899,6 +916,12 @@ async def _rank_eligible_attestors(
         if active_count >= concurrency_cap:
             continue
 
+        rep = reputation_by_user.get(profile.user_id)
+        if rep is not None and rep[1] is False and rep[0] is not None:
+            rep_norm = float(rep[0]) / 100.0
+        else:
+            rep_norm = 0.5
+
         factors = {
             "sector": scoring.sector_alignment(
                 attestation.requested_specializations,
@@ -911,7 +934,7 @@ async def _rank_eligible_attestors(
             ),
             "credential": scoring.credential_relevance(),
             "availability": scoring.availability_score(active_count, concurrency_cap),
-            "reputation": scoring.reputation_score(),
+            "reputation": scoring.reputation_score(rep_norm),
         }
         score, breakdown = scoring.compute_match_score(factors)
         scored_profiles.append(

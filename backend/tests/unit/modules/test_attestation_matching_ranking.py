@@ -30,6 +30,7 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
+from app.modules.reputation.models import ReputationScore
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -418,6 +419,59 @@ async def test_ranking_orders_by_score_then_fifo(db_session) -> None:
     order = [candidate.user_id for candidate in ranked]
     assert order[0] == high.id
     assert order.index(older.id) < order.index(low.id)
+
+
+async def test_ranking_uses_stored_attestor_reputation(db_session) -> None:
+    """A higher stored reputation lifts an otherwise tied attestor above a peer."""
+    requestor = await _make_user("operator", "req")
+    high = await _make_user("attestor", "highrep")
+    low = await _make_user("attestor", "lowrep")
+    base = datetime.now(UTC)
+
+    await _make_profile(
+        high.id,
+        specializations=["ml"],
+        jurisdictions=["US"],
+        approved_at=base,
+    )
+    await _make_profile(
+        low.id,
+        specializations=["ml"],
+        jurisdictions=["US"],
+        approved_at=base,
+    )
+    attestation = await _make_attestation(
+        requestor.id,
+        target_id=uuid4(),
+        target_type="contributor",
+        specializations=["ml"],
+        jurisdictions=["US"],
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                ReputationScore(
+                    subject_type="attestor",
+                    subject_id=high.id,
+                    score=Decimal("90.00"),
+                    components={},
+                    is_provisional=False,
+                )
+            )
+
+    ranked = await matching_service._rank_eligible_attestors(
+        db_session,
+        attestation=attestation,
+        excluded_ids={requestor.id},
+        limit=5,
+        now=base,
+    )
+
+    ids = [candidate.user_id for candidate in ranked]
+    assert ids.index(high.id) < ids.index(low.id)
+    high_candidate = next(candidate for candidate in ranked if candidate.user_id == high.id)
+    assert high_candidate.breakdown["reputation"] == 0.9
 
 
 async def test_revoke_overdue_attestations_includes_in_review_past_grace(
