@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.reputation import service as reputation_service
 from app.modules.attestation.models import Attestation, AttestorProfile, Credential
 from app.modules.attestation.schemas import (
     AttestorDirectoryEntry,
@@ -97,6 +98,18 @@ async def _directory_entry(
     profile: AttestorProfile,
 ) -> AttestorDirectoryEntry:
     """Build one public Attestor directory entry."""
+    score = await reputation_service.get_score(
+        db,
+        subject_type="attestor",
+        subject_id=user_id,
+    )
+    reputation = (
+        float(score.score)
+        if score is not None
+        and score.is_provisional is False
+        and score.score is not None
+        else None
+    )
     return AttestorDirectoryEntry(
         user_id=user_id,
         display_name=display_name,
@@ -106,7 +119,8 @@ async def _directory_entry(
         verification_level=profile.verification_level,
         credentials=await _verified_credentials(db=db, user_id=user_id),
         completed_attestations=await _completed_attestations(db=db, user_id=user_id),
-        reputation=None,
+        reputation=reputation,
+        certified=profile.certified_attestor_at is not None,
     )
 
 
