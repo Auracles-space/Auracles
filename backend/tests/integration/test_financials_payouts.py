@@ -497,8 +497,89 @@ async def test_released_attestation_fees_are_withdrawable_earnings(
         "currency": "USD",
         "gross_revenue": "600.00",
         "pending_clearance": "0.00",
-        "available_balance": "510.00",
-        "commission_rate": "0.15",
+        "available_balance": "540.00",
+        "commission_rate": "0.1",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_attestation_earnings_clear_immediately(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Released Attestation earnings withdraw at once with no refund-window wait.
+
+    Enforces Module 6a design §4.2: attestation has already passed its
+    dispute window before release, so earnings do not sit in pending
+    clearance the way framework sales do.
+    """
+    del migrated_database, payout_context
+    attestor_id, _ = await create_user_with_roles(
+        "attestation-immediate@auracles.space",
+        ["contributor", "attestor"],
+    )
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("600.00"),
+        created_at=datetime.now(UTC),
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(attestor_id, ["contributor", "attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "600.00",
+        "pending_clearance": "0.00",
+        "available_balance": "540.00",
+        "commission_rate": "0.1",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_mixed_marketplace_and_attestation_earnings_blend_commission(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """A user earning from both frameworks and attestations gets a blended rate.
+
+    Framework earnings settle at 15%, attestation earnings at 10%; the
+    reported commission_rate is the effective blend across cleared earnings
+    (Module 6a design §6).
+    """
+    del migrated_database, payout_context
+    user_id, _ = await create_user_with_roles(
+        "mixed-earnings@auracles.space",
+        ["contributor", "attestor"],
+    )
+    await create_sale(
+        user_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    await create_released_attestation_fee_earning(
+        user_id,
+        amount=Decimal("200.00"),
+        created_at=datetime.now(UTC),
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(user_id, ["contributor", "attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "300.00",
+        "pending_clearance": "0.00",
+        "available_balance": "265.00",
+        "commission_rate": "0.1167",
         "minimum_payout": "50.00",
     }
 
