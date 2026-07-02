@@ -56,6 +56,9 @@ DEFAULT_PLATFORM_CONFIG = {
         '{"engagement":"0.1500","license_compliance":"0.2500",'
         '"purchase_activity":"0.4000","review_quality":"0.2000"}'
     ),
+    "reputation_weights_attestor": (
+        '{"rating":"0.7500","reliability":"0.2500"}'
+    ),
     "reputation_min_activity_framework": "3",
     "reputation_min_activity_contributor": "1",
     "reputation_min_activity_operator": "1",
@@ -675,3 +678,36 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
     assert invalid_weights.status_code == 422
     assert invalid_prior.status_code == 422
     assert invalid_decay.status_code == 422
+
+
+async def test_admin_updates_attestor_reputation_weight_config(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """Super-admins can patch the attestor reputation weight map with valid 2FA."""
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    response = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Enable attestor reputation tuning before launch.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [
+                {
+                    "key": "reputation_weights_attestor",
+                    "value": '{"rating":"0.7000","reliability":"0.3000"}',
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    response_config = {item["key"]: item for item in response.json()["items"]}
+    assert json.loads(response_config["reputation_weights_attestor"]["value"]) == {
+        "rating": "0.7000",
+        "reliability": "0.3000",
+    }

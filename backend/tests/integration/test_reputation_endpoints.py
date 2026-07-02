@@ -27,6 +27,7 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
+from app.modules.attestation.models import AttestorProfile
 from app.modules.auth.models import User, UserRole
 from app.modules.frameworks.models import Framework
 from app.modules.projects.models import Project, Proposal
@@ -88,6 +89,7 @@ async def reputation_api_context() -> AsyncIterator[FakeRedis]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(Proposal))
             await session.execute(delete(Project))
+            await session.execute(delete(AttestorProfile))
             await session.execute(delete(Framework))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
@@ -170,6 +172,24 @@ async def _create_framework(
             )
             session.add(framework)
         return framework.id
+
+
+async def _create_attestor_profile(user_id: UUID) -> None:
+    """Create one active attestor profile for reputation recompute tests."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                AttestorProfile(
+                    user_id=user_id,
+                    specializations=["ml"],
+                    jurisdictions=["us"],
+                    sectors=["PE"],
+                    framework_categories=["Compliance"],
+                    active=True,
+                    coi_signed_at=datetime.now(UTC),
+                    coi_expires_at=datetime.now(UTC) + timedelta(days=365),
+                )
+            )
 
 
 async def _seed_score(
@@ -457,6 +477,53 @@ async def test_admin_recompute_queues_with_valid_2fa(
 
     assert response.status_code == 202
     assert dispatched == [("framework", str(framework_id))]
+
+
+@pytest.mark.asyncio
+async def test_admin_recompute_queues_attestor_subject_with_valid_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """An admin with valid 2FA can queue a single-attestor reputation recompute."""
+    secret = pyotp.random_base32()
+    admin_id = await _create_user(
+        "rep-attestor-admin2fa@example.com",
+        ["admin"],
+        totp_secret=secret,
+    )
+    attestor_id = await _create_user(
+        "rep-attestor-subject@example.com",
+        ["attestor"],
+    )
+    await _create_attestor_profile(attestor_id)
+
+    dispatched: list[tuple[str, str]] = []
+
+    from app.workers.tasks import reputation as reputation_tasks
+
+    def fake_delay(subject_type: str, subject_id: str) -> None:
+        """Capture the queued recompute arguments without hitting Celery."""
+        dispatched.append((subject_type, subject_id))
+
+    original_delay = reputation_tasks.recompute_subject_task.delay
+    reputation_tasks.recompute_subject_task.delay = fake_delay  # type: ignore[method-assign]
+    try:
+        response = await client.post(
+            "/v1/admin/reputation/recompute",
+            headers=_auth(admin_id, ["admin"]),
+            json={
+                "subject_type": "attestor",
+                "subject_id": str(attestor_id),
+                "reason": "manual refresh",
+                "totp_code": pyotp.TOTP(secret).now(),
+            },
+        )
+    finally:
+        reputation_tasks.recompute_subject_task.delay = original_delay  # type: ignore[method-assign]
+
+    assert response.status_code == 202
+    assert dispatched == [("attestor", str(attestor_id))]
 
 
 @pytest.mark.asyncio
