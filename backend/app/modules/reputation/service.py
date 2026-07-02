@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.reputation.models import ReputationScore
 from app.modules.reputation.weights import ReputationConfig, load_config
 
-VALID_SUBJECT_TYPES = ("framework", "contributor", "operator")
+VALID_SUBJECT_TYPES = ("framework", "contributor", "operator", "attestor")
 
 _TWO = Decimal("0.01")
 _FOUR = Decimal("0.0001")
@@ -163,11 +163,16 @@ async def subject_exists(
     applying marketplace-public filters such as published status or suspension.
     """
     from app.modules.auth.models import UserRole
+    from app.modules.attestation.models import AttestorProfile
     from app.modules.frameworks.models import Framework
 
     if subject_type == "framework":
         return await db.scalar(
             select(Framework.id).where(Framework.id == subject_id)
+        ) is not None
+    if subject_type == "attestor":
+        return await db.scalar(
+            select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
         ) is not None
     role = "contributor" if subject_type == "contributor" else "operator"
     return await db.scalar(
@@ -182,6 +187,7 @@ async def _public_subject_exists(
     db: AsyncSession, *, subject_type: str, subject_id: UUID
 ) -> bool:
     """Return whether a reputation subject is visible on public read routes."""
+    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import User, UserRole
     from app.modules.frameworks.models import Framework
 
@@ -212,6 +218,14 @@ async def _public_subject_exists(
             select(Framework.id).where(
                 Framework.contributor_id == subject_id,
                 Framework.status == "published",
+            )
+        ) is not None
+
+    if subject_type == "attestor":
+        return await db.scalar(
+            select(AttestorProfile.id).where(
+                AttestorProfile.user_id == subject_id,
+                AttestorProfile.active.is_(True),
             )
         ) is not None
 
@@ -257,7 +271,8 @@ async def read_reputation(
 
     Args:
         db: Async session.
-        subject_type: One of ``framework``, ``contributor``, ``operator``.
+        subject_type: One of ``framework``, ``contributor``, ``operator``,
+            ``attestor``.
         subject_id: UUID of the subject.
         public: When true, enforce public-surface visibility rules instead of
             broad recompute/admin existence checks.

@@ -28,6 +28,7 @@ _FACTOR_FN = {
     "framework": factors.framework_factors,
     "contributor": factors.contributor_factors,
     "operator": factors.operator_factors,
+    "attestor": factors.attestor_factors,
 }
 
 
@@ -35,7 +36,8 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
     """Recompute and upsert one subject's reputation in its own transaction.
 
     Args:
-        subject_type: One of ``framework``, ``contributor``, ``operator``.
+        subject_type: One of ``framework``, ``contributor``, ``operator``,
+            ``attestor``.
         subject_id: UUID of the subject to score.
     """
     async with async_session_factory() as db:
@@ -53,9 +55,10 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
 
 async def _recompute_all_impl() -> dict[str, int]:
     """Recompute every scorable subject; frameworks first for contributor rollups."""
+    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import UserRole
 
-    counts = {"framework": 0, "contributor": 0, "operator": 0}
+    counts = {"framework": 0, "contributor": 0, "operator": 0, "attestor": 0}
     async with async_session_factory() as db:
         framework_ids = (
             (
@@ -88,6 +91,17 @@ async def _recompute_all_impl() -> dict[str, int]:
             .scalars()
             .all()
         )
+        attestor_ids = (
+            (
+                await db.execute(
+                    select(AttestorProfile.user_id).where(
+                        AttestorProfile.active.is_(True)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     # Frameworks before contributors: contributor framework_performance reads
     # already-computed framework scores.
@@ -100,6 +114,9 @@ async def _recompute_all_impl() -> dict[str, int]:
     for oid in set(operator_ids):
         await recompute_subject(subject_type="operator", subject_id=oid)
         counts["operator"] += 1
+    for aid in set(attestor_ids):
+        await recompute_subject(subject_type="attestor", subject_id=aid)
+        counts["attestor"] += 1
     return counts
 
 
