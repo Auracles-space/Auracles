@@ -18,8 +18,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attestation.models import Attestation, AttestationBadge, Credential
-from app.modules.attestation.schemas import AttestorCompletedAttestation
+from app.modules.attestation.schemas import (
+    AttestorCompletedAttestation,
+    PublicCredentialResponse,
+)
 from app.modules.auth.models import User
+from app.modules.explore.schemas import AttestationBadgeDetail
 from app.modules.frameworks.models import Framework, FrameworkVersion
 
 _PUBLIC_BADGE_OUTCOMES = ("approved", "conditional")
@@ -155,4 +159,47 @@ async def list_attestor_completed(
             framework_version=badge.framework_version,
         )
         for badge, title in rows
+    ]
+
+
+async def list_framework_provenance(
+    db: AsyncSession,
+    *,
+    framework: Framework,
+) -> list[AttestationBadgeDetail]:
+    """Return all badges for a framework including rejected provenance rows.
+
+    Args:
+        db: Async SQLAlchemy session.
+        framework: Framework whose full badge provenance should be rendered.
+
+    Returns:
+        All immutable badge snapshots for the framework, newest first.
+    """
+    rows = (
+        await db.execute(
+            select(AttestationBadge)
+            .where(AttestationBadge.framework_id == framework.id)
+            .order_by(AttestationBadge.issued_at.desc(), AttestationBadge.id.desc())
+        )
+    ).scalars()
+    return [
+        AttestationBadgeDetail(
+            id=badge.id,
+            review_type=badge.review_type,
+            outcome=badge.outcome,
+            attestor_id=badge.attestor_id,
+            attestor_display_name=badge.attestor_display_name,
+            credentials=[
+                PublicCredentialResponse.model_validate(cred)
+                for cred in badge.credentials_snapshot
+            ],
+            issued_at=badge.issued_at,
+            framework_version=badge.framework_version,
+            newer_version_exists=(
+                badge.framework_version is not None
+                and badge.framework_version != framework.version
+            ),
+        )
+        for badge in rows.all()
     ]

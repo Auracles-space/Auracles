@@ -3,20 +3,26 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError  # type: ignore[import-untyped]
+from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import (
+    get_current_user,
     require_kyc_verified,
     require_profile_complete,
     require_role,
 )
 from app.core.security import decode_access_token
-from app.modules.auth.models import User
+from app.modules.attestation import badge_service
+from app.modules.auth.models import User, UserRole
+from app.modules.explore.schemas import AttestationBadgeDetail
 from app.modules.frameworks import service
+from app.modules.frameworks.models import Framework
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
     ArtifactResponse,
@@ -39,6 +45,7 @@ router = APIRouter(prefix="/frameworks", tags=["Frameworks"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 ProfileCompleteUser = Annotated[User, Depends(require_profile_complete)]
 optional_bearer = HTTPBearer(auto_error=False)
@@ -159,6 +166,51 @@ async def get_framework(
         contributor=contributor,
         framework_id=framework_id,
     )
+
+
+@router.get(
+    "/{framework_id}/attestation-badges",
+    response_model=list[AttestationBadgeDetail],
+    summary="List all attestation badges for a framework (owner or admin)",
+)
+async def list_framework_attestation_badges(
+    framework_id: UUID,
+    db: DatabaseSession,
+    current_user: CurrentUser,
+) -> list[AttestationBadgeDetail]:
+    """Return the full attestation provenance for a framework.
+
+    Only the framework owner or an admin may read this surface. It includes
+    rejected determinations hidden from the public framework page.
+    """
+    framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    is_admin = (
+        await db.scalar(
+            select(UserRole.id).where(
+                UserRole.user_id == current_user.id,
+                UserRole.role == "admin",
+                UserRole.approved_at.is_not(None),
+            )
+        )
+        is not None
+    )
+    if framework.contributor_id != current_user.id and not is_admin:
+        logger.bind(
+            module="attestation",
+            action="framework_provenance_denied",
+            user_id=current_user.id,
+            framework_id=framework_id,
+        ).warning("access_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not permitted.",
+        )
+    return await badge_service.list_framework_provenance(db, framework=framework)
 
 
 @router.patch("/{framework_id}", response_model=FrameworkResponse)
