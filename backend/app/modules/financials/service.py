@@ -63,6 +63,11 @@ from app.workers.tasks.payouts import process_payout
 
 INVOICE_URL_TTL_SECONDS = 900
 PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
+# Earning classes for payout-balance derivation. Marketplace earnings clear
+# after the refund window at the marketplace commission rate; attestation
+# earnings clear immediately at the attestation commission rate (Module 6a).
+_MARKETPLACE_EARNING_CLASS = "marketplace"
+_ATTESTATION_EARNING_CLASS = "attestation"
 
 
 def _masked_provider_ref(provider_ref: str) -> str:
@@ -163,6 +168,19 @@ async def _commission_rate(db: AsyncSession) -> Decimal:
     )
 
 
+async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
+    """Return the configured Attestation settlement commission rate.
+
+    Attestation earnings settle at a lower platform commission than the
+    framework marketplace (10% vs 15%); see Module 6a design §4.1.
+    """
+    return await _platform_decimal_config(
+        db,
+        key="attestation_commission_rate",
+        default=Decimal("0.10"),
+    )
+
+
 async def _minimum_payout(db: AsyncSession, currency: str) -> Decimal:
     """Return the configured minimum payout for a currency."""
     config_key = f"min_payout_{currency.lower()}"
@@ -177,10 +195,17 @@ async def _sum_transactions(
     *,
     contributor_id: UUID,
     currency: str,
+    earning_class: str,
     before: datetime | None = None,
     after_or_at: datetime | None = None,
 ) -> Decimal:
-    """Return gross completed marketplace and released escrow earnings."""
+    """Return gross completed earnings for one earning class.
+
+    ``earning_class`` selects which transaction types count:
+    ``_MARKETPLACE_EARNING_CLASS`` covers framework purchases and released
+    project milestones; ``_ATTESTATION_EARNING_CLASS`` covers released
+    attestation fees.
+    """
     released_escrow_exists = exists(
         select(Escrow.id).where(
             Escrow.ref_id == Transaction.ref_id,
@@ -188,21 +213,24 @@ async def _sum_transactions(
             Escrow.status == "released",
         )
     )
-    filters = [
-        Transaction.payee_id == contributor_id,
-        or_(
+    if earning_class == _ATTESTATION_EARNING_CLASS:
+        class_filter = or_(
+            (Transaction.transaction_type == "attestation_fee")
+            & (Transaction.ref_type == "attestation")
+            & released_escrow_exists
+        )
+    else:
+        class_filter = or_(
             Transaction.transaction_type == "purchase",
             (
                 (Transaction.transaction_type == "milestone")
                 & (Transaction.ref_type == "project_milestone")
                 & released_escrow_exists
             ),
-            (
-                (Transaction.transaction_type == "attestation_fee")
-                & (Transaction.ref_type == "attestation")
-                & released_escrow_exists
-            ),
-        ),
+        )
+    filters = [
+        Transaction.payee_id == contributor_id,
+        class_filter,
         Transaction.status == "completed",
         Transaction.currency == currency,
     ]
@@ -233,40 +261,84 @@ async def _claimed_payouts(
     return _normalise_money(Decimal(value or "0"))
 
 
+def _blended_commission_rate(
+    cleared_gross: Decimal, cleared_net: Decimal
+) -> Decimal:
+    """Return the effective commission rate across cleared earnings.
+
+    Returns 0 when there are no cleared earnings, avoiding division by zero.
+    Framework/project-only earners resolve to exactly the marketplace rate,
+    attestation-only earners to the attestation rate, and mixed earners to a
+    blended rate. Trailing zeros are stripped so a pure 15% earner serializes
+    as ``"0.15"`` rather than ``"0.1500"``.
+    """
+    if cleared_gross <= 0:
+        return Decimal("0")
+    rate = (Decimal("1") - (cleared_net / cleared_gross)).quantize(Decimal("0.0001"))
+    return rate.normalize()
+
+
 async def _available_payout_balance(
     db: AsyncSession,
     *,
     contributor_id: UUID,
     currency: str,
 ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
-    """Return gross, pending, available, claimed, and commission-rate balances."""
+    """Return gross, pending, available, claimed, and blended-commission balances.
+
+    Marketplace earnings (framework purchases, released project milestones)
+    clear after the refund window at the marketplace commission rate.
+    Attestation earnings clear immediately on release at the attestation
+    commission rate. The returned commission rate is the effective blended
+    rate across all cleared earnings (Module 6a design §5, §6).
+    """
     refund_window_hours = await _refund_window_hours(db)
-    commission_rate = await _commission_rate(db)
+    marketplace_rate = await _commission_rate(db)
+    attestation_rate = await _attestation_commission_rate(db)
     cutoff = datetime.now(UTC) - timedelta(hours=refund_window_hours)
-    gross_revenue = await _sum_transactions(
+    marketplace_gross = await _sum_transactions(
         db,
         contributor_id=contributor_id,
         currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
     )
-    pending_clearance = await _sum_transactions(
+    marketplace_pending = await _sum_transactions(
         db,
         contributor_id=contributor_id,
         currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
         after_or_at=cutoff,
     )
-    cleared_gross = await _sum_transactions(
+    marketplace_cleared_gross = await _sum_transactions(
         db,
         contributor_id=contributor_id,
         currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
         before=cutoff,
+    )
+    attestation_gross = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+        earning_class=_ATTESTATION_EARNING_CLASS,
     )
     claimed = await _claimed_payouts(
         db,
         contributor_id=contributor_id,
         currency=currency,
     )
-    cleared_net = _normalise_money(cleared_gross * (Decimal("1") - commission_rate))
-    available = max(_normalise_money(cleared_net - claimed), Decimal("0.00"))
+    marketplace_cleared_net = _normalise_money(
+        marketplace_cleared_gross * (Decimal("1") - marketplace_rate)
+    )
+    attestation_cleared_net = _normalise_money(
+        attestation_gross * (Decimal("1") - attestation_rate)
+    )
+    total_cleared_gross = marketplace_cleared_gross + attestation_gross
+    total_cleared_net = marketplace_cleared_net + attestation_cleared_net
+    available = max(_normalise_money(total_cleared_net - claimed), Decimal("0.00"))
+    gross_revenue = marketplace_gross + attestation_gross
+    pending_clearance = marketplace_pending
+    commission_rate = _blended_commission_rate(total_cleared_gross, total_cleared_net)
     return gross_revenue, pending_clearance, available, claimed, commission_rate
 
 

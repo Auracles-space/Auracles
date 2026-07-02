@@ -497,10 +497,141 @@ async def test_released_attestation_fees_are_withdrawable_earnings(
         "currency": "USD",
         "gross_revenue": "600.00",
         "pending_clearance": "0.00",
-        "available_balance": "510.00",
-        "commission_rate": "0.15",
+        "available_balance": "540.00",
+        "commission_rate": "0.1",
         "minimum_payout": "50.00",
     }
+
+
+async def test_attestation_earnings_clear_immediately(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """Released Attestation earnings withdraw at once with no refund-window wait.
+
+    Enforces Module 6a design §4.2: attestation has already passed its
+    dispute window before release, so earnings do not sit in pending
+    clearance the way framework sales do.
+    """
+    del migrated_database, payout_context
+    attestor_id, _ = await create_user_with_roles(
+        "attestation-immediate@auracles.space",
+        ["contributor", "attestor"],
+    )
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("600.00"),
+        created_at=datetime.now(UTC),
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(attestor_id, ["contributor", "attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "600.00",
+        "pending_clearance": "0.00",
+        "available_balance": "540.00",
+        "commission_rate": "0.1",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_mixed_marketplace_and_attestation_earnings_blend_commission(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """A user earning from both frameworks and attestations gets a blended rate.
+
+    Framework earnings settle at 15%, attestation earnings at 10%; the
+    reported commission_rate is the effective blend across cleared earnings
+    (Module 6a design §6).
+    """
+    del migrated_database, payout_context
+    user_id, _ = await create_user_with_roles(
+        "mixed-earnings@auracles.space",
+        ["contributor", "attestor"],
+    )
+    await create_sale(
+        user_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    await create_released_attestation_fee_earning(
+        user_id,
+        amount=Decimal("200.00"),
+        created_at=datetime.now(UTC),
+    )
+
+    response = await client.get(
+        "/v1/financials/earnings",
+        headers=auth_headers(user_id, ["contributor", "attestor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "currency": "USD",
+        "gross_revenue": "300.00",
+        "pending_clearance": "0.00",
+        "available_balance": "265.00",
+        "commission_rate": "0.1167",
+        "minimum_payout": "50.00",
+    }
+
+
+async def test_attestor_withdraws_attestation_earnings_at_ten_percent_gross_up(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """An Attestor withdraws attestation earnings; gross-up uses the 10% rate.
+
+    Enforces Module 6a design §9 tests 7-8: attestation earnings are
+    withdrawable via the existing KYC/2FA/$50-minimum payout path, and the
+    payout's commission bookkeeping reflects the 10% attestation rate.
+    """
+    del migrated_database
+    attestor_id, totp_secret = await create_user_with_roles(
+        "attestor-withdraw@auracles.space",
+        ["contributor", "attestor"],
+    )
+    payout_account_id = await create_verified_payout_account(attestor_id)
+    await create_released_attestation_fee_earning(
+        attestor_id,
+        amount=Decimal("600.00"),
+        created_at=datetime.now(UTC),
+    )
+    assert totp_secret is not None
+    code = pyotp.TOTP(totp_secret).now()
+
+    response = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(attestor_id, ["contributor", "attestor"]),
+        json={
+            "amount": "100.00",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+            "totp_code": code,
+        },
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.scalar(select(Payout))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["net_amount"] == "100.00"
+    assert body["commission_deducted"] == "11.11"
+    assert payout is not None
+    assert payout.amount == Decimal("111.11")
+    assert payout.net_amount == Decimal("100.00")
+    assert payout_context["payout_task"].dispatched == [str(payout.id)]
 
 
 async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
