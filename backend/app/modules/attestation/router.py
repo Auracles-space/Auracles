@@ -1351,3 +1351,20 @@ async def get_attestation_earnings_statement(
         attestation_id=attestation_id,
         user=user,
     )
+
+
+@router.get(
+    "/attestations/earnings/annual/{year}",
+    summary="Fetch the caller's annual attestation earnings summary",
+    description=(
+        "Return the approved attestor's annual earnings summary PDF for the "
+        "requested year when the Jan-2 batch has generated it."
+    ),
+)
+async def get_attestation_annual_summary(
+    year: int,
+    user: ApprovedAttestorUser,
+    db: DatabaseSession,
+) -> Response:
+    """Deliver the caller's annual attestation earnings summary."""
+    return await document_service.get_annual_summary(db, user=user, year=year)

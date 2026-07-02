@@ -17,10 +17,11 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.integrations import s3
-from app.modules.attestation.models import Attestation
+from app.modules.attestation.models import Attestation, AttestorProfile
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.invoicing.models import Invoice, InvoiceCounter
+from app.modules.notifications.models import Notification, NotificationDeliveryMarker
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import invoicing as invoicing_tasks
 
@@ -62,8 +63,11 @@ async def _reset_state() -> None:
     async with async_session_factory() as session:
         async with session.begin():
             await session.execute(delete(AuditLog))
+            await session.execute(delete(NotificationDeliveryMarker))
+            await session.execute(delete(Notification))
             await session.execute(delete(Invoice))
             await session.execute(delete(InvoiceCounter))
+            await session.execute(delete(AttestorProfile))
             await session.execute(delete(Attestation))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
@@ -79,6 +83,7 @@ def migrated_database() -> Iterator[None]:
     try:
         yield
     finally:
+        command.upgrade(Config("alembic.ini"), "head")
         sync_engine.dispose()
 
 
@@ -190,6 +195,19 @@ async def _seed_attestation(status: str) -> dict[str, UUID]:
         "requestor_id": requestor.id,
         "attestor_id": attestor.id,
     }
+
+
+async def _approve_attestor(user_id: UUID) -> None:
+    """Create one active approved Attestor profile for endpoint gating."""
+    async with async_session_factory() as session:
+        session.add(
+            AttestorProfile(
+                user_id=user_id,
+                specializations=[],
+                jurisdictions=[],
+            )
+        )
+        await session.commit()
 
 
 async def test_requestor_gets_tax_invoice(
@@ -339,6 +357,68 @@ async def test_requestor_cannot_fetch_earnings_statement(
     response = await client.get(
         f"/v1/attestations/{seeded['attestation_id']}/earnings-statement",
         headers=_auth_headers(seeded["requestor_id"], ["operator"]),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_approved_attestor_gets_annual_summary(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """An approved attestor can fetch their generated annual summary PDF."""
+    del clean_state
+    attestor = await _make_user("attestor", "annual-approved")
+    await _approve_attestor(attestor.id)
+    key = f"annual-summaries/{attestor.id}/2026.pdf"
+    fake_document_storage.existing_keys.add(key)
+
+    response = await client.get(
+        "/v1/attestations/earnings/annual/2026",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        f"https://s3.test/auracles-reports-dev/{key}?expires=900"
+    )
+
+
+async def test_other_approved_attestor_gets_404_for_missing_own_annual_summary(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """An approved attestor only resolves their own generated annual summary key."""
+    del clean_state
+    owner = await _make_user("attestor", "annual-owner")
+    other = await _make_user("attestor", "annual-other")
+    await _approve_attestor(owner.id)
+    await _approve_attestor(other.id)
+    fake_document_storage.existing_keys.add(f"annual-summaries/{owner.id}/2026.pdf")
+
+    response = await client.get(
+        "/v1/attestations/earnings/annual/2026",
+        headers=_auth_headers(other.id, ["attestor"]),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No earnings summary for that year."
+
+
+async def test_non_attestor_cannot_fetch_annual_summary(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """A non-attestor role is rejected before annual-summary delivery logic runs."""
+    del clean_state, fake_document_storage
+    operator = await _make_user("operator", "annual-operator")
+
+    response = await client.get(
+        "/v1/attestations/earnings/annual/2026",
+        headers=_auth_headers(operator.id, ["operator"]),
     )
 
     assert response.status_code == 403

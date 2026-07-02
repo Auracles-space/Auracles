@@ -86,6 +86,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "attestation_disputed": "attestation",
     "attestation_dispute_resolved": "attestation",
     "attestation_refunded": "attestation",
+    "attestation_annual_summary_ready": "attestation",
     "api_rate_limit_threshold": "account",
     "saved_search_alert": "discovery",
     "kyc_verified": "account",

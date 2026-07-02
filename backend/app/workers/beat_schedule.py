@@ -98,4 +98,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.reputation.recompute_reputation",
         "schedule": crontab(hour=1, minute=0),
     },
+    "generate-annual-earnings-summaries-yearly": {
+        "task": "app.workers.tasks.invoicing_beat.generate_annual_earnings_summaries",
+        "schedule": crontab(month_of_year=1, day_of_month=2, hour=6, minute=0),
+    },
 }
