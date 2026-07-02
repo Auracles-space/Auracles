@@ -24,6 +24,8 @@ from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
+from app.modules.invoicing.keys import invoice_pdf_key
+from app.modules.invoicing.models import Invoice
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import financials as financial_tasks
@@ -49,18 +51,26 @@ class FakeInvoiceStorage:
         self.uploads[f"{bucket}/{key}/{mime_type}"] = body
 
 
-class FakeHTML:
-    """WeasyPrint HTML test double."""
+class FakeInvoiceRenderer:
+    """Shared invoice renderer test double."""
 
-    rendered_html: str = ""
+    render_calls: list[dict[str, str]] = []
 
-    def __init__(self, *, string: str) -> None:
-        """Capture the HTML sent to the renderer."""
-        self.rendered_html = string
-        FakeHTML.rendered_html = string
+    @classmethod
+    def reset(cls) -> None:
+        """Clear captured render calls between tests."""
+        cls.render_calls = []
 
-    def write_pdf(self) -> bytes:
-        """Return deterministic PDF bytes."""
+    @classmethod
+    def render(cls, invoice: Invoice, *, line_item_label: str) -> bytes:
+        """Capture the invoice snapshot passed into the worker."""
+        cls.render_calls.append(
+            {
+                "invoice_number": invoice.invoice_number,
+                "line_item_label": line_item_label,
+                "s3_key": invoice.s3_key,
+            }
+        )
         return b"%PDF-INVOICE%"
 
 
@@ -135,10 +145,19 @@ def financial_task_context(
 
     cleanup()
     monkeypatch.setattr(financial_tasks.s3, "storage", fake_storage)
-    monkeypatch.setattr(financial_tasks, "HTML", FakeHTML)
+    FakeInvoiceRenderer.reset()
+    monkeypatch.setattr(
+        financial_tasks,
+        "render_invoice_pdf",
+        FakeInvoiceRenderer.render,
+    )
     monkeypatch.setattr(payout_tasks.stripe, "create_transfer", fake_create_transfer)
     try:
-        yield {"storage": fake_storage, "transfer_calls": transfer_calls}
+        yield {
+            "storage": fake_storage,
+            "transfer_calls": transfer_calls,
+            "render_calls": FakeInvoiceRenderer.render_calls,
+        }
     finally:
         cleanup()
         sync_engine.dispose()
@@ -224,6 +243,47 @@ def create_completed_purchase() -> UUID:
         session.commit()
     sync_engine.dispose()
     return transaction_id
+
+
+def issue_purchase_invoice(transaction_id: UUID) -> Invoice:
+    """Insert the issued shared-ledger invoice row for one purchase."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        transaction = session.get(Transaction, transaction_id)
+        if transaction is None:
+            raise AssertionError("Expected purchase transaction to exist.")
+        operator = session.get(User, transaction.payer_id)
+        if operator is None:
+            raise AssertionError("Expected operator to exist.")
+        invoice = Invoice(
+            series="AUR-INV",
+            sequence_year=2026,
+            sequence_number=1,
+            invoice_number="AUR-INV-2026-000001",
+            doc_type="sales_invoice",
+            currency=transaction.currency,
+            subtotal=transaction.amount,
+            tax_rate=Decimal("0.0000"),
+            tax_amount=Decimal("0.00"),
+            total=transaction.amount,
+            seller_name="Auracles Ltd",
+            seller_tax_id="TAX-1",
+            seller_address="1 Ledger Street",
+            buyer_name=operator.display_name,
+            buyer_email=operator.email,
+            source_ref_type="transaction",
+            source_ref_id=transaction_id,
+            s3_key="",
+        )
+        session.add(invoice)
+        session.flush()
+        invoice.s3_key = invoice_pdf_key(invoice.doc_type, invoice.id)
+        session.commit()
+        session.refresh(invoice)
+    sync_engine.dispose()
+    return invoice
 
 
 def create_pending_payout() -> UUID:
@@ -350,23 +410,28 @@ def test_generate_invoice_pdf_uploads_rendered_purchase_invoice(
 ) -> None:
     """Invoice task renders HTML to PDF and stores it in the reports bucket."""
     transaction_id = create_completed_purchase()
+    invoice = issue_purchase_invoice(transaction_id)
 
     result = financial_tasks.generate_invoice_pdf.apply(
         args=[str(transaction_id)]
     ).get()
 
     storage: FakeInvoiceStorage = financial_task_context["storage"]
-    invoice_key = f"invoices/purchases/{transaction_id}.pdf"
     assert result == {
         "transaction_id": str(transaction_id),
-        "invoice_key": invoice_key,
+        "invoice_key": invoice.s3_key,
         "status": "invoice_generated",
     }
     assert storage.uploads == {
-        f"auracles-reports-dev/{invoice_key}/application/pdf": b"%PDF-INVOICE%"
+        f"auracles-reports-dev/{invoice.s3_key}/application/pdf": b"%PDF-INVOICE%"
     }
-    assert "Invoice Framework" in FakeHTML.rendered_html
-    assert "199.00 USD" in FakeHTML.rendered_html
+    assert financial_task_context["render_calls"] == [
+        {
+            "invoice_number": "AUR-INV-2026-000001",
+            "line_item_label": "Invoice Framework",
+            "s3_key": invoice.s3_key,
+        }
+    ]
 
 
 def test_process_payout_creates_transfer_and_marks_processing(

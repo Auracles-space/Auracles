@@ -27,7 +27,6 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
-from app.modules.financials.invoices import purchase_invoice_key
 from app.modules.financials.models import (
     Escrow,
     Payout,
@@ -58,6 +57,7 @@ from app.modules.financials.schemas import (
 )
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
+from app.modules.invoicing import service as invoicing_service
 from app.workers.tasks.financials import generate_invoice_pdf
 from app.workers.tasks.payouts import process_payout
 
@@ -594,10 +594,24 @@ async def get_framework_purchase_invoice(
             detail="Invoice is only available for settled purchases.",
         )
 
-    key = purchase_invoice_key(transaction_id)
     from app.core.config import get_settings
 
     settings = get_settings()
+    invoice = await invoicing_service.issue_invoice(
+        db,
+        doc_type=invoicing_service.DOC_SALES_INVOICE,
+        series=invoicing_service.SERIES_SALES,
+        source_ref_type="transaction",
+        source_ref_id=transaction_id,
+        currency=transaction.currency,
+        subtotal=transaction.amount,
+        seller=invoicing_service.seller_identity(settings),
+        buyer_name=operator.display_name,
+        buyer_email=operator.email,
+    )
+    await db.commit()
+
+    key = invoice.s3_key
     if s3.storage.object_exists(settings.s3_reports_bucket, key):
         invoice_url = s3.storage.presigned_get(
             settings.s3_reports_bucket,

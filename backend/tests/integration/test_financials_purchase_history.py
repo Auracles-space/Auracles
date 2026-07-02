@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
@@ -19,6 +19,7 @@ from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
+from app.modules.invoicing.models import Invoice, InvoiceCounter
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 
@@ -61,6 +62,8 @@ async def reset_purchase_history_state() -> None:
         await session.execute(delete(ArtifactDownload))
         await session.execute(delete(Artifact))
         await session.execute(delete(License))
+        await session.execute(delete(Invoice))
+        await session.execute(delete(InvoiceCounter))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))
@@ -249,8 +252,23 @@ async def test_purchase_invoice_redirects_when_pdf_exists(
     )
     transaction_id, _ = await create_purchase(operator_id, title="Invoice Ready")
     storage: FakeInvoiceStorage = purchase_history_context["storage"]
-    invoice_key = f"invoices/purchases/{transaction_id}.pdf"
-    storage.existing_keys.add(invoice_key)
+    first_response = await client.get(
+        f"/v1/financials/purchases/{transaction_id}/invoice",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+    assert first_response.status_code == 202
+
+    async with async_session_factory() as session:
+        invoice = await session.scalar(
+            select(Invoice).where(
+                Invoice.source_ref_type == "transaction",
+                Invoice.source_ref_id == transaction_id,
+                Invoice.doc_type == "sales_invoice",
+            )
+        )
+
+    assert invoice is not None
+    storage.existing_keys.add(invoice.s3_key)
 
     response = await client.get(
         f"/v1/financials/purchases/{transaction_id}/invoice",
@@ -259,10 +277,10 @@ async def test_purchase_invoice_redirects_when_pdf_exists(
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        f"https://s3.test/auracles-reports-dev/{invoice_key}?expires=900"
+        f"https://s3.test/auracles-reports-dev/{invoice.s3_key}?expires=900"
     )
     assert storage.presigned_get_requests == [
-        ("auracles-reports-dev", invoice_key, 900)
+        ("auracles-reports-dev", invoice.s3_key, 900)
     ]
 
 
@@ -289,6 +307,38 @@ async def test_purchase_invoice_dispatches_generation_when_missing(
         "status": "generating",
     }
     assert invoice_task.dispatched == [str(transaction_id)]
+
+
+async def test_purchase_invoice_is_issued_and_numbered(
+    client: AsyncClient,
+    purchase_history_context: dict[str, Any],
+) -> None:
+    """A settled purchase GET issues a numbered shared-ledger invoice row."""
+    operator_id = await create_user_with_roles(
+        "invoice-issued@auracles.space",
+        ["operator"],
+    )
+    transaction_id, _ = await create_purchase(operator_id, title="Invoice Issued")
+    del purchase_history_context
+
+    response = await client.get(
+        f"/v1/financials/purchases/{transaction_id}/invoice",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    assert response.status_code == 202
+    async with async_session_factory() as session:
+        invoice = await session.scalar(
+            select(Invoice).where(
+                Invoice.source_ref_type == "transaction",
+                Invoice.source_ref_id == transaction_id,
+                Invoice.doc_type == "sales_invoice",
+            )
+        )
+
+    assert invoice is not None
+    assert invoice.series == "AUR-INV"
+    assert invoice.invoice_number.startswith("AUR-INV-")
 
 
 async def test_purchase_invoice_hides_other_operator_transaction(
