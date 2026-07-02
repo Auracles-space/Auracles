@@ -51,6 +51,16 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
                 subject_id=subject_id,
                 result=result,
             )
+            if subject_type == "attestor":
+                from app.modules.attestation.certification_service import (
+                    evaluate_attestor_certification,
+                )
+
+                await evaluate_attestor_certification(
+                    db,
+                    attestor_id=subject_id,
+                    cfg=cfg,
+                )
 
 
 async def _recompute_all_impl() -> dict[str, int]:
