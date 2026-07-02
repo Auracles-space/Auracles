@@ -1386,6 +1386,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestors/{user_id}/completed:
+    get:
+      tags:
+      - Attestation
+      summary: List an attestor's public completed attestations
+      description: Return the attestor's public positive completed attestations.
+      operationId: list_attestor_completed_attestations_v1_attestors__user_id__completed_get
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttestorCompletedAttestation'
+                title: Response List Attestor Completed Attestations V1 Attestors  User Id  Completed Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}:
     get:
       tags:
@@ -6308,6 +6339,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/attestation-badges:
+    get:
+      tags:
+      - Frameworks
+      summary: List all attestation badges for a framework (owner or admin)
+      description: "Return the full attestation provenance for a framework.\n\nOnly\
+        \ the framework owner or an admin may read this surface. It includes\nrejected\
+        \ determinations hidden from the public framework page."
+      operationId: list_framework_attestation_badges_v1_frameworks__framework_id__attestation_badges_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for links
+          title: Token
+        description: Access token via query parameter for links
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttestationBadgeDetail'
+                title: Response List Framework Attestation Badges V1 Frameworks  Framework Id  Attestation Badges Get
         '422':
           description: Validation Error
           content:
@@ -13641,6 +13717,58 @@ components:
       - totp_code
       title: AttestorCredentialCheckRequest
       description: Admin request body for the credential registry cross-check gate.
+    AttestationBadgeDetail:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        review_type:
+          type: string
+          title: Review Type
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          - rejected
+          title: Outcome
+        attestor_id:
+          type: string
+          format: uuid
+          title: Attestor Id
+        attestor_display_name:
+          type: string
+          title: Attestor Display Name
+        credentials:
+          items:
+            $ref: '#/components/schemas/PublicCredentialResponse'
+          type: array
+          title: Credentials
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        framework_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Version
+        newer_version_exists:
+          type: boolean
+          title: Newer Version Exists
+      type: object
+      required:
+      - id
+      - review_type
+      - outcome
+      - attestor_id
+      - attestor_display_name
+      - issued_at
+      - framework_version
+      - newer_version_exists
+      title: AttestationBadgeDetail
+      description: Full version-locked attestation badge for the framework page.
     AttestorDirectoryEntry:
       properties:
         user_id:
@@ -13706,6 +13834,43 @@ components:
       - attestors
       title: AttestorDirectoryResponse
       description: Public list response for the Attestor directory.
+    AttestorCompletedAttestation:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        framework_title:
+          type: string
+          title: Framework Title
+        review_type:
+          type: string
+          title: Review Type
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          title: Outcome
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        framework_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Version
+      type: object
+      required:
+      - framework_id
+      - framework_title
+      - review_type
+      - outcome
+      - issued_at
+      - framework_version
+      title: AttestorCompletedAttestation
+      description: One public entry in an Attestor's Completed Attestations list.
     AttestorKycVerifyRequest:
       properties:
         name_match:
@@ -16342,6 +16507,11 @@ components:
             $ref: '#/components/schemas/ExploreArtifactSummary'
           type: array
           title: Artifacts
+        attestation_badges:
+          items:
+            $ref: '#/components/schemas/AttestationBadgeDetail'
+          type: array
+          title: Attestation Badges
       type: object
       required:
       - id
