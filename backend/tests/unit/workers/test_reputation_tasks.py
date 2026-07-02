@@ -186,7 +186,7 @@ async def test_recompute_reputation_batch_scores_every_subject_type(
     migrated_database: None,
     reputation_test_context: None,
 ) -> None:
-    """The daily Beat task recomputes frameworks, contributors, and operators.
+    """The daily Beat task recomputes every reputation subject type.
 
     Runs the Celery wrapper through ``asyncio.to_thread`` so its worker event
     loop is isolated from the test loop, with the shared engine disposed around
@@ -203,7 +203,12 @@ async def test_recompute_reputation_batch_scores_every_subject_type(
     result = await asyncio.to_thread(lambda: recompute_reputation.apply().get())
     await engine.dispose()
 
-    assert result == {"framework": 1, "contributor": 1, "operator": 1}
+    assert result == {
+        "framework": 1,
+        "contributor": 1,
+        "operator": 1,
+        "attestor": 0,
+    }
 
     async with async_session_factory() as session:
         framework_score = await reputation_service.get_score(
