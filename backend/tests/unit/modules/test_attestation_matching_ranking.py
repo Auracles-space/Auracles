@@ -470,7 +470,9 @@ async def test_ranking_uses_stored_attestor_reputation(db_session) -> None:
 
     ids = [candidate.user_id for candidate in ranked]
     assert ids.index(high.id) < ids.index(low.id)
-    high_candidate = next(candidate for candidate in ranked if candidate.user_id == high.id)
+    high_candidate = next(
+        candidate for candidate in ranked if candidate.user_id == high.id
+    )
     assert high_candidate.breakdown["reputation"] == 0.9
 
 

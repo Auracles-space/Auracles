@@ -124,7 +124,7 @@ async def test_directory_entry_exposes_reputation_and_certified(clean: None) -> 
 
 
 async def test_directory_entry_hides_provisional_reputation(clean: None) -> None:
-    """A provisional or unscored attestor exposes reputation None and certified False."""
+    """A provisional or unscored attestor exposes no score and no certification."""
     del clean
     attestor_id = await _seed_active_attestor()
 

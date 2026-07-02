@@ -15,7 +15,11 @@ from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.main import app
 from app.modules.attestation import rating_service
-from app.modules.attestation.models import Attestation, AttestationRating, AttestorProfile
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationRating,
+    AttestorProfile,
+)
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
 

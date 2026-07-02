@@ -162,8 +162,8 @@ async def subject_exists(
     subject's type contract (framework vs contributor vs operator) without
     applying marketplace-public filters such as published status or suspension.
     """
-    from app.modules.auth.models import UserRole
     from app.modules.attestation.models import AttestorProfile
+    from app.modules.auth.models import UserRole
     from app.modules.frameworks.models import Framework
 
     if subject_type == "framework":

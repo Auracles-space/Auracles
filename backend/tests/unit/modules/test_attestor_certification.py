@@ -18,7 +18,11 @@ from app.main import app
 from app.modules.attestation.certification_service import (
     evaluate_attestor_certification,
 )
-from app.modules.attestation.models import Attestation, AttestationRating, AttestorProfile
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationRating,
+    AttestorProfile,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.reputation.weights import load_config
 from app.shared.models.audit_log import AuditLog

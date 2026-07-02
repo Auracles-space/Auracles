@@ -14,13 +14,13 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.reputation import service as reputation_service
 from app.modules.attestation.models import Attestation, AttestorProfile, Credential
 from app.modules.attestation.schemas import (
     AttestorDirectoryEntry,
     PublicCredentialResponse,
 )
 from app.modules.auth.models import User
+from app.modules.reputation import service as reputation_service
 
 _COMPLETED_ATTESTATION_STATUSES = ("released", "resolved", "closed")
 
