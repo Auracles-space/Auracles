@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     s3_reports_bucket: str = Field(
         default="auracles-reports-dev", alias="S3_REPORTS_BUCKET"
     )
+    invoice_seller_name: str = Field(
+        default="Auracles (pending registration)",
+        alias="INVOICE_SELLER_NAME",
+    )
+    invoice_seller_tax_id: str = Field(default="", alias="INVOICE_SELLER_TAX_ID")
+    invoice_seller_address: str = Field(default="", alias="INVOICE_SELLER_ADDRESS")
     s3_thumbnails_bucket: str = Field(
         default="auracles-thumbnails-dev", alias="S3_THUMBNAILS_BUCKET"
     )
