@@ -91,6 +91,9 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "saved_search_alert": "discovery",
     "kyc_verified": "account",
     "kyc_rejected": "account",
+    "org_invitation_received": "account",
+    "org_invitation_accepted": "account",
+    "org_invitation_declined": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()

@@ -6,8 +6,10 @@ derived attestor-role sync. RBAC lives in dependencies.py, never here.
 
 from __future__ import annotations
 
+import secrets
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,22 +20,33 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.rate_limit import RateLimiter, RedisCounter
+from app.core.security import hash_token
 from app.modules.auth.models import User
 from app.modules.auth.service import verify_totp_for_sensitive_action
+from app.modules.notifications.service import create_notification
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,
+    OrgInvitation,
     OrgMember,
 )
 from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgInvitationCreateRequest,
+    OrgInvitationResponse,
+    OrgInvitationsResponse,
     OrgMemberResponse,
     OrgMembersResponse,
     PublicOrganizationResponse,
 )
+from app.workers.tasks.org_notifications import send_org_invitation
+
+INVITATION_TTL_DAYS = 7
+INVITE_RATE_LIMITER = RateLimiter(namespace="org_invite", limit=20, window=3600)
 
 
 async def create_organization(
@@ -564,3 +577,170 @@ async def transfer_ownership(
             target_id=org_id,
             metadata={"new_owner_user_id": str(target.user_id)},
         )
+
+
+async def create_invitation(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    context: OrgContext,
+    payload: OrgInvitationCreateRequest,
+) -> OrgInvitationResponse:
+    """Create a pending invitation and dispatch its email after commit.
+
+    Args:
+        db: Async database session.
+        redis: Redis client used by the per-org invitation rate limiter.
+        context: Resolved organization/member/user context from RBAC dependency.
+        payload: Lowercased invitee email and requested role.
+
+    Returns:
+        The created pending invitation.
+
+    Raises:
+        HTTPException(409): The invite already exists or the user is already a member.
+        HTTPException(429): This organization exceeded its hourly invite budget.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    org_name = context.org.name
+    await INVITE_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
+    if db.in_transaction():
+        await db.rollback()
+
+    raw_token = secrets.token_urlsafe(32)
+    email = payload.email
+    try:
+        async with db.begin():
+            existing_member = await db.scalar(
+                select(OrgMember)
+                .join(User, User.id == OrgMember.user_id)
+                .where(
+                    OrgMember.org_id == org_id,
+                    func.lower(User.email) == email,
+                )
+            )
+            if existing_member is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This user is already a member.",
+                )
+
+            invitation = OrgInvitation(
+                org_id=org_id,
+                email=email,
+                role=payload.role,
+                invited_by=actor_id,
+                status="pending",
+                token_hash=hash_token(raw_token),
+                expires_at=datetime.now(UTC) + timedelta(days=INVITATION_TTL_DAYS),
+            )
+            db.add(invitation)
+            await db.flush()
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="org_member_invited",
+                target_type="organization",
+                target_id=org_id,
+                metadata={"role": payload.role},
+            )
+            invitee = await db.scalar(
+                select(User).where(func.lower(User.email) == email)
+            )
+            if invitee is not None:
+                await create_notification(
+                    db=db,
+                    user_id=invitee.id,
+                    notification_type="org_invitation_received",
+                    title=f"Invitation to join {org_name}",
+                    body=f"You've been invited to join {org_name} as {payload.role}.",
+                    link="/settings/organizations",
+                    payload={"org_id": str(org_id)},
+                    dedupe_key=f"org-invitation-received:{invitation.id}",
+                )
+            response = OrgInvitationResponse.model_validate(invitation)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A pending invitation for this email already exists.",
+        ) from exc
+
+    send_org_invitation.delay(email, org_name, payload.role, raw_token)
+    return response
+
+
+async def list_invitations(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+) -> OrgInvitationsResponse:
+    """List pending invitations for one organization.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+
+    Returns:
+        Pending invitations ordered newest-first.
+    """
+    invitations = (
+        await db.scalars(
+            select(OrgInvitation)
+            .where(
+                OrgInvitation.org_id == context.org.id,
+                OrgInvitation.status == "pending",
+            )
+            .order_by(OrgInvitation.created_at.desc(), OrgInvitation.id.desc())
+        )
+    ).all()
+    return OrgInvitationsResponse(
+        invitations=[
+            OrgInvitationResponse.model_validate(invitation)
+            for invitation in invitations
+        ]
+    )
+
+
+async def revoke_invitation(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    invitation_id: UUID,
+) -> None:
+    """Revoke one pending organization invitation.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+        invitation_id: Invitation id scoped to this organization.
+
+    Raises:
+        HTTPException(404): Invitation does not belong to this organization.
+        HTTPException(409): Only pending invitations can be revoked.
+    """
+    org_id = context.org.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        invitation = await db.scalar(
+            select(OrgInvitation)
+            .where(
+                OrgInvitation.id == invitation_id,
+                OrgInvitation.org_id == org_id,
+            )
+            .with_for_update()
+        )
+        if invitation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invitation not found.",
+            )
+        if invitation.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only pending invitations can be revoked.",
+            )
+        invitation.status = "revoked"
+        invitation.responded_at = datetime.now(UTC)

@@ -21,6 +21,9 @@ from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgInvitationCreateRequest,
+    OrgInvitationResponse,
+    OrgInvitationsResponse,
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
@@ -226,4 +229,68 @@ async def transfer_ownership(
         context=context,
         new_owner_member_id=payload.new_owner_member_id,
         totp_code=payload.totp_code,
+    )
+
+
+@router.post(
+    "/{org_id}/invitations",
+    response_model=OrgInvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Invite an organization member",
+    description=(
+        "Create a pending organization invitation, rate-limited per "
+        "organization and delivered by email."
+    ),
+)
+async def create_invitation(
+    org_id: UUID,
+    payload: OrgInvitationCreateRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgInvitationResponse:
+    """Create one pending invitation for an organization."""
+    del org_id
+    return await service.create_invitation(
+        db=db,
+        redis=redis,
+        context=context,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/{org_id}/invitations",
+    response_model=OrgInvitationsResponse,
+    summary="List pending organization invitations",
+    description="List pending invitations for one organization.",
+)
+async def list_invitations(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgInvitationsResponse:
+    """List pending invitations for one organization."""
+    del org_id
+    return await service.list_invitations(db=db, context=context)
+
+
+@router.delete(
+    "/{org_id}/invitations/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke an organization invitation",
+    description="Revoke one pending invitation for an organization.",
+)
+async def revoke_invitation(
+    org_id: UUID,
+    invitation_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Revoke one pending invitation."""
+    del org_id
+    await service.revoke_invitation(
+        db=db,
+        context=context,
+        invitation_id=invitation_id,
     )

@@ -75,6 +75,9 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "saved_search_alert",
     "kyc_verified",
     "kyc_rejected",
+    "org_invitation_received",
+    "org_invitation_accepted",
+    "org_invitation_declined",
     name="notification_type_enum",
     create_type=False,
 )

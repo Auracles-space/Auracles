@@ -468,3 +468,57 @@ def send_project_notification_email(
             "html": html,
         }
     )
+
+
+def send_org_invitation_email(
+    *,
+    email: str,
+    org_name: str,
+    role: str,
+    token: str,
+) -> None:
+    """Send an organization invitation email without logging the raw token.
+
+    Args:
+        email: Invitation recipient address.
+        org_name: Organization display name.
+        role: Invited organization role.
+        token: Raw invitation token for the accept link.
+    """
+    settings = get_settings()
+    accept_url = f"{_frontend_base_url()}/org-invitations/{quote(token, safe='')}"
+    if not settings.email_send_enabled:
+        logger.bind(module="organizations", action="send_org_invitation_email").info(
+            "email_delivery_disabled"
+        )
+        return
+    if settings.resend_api_key is None:
+        logger.bind(module="organizations", action="send_org_invitation_email").info(
+            "resend_not_configured"
+        )
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key.get_secret_value()
+
+    content_html = f"""
+    <p style="margin: 0 0 16px 0;">You've been invited to join <strong>{escape(org_name)}</strong> on Auracles.</p>
+    <p style="margin: 0 0 16px 0;">If you accept, you'll join the organization as <strong>{escape(role)}</strong>.</p>
+    <p style="margin: 0;">Invitation links expire after 7 days.</p>
+    """
+    html = _render_email_html(
+        title=f"You're invited to join {org_name} on Auracles",
+        content_html=content_html,
+        action_url=accept_url,
+        action_text="Review invitation",
+    )
+
+    _dispatch(
+        {
+            "from": settings.resend_from_address,
+            "to": email,
+            "subject": f"You're invited to join {org_name} on Auracles",
+            "html": html,
+        }
+    )

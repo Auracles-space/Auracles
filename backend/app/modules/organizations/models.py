@@ -1,8 +1,8 @@
 """SQLAlchemy models for Organizations Core.
 
-Six tables: organizations, org_members, org_invitations, org_teams,
-org_team_members, org_capabilities. Invitations and teams are added by
-later migrations in this sub-project; this file grows with them.
+This module defines the organization base entity plus membership,
+invitation, capability, and later team structures used by the
+org-as-attestor/contributor/operator sub-projects.
 """
 
 from __future__ import annotations
@@ -47,6 +47,15 @@ ORG_CAPABILITY_STATUS_ENUM = ENUM(
     "suspended",
     "revoked",
     name="org_capability_status_enum",
+    create_type=False,
+)
+ORG_INVITATION_STATUS_ENUM = ENUM(
+    "pending",
+    "accepted",
+    "declined",
+    "revoked",
+    "expired",
+    name="org_invitation_status_enum",
     create_type=False,
 )
 
@@ -141,6 +150,50 @@ class OrgCapability(UpdatedAtMixin, Base):
     capability: Mapped[str] = mapped_column(ORG_CAPABILITY_ENUM, nullable=False)
     status: Mapped[str] = mapped_column(ORG_CAPABILITY_STATUS_ENUM, nullable=False)
     activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class OrgInvitation(CreatedAtMixin, Base):
+    """Pending or terminal invitation for one organization email address."""
+
+    __tablename__ = "org_invitations"
+    __table_args__ = (
+        Index(
+            "uq_org_invitations_pending",
+            "org_id",
+            "email",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index("idx_org_invitations_email", "email"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(ORG_MEMBER_ROLE_ENUM, nullable=False)
+    invited_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(ORG_INVITATION_STATUS_ENUM, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class OrganizationCreateRequest(BaseModel):
@@ -137,3 +137,35 @@ class OrgOwnershipTransferRequest(BaseModel):
 
     new_owner_member_id: UUID
     totp_code: str = Field(min_length=6, max_length=16)
+
+
+class OrgInvitationCreateRequest(BaseModel):
+    """Admin-scoped request to invite one email address into an organization."""
+
+    email: EmailStr
+    role: Literal["admin", "member"]
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        """Normalize invitation emails to lowercase for unique matching."""
+        return str(value).strip().lower()
+
+
+class OrgInvitationResponse(BaseModel):
+    """One organization invitation row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: str
+    role: str
+    status: str
+    expires_at: datetime
+    created_at: datetime
+
+
+class OrgInvitationsResponse(BaseModel):
+    """List wrapper for pending organization invitations."""
+
+    invitations: list[OrgInvitationResponse]
