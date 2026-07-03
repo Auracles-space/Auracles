@@ -1312,7 +1312,7 @@ async def admin_list_orgs(
     orgs = (await db.execute(stmt)).scalars().all()
 
     if not orgs:
-        return AdminOrgsResponse(orgs=[], total=0, page=page, page_size=page_size)
+        return AdminOrgsResponse(orgs=[], total=total, page=page, page_size=page_size)
 
     org_ids = [org.id for org in orgs]
 

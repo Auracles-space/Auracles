@@ -3007,8 +3007,8 @@ export const declineInvitationV1OrgInvitationsTokenDeclinePost = <ThrowOnError e
 };
 
 /**
- * Admin List Orgs
- * List/search organizations for platform administration.
+ * List organizations (platform admin)
+ * Paginated organization directory for platform administrators, with member counts, capability statuses, and slug/name search.
  */
 export const adminListOrgsV1AdminOrgsGet = <ThrowOnError extends boolean = false>(options?: OptionsLegacyParser<AdminListOrgsV1AdminOrgsGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<AdminListOrgsV1AdminOrgsGetResponse, AdminListOrgsV1AdminOrgsGetError, ThrowOnError>({
@@ -3018,8 +3018,8 @@ export const adminListOrgsV1AdminOrgsGet = <ThrowOnError extends boolean = false
 };
 
 /**
- * Admin Suspend Org
- * Suspend an organization platform-wide (idempotent).
+ * Suspend an organization (platform admin)
+ * Suspend an organization platform-wide. Idempotent; members lose org access and derived roles are re-evaluated.
  */
 export const adminSuspendOrgV1AdminOrgsOrgIdSuspendPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse, AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError, ThrowOnError>({

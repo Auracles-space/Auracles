@@ -9265,8 +9265,9 @@ paths:
     get:
       tags:
       - Admin Organizations
-      summary: Admin List Orgs
-      description: List/search organizations for platform administration.
+      summary: List organizations (platform admin)
+      description: Paginated organization directory for platform administrators,
+        with member counts, capability statuses, and slug/name search.
       operationId: admin_list_orgs_v1_admin_orgs_get
       security:
       - HTTPBearer: []
@@ -9314,8 +9315,9 @@ paths:
     post:
       tags:
       - Admin Organizations
-      summary: Admin Suspend Org
-      description: Suspend an organization platform-wide (idempotent).
+      summary: Suspend an organization (platform admin)
+      description: Suspend an organization platform-wide. Idempotent; members lose
+        org access and derived roles are re-evaluated.
       operationId: admin_suspend_org_v1_admin_orgs__org_id__suspend_post
       security:
       - HTTPBearer: []

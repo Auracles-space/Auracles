@@ -484,7 +484,15 @@ admin_orgs_router = APIRouter(
 PlatformAdmin = Annotated[User, Depends(require_role("admin"))]
 
 
-@admin_orgs_router.get("", response_model=AdminOrgsResponse)
+@admin_orgs_router.get(
+    "",
+    response_model=AdminOrgsResponse,
+    summary="List organizations (platform admin)",
+    description=(
+        "Paginated organization directory for platform administrators, with "
+        "member counts, capability statuses, and slug/name search."
+    ),
+)
 async def admin_list_orgs(
     admin: PlatformAdmin,
     db: DatabaseSession,
@@ -499,7 +507,15 @@ async def admin_list_orgs(
     )
 
 
-@admin_orgs_router.post("/{org_id}/suspend", status_code=status.HTTP_204_NO_CONTENT)
+@admin_orgs_router.post(
+    "/{org_id}/suspend",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Suspend an organization (platform admin)",
+    description=(
+        "Suspend an organization platform-wide. Idempotent; members lose "
+        "org access and derived roles are re-evaluated."
+    ),
+)
 async def admin_suspend_org(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
 ) -> None:

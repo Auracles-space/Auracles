@@ -15,17 +15,20 @@ from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import (
     add_member,
     auth,
+    clean_orgs,
     create_org,
     create_user,
+    migrated_database,
 )
 
 pytestmark = pytest.mark.asyncio
 
-# We use clean_orgs directly as a fixture argument in our tests
+__all__ = ["clean_orgs", "migrated_database"]
 
 
 @pytest.fixture
 def override_redis() -> Iterator[FakeRedis]:
+    """Install a fake Redis for endpoints resolved through get_redis."""
     fake_redis = FakeRedis()
     app.dependency_overrides[get_redis] = lambda: fake_redis
     yield fake_redis
@@ -107,3 +110,57 @@ async def test_admin_suspend_org(
     )
     assert patch_res.status_code == 403
     assert patch_res.json()["detail"]["error_code"] == "org_suspended"
+
+
+async def test_admin_list_orgs_reports_total_on_empty_page(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+) -> None:
+    """A page beyond the last result still reports the true total count."""
+    del override_redis
+    _admin_id, admin_headers = await create_platform_admin()
+    owner_id = await create_user("pg-owner")
+    await create_org(client, create_access_token(owner_id, []), "pgorg")
+
+    res = await client.get("/v1/admin/orgs?page=2&page_size=20", headers=admin_headers)
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["orgs"] == []
+    assert data["total"] == 1
+    assert data["page"] == 2
+
+
+async def test_admin_suspend_org_syncs_derived_roles_for_members(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Suspension re-evaluates derived roles for every org member."""
+    del override_redis
+    from app.modules.organizations import service as org_service
+
+    synced: list[UUID] = []
+
+    async def record_sync(db: object, *, user_id: UUID) -> None:
+        """Record which user ids the suspension path syncs."""
+        del db
+        synced.append(user_id)
+
+    monkeypatch.setattr(org_service, "sync_derived_roles", record_sync)
+    _admin_id, admin_headers = await create_platform_admin()
+    owner_id = await create_user("sync-owner")
+    member_id = await create_user("sync-member")
+    org = await create_org(client, create_access_token(owner_id, []), "syncorg")
+    await add_member(str(org["id"]), member_id, "member")
+
+    res = await client.post(
+        f"/v1/admin/orgs/{org['id']}/suspend", headers=admin_headers
+    )
+
+    assert res.status_code == 204
+    assert sorted(synced) == sorted([owner_id, member_id])

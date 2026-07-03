@@ -47,6 +47,7 @@ from app.modules.financials.models import (
 )
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
+from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
@@ -184,6 +185,9 @@ async def account_deletion_test_context(
                 await session.execute(delete(Transaction))
                 await session.execute(delete(Proposal))
                 await session.execute(delete(Project))
+                await session.execute(delete(OrgCapability))
+                await session.execute(delete(OrgMember))
+                await session.execute(delete(Organization))
                 await session.execute(delete(UserRole))
                 await session.execute(delete(User))
                 config = await session.get(
@@ -347,7 +351,9 @@ async def seed_scrub_state(
                         "provider_ref": "pi_123456",
                         "raw_url": "https://files.auracles.space/private",
                         "safe": "retained",
-                        "summary": "Escalate with counterparty@example.com before release",
+                        "summary": (
+                            "Escalate with counterparty@example.com before release"
+                        ),
                         "note": f"Contact {old_email} before release",
                     },
                     ip_address="127.0.0.1",
@@ -822,6 +828,89 @@ async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
     assert {reason["code"] for reason in response.json()["blocked_reasons"]} == {
         "pending_payout"
     }
+
+
+async def _seed_owned_org(
+    user_id: UUID, *, capability_status: str = "active"
+) -> UUID:
+    """Create an org owned by the user with one attestor capability row."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=f"del-org-{uuid4().hex[:6]}",
+                name="Deletion Blocker Org",
+                country="GB",
+                created_by=user_id,
+            )
+            session.add(organization)
+            await session.flush()
+            session.add(
+                OrgMember(org_id=organization.id, user_id=user_id, role="owner")
+            )
+            session.add(
+                OrgCapability(
+                    org_id=organization.id,
+                    capability="attestor",
+                    status=capability_status,
+                )
+            )
+            return organization.id
+
+
+async def test_request_account_deletion_blocks_sole_org_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """Sole ownership of an org with an active capability blocks deletion."""
+    del migrated_database, account_deletion_test_context
+    user_id, _secret = await create_verified_user("org-owner-delete@auracles.space")
+    await _seed_owned_org(user_id)
+
+    response = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["status"] == "blocked"
+    assert {reason["code"] for reason in response.json()["blocked_reasons"]} == {
+        "sole_owner"
+    }
+
+
+async def test_request_account_deletion_allows_former_org_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """After transferring ownership away, orgs no longer block deletion."""
+    del migrated_database, account_deletion_test_context
+    user_id, _secret = await create_verified_user("org-exowner-delete@auracles.space")
+    new_owner_id, _ = await create_verified_user("org-newowner@auracles.space")
+    org_id = await _seed_owned_org(user_id)
+    async with async_session_factory() as session:
+        async with session.begin():
+            member = await session.scalar(
+                select(OrgMember).where(
+                    OrgMember.org_id == org_id, OrgMember.user_id == user_id
+                )
+            )
+            assert member is not None
+            member.role = "member"
+            session.add(
+                OrgMember(org_id=org_id, user_id=new_owner_id, role="owner")
+            )
+
+    response = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "scheduled"
 
 
 async def test_cancel_account_deletion_marks_scheduled_request_cancelled(
