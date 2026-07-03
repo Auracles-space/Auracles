@@ -33,10 +33,12 @@ from app.modules.organizations.models import (
     OrgMember,
 )
 from app.modules.organizations.schemas import (
+    MyOrganizationResponse,
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
     OrgInvitationCreateRequest,
+    OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
     OrgMemberResponse,
@@ -758,3 +760,254 @@ async def revoke_invitation(
             )
         invitation.status = "revoked"
         invitation.responded_at = datetime.now(UTC)
+
+
+async def _get_live_invitation(
+    db: AsyncSession,
+    *,
+    token: str,
+) -> tuple[OrgInvitation, Organization]:
+    """Resolve a pending invitation and its active org by raw token.
+
+    Args:
+        db: Async database session.
+        token: Raw invitation token from the URL path.
+
+    Returns:
+        The pending invitation and its active organization.
+
+    Raises:
+        HTTPException(404): Unknown token, terminal status, or dead org.
+        HTTPException(409): Token has a terminal status (accepted/declined/revoked).
+        HTTPException(410): Pending but past its expiry timestamp.
+    """
+    invitation = await db.scalar(
+        select(OrgInvitation).where(
+            OrgInvitation.token_hash == hash_token(token)
+        )
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation not found.",
+        )
+    if invitation.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invitation is not available.",
+        )
+    organization = await db.scalar(
+        select(Organization).where(
+            Organization.id == invitation.org_id,
+            Organization.deactivated_at.is_(None),
+            Organization.suspended_at.is_(None),
+        )
+    )
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation is not available.",
+        )
+    if invitation.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Invitation has expired.",
+        )
+    return invitation, organization
+
+
+async def preview_invitation(
+    db: AsyncSession,
+    *,
+    token: str,
+) -> OrgInvitationPreviewResponse:
+    """Return a preview of a live invitation without consuming it.
+
+    Args:
+        db: Async database session.
+        token: Raw invitation token from the URL path.
+
+    Returns:
+        The org name, slug, invited role, and expiry for the invitee to review.
+
+    Raises:
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    return OrgInvitationPreviewResponse(
+        org_name=organization.name,
+        org_slug=organization.slug,
+        role=invitation.role,
+        expires_at=invitation.expires_at,
+    )
+
+
+async def accept_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> MyOrganizationResponse:
+    """Accept an invitation and join the organization.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user accepting the invitation.
+        token: Raw invitation token from the URL path.
+
+    Returns:
+        The new membership in the MyOrganizationResponse shape.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+
+    # Extract all primitive values before rollback/begin expires them
+    invitation_id = invitation.id
+    invited_role = invitation.role
+    invited_by = invitation.invited_by
+    org_id = organization.id
+    org_name = organization.name
+    user_id = user.id
+    user_display_name = user.display_name
+
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        # Re-load under lock to prevent double-accept races
+        locked_invitation = await db.scalar(
+            select(OrgInvitation)
+            .where(OrgInvitation.id == invitation_id)
+            .with_for_update()
+        )
+        if locked_invitation is None or locked_invitation.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Invitation is not available.",
+            )
+        locked_invitation.status = "accepted"
+        locked_invitation.responded_at = datetime.now(UTC)
+
+        member = OrgMember(
+            org_id=org_id,
+            user_id=user_id,
+            role=invited_role,
+        )
+        db.add(member)
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="org_member_joined",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"role": invited_role},
+        )
+        await create_notification(
+            db=db,
+            user_id=invited_by,
+            notification_type="org_invitation_accepted",
+            title=f"{user_display_name} joined {org_name}",
+            body=f"{user_display_name} accepted the invitation to join {org_name}.",
+            link="/settings/organizations",
+            payload={"org_id": str(org_id)},
+            dedupe_key=f"org-invite-accepted:{invitation_id}",
+        )
+
+    await sync_derived_roles(db, user_id=user_id)
+
+    # Build the MyOrganizationResponse shape
+    capabilities: dict[str, str] = {}
+    cap_rows = (
+        await db.scalars(
+            select(OrgCapability).where(
+                OrgCapability.org_id == org_id
+            )
+        )
+    ).all()
+    for cap in cap_rows:
+        capabilities[cap.capability] = cap.status
+
+    # Reload the organization from the DB after the transaction is complete
+    org_obj = await db.scalar(
+        select(Organization).where(Organization.id == org_id)
+    )
+    if org_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        )
+
+    return MyOrganizationResponse(
+        org=OrganizationResponse.model_validate(org_obj),
+        role=invited_role,
+        capabilities=capabilities,
+    )
+
+
+async def decline_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> None:
+    """Decline an invitation without joining.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user declining the invitation.
+        token: Raw invitation token from the URL path.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+
+    # Extract all primitive values before rollback/begin expires them
+    invitation_id = invitation.id
+    invited_by = invitation.invited_by
+    org_id = organization.id
+    org_name = organization.name
+    user_display_name = user.display_name
+
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        locked_invitation = await db.scalar(
+            select(OrgInvitation)
+            .where(OrgInvitation.id == invitation_id)
+            .with_for_update()
+        )
+        if locked_invitation is None or locked_invitation.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Invitation is not available.",
+            )
+        locked_invitation.status = "declined"
+        locked_invitation.responded_at = datetime.now(UTC)
+
+        await create_notification(
+            db=db,
+            user_id=invited_by,
+            notification_type="org_invitation_declined",
+            title=f"{user_display_name} declined the invitation",
+            body=f"{user_display_name} declined the invitation to join {org_name}.",
+            link="/settings/organizations",
+            payload={"org_id": str(org_id)},
+            dedupe_key=f"org-invite-declined:{invitation_id}",
+        )
+

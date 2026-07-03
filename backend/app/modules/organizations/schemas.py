@@ -169,3 +169,12 @@ class OrgInvitationsResponse(BaseModel):
     """List wrapper for pending organization invitations."""
 
     invitations: list[OrgInvitationResponse]
+
+
+class OrgInvitationPreviewResponse(BaseModel):
+    """Invitation preview: what the invitee sees before accepting."""
+
+    org_name: str
+    org_slug: str
+    role: str
+    expires_at: datetime

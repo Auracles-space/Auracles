@@ -22,6 +22,7 @@ from app.modules.organizations.schemas import (
     OrganizationResponse,
     OrganizationUpdateRequest,
     OrgInvitationCreateRequest,
+    OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
     OrgMemberResponse,
@@ -294,3 +295,68 @@ async def revoke_invitation(
         context=context,
         invitation_id=invitation_id,
     )
+
+
+# Invitation response routes — invitee is not yet a member, so no org RBAC.
+invitation_router = APIRouter(
+    prefix="/org-invitations",
+    tags=["Organization Invitations"],
+)
+
+
+@invitation_router.get(
+    "/{token}",
+    response_model=OrgInvitationPreviewResponse,
+    summary="Preview an organization invitation",
+    description=(
+        "Return the organization name, slug, role, and expiry for a live "
+        "invitation. The caller must be authenticated but need not match "
+        "the invited email."
+    ),
+)
+async def preview_invitation(
+    token: str,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> OrgInvitationPreviewResponse:
+    """Preview an invitation before accepting or declining."""
+    del user
+    return await service.preview_invitation(db=db, token=token)
+
+
+@invitation_router.post(
+    "/{token}/accept",
+    response_model=MyOrganizationResponse,
+    summary="Accept an organization invitation",
+    description=(
+        "Accept a pending invitation. The authenticated user's email must "
+        "match the invitation email. Creates a membership row and notifies "
+        "the inviter."
+    ),
+)
+async def accept_invitation(
+    token: str,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> MyOrganizationResponse:
+    """Accept an invitation and join the organization."""
+    return await service.accept_invitation(db=db, user=user, token=token)
+
+
+@invitation_router.post(
+    "/{token}/decline",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Decline an organization invitation",
+    description=(
+        "Decline a pending invitation without joining. The authenticated "
+        "user's email must match the invitation email."
+    ),
+)
+async def decline_invitation(
+    token: str,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> None:
+    """Decline an invitation."""
+    await service.decline_invitation(db=db, user=user, token=token)
+

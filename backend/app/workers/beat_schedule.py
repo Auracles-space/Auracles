@@ -102,4 +102,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.invoicing_beat.generate_annual_earnings_summaries",
         "schedule": crontab(month_of_year=1, day_of_month=2, hour=6, minute=0),
     },
+    "expire-pending-org-invitations-daily": {
+        "task": "app.workers.tasks.organizations_beat.expire_pending_org_invitations",
+        "schedule": 86400.0,
+    },
 }

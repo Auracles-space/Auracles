@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -12,8 +14,9 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_token
+from app.core.security import create_access_token, hash_password, hash_token
 from app.main import app
+from app.modules.auth.models import User
 from app.modules.notifications.models import Notification
 from app.modules.organizations.models import OrgInvitation
 from tests.integration.test_auth_sessions import FakeRedis
@@ -251,3 +254,189 @@ async def test_invitation_rate_limit_returns_429(
     )
 
     assert response.status_code == 429
+
+
+# -- Task 7: Invitation preview, accept, decline --
+
+
+async def _invite(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    org: dict[str, object],
+    owner_token: str,
+    email: str,
+    role: str = "member",
+) -> str:
+    """Create an invitation via the API and capture the raw emailed token."""
+    captured: list[str] = []
+
+    from app.workers.tasks import org_notifications
+
+    monkeypatch.setattr(
+        org_notifications.send_org_invitation,
+        "delay",
+        lambda _e, _o, _r, t: captured.append(t),
+    )
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"email": email, "role": role},
+        headers=auth(owner_token),
+    )
+    assert response.status_code == 201
+    return captured[0]
+
+
+async def _create_user_with_email(prefix: str, email: str) -> UUID:
+    """Create a verified user at a specific email; return its id."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash=hash_password("CorrectHorse9"),
+                display_name=prefix,
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            return user.id
+
+
+async def test_accept_requires_matching_email(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting with a different account email returns 403."""
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("acc-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "accmm")
+    raw = await _invite(
+        client, monkeypatch, org, owner_token, "target@auracles.space"
+    )
+    other_id = await create_user("acc-other")
+
+    response = await client.post(
+        f"/v1/org-invitations/{raw}/accept",
+        headers=auth(create_access_token(other_id, [])),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_accept_creates_membership_once(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accept joins the org; a second accept of the same token returns 409."""
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("acc2-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "acc2")
+    invitee_email = f"acc2-invitee-{uuid4().hex[:8]}@auracles.space"
+    raw = await _invite(client, monkeypatch, org, owner_token, invitee_email)
+    invitee_id = await _create_user_with_email("invitee", invitee_email)
+    invitee_token = create_access_token(invitee_id, [])
+
+    first = await client.post(
+        f"/v1/org-invitations/{raw}/accept", headers=auth(invitee_token)
+    )
+    second = await client.post(
+        f"/v1/org-invitations/{raw}/accept", headers=auth(invitee_token)
+    )
+
+    assert first.status_code == 200
+    assert first.json()["role"] == "member"
+    assert second.status_code == 409
+
+
+async def test_expired_invitation_gone(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting an expired invitation returns 410."""
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("exp-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "exp")
+    invitee_email = f"exp-invitee-{uuid4().hex[:8]}@auracles.space"
+    raw = await _invite(client, monkeypatch, org, owner_token, invitee_email)
+
+    # Expire the invitation in the DB
+    async with async_session_factory() as session:
+        async with session.begin():
+            invitation = await session.scalar(
+                select(OrgInvitation).where(OrgInvitation.email == invitee_email)
+            )
+            invitation.expires_at = datetime.now(UTC) - timedelta(days=1)
+
+    invitee_id = await _create_user_with_email("exp-invitee", invitee_email)
+
+    response = await client.post(
+        f"/v1/org-invitations/{raw}/accept",
+        headers=auth(create_access_token(invitee_id, [])),
+    )
+
+    assert response.status_code == 410
+
+
+async def test_decline_terminalizes(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decline flips the invite to declined; preview afterwards returns 404."""
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("dec-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "dec")
+    invitee_email = f"dec-invitee-{uuid4().hex[:8]}@auracles.space"
+    raw = await _invite(client, monkeypatch, org, owner_token, invitee_email)
+    invitee_id = await _create_user_with_email("dec-invitee", invitee_email)
+    invitee_token = create_access_token(invitee_id, [])
+
+    declined = await client.post(
+        f"/v1/org-invitations/{raw}/decline", headers=auth(invitee_token)
+    )
+    # Preview after decline should return 409 (terminal status)
+    preview = await client.get(
+        f"/v1/org-invitations/{raw}", headers=auth(invitee_token)
+    )
+
+    assert declined.status_code == 204
+    # Terminal status → 409 (known-but-terminal per the plan semantics)
+    assert preview.status_code == 409
+
+
+async def test_preview_shows_org_details(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /v1/org-invitations/{token} returns org name, slug, role, expires_at."""
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("prev-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "prev")
+    invitee_email = f"prev-invitee-{uuid4().hex[:8]}@auracles.space"
+    raw = await _invite(client, monkeypatch, org, owner_token, invitee_email)
+    invitee_id = await _create_user_with_email("prev-invitee", invitee_email)
+
+    response = await client.get(
+        f"/v1/org-invitations/{raw}",
+        headers=auth(create_access_token(invitee_id, [])),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["org_slug"] == org["slug"]
+    assert body["role"] == "member"
+    assert "expires_at" in body
+
