@@ -1,8 +1,13 @@
-"""Pydantic schemas for Organizations Core."""
+"""Pydantic schemas for Organizations Core.
+
+Request and response models in this module cover base organization CRUD,
+membership management, and public-safe profile reads.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -100,3 +105,28 @@ class PublicOrganizationResponse(BaseModel):
     active_capabilities: list[str]
     member_count: int
     created_at: datetime
+
+
+class OrgMemberResponse(BaseModel):
+    """One organization member, with email hidden from plain members."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user_id: UUID
+    display_name: str
+    email: str | None
+    role: str
+    joined_at: datetime
+
+
+class OrgMembersResponse(BaseModel):
+    """List wrapper for organization members."""
+
+    members: list[OrgMemberResponse]
+
+
+class OrgMemberRoleUpdateRequest(BaseModel):
+    """Owner-scoped request to switch a member between member and admin."""
+
+    role: Literal["admin", "member"]

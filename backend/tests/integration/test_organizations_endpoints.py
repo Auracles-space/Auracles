@@ -90,6 +90,16 @@ async def create_org(client: AsyncClient, token: str, prefix: str) -> dict[str, 
     return dict(response.json())
 
 
+async def add_member(org_id: str, user_id: UUID, role: str) -> UUID:
+    """Insert a membership row directly and return its id."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            member = OrgMember(org_id=UUID(org_id), user_id=user_id, role=role)
+            session.add(member)
+            await session.flush()
+            return member.id
+
+
 async def test_create_org_seeds_owner_membership(
     client: AsyncClient, migrated_database: None, clean_orgs: None
 ) -> None:
@@ -334,3 +344,127 @@ async def test_deactivate_owner_only(
 
     assert denied.status_code == 403
     assert allowed.status_code == 204
+
+
+async def test_member_list_hides_emails_from_plain_members(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """GET members shows emails to admin+ callers only."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("mem-owner")
+    member_id = await create_user("mem-plain")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "mem")
+    await add_member(str(org["id"]), member_id, "member")
+
+    as_owner = await client.get(
+        f"/v1/orgs/{org['id']}/members",
+        headers=auth(owner_token),
+    )
+    as_member = await client.get(
+        f"/v1/orgs/{org['id']}/members",
+        headers=auth(create_access_token(member_id, [])),
+    )
+
+    assert as_owner.status_code == 200
+    assert as_member.status_code == 200
+    assert all(member["email"] for member in as_owner.json()["members"])
+    assert all(member["email"] is None for member in as_member.json()["members"])
+
+
+async def test_owner_cannot_be_removed(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """Removing the owner returns 409."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("rm-owner")
+    admin_id = await create_user("rm-admin")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "rmo")
+    await add_member(str(org["id"]), admin_id, "admin")
+    async with async_session_factory() as session:
+        owner_member = await session.scalar(
+            select(OrgMember).where(
+                OrgMember.org_id == UUID(str(org["id"])),
+                OrgMember.role == "owner",
+            )
+        )
+
+    assert owner_member is not None
+    response = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{owner_member.id}",
+        headers=auth(create_access_token(admin_id, [])),
+    )
+
+    assert response.status_code == 409
+
+
+async def test_admin_cannot_remove_admin_but_owner_can(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """Admin removing another admin is forbidden; owner removal succeeds."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("rm2-owner")
+    admin_a = await create_user("rm2-admin-a")
+    admin_b = await create_user("rm2-admin-b")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "rm2")
+    await add_member(str(org["id"]), admin_a, "admin")
+    target = await add_member(str(org["id"]), admin_b, "admin")
+
+    denied = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{target}",
+        headers=auth(create_access_token(admin_a, [])),
+    )
+    allowed = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{target}",
+        headers=auth(owner_token),
+    )
+
+    assert denied.status_code == 403
+    assert allowed.status_code == 204
+
+
+async def test_member_can_leave(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """Self-removal is allowed for non-owner members."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("leave-owner")
+    member_id = await create_user("leave-member")
+    org = await create_org(client, create_access_token(owner_id, []), "leave")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    response = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{member_row}",
+        headers=auth(create_access_token(member_id, [])),
+    )
+
+    assert response.status_code == 204
+
+
+async def test_role_change_owner_only_and_never_to_owner(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """Owner can promote member to admin; role cannot be changed to owner here."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("role-owner")
+    member_id = await create_user("role-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "role")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    promoted = await client.patch(
+        f"/v1/orgs/{org['id']}/members/{member_row}",
+        json={"role": "admin"},
+        headers=auth(owner_token),
+    )
+    to_owner = await client.patch(
+        f"/v1/orgs/{org['id']}/members/{member_row}",
+        json={"role": "owner"},
+        headers=auth(owner_token),
+    )
+
+    assert promoted.status_code == 200
+    assert promoted.json()["role"] == "admin"
+    assert to_owner.status_code == 422

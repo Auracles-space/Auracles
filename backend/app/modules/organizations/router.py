@@ -19,12 +19,16 @@ from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgMemberResponse,
+    OrgMemberRoleUpdateRequest,
+    OrgMembersResponse,
     PublicOrganizationResponse,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 
@@ -127,3 +131,68 @@ async def deactivate_organization(
     """Deactivate one organization as its owner."""
     del org_id
     await service.deactivate_organization(db=db, context=context)
+
+
+@router.get(
+    "/{org_id}/members",
+    response_model=OrgMembersResponse,
+    summary="List organization members",
+    description=(
+        "List members of one organization. Member emails are visible only to "
+        "org admins and owners."
+    ),
+)
+async def list_members(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgMembersResponse:
+    """List members of one organization."""
+    del org_id
+    return await service.list_members(db=db, context=context)
+
+
+@router.delete(
+    "/{org_id}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove an organization member",
+    description=(
+        "Remove a member from the organization. Non-owner members may remove "
+        "themselves to leave the organization."
+    ),
+)
+async def remove_member(
+    org_id: UUID,
+    member_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> None:
+    """Remove one member or leave the organization."""
+    del org_id
+    await service.remove_member(db=db, context=context, member_id=member_id)
+
+
+@router.patch(
+    "/{org_id}/members/{member_id}",
+    response_model=OrgMemberResponse,
+    summary="Change an organization member role",
+    description=(
+        "Change a member between the member and admin roles. Ownership "
+        "changes use the dedicated transfer endpoint."
+    ),
+)
+async def change_member_role(
+    org_id: UUID,
+    member_id: UUID,
+    payload: OrgMemberRoleUpdateRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> OrgMemberResponse:
+    """Change one member between member and admin roles."""
+    del org_id
+    return await service.change_member_role(
+        db=db,
+        context=context,
+        member_id=member_id,
+        new_role=payload.role,
+    )

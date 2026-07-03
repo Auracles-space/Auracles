@@ -28,6 +28,8 @@ from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgMemberResponse,
+    OrgMembersResponse,
     PublicOrganizationResponse,
 )
 
@@ -290,4 +292,196 @@ async def deactivate_organization(
             action="org_deactivated",
             target_type="organization",
             target_id=organization.id,
+        )
+
+
+async def list_members(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+) -> OrgMembersResponse:
+    """List organization members with caller-scoped email visibility.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+
+    Returns:
+        The organization's members ordered by join time.
+    """
+    include_email = context.member.role in {"owner", "admin"}
+    rows = (
+        await db.execute(
+            select(OrgMember, User.display_name, User.email)
+            .join(User, User.id == OrgMember.user_id)
+            .where(OrgMember.org_id == context.org.id)
+            .order_by(OrgMember.joined_at.asc(), OrgMember.id.asc())
+        )
+    ).all()
+    return OrgMembersResponse(
+        members=[
+            OrgMemberResponse(
+                id=member.id,
+                user_id=member.user_id,
+                display_name=display_name,
+                email=email if include_email else None,
+                role=member.role,
+                joined_at=member.joined_at,
+            )
+            for member, display_name, email in rows
+        ]
+    )
+
+
+async def _get_member_row(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    member_id: UUID,
+    for_update: bool = False,
+) -> OrgMember:
+    """Load one member row for an organization or raise 404."""
+    statement = select(OrgMember).where(
+        OrgMember.id == member_id,
+        OrgMember.org_id == org_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    member = await db.scalar(statement)
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found.",
+        )
+    return member
+
+
+async def remove_member(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    member_id: UUID,
+) -> None:
+    """Remove a member or allow a non-owner to leave the organization.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+        member_id: Target membership row id in this organization.
+
+    Raises:
+        HTTPException(403): Caller lacks permission to remove the target member.
+        HTTPException(404): Target member does not belong to this organization.
+        HTTPException(409): The organization owner cannot be removed.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    caller_role = context.member.role
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        target = await _get_member_row(
+            db,
+            org_id=org_id,
+            member_id=member_id,
+            for_update=True,
+        )
+        if target.role == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Transfer ownership before removing the owner.",
+            )
+
+        is_self = target.user_id == actor_id
+        if not is_self and caller_role == "member":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to remove this member.",
+            )
+        if caller_role == "admin" and target.role == "admin" and not is_self:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the owner can remove an admin.",
+            )
+
+        removed_user_id = target.user_id
+        await db.delete(target)
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_member_removed",
+            target_type="organization",
+            target_id=org_id,
+            metadata={
+                "removed_user_id": str(removed_user_id),
+                "self_removed": is_self,
+            },
+        )
+
+
+async def change_member_role(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    member_id: UUID,
+    new_role: str,
+) -> OrgMemberResponse:
+    """Change one member between the member and admin roles.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+        member_id: Target membership row id in this organization.
+        new_role: The replacement role, restricted to ``member`` or ``admin``.
+
+    Returns:
+        The updated member response with email included for the owner caller.
+
+    Raises:
+        HTTPException(404): Target member does not belong to this organization.
+        HTTPException(409): The owner role must be moved through transfer flow.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        target = await _get_member_row(
+            db,
+            org_id=org_id,
+            member_id=member_id,
+            for_update=True,
+        )
+        if target.role == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Use transfer ownership to change the owner role.",
+            )
+
+        old_role = target.role
+        target.role = new_role
+        user_row = await db.scalar(select(User).where(User.id == target.user_id))
+        assert user_row is not None
+        if old_role != new_role:
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="org_member_role_changed",
+                target_type="organization",
+                target_id=org_id,
+                metadata={
+                    "member_user_id": str(target.user_id),
+                    "from_role": old_role,
+                    "to_role": new_role,
+                },
+            )
+        return OrgMemberResponse(
+            id=target.id,
+            user_id=target.user_id,
+            display_name=user_row.display_name,
+            email=user_row.email,
+            role=target.role,
+            joined_at=target.joined_at,
         )
