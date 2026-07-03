@@ -468,3 +468,63 @@ async def test_role_change_owner_only_and_never_to_owner(
     assert promoted.status_code == 200
     assert promoted.json()["role"] == "admin"
     assert to_owner.status_code == 422
+
+
+async def test_ownership_transfer_requires_totp(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """Ownership transfer is blocked until the owner enables 2FA."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("xfer-owner")
+    member_id = await create_user("xfer-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "xfer")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/transfer-ownership",
+        json={"new_owner_member_id": str(member_row), "totp_code": "000000"},
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_ownership_transfer_swaps_roles(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A verified transfer demotes the old owner and promotes the new one."""
+    del migrated_database, clean_orgs
+    from app.modules.organizations import service as org_service
+
+    async def totp_ok(*args: object, **kwargs: object) -> None:
+        """Accept the transfer without real TOTP setup in this test."""
+        del args, kwargs
+
+    monkeypatch.setattr(org_service, "verify_totp_for_sensitive_action", totp_ok)
+    owner_id = await create_user("xfer2-owner")
+    member_id = await create_user("xfer2-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "xfer2")
+    member_row = await add_member(str(org["id"]), member_id, "admin")
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/transfer-ownership",
+        json={"new_owner_member_id": str(member_row), "totp_code": "123456"},
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 204
+    async with async_session_factory() as session:
+        memberships = (
+            await session.scalars(
+                select(OrgMember).where(OrgMember.org_id == UUID(str(org["id"])))
+            )
+        ).all()
+
+    roles = {membership.user_id: membership.role for membership in memberships}
+    assert roles[member_id] == "owner"
+    assert roles[owner_id] == "admin"

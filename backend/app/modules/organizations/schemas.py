@@ -130,3 +130,10 @@ class OrgMemberRoleUpdateRequest(BaseModel):
     """Owner-scoped request to switch a member between member and admin."""
 
     role: Literal["admin", "member"]
+
+
+class OrgOwnershipTransferRequest(BaseModel):
+    """TOTP-gated request to transfer organization ownership."""
+
+    new_owner_member_id: UUID
+    totp_code: str = Field(min_length=6, max_length=16)

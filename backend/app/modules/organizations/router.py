@@ -6,10 +6,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.organizations import service
 from app.modules.organizations.dependencies import OrgContext, require_org_role
@@ -22,12 +24,14 @@ from app.modules.organizations.schemas import (
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
+    OrgOwnershipTransferRequest,
     PublicOrganizationResponse,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+RedisClient = Annotated[Redis, Depends(get_redis)]
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
@@ -195,4 +199,31 @@ async def change_member_role(
         context=context,
         member_id=member_id,
         new_role=payload.role,
+    )
+
+
+@router.post(
+    "/{org_id}/transfer-ownership",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Transfer organization ownership",
+    description=(
+        "Transfer ownership to another existing member after successful "
+        "two-factor verification."
+    ),
+)
+async def transfer_ownership(
+    org_id: UUID,
+    payload: OrgOwnershipTransferRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> None:
+    """Transfer organization ownership to another member."""
+    del org_id
+    await service.transfer_ownership(
+        db=db,
+        redis=redis,
+        context=context,
+        new_owner_member_id=payload.new_owner_member_id,
+        totp_code=payload.totp_code,
     )

@@ -12,12 +12,14 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
+from redis.asyncio import Redis
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
+from app.modules.auth.service import verify_totp_for_sensitive_action
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
@@ -484,4 +486,81 @@ async def change_member_role(
             email=user_row.email,
             role=target.role,
             joined_at=target.joined_at,
+        )
+
+
+async def transfer_ownership(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    context: OrgContext,
+    new_owner_member_id: UUID,
+    totp_code: str,
+) -> None:
+    """Transfer organization ownership to another existing member.
+
+    Args:
+        db: Async database session.
+        redis: Redis client used for TOTP verification state.
+        context: Resolved organization/member/user context from RBAC dependency.
+        new_owner_member_id: Target membership row that should become owner.
+        totp_code: TOTP or backup code provided by the current owner.
+
+    Raises:
+        HTTPException(401): The authenticated owner row can no longer be loaded.
+        HTTPException(403): The sensitive-action TOTP check fails.
+        HTTPException(404): The target membership does not belong to this organization.
+        HTTPException(409): The transfer target already owns the organization.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    current_member_id = context.member.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        locked_user = await db.get(User, actor_id, with_for_update=True)
+        if locked_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        await verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=locked_user,
+            code=totp_code,
+        )
+
+        target = await _get_member_row(
+            db,
+            org_id=org_id,
+            member_id=new_owner_member_id,
+            for_update=True,
+        )
+        if target.id == current_member_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You already own this organization.",
+            )
+
+        current_owner = await db.scalar(
+            select(OrgMember)
+            .where(
+                OrgMember.org_id == org_id,
+                OrgMember.role == "owner",
+            )
+            .with_for_update()
+        )
+        assert current_owner is not None
+        current_owner.role = "admin"
+        await db.flush()
+        target.role = "owner"
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_ownership_transferred",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"new_owner_user_id": str(target.user_id)},
         )
