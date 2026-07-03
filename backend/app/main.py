@@ -25,6 +25,8 @@ from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.organizations.router import (
     invitation_router as org_invitation_router,
+)
+from app.modules.organizations.router import (
     router as organizations_router,
 )
 from app.modules.profiles.router import router as profiles_router

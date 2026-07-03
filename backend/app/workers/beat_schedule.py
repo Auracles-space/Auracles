@@ -104,6 +104,6 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     },
     "expire-pending-org-invitations-daily": {
         "task": "app.workers.tasks.organizations_beat.expire_pending_org_invitations",
-        "schedule": 86400.0,
+        "schedule": crontab(hour=3, minute=20),
     },
 }

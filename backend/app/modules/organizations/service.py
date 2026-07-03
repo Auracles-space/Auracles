@@ -881,45 +881,53 @@ async def accept_invitation(
     if db.in_transaction():
         await db.rollback()
 
-    async with db.begin():
-        # Re-load under lock to prevent double-accept races
-        locked_invitation = await db.scalar(
-            select(OrgInvitation)
-            .where(OrgInvitation.id == invitation_id)
-            .with_for_update()
-        )
-        if locked_invitation is None or locked_invitation.status != "pending":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Invitation is not available.",
+    try:
+        async with db.begin():
+            # Re-load under lock to prevent double-accept races
+            locked_invitation = await db.scalar(
+                select(OrgInvitation)
+                .where(OrgInvitation.id == invitation_id)
+                .with_for_update()
             )
-        locked_invitation.status = "accepted"
-        locked_invitation.responded_at = datetime.now(UTC)
+            if locked_invitation is None or locked_invitation.status != "pending":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Invitation is not available.",
+                )
+            locked_invitation.status = "accepted"
+            locked_invitation.responded_at = datetime.now(UTC)
 
-        member = OrgMember(
-            org_id=org_id,
-            user_id=user_id,
-            role=invited_role,
-        )
-        db.add(member)
-        await write_audit(
-            db=db,
-            actor_id=user_id,
-            action="org_member_joined",
-            target_type="organization",
-            target_id=org_id,
-            metadata={"role": invited_role},
-        )
-        await create_notification(
-            db=db,
-            user_id=invited_by,
-            notification_type="org_invitation_accepted",
-            title=f"{user_display_name} joined {org_name}",
-            body=f"{user_display_name} accepted the invitation to join {org_name}.",
-            link="/settings/organizations",
-            payload={"org_id": str(org_id)},
-            dedupe_key=f"org-invite-accepted:{invitation_id}",
-        )
+            member = OrgMember(
+                org_id=org_id,
+                user_id=user_id,
+                role=invited_role,
+            )
+            db.add(member)
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="org_member_joined",
+                target_type="organization",
+                target_id=org_id,
+                metadata={"role": invited_role},
+            )
+            await create_notification(
+                db=db,
+                user_id=invited_by,
+                notification_type="org_invitation_accepted",
+                title=f"{user_display_name} joined {org_name}",
+                body=f"{user_display_name} accepted the invitation to join {org_name}.",
+                link="/settings/organizations",
+                payload={"org_id": str(org_id)},
+                dedupe_key=f"org-invite-accepted:{invitation_id}",
+            )
+    except IntegrityError as exc:
+        # Invitee is already a member (e.g. email changed after joining
+        # another way) — surface the unique-membership violation as 409.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already a member of this organization.",
+        ) from exc
 
     await sync_derived_roles(db, user_id=user_id)
 

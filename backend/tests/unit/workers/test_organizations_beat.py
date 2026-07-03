@@ -17,16 +17,17 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, select
+from celery.schedules import crontab
+from sqlalchemy import create_engine, delete
 
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password, hash_token
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.organizations.models import (
+    Organization,
     OrgInvitation,
     OrgMember,
-    Organization,
 )
 from app.shared.models.audit_log import AuditLog
 from app.workers.beat_schedule import BEAT_SCHEDULE
@@ -115,13 +116,17 @@ async def _seed_invitation(
 
 
 async def test_beat_schedule_registered() -> None:
-    """The org invitation expiry task is registered in the beat schedule."""
+    """The org invitation expiry task runs daily at a pinned UTC time.
+
+    A crontab schedule (not a float interval) keeps the sweep at a
+    predictable off-peak hour regardless of when Beat was restarted.
+    """
     assert "expire-pending-org-invitations-daily" in BEAT_SCHEDULE
     entry = BEAT_SCHEDULE["expire-pending-org-invitations-daily"]
     assert entry["task"] == (
         "app.workers.tasks.organizations_beat.expire_pending_org_invitations"
     )
-    assert entry["schedule"] == 86400.0
+    assert entry["schedule"] == crontab(hour=3, minute=20)
 
 
 async def test_noop_on_empty_table(

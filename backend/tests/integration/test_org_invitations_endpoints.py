@@ -414,6 +414,36 @@ async def test_decline_terminalizes(
     assert preview.status_code == 409
 
 
+async def test_accept_when_already_member_returns_conflict(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting an invitation while already a member returns 409, not 500.
+
+    A user can hold a pending invitation and already be a member (e.g. the
+    invitee changed their account email to the invited address after being
+    added another way). The unique membership constraint must surface as a
+    conflict, never an unhandled IntegrityError.
+    """
+    del migrated_database, invitation_test_context
+    owner_id = await create_user("dup-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "dup")
+    invitee_email = f"dup-invitee-{uuid4().hex[:8]}@auracles.space"
+    raw = await _invite(client, monkeypatch, org, owner_token, invitee_email)
+    invitee_id = await _create_user_with_email("dup-invitee", invitee_email)
+    await add_member(str(org["id"]), invitee_id, "member")
+
+    response = await client.post(
+        f"/v1/org-invitations/{raw}/accept",
+        headers=auth(create_access_token(invitee_id, [])),
+    )
+
+    assert response.status_code == 409
+
+
 async def test_preview_shows_org_details(
     client: AsyncClient,
     migrated_database: None,
