@@ -40,6 +40,7 @@ def generate_annual_earnings_summary(
     log.info("task_started")
     parsed_attestor_id = UUID(attestor_id)
     try:
+
         async def _build_summary() -> tuple[
             list[dict[str, str]],
             dict[str, str | int],

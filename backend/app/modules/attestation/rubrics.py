@@ -129,9 +129,7 @@ def weighted_overall(scores: dict[str, int], review_type: str) -> Decimal:
             raise ValueError(f"Missing score for dimension: {dimension.key}")
         score = scores[dimension.key]
         if not 1 <= score <= 5:
-            raise ValueError(
-                f"Score out of range for {dimension.key}: {score}"
-            )
+            raise ValueError(f"Score out of range for {dimension.key}: {score}")
         total += dimension.weight * Decimal(score)
 
     return total.quantize(Decimal("0.01"))

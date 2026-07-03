@@ -192,9 +192,7 @@ def downgrade() -> None:
         )
         """
     )
-    op.execute(
-        "DROP INDEX IF EXISTS idx_consent_logs_user_document_accepted"
-    )
+    op.execute("DROP INDEX IF EXISTS idx_consent_logs_user_document_accepted")
     op.drop_table("consent_logs")
     op.drop_index(
         "uq_account_deletion_requests_one_active",

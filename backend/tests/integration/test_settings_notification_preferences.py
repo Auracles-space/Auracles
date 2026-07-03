@@ -72,18 +72,14 @@ async def _create_user(
             )
             session.add(user)
             await session.flush()
-            session.add_all(
-                [UserRole(user_id=user.id, role=role) for role in roles]
-            )
+            session.add_all([UserRole(user_id=user.id, role=role) for role in roles])
         return user.id
 
 
 def _auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for one authenticated test user."""
     return {
-        "Authorization": (
-            f"Bearer {create_access_token(user_id=user_id, roles=roles)}"
-        )
+        "Authorization": (f"Bearer {create_access_token(user_id=user_id, roles=roles)}")
     }
 
 
@@ -170,9 +166,7 @@ async def test_get_notification_preferences_returns_effective_grouped_matrix(
     ]
 
     project_category = next(
-        category
-        for category in body["categories"]
-        if category["category"] == "project"
+        category for category in body["categories"] if category["category"] == "project"
     )
     proposal_submitted = next(
         item
@@ -233,9 +227,7 @@ async def test_patch_notification_preferences_upserts_and_audits(
     ]
 
     project_category = next(
-        category
-        for category in body["categories"]
-        if category["category"] == "project"
+        category for category in body["categories"] if category["category"] == "project"
     )
     proposal_submitted = next(
         item

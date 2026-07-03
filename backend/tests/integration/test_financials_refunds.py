@@ -507,9 +507,11 @@ async def test_operator_can_refund_completed_collection_purchase(
         "refund-collection-operator@auracles.space",
         ["operator"],
     )
-    transaction_id, license_ids, framework_ids = (
-        await create_completed_collection_purchase(operator_id)
-    )
+    (
+        transaction_id,
+        license_ids,
+        framework_ids,
+    ) = await create_completed_collection_purchase(operator_id)
 
     response = await client.post(
         f"/v1/financials/purchases/{transaction_id}/refund",
@@ -519,19 +521,29 @@ async def test_operator_can_refund_completed_collection_purchase(
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, transaction_id)
         licenses = (
-            await session.execute(
-                select(License).where(License.id.in_(license_ids)).order_by(License.id)
-            )
-        ).scalars().all()
-        allocations = (
-            await session.execute(
-                select(CollectionEarningAllocation)
-                .where(
-                    CollectionEarningAllocation.transaction_id == transaction_id,
+            (
+                await session.execute(
+                    select(License)
+                    .where(License.id.in_(license_ids))
+                    .order_by(License.id)
                 )
-                .order_by(CollectionEarningAllocation.framework_id)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        allocations = (
+            (
+                await session.execute(
+                    select(CollectionEarningAllocation)
+                    .where(
+                        CollectionEarningAllocation.transaction_id == transaction_id,
+                    )
+                    .order_by(CollectionEarningAllocation.framework_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "collection_refunded")
         )
@@ -575,9 +587,11 @@ async def test_collection_refund_rejects_when_any_member_was_downloaded(
         "refund-downloaded-collection@auracles.space",
         ["operator"],
     )
-    transaction_id, license_ids, _framework_ids = (
-        await create_completed_collection_purchase(operator_id, with_download=True)
-    )
+    (
+        transaction_id,
+        license_ids,
+        _framework_ids,
+    ) = await create_completed_collection_purchase(operator_id, with_download=True)
 
     response = await client.post(
         f"/v1/financials/purchases/{transaction_id}/refund",
@@ -587,8 +601,10 @@ async def test_collection_refund_rejects_when_any_member_was_downloaded(
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, transaction_id)
         licenses = (
-            await session.execute(select(License).where(License.id.in_(license_ids)))
-        ).scalars().all()
+            (await session.execute(select(License).where(License.id.in_(license_ids))))
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 422
     assert response.json()["detail"] == (

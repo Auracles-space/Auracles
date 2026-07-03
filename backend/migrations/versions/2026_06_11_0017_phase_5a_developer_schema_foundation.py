@@ -511,10 +511,7 @@ def upgrade() -> None:
             sa.column("key", sa.String),
             sa.column("value", sa.Text),
         ),
-        [
-            {"key": key, "value": value}
-            for key, value in DEVELOPER_CONFIG_SEEDS.items()
-        ],
+        [{"key": key, "value": value} for key, value in DEVELOPER_CONFIG_SEEDS.items()],
     )
 
 

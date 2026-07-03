@@ -73,9 +73,7 @@ def _id_token(private_pem: str, **overrides: object) -> str:
         "iat": int(time.time()),
     }
     claims.update(overrides)
-    return jwt.encode(
-        claims, private_pem, algorithm="RS256", headers={"kid": "k1"}
-    )
+    return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "k1"})
 
 
 def test_generate_pkce_pair_produces_s256_challenge() -> None:
@@ -112,9 +110,7 @@ def test_build_authorization_url_contains_required_oauth_params() -> None:
     )
     params = parse_qs(split.query)
     assert params["client_id"] == ["client-abc.apps.googleusercontent.com"]
-    assert params["redirect_uri"] == [
-        "https://auracles.space/v1/auth/google/callback"
-    ]
+    assert params["redirect_uri"] == ["https://auracles.space/v1/auth/google/callback"]
     assert params["response_type"] == ["code"]
     assert "openid" in params["scope"][0]
     assert "email" in params["scope"][0]
@@ -157,9 +153,7 @@ async def test_exchange_code_posts_pkce_verifier_and_returns_tokens() -> None:
     assert sent["code_verifier"] == ["pkce-verifier"]
     assert sent["client_id"] == ["client-abc.apps.googleusercontent.com"]
     assert sent["client_secret"] == ["gclient_secret"]
-    assert sent["redirect_uri"] == [
-        "https://auracles.space/v1/auth/google/callback"
-    ]
+    assert sent["redirect_uri"] == ["https://auracles.space/v1/auth/google/callback"]
 
 
 @pytest.mark.asyncio
@@ -171,9 +165,7 @@ async def test_exchange_code_raises_on_provider_error() -> None:
     )
 
     with pytest.raises(GoogleOAuthError):
-        await exchange_code(
-            code="bad", code_verifier="v", settings=GOOGLE_SETTINGS
-        )
+        await exchange_code(code="bad", code_verifier="v", settings=GOOGLE_SETTINGS)
 
 
 def test_verify_id_token_accepts_valid_signature_and_returns_claims() -> None:

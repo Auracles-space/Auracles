@@ -428,6 +428,33 @@ export type AdminModerationQueueResponse = {
 };
 
 /**
+ * Platform-admin view of an organization.
+ */
+export type AdminOrgResponse = {
+    id: string;
+    slug: string;
+    name: string;
+    country: string;
+    member_count: number;
+    capabilities: {
+        [key: string]: (string);
+    };
+    suspended_at?: (string | null);
+    deactivated_at?: (string | null);
+    created_at: string;
+};
+
+/**
+ * Paginated list of organizations for platform admins.
+ */
+export type AdminOrgsResponse = {
+    orgs: Array<AdminOrgResponse>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Request body for overriding a near-duplicate rarity hard block.
  */
 export type AdminRarityBlockOverrideRequest = {
@@ -2414,6 +2441,24 @@ export type MilestoneUpdateRequest = {
 };
 
 /**
+ * An organization membership visible to the current user.
+ */
+export type MyOrganizationResponse = {
+    org: OrganizationResponse;
+    role: string;
+    capabilities: {
+        [key: string]: (string);
+    };
+};
+
+/**
+ * List wrapper for the authenticated user's organizations.
+ */
+export type MyOrganizationsResponse = {
+    organizations: Array<MyOrganizationResponse>;
+};
+
+/**
  * Serializable notification row returned to the owning user.
  */
 export type NotificationItem = {
@@ -2489,6 +2534,145 @@ export type NotificationsResponse = {
     total: number;
     page: number;
     page_size: number;
+};
+
+/**
+ * Request body to create an organization.
+ */
+export type OrganizationCreateRequest = {
+    slug: string;
+    name: string;
+    country: string;
+    website?: (string | null);
+    description?: (string | null);
+};
+
+/**
+ * Public-safe organization fields.
+ */
+export type OrganizationResponse = {
+    id: string;
+    slug: string;
+    name: string;
+    logo_key: (string | null);
+    country: string;
+    website: (string | null);
+    description: (string | null);
+    created_at: string;
+};
+
+/**
+ * Partial update of org profile fields (admin+).
+ */
+export type OrganizationUpdateRequest = {
+    name?: (string | null);
+    website?: (string | null);
+    description?: (string | null);
+    logo_key?: (string | null);
+};
+
+/**
+ * Admin-scoped request to invite one email address into an organization.
+ */
+export type OrgInvitationCreateRequest = {
+    email: string;
+    role: 'admin' | 'member';
+};
+
+export type role3 = 'admin' | 'member';
+
+/**
+ * Invitation preview: what the invitee sees before accepting.
+ */
+export type OrgInvitationPreviewResponse = {
+    org_name: string;
+    org_slug: string;
+    role: string;
+    expires_at: string;
+};
+
+/**
+ * One organization invitation row.
+ */
+export type OrgInvitationResponse = {
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    expires_at: string;
+    created_at: string;
+};
+
+/**
+ * List wrapper for pending organization invitations.
+ */
+export type OrgInvitationsResponse = {
+    invitations: Array<OrgInvitationResponse>;
+};
+
+/**
+ * One organization member, with email hidden from plain members.
+ */
+export type OrgMemberResponse = {
+    id: string;
+    user_id: string;
+    display_name: string;
+    email: (string | null);
+    role: string;
+    joined_at: string;
+};
+
+/**
+ * Owner-scoped request to switch a member between member and admin.
+ */
+export type OrgMemberRoleUpdateRequest = {
+    role: 'admin' | 'member';
+};
+
+/**
+ * List wrapper for organization members.
+ */
+export type OrgMembersResponse = {
+    members: Array<OrgMemberResponse>;
+};
+
+/**
+ * TOTP-gated request to transfer organization ownership.
+ */
+export type OrgOwnershipTransferRequest = {
+    new_owner_member_id: string;
+    totp_code: string;
+};
+
+/**
+ * Admin-scoped request to create a team in an organization.
+ */
+export type OrgTeamCreateRequest = {
+    name: string;
+};
+
+/**
+ * Admin-scoped request to rename an existing team.
+ */
+export type OrgTeamRenameRequest = {
+    name: string;
+};
+
+/**
+ * One organization team row with member count.
+ */
+export type OrgTeamResponse = {
+    id: string;
+    name: string;
+    member_count: number;
+    created_at: string;
+};
+
+/**
+ * List wrapper for organization teams.
+ */
+export type OrgTeamsResponse = {
+    teams: Array<OrgTeamResponse>;
 };
 
 /**
@@ -3113,6 +3297,21 @@ export type PublicCredentialResponse = {
     issued_date: string;
     expires_date: (string | null);
     expired: boolean;
+};
+
+/**
+ * Public org profile: no member identities, no PII.
+ */
+export type PublicOrganizationResponse = {
+    slug: string;
+    name: string;
+    logo_key: (string | null);
+    country: string;
+    website: (string | null);
+    description: (string | null);
+    active_capabilities: Array<(string)>;
+    member_count: number;
+    created_at: string;
 };
 
 /**
@@ -5957,6 +6156,245 @@ export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetError = (HTTPVali
 export type GetHealthV1HealthGetResponse = (HealthResponse);
 
 export type GetHealthV1HealthGetError = (HealthResponse);
+
+export type CreateOrganizationV1OrgsPostData = {
+    body: OrganizationCreateRequest;
+};
+
+export type CreateOrganizationV1OrgsPostResponse = (OrganizationResponse);
+
+export type CreateOrganizationV1OrgsPostError = (HTTPValidationError);
+
+export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse);
+
+export type ListMyOrganizationsV1OrgsMineGetError = unknown;
+
+export type GetPublicOrgV1OrgsSlugGetData = {
+    path: {
+        slug: string;
+    };
+};
+
+export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
+
+export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
+
+export type UpdateOrganizationV1OrgsOrgIdPatchData = {
+    body: OrganizationUpdateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type UpdateOrganizationV1OrgsOrgIdPatchResponse = (OrganizationResponse);
+
+export type UpdateOrganizationV1OrgsOrgIdPatchError = (HTTPValidationError);
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
+
+export type ListMembersV1OrgsOrgIdMembersGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
+
+export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchData = {
+    body: OrgMemberRoleUpdateRequest;
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchResponse = (OrgMemberResponse);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchError = (HTTPValidationError);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostData = {
+    body: OrgOwnershipTransferRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostResponse = (void);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostError = (HTTPValidationError);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostData = {
+    body: OrgInvitationCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostResponse = (OrgInvitationResponse);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostError = (HTTPValidationError);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
+    path: {
+        invitation_id: string;
+        org_id: string;
+    };
+};
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostData = {
+    body: OrgTeamCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateTeamV1OrgsOrgIdTeamsPostResponse = (OrgTeamResponse);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostError = (HTTPValidationError);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListTeamsV1OrgsOrgIdTeamsGetResponse = (OrgTeamsResponse);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetError = (HTTPValidationError);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchData = {
+    body: OrgTeamRenameRequest;
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchResponse = (OrgTeamResponse);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchError = (HTTPValidationError);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutResponse = (void);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutError = (HTTPValidationError);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type PreviewInvitationV1OrgInvitationsTokenGetData = {
+    path: {
+        token: string;
+    };
+};
+
+export type PreviewInvitationV1OrgInvitationsTokenGetResponse = (OrgInvitationPreviewResponse);
+
+export type PreviewInvitationV1OrgInvitationsTokenGetError = (HTTPValidationError);
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostData = {
+    path: {
+        token: string;
+    };
+};
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostResponse = (MyOrganizationResponse);
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostError = (HTTPValidationError);
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostData = {
+    path: {
+        token: string;
+    };
+};
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostResponse = (void);
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostError = (HTTPValidationError);
+
+export type AdminListOrgsV1AdminOrgsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type AdminListOrgsV1AdminOrgsGetResponse = (AdminOrgsResponse);
+
+export type AdminListOrgsV1AdminOrgsGetError = (HTTPValidationError);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
 
 // Compatibility aliases used by application code.
 export type ExploreAttestationStatus = ListFrameworksV1ExploreFrameworksGetData["query"] extends infer Query ? NonNullable<Query extends { attestation_status?: infer Value } ? Value : never> : never;

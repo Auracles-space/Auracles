@@ -48,22 +48,18 @@ def test_notification_preferences_migration_creates_tables_indexes_and_enums(
     inspector = inspect(migrated_engine)
     table_names = set(inspector.get_table_names())
     preference_columns = {
-        column["name"]
-        for column in inspector.get_columns("notification_preferences")
+        column["name"] for column in inspector.get_columns("notification_preferences")
     }
     marker_columns = {
         column["name"]
         for column in inspector.get_columns("notification_delivery_markers")
     }
     indexes = {
-        index["name"]
-        for index in inspector.get_indexes("notification_preferences")
+        index["name"] for index in inspector.get_indexes("notification_preferences")
     }
     uniques = {
         constraint["name"]
-        for constraint in inspector.get_unique_constraints(
-            "notification_preferences"
-        )
+        for constraint in inspector.get_unique_constraints("notification_preferences")
     }
     marker_uniques = {
         constraint["name"]
@@ -103,9 +99,7 @@ def test_notification_preferences_migration_creates_tables_indexes_and_enums(
     assert {"user_id", "dedupe_key", "channel"}.issubset(marker_columns)
     assert "idx_notification_preferences_user_type" in indexes
     assert "uq_notification_preferences_user_type_channel" in uniques
-    assert (
-        "uq_notification_delivery_markers_user_dedupe_channel" in marker_uniques
-    )
+    assert "uq_notification_delivery_markers_user_dedupe_channel" in marker_uniques
     assert enum_labels["notification_channel_enum"] == ["email", "in_app"]
     assert enum_labels["notification_category_enum"] == [
         "project",
@@ -116,8 +110,9 @@ def test_notification_preferences_migration_creates_tables_indexes_and_enums(
     ]
 
 
-def test_notification_preferences_migration_downgrade_removes_slice_one_schema(
-) -> None:
+def test_notification_preferences_migration_downgrade_removes_slice_one_schema() -> (
+    None
+):
     """Downgrade removes the preference table and its enum types."""
     settings = get_settings()
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)

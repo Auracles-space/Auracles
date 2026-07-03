@@ -236,10 +236,14 @@ async def test_admin_releases_held_escrow_with_totp_reason_and_idempotency(
     async with async_session_factory() as session:
         escrow = await session.get(Escrow, escrow_id)
         audits = (
-            await session.execute(
-                select(AuditLog).where(AuditLog.action == "escrow_released")
+            (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.action == "escrow_released")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert first.status_code == 200
     assert first.json()["status"] == "released"
@@ -250,10 +254,7 @@ async def test_admin_releases_held_escrow_with_totp_reason_and_idempotency(
     assert escrow.status == "released"
     assert escrow.released_by == admin_id
     assert len(audits) == 1
-    assert (
-        audits[0].metadata_["reason"]
-        == "Operator approval confirmed by support."
-    )
+    assert audits[0].metadata_["reason"] == "Operator approval confirmed by support."
     assert audits[0].metadata_["admin_override"] is True
 
 

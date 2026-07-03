@@ -44,9 +44,11 @@ def _parse_total_hits(payload: dict[str, Any]) -> tuple[int, list[dict[str, Any]
     if not isinstance(web_payload, dict):
         return 0, []
     raw_results = web_payload.get("results") or []
-    results = [
-        result for result in raw_results if isinstance(result, dict)
-    ] if isinstance(raw_results, list) else []
+    results = (
+        [result for result in raw_results if isinstance(result, dict)]
+        if isinstance(raw_results, list)
+        else []
+    )
     raw_total = web_payload.get("total") or web_payload.get("total_count")
     if isinstance(raw_total, int):
         return max(raw_total, len(results)), results

@@ -29,6 +29,7 @@ from app.modules.gdpr.schemas import (
     AccountDeletionRequestBody,
     AccountDeletionStatusResponse,
 )
+from app.modules.organizations.service import user_deletion_org_blockers
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 
 ACTIVE_DELETION_STATUSES = {"pending", "scheduled"}
@@ -332,6 +333,10 @@ async def collect_blocked_reasons(
                 count=active_attestation_count,
             )
         )
+
+    org_blockers = await user_deletion_org_blockers(db, user_id=user_id)
+    reasons.extend(org_blockers)
+
     return reasons
 
 

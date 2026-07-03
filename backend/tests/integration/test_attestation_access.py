@@ -38,6 +38,7 @@ pytestmark = pytest.mark.asyncio
 # S3 Stub
 # ---------------------------------------------------------------------------
 
+
 class FakeDownloadStorage:
     """S3 storage test double for licensed Artifact downloads."""
 
@@ -57,6 +58,7 @@ class FakeDownloadStorage:
         self.presigned_get_requests.append((bucket, key, expires_in))
         return f"https://s3.test/{bucket}/{key}?download={self.counter}"
 
+
 @pytest.fixture
 def stub_s3(monkeypatch: pytest.MonkeyPatch) -> FakeDownloadStorage:
     fake = FakeDownloadStorage()
@@ -67,6 +69,7 @@ def stub_s3(monkeypatch: pytest.MonkeyPatch) -> FakeDownloadStorage:
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
+
 
 async def _reset_state() -> None:
     """Remove attestation/user test rows in FK-safe order."""
@@ -82,6 +85,7 @@ async def _reset_state() -> None:
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             from sqlalchemy import update
+
             await session.execute(update(Framework).values(preview_artifact_id=None))
             await session.execute(delete(Artifact))
             await session.execute(delete(Framework))
@@ -101,6 +105,7 @@ def migrated_database() -> Iterator[None]:
     finally:
         sync_engine.dispose()
 
+
 @pytest.fixture
 async def clean_state(migrated_database) -> AsyncIterator[None]:
     """Clean attestation/user state before and after the test."""
@@ -113,23 +118,25 @@ async def clean_state(migrated_database) -> AsyncIterator[None]:
         await _reset_state()
         await engine.dispose()
 
+
 @pytest.fixture
 async def db_session(clean_state) -> AsyncIterator:
     del clean_state
     async with async_session_factory() as session:
         yield session
 
+
 @pytest.fixture
 async def client() -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://testserver"
-    ) as client:
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
+
 
 # ---------------------------------------------------------------------------
 # Users & Auth
 # ---------------------------------------------------------------------------
+
 
 async def _create_user(role_name: str, prefix: str) -> User:
     async with async_session_factory() as session:
@@ -157,27 +164,33 @@ async def _create_user(role_name: str, prefix: str) -> User:
 async def operator(clean_state) -> User:
     return await _create_user("operator", "access-operator")
 
+
 @pytest.fixture
 async def attestor(clean_state) -> User:
     return await _create_user("attestor", "access-attestor")
 
+
 @pytest.fixture
 async def other_attestor(clean_state) -> User:
     return await _create_user("attestor", "access-other")
+
 
 @pytest.fixture
 def attestor_auth(attestor: User) -> dict[str, str]:
     token = create_access_token(attestor.id, ["attestor"])
     return {"Authorization": f"Bearer {token}"}
 
+
 @pytest.fixture
 def other_attestor_auth(other_attestor: User) -> dict[str, str]:
     token = create_access_token(other_attestor.id, ["attestor"])
     return {"Authorization": f"Bearer {token}"}
 
+
 # ---------------------------------------------------------------------------
 # Data Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 async def framework_with_artifact(operator: User) -> tuple[Framework, Artifact]:
@@ -195,7 +208,7 @@ async def framework_with_artifact(operator: User) -> tuple[Framework, Artifact]:
         )
         session.add(framework)
         await session.flush()
-        
+
         artifact = Artifact(
             framework_id=framework.id,
             name="main_doc.pdf",
@@ -210,17 +223,17 @@ async def framework_with_artifact(operator: User) -> tuple[Framework, Artifact]:
         await session.refresh(artifact)
     return framework, artifact
 
+
 @pytest.fixture
 async def framework_artifact(
-    framework_with_artifact: tuple[Framework, Artifact]
+    framework_with_artifact: tuple[Framework, Artifact],
 ) -> Artifact:
     return framework_with_artifact[1]
 
+
 @pytest.fixture
 async def accepted_attestation(
-    framework_with_artifact: tuple[Framework, Artifact],
-    operator: User,
-    attestor: User
+    framework_with_artifact: tuple[Framework, Artifact], operator: User, attestor: User
 ) -> Attestation:
     framework, _ = framework_with_artifact
     async with async_session_factory() as session:
@@ -241,11 +254,10 @@ async def accepted_attestation(
         await session.refresh(attestation)
     return attestation
 
+
 @pytest.fixture
 async def offered_attestation(
-    framework_with_artifact: tuple[Framework, Artifact],
-    operator: User,
-    attestor: User
+    framework_with_artifact: tuple[Framework, Artifact], operator: User, attestor: User
 ) -> Attestation:
     framework, _ = framework_with_artifact
     async with async_session_factory() as session:
@@ -261,7 +273,7 @@ async def offered_attestation(
         )
         session.add(attestation)
         await session.flush()
-        
+
         offer = AttestationOffer(
             attestation_id=attestation.id,
             attestor_id=attestor.id,
@@ -278,6 +290,7 @@ async def offered_attestation(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 async def test_assigned_attestor_full_access_logs(
     client, attestor_auth, accepted_attestation, framework_artifact, db_session, stub_s3
@@ -324,7 +337,7 @@ async def test_outsider_gets_forbidden(
 
 @pytest.fixture
 async def preview_artifact(
-    framework_with_artifact: tuple[Framework, Artifact]
+    framework_with_artifact: tuple[Framework, Artifact],
 ) -> Artifact:
     framework, _ = framework_with_artifact
     async with async_session_factory() as session:
@@ -338,7 +351,7 @@ async def preview_artifact(
         )
         session.add(artifact)
         await session.commit()
-        
+
         fw = await session.get(Framework, framework.id)
         fw.preview_artifact_id = artifact.id
         await session.commit()

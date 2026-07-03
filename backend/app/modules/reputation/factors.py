@@ -327,8 +327,7 @@ async def attestor_factors(
 
     stood_count = int(
         await db.scalar(
-            select(func.count())
-            .select_from(
+            select(func.count()).select_from(
                 select(Attestation.id)
                 .where(
                     Attestation.attestor_id == user_id,

@@ -435,9 +435,7 @@ async def test_regenerate_backup_codes_replaces_old_set(
             )
         )
         audit_log = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "2fa_backup_codes_regenerated"
-            )
+            select(AuditLog).where(AuditLog.action == "2fa_backup_codes_regenerated")
         )
 
     assert regen.status_code == 200

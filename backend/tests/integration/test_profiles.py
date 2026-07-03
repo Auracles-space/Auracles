@@ -559,9 +559,7 @@ async def test_links_patch_replaces_whole_list(
         headers=headers,
     )
 
-    assert response.json()["links"] == [
-        {"label": "New", "url": "https://new.example"}
-    ]
+    assert response.json()["links"] == [{"label": "New", "url": "https://new.example"}]
 
 
 async def test_links_omitted_leaves_them_untouched(
@@ -618,8 +616,7 @@ async def test_too_many_links_rejected(
         "/v1/profiles/me",
         json={
             "links": [
-                {"label": f"L{i}", "url": f"https://x{i}.example"}
-                for i in range(15)
+                {"label": f"L{i}", "url": f"https://x{i}.example"} for i in range(15)
             ]
         },
         headers=auth_headers(user_id, ["contributor"]),
@@ -720,7 +717,9 @@ async def test_social_links_omitted_leaves_them_untouched(
 
     await client.patch(
         "/v1/profiles/me",
-        json={"social_links": [{"platform": "github", "url": "https://github.com/keep"}]},
+        json={
+            "social_links": [{"platform": "github", "url": "https://github.com/keep"}]
+        },
         headers=headers,
     )
     response = await client.patch(
@@ -761,7 +760,9 @@ async def test_social_links_reject_unknown_platform(
 
     response = await client.patch(
         "/v1/profiles/me",
-        json={"social_links": [{"platform": "myspace", "url": "https://myspace.com/ada"}]},
+        json={
+            "social_links": [{"platform": "myspace", "url": "https://myspace.com/ada"}]
+        },
         headers=auth_headers(user_id, ["contributor"]),
     )
 
@@ -1175,9 +1176,7 @@ async def test_too_many_experience_entries_rejected(
     response = await client.patch(
         "/v1/profiles/me",
         json={
-            "experience": [
-                {"title": f"Role {i}", "company": "Co"} for i in range(25)
-            ]
+            "experience": [{"title": f"Role {i}", "company": "Co"} for i in range(25)]
         },
         headers=auth_headers(user_id, ["contributor"]),
     )

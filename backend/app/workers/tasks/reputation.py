@@ -74,9 +74,7 @@ async def _recompute_all_impl() -> dict[str, int]:
             (
                 await db.execute(
                     select(Framework.id).where(
-                        Framework.status.in_(
-                            ("published", "unpublished", "suspended")
-                        )
+                        Framework.status.in_(("published", "unpublished", "suspended"))
                     )
                 )
             )

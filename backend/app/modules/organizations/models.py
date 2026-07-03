@@ -203,9 +203,7 @@ class OrgTeam(CreatedAtMixin, Base):
     """A sub-grouping of members within an organization."""
 
     __tablename__ = "org_teams"
-    __table_args__ = (
-        UniqueConstraint("org_id", "name", name="uq_org_teams_org_name"),
-    )
+    __table_args__ = (UniqueConstraint("org_id", "name", name="uq_org_teams_org_name"),)
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -224,9 +222,7 @@ class OrgTeamMember(CreatedAtMixin, Base):
     """Membership of an OrgMember in an OrgTeam."""
 
     __tablename__ = "org_team_members"
-    __table_args__ = (
-        Index("idx_org_team_members_member", "member_id"),
-    )
+    __table_args__ = (Index("idx_org_team_members_member", "member_id"),)
 
     team_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

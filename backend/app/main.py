@@ -24,6 +24,9 @@ from app.modules.health.router import router as health_router
 from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.organizations.router import (
+    admin_orgs_router,
+)
+from app.modules.organizations.router import (
     invitation_router as org_invitation_router,
 )
 from app.modules.organizations.router import (
@@ -88,6 +91,7 @@ def create_app() -> FastAPI:
     application.include_router(notifications_router, prefix="/v1")
     application.include_router(organizations_router, prefix="/v1")
     application.include_router(org_invitation_router, prefix="/v1")
+    application.include_router(admin_orgs_router, prefix="/v1")
     application.include_router(profiles_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
     application.include_router(partner_router, prefix="/v1")

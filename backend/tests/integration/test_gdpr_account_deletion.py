@@ -161,7 +161,7 @@ async def account_deletion_test_context(
     """Reset GDPR/account state and install Redis overrides."""
     fake_redis = FakeRedis()
     fake_s3 = FakeS3Storage()
-    
+
     async def reset_database() -> None:
         """Remove account-deletion test data while preserving config rows."""
         await engine.dispose()
@@ -341,18 +341,18 @@ async def seed_scrub_state(
                     action="account_email_change_requested",
                     target_type="user",
                     target_id=user_id,
-                metadata_={
-                    "new_email": old_email,
-                    "uploaded_filename": "passport.pdf",
-                    "provider_ref": "pi_123456",
-                    "raw_url": "https://files.auracles.space/private",
-                    "safe": "retained",
-                    "summary": "Escalate with counterparty@example.com before release",
-                    "note": f"Contact {old_email} before release",
-                },
-                ip_address="127.0.0.1",
-                user_agent="Deletion test browser",
-            )
+                    metadata_={
+                        "new_email": old_email,
+                        "uploaded_filename": "passport.pdf",
+                        "provider_ref": "pi_123456",
+                        "raw_url": "https://files.auracles.space/private",
+                        "safe": "retained",
+                        "summary": "Escalate with counterparty@example.com before release",
+                        "note": f"Contact {old_email} before release",
+                    },
+                    ip_address="127.0.0.1",
+                    user_agent="Deletion test browser",
+                )
             )
 
             deletion_request = AccountDeletionRequest(
@@ -761,9 +761,7 @@ async def test_request_account_deletion_blocks_when_unsettled_obligations_exist(
 
     assert response.status_code == 409
     assert response.json()["status"] == "blocked"
-    assert {
-        reason["code"] for reason in response.json()["blocked_reasons"]
-    } == {
+    assert {reason["code"] for reason in response.json()["blocked_reasons"]} == {
         "held_escrow",
         "pending_payout",
         "open_dispute",
@@ -821,9 +819,9 @@ async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
 
     assert response.status_code == 409
     assert response.json()["status"] == "blocked"
-    assert {
-        reason["code"] for reason in response.json()["blocked_reasons"]
-    } == {"pending_payout"}
+    assert {reason["code"] for reason in response.json()["blocked_reasons"]} == {
+        "pending_payout"
+    }
 
 
 async def test_cancel_account_deletion_marks_scheduled_request_cancelled(
@@ -1056,9 +1054,7 @@ async def test_process_account_deletions_scrubs_due_scheduled_user_state(
         is None
     )
     assert (
-        await account_deletion_test_context["redis"].smembers(
-            f"refresh_user:{user_id}"
-        )
+        await account_deletion_test_context["redis"].smembers(f"refresh_user:{user_id}")
         == set()
     )
 
@@ -1110,9 +1106,7 @@ async def test_process_account_deletions_skips_due_requests_with_live_obligation
     assert user.email == "worker-blocked@auracles.space"
     assert request is not None
     assert request.status == "scheduled"
-    assert {
-        reason["code"] for reason in (request.blocked_reasons or [])
-    } == {
+    assert {reason["code"] for reason in (request.blocked_reasons or [])} == {
         "held_escrow",
         "pending_payout",
         "open_dispute",

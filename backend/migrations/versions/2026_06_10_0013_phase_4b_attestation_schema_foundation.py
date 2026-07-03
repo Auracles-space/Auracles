@@ -507,9 +507,7 @@ def downgrade() -> None:
 
     for key in ATTESTATION_CONFIG_SEEDS:
         op.execute(
-            sa.text("DELETE FROM platform_config WHERE key = :key").bindparams(
-                key=key
-            )
+            sa.text("DELETE FROM platform_config WHERE key = :key").bindparams(key=key)
         )
 
     op.drop_index(

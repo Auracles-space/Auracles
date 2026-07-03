@@ -458,20 +458,28 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         attestation = await session.get(Attestation, attestation_id)
         transaction = await session.get(Transaction, transaction_id)
         offers = (
-            await session.execute(
-                select(AttestationOffer).where(
-                    AttestationOffer.attestation_id == attestation_id
+            (
+                await session.execute(
+                    select(AttestationOffer).where(
+                        AttestationOffer.attestation_id == attestation_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         audits = (
-            await session.execute(
-                select(AuditLog.action).where(
-                    AuditLog.target_type == "attestation",
-                    AuditLog.target_id == attestation_id,
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.target_type == "attestation",
+                        AuditLog.target_id == attestation_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert webhook_response.status_code == 200
     assert assignments_response.status_code == 200
@@ -495,10 +503,7 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         first_attestor_id,
         second_attestor_id,
     }
-    assert {
-        (offer.attestor_id, offer.status)
-        for offer in offers
-    } == {
+    assert {(offer.attestor_id, offer.status) for offer in offers} == {
         (first_attestor_id, "accepted"),
         (second_attestor_id, "superseded"),
     }
@@ -610,12 +615,16 @@ async def test_attestation_decline_advances_to_next_cohort(
 
     async with async_session_factory() as session:
         offers = (
-            await session.execute(
-                select(AttestationOffer)
-                .where(AttestationOffer.attestation_id == attestation_id)
-                .order_by(AttestationOffer.cohort_index)
+            (
+                await session.execute(
+                    select(AttestationOffer)
+                    .where(AttestationOffer.attestation_id == attestation_id)
+                    .order_by(AttestationOffer.cohort_index)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         attestation = await session.get(Attestation, attestation_id)
 
     assert webhook_response.status_code == 200
@@ -758,12 +767,16 @@ async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
         attestation = await session.get(Attestation, attestation_id)
         transaction = await session.get(Transaction, transaction_id)
         offers = (
-            await session.execute(
-                select(AttestationOffer)
-                .where(AttestationOffer.attestation_id == attestation_id)
-                .order_by(AttestationOffer.cohort_index)
+            (
+                await session.execute(
+                    select(AttestationOffer)
+                    .where(AttestationOffer.attestation_id == attestation_id)
+                    .order_by(AttestationOffer.cohort_index)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         reassigned_audit = await session.scalar(
             select(AuditLog).where(
                 AuditLog.action == "attestation_reassigned",
@@ -938,13 +951,17 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
             )
         )
         audits = (
-            await session.execute(
-                select(AuditLog.action).where(
-                    AuditLog.target_type == "attestation",
-                    AuditLog.target_id == attestation_id,
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.target_type == "attestation",
+                        AuditLog.target_id == attestation_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert upload_response.status_code == 201
     assert upload_response.json()["fields"]["Content-Type"] == "application/pdf"
@@ -1190,13 +1207,17 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
         transaction = await session.get(Transaction, transaction_id)
         escrow = await session.get(Escrow, escrow_id)
         audits = (
-            await session.execute(
-                select(AuditLog.action).where(
-                    AuditLog.target_type.in_(("attestation", "escrow")),
-                    AuditLog.target_id.in_((attestation_id, escrow_id)),
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.target_type.in_(("attestation", "escrow")),
+                        AuditLog.target_id.in_((attestation_id, escrow_id)),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "closed"
@@ -1265,13 +1286,17 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
         disputed = await session.get(Attestation, disputed_id)
         disputed_escrow = await session.get(Escrow, disputed_escrow_id)
         release_audits = (
-            await session.execute(
-                select(AuditLog.action).where(
-                    AuditLog.action == "attestation_released",
-                    AuditLog.target_id == releasable_id,
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.action == "attestation_released",
+                        AuditLog.target_id == releasable_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert released_count == 1
     assert second_count == 0
@@ -1477,9 +1502,11 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
     requestor_id = await create_user("refund-req@auracles.space", ["operator"])
     attestor_id = await create_user("refund-att@auracles.space", ["attestor"])
     admin_id, totp_secret = await create_admin_user()
-    attestation_id, transaction_id, escrow_id = (
-        await create_report_submitted_attestation(requestor_id, attestor_id)
-    )
+    (
+        attestation_id,
+        transaction_id,
+        escrow_id,
+    ) = await create_report_submitted_attestation(requestor_id, attestor_id)
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),

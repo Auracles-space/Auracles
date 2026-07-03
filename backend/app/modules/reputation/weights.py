@@ -105,13 +105,11 @@ async def load_config(
     raw_weights = await _raw(db, f"reputation_weights_{subject_type}")
     if raw_weights:
         weights_map = {
-            key: Decimal(str(value))
-            for key, value in json.loads(raw_weights).items()
+            key: Decimal(str(value)) for key, value in json.loads(raw_weights).items()
         }
     else:
         weights_map = {
-            key: Decimal(value)
-            for key, value in _DEFAULT_WEIGHTS[subject_type].items()
+            key: Decimal(value) for key, value in _DEFAULT_WEIGHTS[subject_type].items()
         }
     validate_weight_map(weights_map, subject_type=subject_type)
 
@@ -121,9 +119,7 @@ async def load_config(
     )
     prior = Decimal(await _raw(db, "reputation_prior") or "0.5")
     prior_strength_k = Decimal(await _raw(db, "reputation_prior_strength_k") or "5")
-    decay_halflife_days = int(
-        await _raw(db, "reputation_decay_halflife_days") or "180"
-    )
+    decay_halflife_days = int(await _raw(db, "reputation_decay_halflife_days") or "180")
     dispute_penalty = Decimal(await _raw(db, "reputation_dispute_penalty") or "0.20")
     reliability_penalty = Decimal(
         await _raw(db, "attestor_reliability_penalty") or "0.10"
@@ -140,9 +136,7 @@ async def load_config(
             "reputation min_activity, prior_strength_k, and halflife must be positive"
         )
     if prior < 0 or prior > 1 or dispute_penalty < 0 or dispute_penalty > 1:
-        raise ValueError(
-            "reputation prior and dispute penalty must be between 0 and 1"
-        )
+        raise ValueError("reputation prior and dispute penalty must be between 0 and 1")
     if (
         reliability_penalty < 0
         or reliability_penalty > 1

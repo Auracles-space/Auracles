@@ -114,9 +114,7 @@ def test_attestation_has_report_published_eligible_attribute() -> None:
 async def test_dispute_outcome_enum_values(db_session: AsyncSession) -> None:
     """The outcome enum allows exactly rejected, upheld_refund, upheld_revise."""
     result = await db_session.execute(
-        text(
-            "SELECT unnest(enum_range(NULL::attestation_dispute_outcome_enum))::text"
-        )
+        text("SELECT unnest(enum_range(NULL::attestation_dispute_outcome_enum))::text")
     )
     values = {row[0] for row in result.fetchall()}
     assert values == {"rejected", "upheld_refund", "upheld_revise"}

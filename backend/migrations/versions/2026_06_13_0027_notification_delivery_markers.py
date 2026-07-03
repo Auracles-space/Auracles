@@ -57,6 +57,8 @@ def upgrade() -> None:
             name="uq_notification_delivery_markers_user_dedupe_channel",
         ),
     )
+
+
 def downgrade() -> None:
     """Drop the notification delivery marker table."""
     op.drop_table("notification_delivery_markers")

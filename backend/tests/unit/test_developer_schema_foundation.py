@@ -179,9 +179,7 @@ def test_developer_migration_downgrade_removes_slice_one_schema() -> None:
             }
             config_keys = {
                 row[0]
-                for row in connection.execute(
-                    text("SELECT key FROM platform_config")
-                )
+                for row in connection.execute(text("SELECT key FROM platform_config"))
             }
 
         assert DEVELOPER_TABLES.isdisjoint(table_names)

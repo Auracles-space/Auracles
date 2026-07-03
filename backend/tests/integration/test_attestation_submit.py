@@ -288,13 +288,17 @@ async def test_submit_past_deadline_within_grace_stamps_late(
             select(AttestorProfile).where(AttestorProfile.user_id == attestor_id)
         )
         audits = (
-            await session.execute(
-                select(AuditLog.action).where(
-                    AuditLog.target_type == "attestation",
-                    AuditLog.target_id == attestation_id,
+            (
+                await session.execute(
+                    select(AuditLog.action).where(
+                        AuditLog.target_type == "attestation",
+                        AuditLog.target_id == attestation_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "report_submitted"

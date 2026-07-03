@@ -373,11 +373,11 @@ async def test_saved_search_alert_flow_sends_digest_and_in_app_once(
 
     async with async_session_factory() as session:
         deliveries = (
-            await session.execute(select(SavedSearchAlertDelivery))
-        ).scalars().all()
+            (await session.execute(select(SavedSearchAlertDelivery))).scalars().all()
+        )
         notification_rows = (
-            await session.execute(select(Notification))
-        ).scalars().all()
+            (await session.execute(select(Notification))).scalars().all()
+        )
 
     assert len(deliveries) == 1
     assert len(notification_rows) == 1

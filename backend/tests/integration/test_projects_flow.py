@@ -1665,10 +1665,14 @@ async def test_operator_cancels_acceptance_reopens_project_and_clears_plan(
             select(Proposal).where(Proposal.project_id == project_id)
         )
         remaining = (
-            await session.execute(
-                select(Milestone).where(Milestone.project_id == project_id)
+            (
+                await session.execute(
+                    select(Milestone).where(Milestone.project_id == project_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "open"
@@ -1868,9 +1872,7 @@ async def test_proposal_listings_include_proposer_name(
     assert operator_view.status_code == 200
     assert operator_view.json()["proposals"][0]["contributor_name"] == "names-bidder"
     assert contributor_view.status_code == 200
-    assert (
-        contributor_view.json()["proposals"][0]["contributor_name"] == "names-bidder"
-    )
+    assert contributor_view.json()["proposals"][0]["contributor_name"] == "names-bidder"
 
 
 async def test_workspace_upload_session_rejects_disallowed_file_type(

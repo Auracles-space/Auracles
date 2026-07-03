@@ -732,9 +732,10 @@ async def _dispatch_verified_event(
     """Dispatch a verified event and return status plus post-commit work."""
     metadata = _event_metadata(event)
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "purchase":
-        invoice_transaction_id, after_commit_notifications = (
-            await _handle_purchase_succeeded(db, event)
-        )
+        (
+            invoice_transaction_id,
+            after_commit_notifications,
+        ) = await _handle_purchase_succeeded(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", invoice_transaction_id, after_commit_notifications
     if (
@@ -985,9 +986,7 @@ async def _apply_persona_decision(
         user_id=user.id,
         notification_type="kyc_verified" if verified else "kyc_rejected",
         title=(
-            "Identity verified"
-            if verified
-            else "Identity verification needs attention"
+            "Identity verified" if verified else "Identity verification needs attention"
         ),
         body=(
             "Your identity verification is complete."

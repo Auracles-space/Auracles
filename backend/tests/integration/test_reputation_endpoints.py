@@ -389,9 +389,7 @@ async def test_operator_reputation_visibility_gating(
     self_resp = await client.get(path, headers=_auth(operator_id, ["operator"]))
     deal_resp = await client.get(path, headers=_auth(in_deal_id, ["contributor"]))
     admin_resp = await client.get(path, headers=_auth(admin_id, ["admin"]))
-    stranger_resp = await client.get(
-        path, headers=_auth(stranger_id, ["contributor"])
-    )
+    stranger_resp = await client.get(path, headers=_auth(stranger_id, ["contributor"]))
     anon_resp = await client.get(path)
 
     assert self_resp.status_code == 200

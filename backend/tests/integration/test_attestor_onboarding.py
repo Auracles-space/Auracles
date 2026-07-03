@@ -1669,8 +1669,6 @@ async def test_activate_attestor_profile_mirrors_timestamp(
         assert profile.confidentiality_signed_at.isoformat().startswith(nda_time[:19])
 
 
-
-
 @pytest.mark.asyncio
 async def test_sign_confidentiality_is_idempotent_re_sign(
     client: AsyncClient,

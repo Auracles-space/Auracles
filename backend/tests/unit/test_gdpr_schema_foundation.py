@@ -67,8 +67,7 @@ def test_gdpr_migration_creates_tables_indexes_enums_and_config(
         index["name"] for index in inspector.get_indexes("data_export_requests")
     }
     deletion_indexes = {
-        index["name"]
-        for index in inspector.get_indexes("account_deletion_requests")
+        index["name"] for index in inspector.get_indexes("account_deletion_requests")
     }
     consent_indexes = {index["name"] for index in inspector.get_indexes("consent_logs")}
 

@@ -56,9 +56,7 @@ DEFAULT_PLATFORM_CONFIG = {
         '{"engagement":"0.1500","license_compliance":"0.2500",'
         '"purchase_activity":"0.4000","review_quality":"0.2000"}'
     ),
-    "reputation_weights_attestor": (
-        '{"rating":"0.7500","reliability":"0.2500"}'
-    ),
+    "reputation_weights_attestor": ('{"rating":"0.7500","reliability":"0.2500"}'),
     "reputation_min_activity_framework": "3",
     "reputation_min_activity_contributor": "1",
     "reputation_min_activity_operator": "1",
@@ -301,17 +299,19 @@ async def test_admin_updates_editable_config_with_totp_reason_and_audit(
     async with async_session_factory() as session:
         config_rows = {
             row.key: row
-            for row in (
-                await session.execute(select(PlatformConfig))
-            ).scalars().all()
+            for row in (await session.execute(select(PlatformConfig))).scalars().all()
         }
         audits = (
-            await session.execute(
-                select(AuditLog)
-                .where(AuditLog.action == "platform_config_updated")
-                .order_by(AuditLog.created_at)
+            (
+                await session.execute(
+                    select(AuditLog)
+                    .where(AuditLog.action == "platform_config_updated")
+                    .order_by(AuditLog.created_at)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 200
     response_config = {item["key"]: item for item in response.json()["items"]}
@@ -326,15 +326,11 @@ async def test_admin_updates_editable_config_with_totp_reason_and_audit(
         "commission_rate",
         "refund_window_hours",
     }
-    assert {
-        audit.metadata_["reason"] for audit in audits
-    } == {"Lower initial launch commission and extend refund window."}
-    assert {
-        audit.metadata_["old_value"] for audit in audits
-    } == {"0.15", "48"}
-    assert {
-        audit.metadata_["new_value"] for audit in audits
-    } == {"0.12", "72"}
+    assert {audit.metadata_["reason"] for audit in audits} == {
+        "Lower initial launch commission and extend refund window."
+    }
+    assert {audit.metadata_["old_value"] for audit in audits} == {"0.15", "48"}
+    assert {audit.metadata_["new_value"] for audit in audits} == {"0.12", "72"}
 
 
 async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
@@ -381,11 +377,11 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
         audit_count = len(
             (
                 await session.execute(
-                    select(AuditLog).where(
-                        AuditLog.action == "platform_config_updated"
-                    )
+                    select(AuditLog).where(AuditLog.action == "platform_config_updated")
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
     assert invalid_2fa.status_code == 422
@@ -444,9 +440,7 @@ async def test_admin_updates_attestation_config_with_range_validation(
     async with async_session_factory() as session:
         config_rows = {
             row.key: row.value
-            for row in (
-                await session.execute(select(PlatformConfig))
-            ).scalars().all()
+            for row in (await session.execute(select(PlatformConfig))).scalars().all()
         }
 
     assert valid_update.status_code == 200
@@ -569,9 +563,7 @@ async def test_admin_updates_gdpr_config_with_range_validation(
     async with async_session_factory() as session:
         config_rows = {
             row.key: row.value
-            for row in (
-                await session.execute(select(PlatformConfig))
-            ).scalars().all()
+            for row in (await session.execute(select(PlatformConfig))).scalars().all()
         }
 
     assert valid_update.status_code == 200
@@ -647,18 +639,14 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
         json={
             "reason": "Decay is not wired into the engine yet.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
-            "updates": [
-                {"key": "reputation_decay_halflife_days", "value": "365"}
-            ],
+            "updates": [{"key": "reputation_decay_halflife_days", "value": "365"}],
         },
     )
 
     async with async_session_factory() as session:
         config_rows = {
             row.key: row.value
-            for row in (
-                await session.execute(select(PlatformConfig))
-            ).scalars().all()
+            for row in (await session.execute(select(PlatformConfig))).scalars().all()
         }
 
     assert valid_update.status_code == 200

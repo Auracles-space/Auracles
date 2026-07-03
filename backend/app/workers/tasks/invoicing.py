@@ -52,8 +52,7 @@ async def _generate_invoice_document(invoice_id: str) -> tuple[str, bytes]:
             line_item_label = framework_title
         else:
             raise ValueError(
-                "Unsupported invoice source_ref_type: "
-                f"{invoice.source_ref_type}"
+                f"Unsupported invoice source_ref_type: {invoice.source_ref_type}"
             )
 
     pdf_bytes = render_invoice_pdf(invoice, line_item_label=line_item_label)

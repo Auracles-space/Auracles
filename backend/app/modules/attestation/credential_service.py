@@ -347,9 +347,7 @@ async def _consume_credential_evidence_sessions(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Credential contains invalid or expired evidence upload keys.",
         )
-    pending_scan_ids = [
-        row.id for row in rows if row.scan_status == "pending_scan"
-    ]
+    pending_scan_ids = [row.id for row in rows if row.scan_status == "pending_scan"]
     for upload_session_id in pending_scan_ids:
         scan_attestation_upload.delay(str(upload_session_id))
     if pending_scan_ids:

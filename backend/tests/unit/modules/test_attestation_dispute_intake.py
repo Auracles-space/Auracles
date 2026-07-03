@@ -136,7 +136,7 @@ async def test_dispute_requires_category(db_session) -> None:
     """A dispute row requires a category (DB not-null)."""
     attestation = await _report_submitted_within_window(db_session)
     requestor = await db_session.get(User, attestation.requestor_id)
-    
+
     # Intentionally omitted category should raise DB IntegrityError
     db_session.add(
         AttestationDispute(
@@ -155,9 +155,12 @@ async def test_dispute_below_min_evidence_length_is_422(db_session) -> None:
     requestor = await db_session.get(User, attestation.requestor_id)
     with pytest.raises(HTTPException) as exc:
         await dispute_service.create_dispute(
-            db=db_session, requestor=requestor, attestation_id=attestation.id,
+            db=db_session,
+            requestor=requestor,
+            attestation_id=attestation.id,
             payload=AttestationDisputeCreateRequest(
-                category="scope_error", reason="too short",
+                category="scope_error",
+                reason="too short",
             ),
         )
     assert exc.value.status_code == 422
@@ -168,7 +171,9 @@ async def test_dispute_stores_category(db_session) -> None:
     attestation = await _report_submitted_within_window(db_session)
     requestor = await db_session.get(User, attestation.requestor_id)
     dispute = await dispute_service.create_dispute(
-        db=db_session, requestor=requestor, attestation_id=attestation.id,
+        db=db_session,
+        requestor=requestor,
+        attestation_id=attestation.id,
         payload=AttestationDisputeCreateRequest(
             category="material_inaccuracy",
             reason="Finding 3 misstates the 2025 revenue by a factor of ten, see p.4.",
@@ -227,16 +232,18 @@ async def test_requestor_flag_threshold(db_session) -> None:
     """Three rejected disputes inside 12 months flags the requestor."""
     frozen_now = datetime.now(UTC)
     requestor = await _make_user("operator", "serial")
-    await _seed_rejected_disputes(db_session, requestor_id=requestor.id, count=2,
-                                  resolved_at=frozen_now)
+    await _seed_rejected_disputes(
+        db_session, requestor_id=requestor.id, count=2, resolved_at=frozen_now
+    )
 
     count_2 = await dispute_service.requestor_rejected_dispute_count(
         db_session, requestor_id=requestor.id, now=frozen_now
     )
     assert count_2 < dispute_service.REQUESTOR_FLAG_THRESHOLD
 
-    await _seed_rejected_disputes(db_session, requestor_id=requestor.id, count=1,
-                                  resolved_at=frozen_now)
+    await _seed_rejected_disputes(
+        db_session, requestor_id=requestor.id, count=1, resolved_at=frozen_now
+    )
     count_3 = await dispute_service.requestor_rejected_dispute_count(
         db_session, requestor_id=requestor.id, now=frozen_now
     )

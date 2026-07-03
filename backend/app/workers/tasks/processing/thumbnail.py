@@ -123,9 +123,13 @@ def render_office_thumbnail(path: str) -> bytes:
             raise RuntimeError("LibreOffice failed to convert the document.")
 
         expected_pdf = Path(output_dir) / f"{Path(path).stem}.pdf"
-        pdf_path = expected_pdf if expected_pdf.exists() else next(
-            Path(output_dir).glob("*.pdf"),
-            None,
+        pdf_path = (
+            expected_pdf
+            if expected_pdf.exists()
+            else next(
+                Path(output_dir).glob("*.pdf"),
+                None,
+            )
         )
         if pdf_path is None:
             raise RuntimeError("LibreOffice did not produce a PDF.")

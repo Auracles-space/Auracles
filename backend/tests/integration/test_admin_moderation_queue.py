@@ -277,12 +277,16 @@ async def test_admin_moderation_queue_aggregates_all_signal_types(
 
         async with async_session_factory() as audit_session:
             audits = (
-                await audit_session.execute(
-                    select(AuditLog)
-                    .where(AuditLog.action == "moderation_queue_viewed")
-                    .order_by(AuditLog.created_at)
+                (
+                    await audit_session.execute(
+                        select(AuditLog)
+                        .where(AuditLog.action == "moderation_queue_viewed")
+                        .order_by(AuditLog.created_at)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
     finally:
         await _cleanup_admin_moderation_queue_state()
         await engine.dispose()

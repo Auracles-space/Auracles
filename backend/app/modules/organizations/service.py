@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,7 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
 from app.modules.auth.models import User
 from app.modules.auth.service import verify_totp_for_sensitive_action
+from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
@@ -36,6 +37,8 @@ from app.modules.organizations.models import (
     OrgTeamMember,
 )
 from app.modules.organizations.schemas import (
+    AdminOrgResponse,
+    AdminOrgsResponse,
     MyOrganizationResponse,
     OrganizationCreateRequest,
     OrganizationResponse,
@@ -304,9 +307,7 @@ async def deactivate_organization(
             )
 
         organization = await db.scalar(
-            select(Organization)
-            .where(Organization.id == org_id)
-            .with_for_update()
+            select(Organization).where(Organization.id == org_id).with_for_update()
         )
         assert organization is not None
         organization.deactivated_at = datetime.now(UTC)
@@ -845,9 +846,7 @@ async def _get_live_invitation(
         HTTPException(410): Pending but past its expiry timestamp.
     """
     invitation = await db.scalar(
-        select(OrgInvitation).where(
-            OrgInvitation.token_hash == hash_token(token)
-        )
+        select(OrgInvitation).where(OrgInvitation.token_hash == hash_token(token))
     )
     if invitation is None:
         raise HTTPException(
@@ -997,19 +996,13 @@ async def accept_invitation(
     # Build the MyOrganizationResponse shape
     capabilities: dict[str, str] = {}
     cap_rows = (
-        await db.scalars(
-            select(OrgCapability).where(
-                OrgCapability.org_id == org_id
-            )
-        )
+        await db.scalars(select(OrgCapability).where(OrgCapability.org_id == org_id))
     ).all()
     for cap in cap_rows:
         capabilities[cap.capability] = cap.status
 
     # Reload the organization from the DB after the transaction is complete
-    org_obj = await db.scalar(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_obj = await db.scalar(select(Organization).where(Organization.id == org_id))
     if org_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1168,9 +1161,9 @@ async def rename_team(
         await db.rollback()
     async with db.begin():
         team = await db.scalar(
-            select(OrgTeam).where(
-                OrgTeam.id == team_id, OrgTeam.org_id == org_id
-            ).with_for_update()
+            select(OrgTeam)
+            .where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+            .with_for_update()
         )
         if not team:
             raise HTTPException(status_code=404, detail="Team not found.")
@@ -1213,9 +1206,7 @@ async def delete_team(
         await db.rollback()
     async with db.begin():
         team = await db.scalar(
-            select(OrgTeam).where(
-                OrgTeam.id == team_id, OrgTeam.org_id == org_id
-            )
+            select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
         )
         if not team:
             raise HTTPException(status_code=404, detail="Team not found.")
@@ -1253,9 +1244,11 @@ async def add_team_member(
 
         await _get_member_row(db, org_id=org_id, member_id=member_id)
 
-        stmt = pg_insert(OrgTeamMember).values(
-            team_id=team_id, member_id=member_id
-        ).on_conflict_do_nothing()
+        stmt = (
+            pg_insert(OrgTeamMember)
+            .values(team_id=team_id, member_id=member_id)
+            .on_conflict_do_nothing()
+        )
         await db.execute(stmt)
 
 
@@ -1279,11 +1272,193 @@ async def remove_team_member(
 
         member_row = await db.scalar(
             select(OrgTeamMember).where(
-                OrgTeamMember.team_id == team_id,
-                OrgTeamMember.member_id == member_id
+                OrgTeamMember.team_id == team_id, OrgTeamMember.member_id == member_id
             )
         )
         if not member_row:
             raise HTTPException(status_code=404, detail="Member is not in this team.")
 
         await db.delete(member_row)
+
+
+async def admin_list_orgs(
+    db: AsyncSession,
+    *,
+    query: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> AdminOrgsResponse:
+    """List/search organizations for platform administration."""
+    filters = []
+    if query:
+        filters.append(
+            or_(
+                Organization.name.ilike(f"%{query}%"),
+                Organization.slug.ilike(f"%{query}%"),
+            )
+        )
+
+    stmt = select(Organization).where(*filters)
+    total_stmt = select(func.count()).select_from(Organization).where(*filters)
+
+    total = await db.scalar(total_stmt) or 0
+
+    stmt = (
+        stmt.order_by(Organization.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    orgs = (await db.execute(stmt)).scalars().all()
+
+    if not orgs:
+        return AdminOrgsResponse(orgs=[], total=0, page=page, page_size=page_size)
+
+    org_ids = [org.id for org in orgs]
+
+    member_counts_rows = (
+        await db.execute(
+            select(OrgMember.org_id, func.count())
+            .where(OrgMember.org_id.in_(org_ids))
+            .group_by(OrgMember.org_id)
+        )
+    ).all()
+    member_counts = {org_id: count for org_id, count in member_counts_rows}
+
+    capabilities_rows = (
+        (
+            await db.execute(
+                select(OrgCapability).where(OrgCapability.org_id.in_(org_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    capabilities_by_org: dict[UUID, list[OrgCapability]] = {}
+    for cap in capabilities_rows:
+        capabilities_by_org.setdefault(cap.org_id, []).append(cap)
+
+    results = []
+    for org in orgs:
+        caps = capabilities_by_org.get(org.id, [])
+        cap_dict = {cap.capability: cap.status for cap in caps}
+        results.append(
+            AdminOrgResponse(
+                id=org.id,
+                slug=org.slug,
+                name=org.name,
+                country=org.country,
+                member_count=member_counts.get(org.id, 0),
+                capabilities=cap_dict,
+                suspended_at=org.suspended_at,
+                deactivated_at=org.deactivated_at,
+                created_at=org.created_at,
+            )
+        )
+
+    return AdminOrgsResponse(
+        orgs=results,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+async def admin_suspend_org(
+    db: AsyncSession,
+    *,
+    admin: User,
+    org_id: UUID,
+) -> None:
+    """Suspend an organization platform-wide (idempotent)."""
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        org = await db.scalar(
+            select(Organization).where(Organization.id == org_id).with_for_update()
+        )
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found.")
+
+        if org.suspended_at:
+            return
+
+        org.suspended_at = datetime.now(UTC)
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_suspended",
+            target_type="organization",
+            target_id=org_id,
+        )
+
+        members = (
+            (
+                await db.execute(
+                    select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    for user_id in members:
+        await sync_derived_roles(db, user_id=user_id)
+
+
+async def export_user_org_memberships(
+    db: AsyncSession, *, user_id: UUID
+) -> list[dict[str, object]]:
+    """Return the user's org memberships for the GDPR export bundle."""
+    rows = (
+        await db.execute(
+            select(
+                Organization.slug,
+                Organization.name,
+                OrgMember.role,
+                OrgMember.joined_at,
+            )
+            .join(OrgMember, OrgMember.org_id == Organization.id)
+            .where(OrgMember.user_id == user_id)
+        )
+    ).all()
+    return [
+        {
+            "org_slug": slug,
+            "org_name": name,
+            "role": role,
+            "joined_at": joined_at.isoformat(),
+        }
+        for slug, name, role, joined_at in rows
+    ]
+
+
+async def user_deletion_org_blockers(
+    db: AsyncSession, *, user_id: UUID
+) -> list[AccountDeletionBlockedReason]:
+    """Names of orgs blocking account deletion (sole owner + active capability)."""
+    rows = (
+        await db.execute(
+            select(Organization.name)
+            .join(OrgMember, OrgMember.org_id == Organization.id)
+            .join(OrgCapability, OrgCapability.org_id == Organization.id)
+            .where(
+                OrgMember.user_id == user_id,
+                OrgMember.role == "owner",
+                OrgCapability.status == "active",
+                Organization.deactivated_at.is_(None),
+            )
+            .distinct()
+        )
+    ).all()
+    return [
+        AccountDeletionBlockedReason(
+            code="sole_owner",
+            message=f"You are the sole owner of active organization: {name}",
+            count=1,
+        )
+        for (name,) in rows
+    ]

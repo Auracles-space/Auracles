@@ -64,9 +64,7 @@ def test_auth_foundation_migration_creates_enums_and_indexes(
 ) -> None:
     """Alembic creates role/KYC enums and query indexes for the audit trail."""
     inspector = inspect(migrated_engine)
-    audit_index_names = {
-        index["name"] for index in inspector.get_indexes("audit_logs")
-    }
+    audit_index_names = {index["name"] for index in inspector.get_indexes("audit_logs")}
 
     with migrated_engine.connect() as connection:
         enum_names = {

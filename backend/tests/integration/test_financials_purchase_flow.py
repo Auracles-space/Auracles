@@ -600,12 +600,16 @@ async def test_collection_purchase_service_directly_snapshots_only_missing_membe
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, response.transaction_id)
         snapshots = (
-            await session.execute(
-                select(CollectionPurchaseSnapshot).order_by(
-                    CollectionPurchaseSnapshot.list_price_at_purchase
+            (
+                await session.execute(
+                    select(CollectionPurchaseSnapshot).order_by(
+                        CollectionPurchaseSnapshot.list_price_at_purchase
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert response.provider == "stripe"
     assert response.client_secret == "pi_secret_123"

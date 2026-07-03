@@ -76,9 +76,7 @@ async def _run_beat(task: object) -> dict[str, int]:
     return result
 
 
-async def _seed_invitation(
-    *, expires_at: datetime, status: str = "pending"
-) -> UUID:
+async def _seed_invitation(*, expires_at: datetime, status: str = "pending") -> UUID:
     """Insert an invitation with a specific expiry and status."""
     async with async_session_factory() as session:
         async with session.begin():
@@ -98,9 +96,7 @@ async def _seed_invitation(
             )
             session.add(org)
             await session.flush()
-            session.add(
-                OrgMember(org_id=org.id, user_id=owner.id, role="owner")
-            )
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
             invitation = OrgInvitation(
                 org_id=org.id,
                 email=f"beat-invitee-{uuid4().hex[:8]}@auracles.space",

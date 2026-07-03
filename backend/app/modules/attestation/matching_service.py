@@ -389,13 +389,10 @@ async def expire_stale_offers(
                     target_id=attestation_id,
                     metadata={"offer_id": str(offer_id)},
                 )
-            if (
-                attestation.status == "offered"
-                and await _current_cohort_is_exhausted(
-                    db,
-                    attestation_id,
-                    cohort_index,
-                )
+            if attestation.status == "offered" and await _current_cohort_is_exhausted(
+                db,
+                attestation_id,
+                cohort_index,
             ):
                 attestation.status = "matching"
                 next_offers = await offer_next_cohort(
@@ -689,7 +686,7 @@ async def _load_locked_offer(
                 AttestationOffer.attestor_id == attestor_id,
             )
             .with_for_update()
-        )
+        ),
     )
 
 
@@ -856,19 +853,16 @@ async def _rank_eligible_attestors(
     Returns:
         Ranked eligible candidates, best first, capped to ``limit``.
     """
-    query = (
-        select(AttestorProfile)
-        .where(
-            AttestorProfile.active.is_(True),
-            AttestorProfile.specializations.op("&&")(
-                sql_cast(attestation.requested_specializations, ARRAY(Text))
-            ),
-            AttestorProfile.jurisdictions.op("&&")(
-                sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
-            ),
-            AttestorProfile.coi_signed_at.is_not(None),
-            AttestorProfile.coi_expires_at > now,
-        )
+    query = select(AttestorProfile).where(
+        AttestorProfile.active.is_(True),
+        AttestorProfile.specializations.op("&&")(
+            sql_cast(attestation.requested_specializations, ARRAY(Text))
+        ),
+        AttestorProfile.jurisdictions.op("&&")(
+            sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
+        ),
+        AttestorProfile.coi_signed_at.is_not(None),
+        AttestorProfile.coi_expires_at > now,
     )
     if excluded_ids:
         query = query.where(AttestorProfile.user_id.not_in(excluded_ids))

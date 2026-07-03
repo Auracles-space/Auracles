@@ -413,7 +413,9 @@ async def test_saved_search_run_matches_live_explore_filters(
 
     assert live.status_code == 200
     assert run.status_code == 200
-    assert [item["id"] for item in run.json()["items"]] == [
-        item["id"] for item in live.json()["items"]
-    ] == [str(matching_id)]
+    assert (
+        [item["id"] for item in run.json()["items"]]
+        == [item["id"] for item in live.json()["items"]]
+        == [str(matching_id)]
+    )
     assert run.json()["total"] == live.json()["total"] == 1

@@ -292,14 +292,16 @@ async def create_deliverable_download(
         await db.rollback()
 
     async with db.begin():
-        project, proposal, milestone = (
-            await _load_project_milestone_for_workspace_action(
-                db=db,
-                project_id=project_id,
-                milestone_id=milestone_id,
-                lock_project=False,
-                lock_milestone=False,
-            )
+        (
+            project,
+            proposal,
+            milestone,
+        ) = await _load_project_milestone_for_workspace_action(
+            db=db,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            lock_project=False,
+            lock_milestone=False,
         )
         _ensure_project_member(project, proposal, user_id)
         deliverable = await db.scalar(
@@ -317,8 +319,7 @@ async def create_deliverable_download(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "Deliverable files are still being scanned or were "
-                    "quarantined."
+                    "Deliverable files are still being scanned or were quarantined."
                 ),
             )
         settings = get_settings()
@@ -332,9 +333,7 @@ async def create_deliverable_download(
                 download_name=file_name,
             )
             files.append(
-                DeliverableFileDownload(
-                    file_key=file_key, file_name=file_name, url=url
-                )
+                DeliverableFileDownload(file_key=file_key, file_name=file_name, url=url)
             )
         await write_audit(
             db=db,

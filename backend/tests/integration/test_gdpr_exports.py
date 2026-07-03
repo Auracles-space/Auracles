@@ -382,13 +382,10 @@ async def test_ready_export_download_redirects_to_private_presigned_url(
             "download_name": "auracles-data-export.json",
         }
     ]
-    assert (
-        response.headers["location"]
-        == (
-            f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
-            "gdpr-exports/test/export.json"
-            "?expires=600&download_name=auracles-data-export.json"
-        )
+    assert response.headers["location"] == (
+        f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
+        "gdpr-exports/test/export.json"
+        "?expires=600&download_name=auracles-data-export.json"
     )
 
 
@@ -488,9 +485,7 @@ async def test_export_download_is_rate_limited_per_user(
     assert limited.json()["detail"].startswith("Too many attempts. Please try again in")
     assert "Retry-After" in limited.headers
     assert (
-        export_test_context["redis"].ttls[
-            f"rate_limit:gdpr_export_download:{user_id}"
-        ]
+        export_test_context["redis"].ttls[f"rate_limit:gdpr_export_download:{user_id}"]
         == gdpr_export_service.EXPORT_DOWNLOAD_LIMITER.window
     )
 

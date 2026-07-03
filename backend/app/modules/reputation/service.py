@@ -167,20 +167,27 @@ async def subject_exists(
     from app.modules.frameworks.models import Framework
 
     if subject_type == "framework":
-        return await db.scalar(
-            select(Framework.id).where(Framework.id == subject_id)
-        ) is not None
-    if subject_type == "attestor":
-        return await db.scalar(
-            select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
-        ) is not None
-    role = "contributor" if subject_type == "contributor" else "operator"
-    return await db.scalar(
-        select(UserRole.id).where(
-            UserRole.user_id == subject_id,
-            UserRole.role == role,
+        return (
+            await db.scalar(select(Framework.id).where(Framework.id == subject_id))
+            is not None
         )
-    ) is not None
+    if subject_type == "attestor":
+        return (
+            await db.scalar(
+                select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
+            )
+            is not None
+        )
+    role = "contributor" if subject_type == "contributor" else "operator"
+    return (
+        await db.scalar(
+            select(UserRole.id).where(
+                UserRole.user_id == subject_id,
+                UserRole.role == role,
+            )
+        )
+        is not None
+    )
 
 
 async def _public_subject_exists(
@@ -192,15 +199,18 @@ async def _public_subject_exists(
     from app.modules.frameworks.models import Framework
 
     if subject_type == "framework":
-        return await db.scalar(
-            select(Framework.id)
-            .join(User, User.id == Framework.contributor_id)
-            .where(
-                Framework.id == subject_id,
-                Framework.status == "published",
-                User.suspended_at.is_(None),
+        return (
+            await db.scalar(
+                select(Framework.id)
+                .join(User, User.id == Framework.contributor_id)
+                .where(
+                    Framework.id == subject_id,
+                    Framework.status == "published",
+                    User.suspended_at.is_(None),
+                )
             )
-        ) is not None
+            is not None
+        )
 
     if subject_type == "contributor":
         contributor = await db.scalar(
@@ -214,24 +224,28 @@ async def _public_subject_exists(
         )
         if contributor is None:
             return False
-        return await db.scalar(
-            select(Framework.id).where(
-                Framework.contributor_id == subject_id,
-                Framework.status == "published",
+        return (
+            await db.scalar(
+                select(Framework.id).where(
+                    Framework.contributor_id == subject_id,
+                    Framework.status == "published",
+                )
             )
-        ) is not None
+            is not None
+        )
 
     if subject_type == "attestor":
-        return await db.scalar(
-            select(AttestorProfile.id).where(
-                AttestorProfile.user_id == subject_id,
-                AttestorProfile.active.is_(True),
+        return (
+            await db.scalar(
+                select(AttestorProfile.id).where(
+                    AttestorProfile.user_id == subject_id,
+                    AttestorProfile.active.is_(True),
+                )
             )
-        ) is not None
+            is not None
+        )
 
-    return await subject_exists(
-        db, subject_type=subject_type, subject_id=subject_id
-    )
+    return await subject_exists(db, subject_type=subject_type, subject_id=subject_id)
 
 
 def _public_factors(
@@ -285,9 +299,7 @@ async def read_reputation(
             db, subject_type=subject_type, subject_id=subject_id
         )
         if public
-        else await subject_exists(
-            db, subject_type=subject_type, subject_id=subject_id
-        )
+        else await subject_exists(db, subject_type=subject_type, subject_id=subject_id)
     )
     if not exists:
         return None
@@ -300,9 +312,7 @@ async def read_reputation(
         "score": None if (score is None or provisional) else score.score,
         "is_provisional": provisional,
         "factors": _public_factors(cfg, score),
-        "last_calculated_at": (
-            score.last_calculated_at if score is not None else None
-        ),
+        "last_calculated_at": (score.last_calculated_at if score is not None else None),
     }
 
 
@@ -334,13 +344,17 @@ async def summaries_for_subjects(
         return {}
     cfg = await load_config(db, subject_type=subject_type)
     rows = (
-        await db.execute(
-            select(ReputationScore).where(
-                ReputationScore.subject_type == subject_type,
-                ReputationScore.subject_id.in_(subject_ids),
+        (
+            await db.execute(
+                select(ReputationScore).where(
+                    ReputationScore.subject_type == subject_type,
+                    ReputationScore.subject_id.in_(subject_ids),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     row_map = {row.subject_id: row for row in rows}
     return {
         subject_id: summary_payload(cfg, row_map.get(subject_id))

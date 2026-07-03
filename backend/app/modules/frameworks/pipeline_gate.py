@@ -123,9 +123,7 @@ async def _apply_similarity_band(
     if jaccard is None:
         artifact.metadata_vector = metadata
         return
-    overridden = (
-        audit is not None and audit.near_duplicate_overridden_at is not None
-    )
+    overridden = audit is not None and audit.near_duplicate_overridden_at is not None
     if jaccard >= NEAR_DUPLICATE_JACCARD_THRESHOLD and not overridden:
         failure_reasons.setdefault("internal_rarity", []).append(str(artifact.id))
         metadata["near_duplicate_blocked"] = True
@@ -145,15 +143,19 @@ async def evaluate_framework_pipeline(
         return framework
 
     artifacts = (
-        await db.execute(
-            select(Artifact)
-            .where(
-                Artifact.framework_id == framework.id,
-                Artifact.current_for_framework.is_(True),
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
             )
-            .order_by(Artifact.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not artifacts:
         framework.status = "pipeline_failed"

@@ -66,9 +66,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
     )
-    op.create_index(
-        "idx_org_team_members_member", "org_team_members", ["member_id"]
-    )
+    op.create_index("idx_org_team_members_member", "org_team_members", ["member_id"])
 
 
 def downgrade() -> None:

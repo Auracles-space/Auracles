@@ -191,16 +191,19 @@ async def build_preference_matrix(
 ) -> NotificationPreferencesResponse:
     """Return the effective grouped preference matrix for one user."""
     rows = (
-        await db.execute(
-            select(NotificationPreference).where(
-                NotificationPreference.user_id == user_id
+        (
+            await db.execute(
+                select(NotificationPreference).where(
+                    NotificationPreference.user_id == user_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     enabled_lookup = {
-        (row.notification_type, row.channel): bool(row.enabled)
-        for row in rows
+        (row.notification_type, row.channel): bool(row.enabled) for row in rows
     }
     grouped_preferences: dict[str, list[NotificationPreferenceItem]] = defaultdict(list)
 

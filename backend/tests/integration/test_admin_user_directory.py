@@ -49,9 +49,7 @@ async def _create_user(
         email_verified=True,
         kyc_status=kyc_status,
         suspended_at=suspended_at,
-        suspension_reason=(
-            "Policy review hold." if suspended_at is not None else None
-        ),
+        suspension_reason=("Policy review hold." if suspended_at is not None else None),
         created_at=created_at,
         updated_at=created_at,
     )

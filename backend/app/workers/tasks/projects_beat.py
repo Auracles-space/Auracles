@@ -278,9 +278,12 @@ async def _auto_approve_deliverables() -> int:
                     },
                 )
 
-    for contributor_id, project_id, milestone_id, deliverable_id in (
-        auto_approved_notifications
-    ):
+    for (
+        contributor_id,
+        project_id,
+        milestone_id,
+        deliverable_id,
+    ) in auto_approved_notifications:
         project_notifications.notify_deliverable_auto_approved(
             contributor_id=contributor_id,
             project_id=project_id,

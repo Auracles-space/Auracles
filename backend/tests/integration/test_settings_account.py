@@ -352,4 +352,3 @@ async def test_email_change_passwordless_account_skips_password_reauth(
     assert requested.status_code == 200
     sent = settings_account_context["sent_email_changes"]
     assert sent[0][0] == "moved@auracles.space"
-

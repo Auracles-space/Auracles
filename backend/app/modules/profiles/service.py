@@ -67,9 +67,7 @@ def _avatar_public_url(settings: Settings, file_key: str) -> str:
     bucket = settings.s3_avatars_bucket
     if settings.aws_endpoint_url is not None:
         return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{file_key}"
-    return (
-        f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{file_key}"
-    )
+    return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{file_key}"
 
 
 async def _verified_credentials(
@@ -104,8 +102,7 @@ async def _verified_credentials(
             issued_date=credential.issued_date,
             expires_date=credential.expires_date,
             expired=(
-                credential.expires_date is not None
-                and credential.expires_date < today
+                credential.expires_date is not None and credential.expires_date < today
             ),
         )
         for credential in rows.scalars().all()
@@ -173,9 +170,7 @@ async def _resolve_featured(
         Framework that is no longer published resolves to None.
     """
     framework_ids = [
-        UUID(str(item["framework_id"]))
-        for item in stored
-        if item.get("framework_id")
+        UUID(str(item["framework_id"])) for item in stored if item.get("framework_id")
     ]
     cards = (
         await explore_service.public_framework_cards(db, framework_ids)
@@ -211,6 +206,7 @@ async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
         .scalars()
         .all()
     )
+
 
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 

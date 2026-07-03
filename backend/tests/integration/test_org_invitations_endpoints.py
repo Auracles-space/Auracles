@@ -312,9 +312,7 @@ async def test_accept_requires_matching_email(
     owner_id = await create_user("acc-owner")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "accmm")
-    raw = await _invite(
-        client, monkeypatch, org, owner_token, "target@auracles.space"
-    )
+    raw = await _invite(client, monkeypatch, org, owner_token, "target@auracles.space")
     other_id = await create_user("acc-other")
 
     response = await client.post(
@@ -469,4 +467,3 @@ async def test_preview_shows_org_details(
     assert body["org_slug"] == org["slug"]
     assert body["role"] == "member"
     assert "expires_at" in body
-

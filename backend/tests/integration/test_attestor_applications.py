@@ -212,9 +212,7 @@ async def test_user_submits_and_lists_own_attestor_application(
             UUID(submitted.json()["id"]),
         )
         audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestor_application_submitted"
-            )
+            select(AuditLog).where(AuditLog.action == "attestor_application_submitted")
         )
 
     assert application is not None
@@ -386,9 +384,7 @@ async def test_pending_application_can_be_withdrawn_and_then_reapplied(
             UUID(first.json()["id"]),
         )
         withdrawal_audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestor_application_withdrawn"
-            )
+            select(AuditLog).where(AuditLog.action == "attestor_application_withdrawn")
         )
 
     assert first.status_code == 201
@@ -472,17 +468,14 @@ async def test_admin_rejects_attestor_application_with_feedback(
             )
         )
         audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestor_application_rejected"
-            )
+            select(AuditLog).where(AuditLog.action == "attestor_application_rejected")
         )
 
     assert missing_feedback.status_code == 422
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
     assert (
-        rejected.json()["admin_feedback"]
-        == "Please add verifiable client references."
+        rejected.json()["admin_feedback"] == "Please add verifiable client references."
     )
     assert rejected.json()["reviewed_by"] == str(admin_id)
     assert profile is None

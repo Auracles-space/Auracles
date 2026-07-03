@@ -794,19 +794,27 @@ async def test_confirm_collection_purchase_reactivates_license_idempotently(
 
     async with async_session_factory() as session:
         licenses = (
-            await session.execute(
-                select(License)
-                .where(License.operator_id == operator_id)
-                .order_by(License.framework_id)
-            )
-        ).scalars().all()
-        allocations = (
-            await session.execute(
-                select(CollectionEarningAllocation).where(
-                    CollectionEarningAllocation.transaction_id == transaction_id
+            (
+                await session.execute(
+                    select(License)
+                    .where(License.operator_id == operator_id)
+                    .order_by(License.framework_id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        allocations = (
+            (
+                await session.execute(
+                    select(CollectionEarningAllocation).where(
+                        CollectionEarningAllocation.transaction_id == transaction_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     assert first_result == transaction_id
     assert replay_result == transaction_id
@@ -920,12 +928,16 @@ async def test_confirm_collection_purchase_rejects_midflight_owned_member(
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, transaction_id)
         allocations = (
-            await session.execute(
-                select(CollectionEarningAllocation).where(
-                    CollectionEarningAllocation.transaction_id == transaction_id
+            (
+                await session.execute(
+                    select(CollectionEarningAllocation).where(
+                        CollectionEarningAllocation.transaction_id == transaction_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         license_row = await session.scalar(
             select(License).where(
                 License.framework_id == minted_framework_id,
@@ -1395,10 +1407,14 @@ async def test_stripe_attestation_fee_failure_or_cancel_cancels_request(
             cancelled_attestation_id,
         )
         audits = (
-            await session.execute(
-                select(AuditLog).where(AuditLog.action == "attestation_fee_failed")
+            (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.action == "attestation_fee_failed")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         purchase_failed_audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "purchase_failed")
         )
@@ -1623,9 +1639,7 @@ async def test_stripe_payment_intent_failure_marks_purchase_failed(
     assert audit.target_id == transaction_id
 
 
-async def create_processing_payout(
-    *, provider_ref: str | None
-) -> tuple[UUID, UUID]:
+async def create_processing_payout(*, provider_ref: str | None) -> tuple[UUID, UUID]:
     """Create a processing payout a transfer webhook can settle.
 
     Args:
@@ -1728,9 +1742,7 @@ async def test_stripe_transfer_reversed_fails_payout(
     webhook_context: dict[str, Any],
 ) -> None:
     """A verified transfer.reversed webhook marks the payout failed."""
-    payout_id, _ = await create_processing_payout(
-        provider_ref="tr_webhook_payout_456"
-    )
+    payout_id, _ = await create_processing_payout(provider_ref="tr_webhook_payout_456")
     webhook_context["event"] = transfer_event(
         "evt_transfer_reversed",
         "transfer.reversed",

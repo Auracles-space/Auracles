@@ -191,9 +191,7 @@ def test_process_partner_payout_creates_transfer_and_marks_processing(
     with session_factory() as session:
         payout = session.get(PartnerPayout, payout_id)
         audit = (
-            session.query(AuditLog)
-            .filter_by(action="partner_payout_processing")
-            .one()
+            session.query(AuditLog).filter_by(action="partner_payout_processing").one()
         )
     sync_engine.dispose()
 

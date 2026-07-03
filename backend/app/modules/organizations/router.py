@@ -5,17 +5,18 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.organizations import service
 from app.modules.organizations.dependencies import OrgContext, require_org_role
 from app.modules.organizations.schemas import (
+    AdminOrgsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
     OrganizationCreateRequest,
@@ -67,8 +68,7 @@ async def create_organization(
     response_model=MyOrganizationsResponse,
     summary="List my organizations",
     description=(
-        "Organizations the current user belongs to, with role and capability "
-        "statuses."
+        "Organizations the current user belongs to, with role and capability statuses."
     ),
 )
 async def list_my_organizations(
@@ -475,3 +475,33 @@ async def decline_invitation(
     """Decline an invitation."""
     await service.decline_invitation(db=db, user=user, token=token)
 
+
+admin_orgs_router = APIRouter(
+    prefix="/admin/orgs",
+    tags=["Admin Organizations"],
+)
+
+PlatformAdmin = Annotated[User, Depends(require_role("admin"))]
+
+
+@admin_orgs_router.get("", response_model=AdminOrgsResponse)
+async def admin_list_orgs(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    query: str | None = Query(default=None, max_length=120),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> AdminOrgsResponse:
+    """List/search organizations for platform administration."""
+    del admin
+    return await service.admin_list_orgs(
+        db=db, query=query, page=page, page_size=page_size
+    )
+
+
+@admin_orgs_router.post("/{org_id}/suspend", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_suspend_org(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Suspend an organization platform-wide (idempotent)."""
+    await service.admin_suspend_org(db=db, admin=admin, org_id=org_id)

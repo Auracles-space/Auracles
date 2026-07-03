@@ -147,10 +147,14 @@ async def test_certifies_when_thresholds_met(clean: None) -> None:
 
     async with async_session_factory() as session:
         audits = (
-            await session.execute(
-                select(AuditLog).where(AuditLog.action == "attestor_certified")
+            (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.action == "attestor_certified")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert len(audits) == 1
 
@@ -177,9 +181,13 @@ async def test_already_certified_is_sticky_and_not_reaudited(clean: None) -> Non
 
     async with async_session_factory() as session:
         audits = (
-            await session.execute(
-                select(AuditLog).where(AuditLog.action == "attestor_certified")
+            (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.action == "attestor_certified")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert len(audits) == 1

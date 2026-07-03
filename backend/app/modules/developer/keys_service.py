@@ -27,6 +27,8 @@ from app.modules.developer.schemas import (
 API_KEY_PREFIX = "ak_"
 API_KEY_RANDOM_BYTES = 32
 API_KEY_PREFIX_LENGTH = 12
+
+
 def _hash_api_key(raw_key: str) -> str:
     """Return the SHA-256 hex digest stored for API key lookup."""
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()

@@ -143,9 +143,7 @@ async def test_start_session_creates_inquiry_and_marks_pending(
     async with async_session_factory() as session:
         user = await session.get(User, user_id)
         inquiry = await session.scalar(
-            select(IdentityVerification).where(
-                IdentityVerification.user_id == user_id
-            )
+            select(IdentityVerification).where(IdentityVerification.user_id == user_id)
         )
         audit_log = await session.scalar(
             select(AuditLog).where(AuditLog.action == "kyc_status_change")

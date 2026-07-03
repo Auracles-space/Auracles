@@ -218,9 +218,7 @@ async def test_list_teams_shows_member_count(
         headers=auth(owner_token),
     )
 
-    res = await client.get(
-        f"/v1/orgs/{org['id']}/teams", headers=auth(owner_token)
-    )
+    res = await client.get(f"/v1/orgs/{org['id']}/teams", headers=auth(owner_token))
     assert res.status_code == 200
     teams = res.json()["teams"]
     assert len(teams) == 1

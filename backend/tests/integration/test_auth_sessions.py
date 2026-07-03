@@ -216,9 +216,7 @@ async def test_me_exposes_pending_attestor_role(
             )
             session.add(user)
             await session.flush()
-            session.add(
-                UserRole(user_id=user.id, role="attestor", approved_at=None)
-            )
+            session.add(UserRole(user_id=user.id, role="attestor", approved_at=None))
 
     login = await client.post(
         "/v1/auth/login",

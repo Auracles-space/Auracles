@@ -60,7 +60,9 @@ async def test_create_inquiry_returns_inquiry_id_and_hosted_url() -> None:
     )
 
     assert result.inquiry_id == "inq_123"
-    assert result.hosted_url.startswith("https://withpersona.com/verify?inquiry-id=inq_123")
+    assert result.hosted_url.startswith(
+        "https://withpersona.com/verify?inquiry-id=inq_123"
+    )
     # The configured completion URL is appended so Persona returns the user to
     # the app after the hosted flow finishes.
     encoded_redirect = "redirect-uri=https%3A%2F%2Fauracles.space%2Fsettings%2Fkyc"

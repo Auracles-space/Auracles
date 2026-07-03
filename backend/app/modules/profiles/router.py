@@ -81,9 +81,7 @@ async def request_avatar_upload_url(
     current_user: CurrentUser,
 ) -> AvatarUploadUrlResponse:
     """Return a presigned avatar upload target for the owner."""
-    return await service.request_avatar_upload_url(
-        user=current_user, payload=payload
-    )
+    return await service.request_avatar_upload_url(user=current_user, payload=payload)
 
 
 @router.post(
@@ -101,9 +99,7 @@ async def confirm_avatar_upload(
     current_user: CurrentUser,
 ) -> PublicProfileResponse:
     """Persist the owner's avatar after verifying the upload."""
-    return await service.confirm_avatar_upload(
-        db, user=current_user, payload=payload
-    )
+    return await service.confirm_avatar_upload(db, user=current_user, payload=payload)
 
 
 @router.post(
@@ -120,9 +116,7 @@ async def request_banner_upload_url(
     current_user: CurrentUser,
 ) -> BannerUploadUrlResponse:
     """Return a presigned banner upload target for the owner."""
-    return await service.request_banner_upload_url(
-        user=current_user, payload=payload
-    )
+    return await service.request_banner_upload_url(user=current_user, payload=payload)
 
 
 @router.post(
@@ -140,9 +134,7 @@ async def confirm_banner_upload(
     current_user: CurrentUser,
 ) -> PublicProfileResponse:
     """Persist the owner's banner after verifying the upload."""
-    return await service.confirm_banner_upload(
-        db, user=current_user, payload=payload
-    )
+    return await service.confirm_banner_upload(db, user=current_user, payload=payload)
 
 
 @router.get(

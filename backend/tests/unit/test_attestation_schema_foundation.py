@@ -198,9 +198,7 @@ def test_attestation_migration_downgrade_removes_slice_one_schema() -> None:
             }
             config_keys = {
                 row[0]
-                for row in connection.execute(
-                    text("SELECT key FROM platform_config")
-                )
+                for row in connection.execute(text("SELECT key FROM platform_config"))
             }
 
         assert ATTESTATION_TABLES.isdisjoint(table_names)

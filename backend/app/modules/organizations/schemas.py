@@ -207,3 +207,26 @@ class OrgTeamsResponse(BaseModel):
     """List wrapper for organization teams."""
 
     teams: list[OrgTeamResponse]
+
+
+class AdminOrgResponse(BaseModel):
+    """Platform-admin view of an organization."""
+
+    id: UUID
+    slug: str
+    name: str
+    country: str
+    member_count: int
+    capabilities: dict[str, str]
+    suspended_at: datetime | None = None
+    deactivated_at: datetime | None = None
+    created_at: datetime
+
+
+class AdminOrgsResponse(BaseModel):
+    """Paginated list of organizations for platform admins."""
+
+    orgs: list[AdminOrgResponse]
+    total: int
+    page: int
+    page_size: int

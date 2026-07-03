@@ -233,4 +233,3 @@ def test_stripe_webhook_multiple_secrets() -> None:
             settings=multi_settings,
             now=now,
         )
-

@@ -39,9 +39,7 @@ def test_classify_daily_quota_is_permanent() -> None:
 
 def test_classify_per_second_rate_limit_is_transient() -> None:
     """The per-second rate-limit error must classify as transient (retry)."""
-    exc = RuntimeError(
-        "Too many requests. You can only make 5 requests per second."
-    )
+    exc = RuntimeError("Too many requests. You can only make 5 requests per second.")
     assert isinstance(classify_email_error(exc), TransientEmailError)
 
 
