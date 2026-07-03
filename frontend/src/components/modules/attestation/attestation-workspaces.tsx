@@ -16,6 +16,9 @@ import {
 } from "@/lib/auth/form-client";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
 import {
   acceptAttestationOffer,
   acceptAttestationReport,
@@ -243,8 +246,8 @@ export function AttestationRequestorPanel() {
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Target type
-            <select
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            <Select
+              
               onChange={(event) =>
                 setTargetType(
                   event.target.value as
@@ -260,20 +263,20 @@ export function AttestationRequestorPanel() {
               <option value="contributor">Contributor profile</option>
               <option value="operator">Operator organization</option>
               <option value="credential">Credential</option>
-            </select>
+            </Select>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Target ID
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            <Input
+              
               onChange={(event) => setTargetId(event.target.value)}
               value={targetId}
             />
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            <Input
+              
               onChange={(event) => setSpecializations(event.target.value)}
               placeholder="governance, healthcare"
               value={specializations}
@@ -281,8 +284,8 @@ export function AttestationRequestorPanel() {
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
-            <input
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            <Input
+              
               onChange={(event) => setJurisdictions(event.target.value)}
               placeholder="US, EU"
               value={jurisdictions}
@@ -313,8 +316,8 @@ export function AttestationRequestorPanel() {
                 </button>
                 <label className="grid gap-2 text-sm font-semibold text-foreground">
                   Dispute reason
-                  <textarea
-                    className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+                  <Textarea
+                    
                     onChange={(event) => setDisputeReason(event.target.value)}
                     value={disputeReason}
                   />
@@ -514,22 +517,22 @@ export function AttestorApplicationPanel() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Specializations
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSpecializations(event.target.value)} placeholder="e.g. ISO 27001, SOC 2" value={specializations} />
+            <Input  onChange={(event) => setSpecializations(event.target.value)} placeholder="e.g. ISO 27001, SOC 2" value={specializations} />
             <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
-            <input className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setJurisdictions(event.target.value)} placeholder="e.g. US, EU, NG" value={jurisdictions} />
+            <Input  onChange={(event) => setJurisdictions(event.target.value)} placeholder="e.g. US, EU, NG" value={jurisdictions} />
             <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground md:col-span-2">
             Credentials summary
-            <textarea className="min-h-28 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setCredentialsSummary(event.target.value)} value={credentialsSummary} />
+            <Textarea className="min-h-28" onChange={(event) => setCredentialsSummary(event.target.value)} value={credentialsSummary} />
             <span className="text-xs font-normal text-foreground-subtle">At least 10 characters.</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground md:col-span-2">
             Professional references
-            <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setProfessionalReferences(event.target.value)} value={professionalReferences} />
+            <Textarea  onChange={(event) => setProfessionalReferences(event.target.value)} value={professionalReferences} />
             <span className="text-xs font-normal text-foreground-subtle">At least 3 characters.</span>
           </label>
         </div>
@@ -675,13 +678,13 @@ export function AttestorAssignmentsPanel() {
             ) : null}
             {assignment.attestation_status === "accepted" ? (
               <div className="mt-4 grid gap-3">
-                <select className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setOutcome(event.target.value as "approved" | "conditional" | "rejected")} value={outcome}>
+                <Select  onChange={(event) => setOutcome(event.target.value as "approved" | "conditional" | "rejected")} value={outcome}>
                   <option value="approved">Approved</option>
                   <option value="conditional">Conditional</option>
                   <option value="rejected">Rejected</option>
-                </select>
-                <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setSummary(event.target.value)} placeholder="Report summary" value={summary} />
-                <textarea className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent" onChange={(event) => setScope(event.target.value)} placeholder="Scope reviewed" value={scope} />
+                </Select>
+                <Textarea  onChange={(event) => setSummary(event.target.value)} placeholder="Report summary" value={summary} />
+                <Textarea  onChange={(event) => setScope(event.target.value)} placeholder="Scope reviewed" value={scope} />
                 <button className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60" disabled={!canSubmitReport} onClick={() => handleSubmitReport(assignment)} type="button">
                   Submit report
                 </button>
@@ -851,8 +854,8 @@ export function AdminAttestationPanel() {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Admin 2FA code
-            <input 
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+            <Input 
+               
               onChange={(event) => setTotpCode(event.target.value)} 
               placeholder="Enter 6-digit code"
               value={totpCode} 
@@ -860,8 +863,8 @@ export function AdminAttestationPanel() {
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Reason or notes
-            <input 
-              className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+            <Input 
+               
               onChange={(event) => setManualReason(event.target.value)} 
               placeholder="Explain this action for audit logs..."
               value={manualReason} 
@@ -891,8 +894,8 @@ export function AdminAttestationPanel() {
             <div className="grid gap-4 mb-6">
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
                 Attestation ID
-                <input 
-                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                <Input 
+                   
                   onChange={(event) => setAssignAttestationId(event.target.value)} 
                   placeholder="e.g. att-93f8e" 
                   value={assignAttestationId} 
@@ -900,8 +903,8 @@ export function AdminAttestationPanel() {
               </label>
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
                 Target Attestor ID
-                <input 
-                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                <Input 
+                   
                   onChange={(event) => setAssignAttestorId(event.target.value)} 
                   placeholder="Required for manual assignment" 
                   value={assignAttestorId} 
@@ -940,8 +943,8 @@ export function AdminAttestationPanel() {
             <div className="grid gap-4 mb-6">
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
                 Dispute ID
-                <input 
-                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                <Input 
+                   
                   onChange={(event) => setDisputeId(event.target.value)} 
                   placeholder="e.g. dsp-18a7b" 
                   value={disputeId} 
@@ -949,22 +952,22 @@ export function AdminAttestationPanel() {
               </label>
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
                 Resolution Strategy
-                <select 
-                  className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent" 
+                <Select 
+                   
                   onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} 
                   value={resolutionType}
                 >
                   <option value="release">Release (Pay Contributor)</option>
                   <option value="refund">Refund (Pay Operator)</option>
                   <option value="split">Split Escrow Funds</option>
-                </select>
+                </Select>
               </label>
               
               {resolutionType === "split" && (
                 <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-surface-2 p-3 border border-border-default">
                   <label className="grid gap-1.5 text-xs font-semibold text-foreground">
                     Release to Contributor ($)
-                    <input 
+                    <Input 
                       className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
                       onChange={(event) => setReleaseAmount(event.target.value)} 
                       placeholder="Amount" 
@@ -973,7 +976,7 @@ export function AdminAttestationPanel() {
                   </label>
                   <label className="grid gap-1.5 text-xs font-semibold text-foreground">
                     Refund to Operator ($)
-                    <input 
+                    <Input 
                       className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
                       onChange={(event) => setRefundAmount(event.target.value)} 
                       placeholder="Amount" 

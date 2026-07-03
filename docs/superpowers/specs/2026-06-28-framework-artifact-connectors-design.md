@@ -1,7 +1,7 @@
 # Framework Artifact Connectors & Source-of-Truth Model — Design
 
-- **Date:** 2026-06-28
-- **Status:** Draft (awaiting review)
+- **Date:** 2026-06-28 (open questions resolved 2026-07-03)
+- **Status:** Approved — Phase A planned first
 - **Author:** William Ikeji (architect) + agent
 - **Module:** `frameworks` (artifacts)
 - **Related FRs:** FR-FWK-* (artifact upload, versioning, publish/review workflow)
@@ -205,13 +205,25 @@ OpenAPI contract updated first, then frontend client regenerated.
 - Security: tokens never in responses/logs; buyer access via presigned URL only; no external
   fetch to arbitrary URLs.
 
-## Open questions / deferred
+## Open questions — resolved 2026-07-03
 
-- Exact provider set for v1 (Drive first? all three?).
-- Reuse existing OAuth account model vs. new `oauth_connections` table — to confirm against
-  the auth module during planning.
-- Whether draft live-mirror shows source-rendered preview or a fetched-bytes preview for
-  non-image formats (provider thumbnail vs. our render).
+- **Provider set for v1:** Google Drive only. Dropbox/OneDrive follow once the pattern is
+  proven; the connector abstraction must still be provider-generic.
+- **OAuth storage:** new `oauth_connections` table in a new `integrations` module.
+  Confirmed against the auth module: `oauth_accounts` is an identity link only
+  (`provider` + `provider_id`, no tokens/scopes/status) and its
+  `unique(provider, provider_id)` constraint conflicts with connecting a different Google
+  account than the login identity. Tokens encrypted with a new per-domain Fernet key
+  following the existing `core/config.py` / `core/security.py` pattern
+  (`totp_encryption_key` et al.).
+- **Draft live-mirror preview:** provider thumbnail (Drive `files.get` → `thumbnailLink`,
+  fetched server-side with the stored token). Industry standard (Notion/Slack/Confluence
+  all use provider previews); self-render only once we own the bytes, where the pipeline
+  already produces thumbnails. Phase B concern — decided now, built later.
+- **Plan scope:** Phase A only is planned first; B/C planned after A ships and is reviewed.
+
+## Deferred
+
 - In-app editing SDK choice (Apryse vs. OnlyOffice) — only if/when Phase D is approved; carries
   a cost decision.
 
