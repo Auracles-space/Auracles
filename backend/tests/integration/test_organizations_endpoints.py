@@ -443,6 +443,43 @@ async def test_member_can_leave(
     assert response.status_code == 204
 
 
+async def test_remove_member_triggers_derived_role_sync(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing a member runs the derived-role sync for the removed user.
+
+    The attestor role is org-derived, so every membership removal must
+    re-evaluate the removed user's derived roles.
+    """
+    del migrated_database, clean_orgs
+    from app.modules.organizations import service as org_service
+
+    synced: list[UUID] = []
+
+    async def record_sync(db: object, *, user_id: UUID) -> None:
+        """Record which user ids the removal path syncs."""
+        del db
+        synced.append(user_id)
+
+    monkeypatch.setattr(org_service, "sync_derived_roles", record_sync)
+    owner_id = await create_user("sync-owner")
+    member_id = await create_user("sync-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "sync")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    response = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{member_row}",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 204
+    assert synced == [member_id]
+
+
 async def test_role_change_owner_only_and_never_to_owner(
     client: AsyncClient, migrated_database: None, clean_orgs: None
 ) -> None:

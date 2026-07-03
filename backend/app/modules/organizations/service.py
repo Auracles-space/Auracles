@@ -434,6 +434,20 @@ async def remove_member(
             },
         )
 
+    await sync_derived_roles(db, user_id=removed_user_id)
+
+
+async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
+    """Grant/revoke the derived user-level attestor role for this user.
+
+    Completed in the derived-roles task; safe to call from member paths
+    from day one. With no active attestor capabilities in Org Core it is
+    a no-op revoke path.
+    """
+    # Full grant/revoke logic lands with the derived-roles task; the call
+    # sites (member add/remove, capability change) are wired here first.
+    return None
+
 
 async def change_member_role(
     db: AsyncSession,
