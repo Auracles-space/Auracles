@@ -149,18 +149,20 @@ async def test_user_manages_only_their_own_credentials(
     async with async_session_factory() as session:
         stored = await session.get(Credential, UUID(credential_id))
         audits = (
-            await session.execute(
-                select(AuditLog.action).where(AuditLog.target_type == "credential")
+            (
+                await session.execute(
+                    select(AuditLog.action).where(AuditLog.target_type == "credential")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert created.json()["user_id"] == str(owner_id)
     assert created.json()["title"] == "Certified Healthcare Operations Lead"
     assert created.json()["evidence_file_keys"] == []
     assert listed.status_code == 200
-    assert [item["id"] for item in listed.json()["credentials"]] == [
-        credential_id
-    ]
+    assert [item["id"] for item in listed.json()["credentials"]] == [credential_id]
     assert outsider_listed.status_code == 200
     assert outsider_listed.json()["credentials"] == []
     assert outsider_update.status_code == 404

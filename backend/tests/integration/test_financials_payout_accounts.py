@@ -397,9 +397,12 @@ async def test_payout_account_onboarding_reuses_existing_account(
     # Verify only one PayoutAccount exists in the database for this user
     async with async_session_factory() as session:
         accounts = (
-            await session.execute(
-                select(PayoutAccount).where(PayoutAccount.user_id == contributor_id)
+            (
+                await session.execute(
+                    select(PayoutAccount).where(PayoutAccount.user_id == contributor_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(accounts) == 1
-

@@ -46,9 +46,9 @@ async def _process_artifact_impl(artifact_id: str) -> dict[str, Any]:
     if pii["status"] != "clear":
         redaction = await _redact_artifact_impl(artifact_id)
         result["steps"]["redaction"] = redaction
-        result["steps"]["framework_gate"] = (
-            await evaluate_framework_pipeline_for_artifact(artifact_id)
-        )
+        result["steps"][
+            "framework_gate"
+        ] = await evaluate_framework_pipeline_for_artifact(artifact_id)
         return result
 
     metadata = await _compute_metadata_impl(artifact_id)

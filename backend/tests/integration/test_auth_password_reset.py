@@ -378,10 +378,14 @@ async def test_new_device_login_notification_is_sent_once_per_fingerprint(
 
     async with async_session_factory() as session:
         audit_logs = (
-            await session.execute(
-                select(AuditLog).where(AuditLog.action == "new_device_login")
+            (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.action == "new_device_login")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     sent_emails = reset_test_context["sent_emails"]
 

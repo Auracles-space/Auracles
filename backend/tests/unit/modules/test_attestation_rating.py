@@ -231,16 +231,22 @@ async def test_duplicate_rating_conflicts(db_session) -> None:
     attestation = await _closed_after_accept(db_session)
     requestor = await db_session.get(User, attestation.requestor_id)
     await rating_service.submit_rating(
-        db=db_session, requestor=requestor,
-        attestation_id=attestation.id, stars=4, comment=None,
+        db=db_session,
+        requestor=requestor,
+        attestation_id=attestation.id,
+        stars=4,
+        comment=None,
     )
     # Each rating attempt is a fresh request with a freshly loaded user; the
     # service commits, expiring ORM instances, so reload before the retry.
     requestor = await db_session.get(User, attestation.requestor_id)
     with pytest.raises(HTTPException) as exc:
         await rating_service.submit_rating(
-            db=db_session, requestor=requestor,
-            attestation_id=attestation.id, stars=3, comment=None,
+            db=db_session,
+            requestor=requestor,
+            attestation_id=attestation.id,
+            stars=3,
+            comment=None,
         )
     assert exc.value.status_code == 409
 
@@ -251,8 +257,11 @@ async def test_non_requestor_gets_404(db_session) -> None:
     stranger = await _make_user("operator", "stranger")
     with pytest.raises(HTTPException) as exc:
         await rating_service.submit_rating(
-            db=db_session, requestor=stranger,
-            attestation_id=attestation.id, stars=5, comment=None,
+            db=db_session,
+            requestor=stranger,
+            attestation_id=attestation.id,
+            stars=5,
+            comment=None,
         )
     assert exc.value.status_code == 404
 
@@ -263,7 +272,10 @@ async def test_refunded_attestation_not_rateable(db_session) -> None:
     requestor = await db_session.get(User, attestation.requestor_id)
     with pytest.raises(HTTPException) as exc:
         await rating_service.submit_rating(
-            db=db_session, requestor=requestor,
-            attestation_id=attestation.id, stars=5, comment=None,
+            db=db_session,
+            requestor=requestor,
+            attestation_id=attestation.id,
+            stars=5,
+            comment=None,
         )
     assert exc.value.status_code == 409

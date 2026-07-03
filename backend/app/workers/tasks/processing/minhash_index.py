@@ -107,14 +107,18 @@ async def remove_framework_artifacts_from_index(framework_id: UUID) -> None:
     """Remove all current Framework Artifacts from Redis LSH bands."""
     async with async_session_factory() as db:
         artifact_ids = (
-            await db.execute(
-                select(Artifact.id).where(
-                    Artifact.framework_id == framework_id,
-                    Artifact.current_for_framework.is_(True),
-                    Artifact.minhash_signature.is_not(None),
+            (
+                await db.execute(
+                    select(Artifact.id).where(
+                        Artifact.framework_id == framework_id,
+                        Artifact.current_for_framework.is_(True),
+                        Artifact.minhash_signature.is_not(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     for artifact_id in artifact_ids:
         await remove_artifact_signature(artifact_id)

@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -21,6 +21,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.gdpr import export_service as gdpr_export_service
 from app.modules.gdpr.models import DataExportRequest
+from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
 
@@ -138,6 +139,9 @@ async def export_test_context(
     async with async_session_factory() as session:
         await session.execute(delete(DataExportRequest))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(OrgCapability))
+        await session.execute(delete(OrgMember))
+        await session.execute(delete(Organization))
         await session.commit()
 
     app.dependency_overrides[get_redis] = lambda: fake_redis
@@ -343,6 +347,49 @@ async def test_generate_data_export_writes_redacted_json_bundle(
     assert "counterparty.example.com" not in serialized_bundle
 
 
+async def test_export_bundle_includes_organization_memberships(
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The export bundle lists the user's org memberships with role and dates."""
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user(
+        f"export-org-{uuid4().hex[:8]}@auracles.space"
+    )
+    org_slug = f"export-org-{uuid4().hex[:6]}"
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=org_slug,
+                name="Export Org",
+                country="GB",
+                created_by=user_id,
+            )
+            session.add(organization)
+            await session.flush()
+            session.add(
+                OrgMember(org_id=organization.id, user_id=user_id, role="owner")
+            )
+            request = DataExportRequest(user_id=user_id, status="pending")
+            session.add(request)
+            await session.flush()
+            request_id = request.id
+
+    result = await gdpr_beat._generate_data_export_impl(str(request_id))
+
+    assert result["status"] == "ready"
+    bundle = json.loads(fake_s3.uploads[0]["body"].decode("utf-8"))
+    memberships = bundle["organization_memberships"]
+    assert len(memberships) == 1
+    assert memberships[0]["org_slug"] == org_slug
+    assert memberships[0]["org_name"] == "Export Org"
+    assert memberships[0]["role"] == "owner"
+    assert memberships[0]["joined_at"]
+
+
 async def test_ready_export_download_redirects_to_private_presigned_url(
     client: AsyncClient,
     migrated_database: None,
@@ -382,13 +429,10 @@ async def test_ready_export_download_redirects_to_private_presigned_url(
             "download_name": "auracles-data-export.json",
         }
     ]
-    assert (
-        response.headers["location"]
-        == (
-            f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
-            "gdpr-exports/test/export.json"
-            "?expires=600&download_name=auracles-data-export.json"
-        )
+    assert response.headers["location"] == (
+        f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
+        "gdpr-exports/test/export.json"
+        "?expires=600&download_name=auracles-data-export.json"
     )
 
 
@@ -488,9 +532,7 @@ async def test_export_download_is_rate_limited_per_user(
     assert limited.json()["detail"].startswith("Too many attempts. Please try again in")
     assert "Retry-After" in limited.headers
     assert (
-        export_test_context["redis"].ttls[
-            f"rate_limit:gdpr_export_download:{user_id}"
-        ]
+        export_test_context["redis"].ttls[f"rate_limit:gdpr_export_download:{user_id}"]
         == gdpr_export_service.EXPORT_DOWNLOAD_LIMITER.window
     )
 

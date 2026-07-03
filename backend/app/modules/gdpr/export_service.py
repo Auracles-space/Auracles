@@ -46,6 +46,7 @@ from app.modules.frameworks.models import Framework, License, Review
 from app.modules.gdpr.models import DataExportRequest
 from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
+from app.modules.organizations.service import export_user_org_memberships
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -102,8 +103,10 @@ def _json_value(value: Any) -> Any:
 async def _collect_profile(db: AsyncSession, user: User) -> dict[str, Any]:
     """Collect profile and role fields explicitly allowed for export."""
     roles = (
-        await db.execute(select(UserRole).where(UserRole.user_id == user.id))
-    ).scalars().all()
+        (await db.execute(select(UserRole).where(UserRole.user_id == user.id)))
+        .scalars()
+        .all()
+    )
     return {
         "id": str(user.id),
         "email": user.email,
@@ -130,38 +133,54 @@ async def _collect_profile(db: AsyncSession, user: User) -> dict[str, Any]:
 async def _collect_financial(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect financial ledger records without provider secrets or account refs."""
     transactions = (
-        await db.execute(
-            select(Transaction)
-            .where(
-                or_(
-                    Transaction.payer_id == user_id,
-                    Transaction.payee_id == user_id,
+        (
+            await db.execute(
+                select(Transaction)
+                .where(
+                    or_(
+                        Transaction.payer_id == user_id,
+                        Transaction.payee_id == user_id,
+                    )
                 )
+                .order_by(Transaction.updated_at)
             )
-            .order_by(Transaction.updated_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     licenses = (
-        await db.execute(
-            select(License)
-            .where(License.operator_id == user_id)
-            .order_by(License.granted_at)
+        (
+            await db.execute(
+                select(License)
+                .where(License.operator_id == user_id)
+                .order_by(License.granted_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     payouts = (
-        await db.execute(
-            select(Payout)
-            .where(Payout.contributor_id == user_id)
-            .order_by(Payout.initiated_at)
+        (
+            await db.execute(
+                select(Payout)
+                .where(Payout.contributor_id == user_id)
+                .order_by(Payout.initiated_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     payout_accounts = (
-        await db.execute(
-            select(PayoutAccount)
-            .where(PayoutAccount.user_id == user_id)
-            .order_by(PayoutAccount.created_at)
+        (
+            await db.execute(
+                select(PayoutAccount)
+                .where(PayoutAccount.user_id == user_id)
+                .order_by(PayoutAccount.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     developer_account = await db.scalar(
         select(DeveloperAccount).where(DeveloperAccount.user_id == user_id)
     )
@@ -172,12 +191,13 @@ async def _collect_financial(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
                 await db.execute(
                     select(PartnerCommission)
                     .where(
-                        PartnerCommission.developer_account_id
-                        == developer_account.id
+                        PartnerCommission.developer_account_id == developer_account.id
                     )
                     .order_by(PartnerCommission.created_at)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
     return {
         "transactions": [
@@ -266,12 +286,16 @@ async def _collect_financial(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
 async def _collect_frameworks(db: AsyncSession, user_id: UUID) -> list[dict[str, Any]]:
     """Collect contributor-authored Framework metadata without artifacts."""
     frameworks = (
-        await db.execute(
-            select(Framework)
-            .where(Framework.contributor_id == user_id)
-            .order_by(Framework.updated_at)
+        (
+            await db.execute(
+                select(Framework)
+                .where(Framework.contributor_id == user_id)
+                .order_by(Framework.updated_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": str(row.id),
@@ -300,12 +324,16 @@ async def _collect_frameworks(db: AsyncSession, user_id: UUID) -> list[dict[str,
 async def _collect_reviews(db: AsyncSession, user_id: UUID) -> list[dict[str, Any]]:
     """Collect reviews authored by the user."""
     reviews = (
-        await db.execute(
-            select(Review)
-            .where(Review.operator_id == user_id)
-            .order_by(Review.updated_at)
+        (
+            await db.execute(
+                select(Review)
+                .where(Review.operator_id == user_id)
+                .order_by(Review.updated_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": str(row.id),
@@ -322,12 +350,16 @@ async def _collect_reviews(db: AsyncSession, user_id: UUID) -> list[dict[str, An
 async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect project records owned by or authored by the user."""
     projects = (
-        await db.execute(
-            select(Project)
-            .where(Project.operator_id == user_id)
-            .order_by(Project.updated_at)
+        (
+            await db.execute(
+                select(Project)
+                .where(Project.operator_id == user_id)
+                .order_by(Project.updated_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     project_ids = [project.id for project in projects]
     milestones: list[Milestone] = []
     if project_ids:
@@ -338,48 +370,70 @@ async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
                     .where(Milestone.project_id.in_(project_ids))
                     .order_by(Milestone.created_at)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
     proposals = (
-        await db.execute(
-            select(Proposal)
-            .where(Proposal.contributor_id == user_id)
-            .order_by(Proposal.created_at)
-        )
-    ).scalars().all()
-    amendments = (
-        await db.execute(
-            select(ProposalAmendment)
-            .where(
-                or_(
-                    ProposalAmendment.proposed_by == user_id,
-                    ProposalAmendment.responded_by == user_id,
-                )
+        (
+            await db.execute(
+                select(Proposal)
+                .where(Proposal.contributor_id == user_id)
+                .order_by(Proposal.created_at)
             )
-            .order_by(ProposalAmendment.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
+    amendments = (
+        (
+            await db.execute(
+                select(ProposalAmendment)
+                .where(
+                    or_(
+                        ProposalAmendment.proposed_by == user_id,
+                        ProposalAmendment.responded_by == user_id,
+                    )
+                )
+                .order_by(ProposalAmendment.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     deliverables = (
-        await db.execute(
-            select(Deliverable)
-            .where(Deliverable.contributor_id == user_id)
-            .order_by(Deliverable.created_at)
+        (
+            await db.execute(
+                select(Deliverable)
+                .where(Deliverable.contributor_id == user_id)
+                .order_by(Deliverable.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     disputes = (
-        await db.execute(
-            select(Dispute)
-            .where(or_(Dispute.raised_by == user_id, Dispute.admin_id == user_id))
-            .order_by(Dispute.created_at)
+        (
+            await db.execute(
+                select(Dispute)
+                .where(or_(Dispute.raised_by == user_id, Dispute.admin_id == user_id))
+                .order_by(Dispute.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     workspace_messages = (
-        await db.execute(
-            select(WorkspaceMessage)
-            .where(WorkspaceMessage.sender_id == user_id)
-            .order_by(WorkspaceMessage.created_at)
+        (
+            await db.execute(
+                select(WorkspaceMessage)
+                .where(WorkspaceMessage.sender_id == user_id)
+                .order_by(WorkspaceMessage.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "projects": [
             {
@@ -487,34 +541,46 @@ async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
 async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect attestation records tied to the user."""
     applications = (
-        await db.execute(
-            select(AttestorApplication)
-            .where(AttestorApplication.user_id == user_id)
-            .order_by(AttestorApplication.created_at)
+        (
+            await db.execute(
+                select(AttestorApplication)
+                .where(AttestorApplication.user_id == user_id)
+                .order_by(AttestorApplication.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     profile = await db.scalar(
         select(AttestorProfile).where(AttestorProfile.user_id == user_id)
     )
     credentials = (
-        await db.execute(
-            select(Credential)
-            .where(Credential.user_id == user_id)
-            .order_by(Credential.updated_at)
-        )
-    ).scalars().all()
-    attestations = (
-        await db.execute(
-            select(Attestation)
-            .where(
-                or_(
-                    Attestation.requestor_id == user_id,
-                    Attestation.attestor_id == user_id,
-                )
+        (
+            await db.execute(
+                select(Credential)
+                .where(Credential.user_id == user_id)
+                .order_by(Credential.updated_at)
             )
-            .order_by(Attestation.updated_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
+    attestations = (
+        (
+            await db.execute(
+                select(Attestation)
+                .where(
+                    or_(
+                        Attestation.requestor_id == user_id,
+                        Attestation.attestor_id == user_id,
+                    )
+                )
+                .order_by(Attestation.updated_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "applications": [
             {
@@ -572,12 +638,16 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
 async def _collect_developer(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect Developer platform metadata without credentials or secrets."""
     applications = (
-        await db.execute(
-            select(DeveloperApplication)
-            .where(DeveloperApplication.user_id == user_id)
-            .order_by(DeveloperApplication.created_at)
+        (
+            await db.execute(
+                select(DeveloperApplication)
+                .where(DeveloperApplication.user_id == user_id)
+                .order_by(DeveloperApplication.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     account = await db.scalar(
         select(DeveloperAccount).where(DeveloperAccount.user_id == user_id)
     )
@@ -592,7 +662,9 @@ async def _collect_developer(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
                     .where(ApiKey.developer_account_id == account.id)
                     .order_by(ApiKey.created_at)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         webhooks = list(
             (
@@ -601,7 +673,9 @@ async def _collect_developer(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
                     .where(PartnerWebhook.developer_account_id == account.id)
                     .order_by(PartnerWebhook.created_at)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         payouts = list(
             (
@@ -610,7 +684,9 @@ async def _collect_developer(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
                     .where(PartnerPayout.developer_account_id == account.id)
                     .order_by(PartnerPayout.created_at)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
     return {
         "applications": [
@@ -685,18 +761,22 @@ async def _collect_security_audit(
 ) -> list[dict[str, Any]]:
     """Collect audit rows involving the user with metadata redacted."""
     audit_logs = (
-        await db.execute(
-            select(AuditLog)
-            .where(
-                (AuditLog.actor_id == user_id)
-                | (
-                    (AuditLog.target_type == "user")
-                    & (AuditLog.target_id == user_id)
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(
+                    (AuditLog.actor_id == user_id)
+                    | (
+                        (AuditLog.target_type == "user")
+                        & (AuditLog.target_id == user_id)
+                    )
                 )
+                .order_by(AuditLog.created_at)
             )
-            .order_by(AuditLog.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": str(row.id),
@@ -861,4 +941,7 @@ async def build_data_export_bundle(
         "developer": await _collect_developer(db, user_id),
         "reputation": {},
         "security_audit": await _collect_security_audit(db, user_id),
+        "organization_memberships": await export_user_org_memberships(
+            db, user_id=user_id
+        ),
     }

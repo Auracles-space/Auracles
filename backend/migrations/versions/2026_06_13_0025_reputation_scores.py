@@ -109,9 +109,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop the reputation score table and seeded reputation config defaults."""
     op.execute(
-        sa.text(
-            "DELETE FROM platform_config WHERE key IN :keys"
-        ).bindparams(sa.bindparam("keys", tuple(_REPUTATION_SEEDS), expanding=True))
+        sa.text("DELETE FROM platform_config WHERE key IN :keys").bindparams(
+            sa.bindparam("keys", tuple(_REPUTATION_SEEDS), expanding=True)
+        )
     )
     op.drop_index("ix_reputation_subject_type_score", table_name="reputation_scores")
     op.drop_table("reputation_scores")

@@ -59,9 +59,7 @@ def test_saved_searches_migration_creates_tables_indexes_and_enum(
             "saved_search_alert_deliveries"
         )
     }
-    framework_indexes = {
-        index["name"] for index in inspector.get_indexes("frameworks")
-    }
+    framework_indexes = {index["name"] for index in inspector.get_indexes("frameworks")}
 
     with migrated_engine.connect() as connection:
         notification_labels = {
@@ -138,9 +136,7 @@ def test_saved_searches_orm_models_bind_to_slice_one_tables() -> None:
     assert {"user_id", "name", "filters", "alert_enabled"}.issubset(
         SavedSearch.__table__.columns.keys()
     )
-    assert SavedSearchAlertDelivery.__tablename__ == (
-        "saved_search_alert_deliveries"
-    )
+    assert SavedSearchAlertDelivery.__tablename__ == ("saved_search_alert_deliveries")
     assert {"saved_search_id", "framework_id", "delivered_at"}.issubset(
         SavedSearchAlertDelivery.__table__.columns.keys()
     )

@@ -124,9 +124,7 @@ class Settings(BaseSettings):
         default=False,
         alias="TRUST_PROXY_HEADERS",
     )
-    aws_access_key_id: SecretStr | None = Field(
-        default=None, alias="AWS_ACCESS_KEY_ID"
-    )
+    aws_access_key_id: SecretStr | None = Field(default=None, alias="AWS_ACCESS_KEY_ID")
     aws_secret_access_key: SecretStr | None = Field(
         default=None, alias="AWS_SECRET_ACCESS_KEY"
     )
@@ -158,9 +156,7 @@ class Settings(BaseSettings):
     # still sends; set EMAIL_SEND_ENABLED=false locally to log emails instead of
     # calling Resend (avoids burning the Resend daily quota during flow testing).
     email_send_enabled: bool = Field(default=True, alias="EMAIL_SEND_ENABLED")
-    stripe_secret_key: SecretStr | None = Field(
-        default=None, alias="STRIPE_SECRET_KEY"
-    )
+    stripe_secret_key: SecretStr | None = Field(default=None, alias="STRIPE_SECRET_KEY")
     stripe_webhook_secret: SecretStr | None = Field(
         default=None, alias="STRIPE_WEBHOOK_SECRET"
     )
@@ -170,18 +166,14 @@ class Settings(BaseSettings):
     paystack_webhook_secret: SecretStr | None = Field(
         default=None, alias="PAYSTACK_WEBHOOK_SECRET"
     )
-    persona_api_key: SecretStr | None = Field(
-        default=None, alias="PERSONA_API_KEY"
-    )
+    persona_api_key: SecretStr | None = Field(default=None, alias="PERSONA_API_KEY")
     persona_webhook_secret: SecretStr | None = Field(
         default=None, alias="PERSONA_WEBHOOK_SECRET"
     )
     persona_inquiry_template_id: str | None = Field(
         default=None, alias="PERSONA_INQUIRY_TEMPLATE_ID"
     )
-    persona_redirect_url: str | None = Field(
-        default=None, alias="PERSONA_REDIRECT_URL"
-    )
+    persona_redirect_url: str | None = Field(default=None, alias="PERSONA_REDIRECT_URL")
     google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
     google_client_secret: SecretStr | None = Field(
         default=None, alias="GOOGLE_CLIENT_SECRET"
@@ -229,11 +221,10 @@ class Settings(BaseSettings):
         ):
             self.totp_encryption_key = SecretStr(DEV_TOTP_ENCRYPTION_KEY)
             return self
-        if (
-            self.environment != "local"
-            and raw_totp_key
-            in {DEV_TOTP_ENCRYPTION_KEY, PLACEHOLDER_TOTP_ENCRYPTION_KEY}
-        ):
+        if self.environment != "local" and raw_totp_key in {
+            DEV_TOTP_ENCRYPTION_KEY,
+            PLACEHOLDER_TOTP_ENCRYPTION_KEY,
+        }:
             raise ValueError("TOTP_ENCRYPTION_KEY must be set outside local.")
         return self
 
@@ -249,14 +240,10 @@ class Settings(BaseSettings):
                 DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY
             )
             return self
-        if (
-            self.environment != "local"
-            and raw_key
-            in {
-                DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
-                PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
-            }
-        ):
+        if self.environment != "local" and raw_key in {
+            DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
+            PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
+        }:
             raise ValueError("PAYOUT_ACCOUNT_ENCRYPTION_KEY must be set outside local.")
         return self
 
@@ -272,14 +259,10 @@ class Settings(BaseSettings):
                 DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY
             )
             return self
-        if (
-            self.environment != "local"
-            and raw_key
-            in {
-                DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY,
-                PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY,
-            }
-        ):
+        if self.environment != "local" and raw_key in {
+            DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY,
+            PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY,
+        }:
             raise ValueError(
                 "PARTNER_WEBHOOK_ENCRYPTION_KEY must be set outside local."
             )
@@ -293,11 +276,10 @@ class Settings(BaseSettings):
         the frontend middleware for routing. Shipping the dev value to staging
         or production lets any attacker forge tokens and hints.
         """
-        if (
-            self.environment != "local"
-            and self.secret_key.get_secret_value()
-            in {DEV_SECRET_KEY, PLACEHOLDER_SECRET_KEY}
-        ):
+        if self.environment != "local" and self.secret_key.get_secret_value() in {
+            DEV_SECRET_KEY,
+            PLACEHOLDER_SECRET_KEY,
+        }:
             raise ValueError("SECRET_KEY must be set outside local.")
         return self
 

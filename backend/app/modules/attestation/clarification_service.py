@@ -100,9 +100,9 @@ async def send_clarification(
             allowed_statuses={"in_review"},
         )
         total = await db.scalar(
-            select(func.count()).select_from(AttestationClarification).where(
-                AttestationClarification.attestation_id == attestation.id
-            )
+            select(func.count())
+            .select_from(AttestationClarification)
+            .where(AttestationClarification.attestation_id == attestation.id)
         )
         if total is not None and total >= MAX_CLARIFICATIONS:
             raise HTTPException(
@@ -110,7 +110,9 @@ async def send_clarification(
                 detail="Clarification limit reached for this assignment.",
             )
         open_count = await db.scalar(
-            select(func.count()).select_from(AttestationClarification).where(
+            select(func.count())
+            .select_from(AttestationClarification)
+            .where(
                 AttestationClarification.attestation_id == attestation.id,
                 AttestationClarification.status == "open",
             )

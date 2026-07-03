@@ -41,6 +41,7 @@ pytestmark = pytest.mark.asyncio
 # Cleanup — mirrors test_attestation_requests.reset_attestation_state
 # ---------------------------------------------------------------------------
 
+
 async def _reset_state() -> None:
     """Remove attestation/user test rows in FK-safe order."""
     async with async_session_factory() as session:
@@ -62,6 +63,7 @@ async def _reset_state() -> None:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
@@ -171,6 +173,7 @@ async def db_session(clean_state) -> AsyncIterator:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _make_attestation(
     *,
     requestor: User,
@@ -202,6 +205,7 @@ async def _make_attestation(
 # ---------------------------------------------------------------------------
 # Full access — assigned attestor + review status + ack
 # ---------------------------------------------------------------------------
+
 
 async def test_assigned_accepted_with_ack_is_full(
     db_session, operator, attestor, published_framework
@@ -240,6 +244,7 @@ async def test_review_states_are_full(
 # No ack → no full access
 # ---------------------------------------------------------------------------
 
+
 async def test_accepted_without_ack_is_none(
     db_session, operator, attestor, published_framework
 ):
@@ -260,6 +265,7 @@ async def test_accepted_without_ack_is_none(
 # ---------------------------------------------------------------------------
 # Terminal states revoke full access
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "status_value", ["released", "resolved", "refunded", "closed", "cancelled"]
@@ -283,6 +289,7 @@ async def test_terminal_states_revoke_full(
 # ---------------------------------------------------------------------------
 # Preview — cohort offer
 # ---------------------------------------------------------------------------
+
 
 async def test_cohort_offer_is_preview(
     db_session, operator, attestor, published_framework
@@ -316,9 +323,8 @@ async def test_cohort_offer_is_preview(
 # Outsider — no assignment, no offer
 # ---------------------------------------------------------------------------
 
-async def test_outsider_is_none(
-    db_session, operator, attestor, published_framework
-):
+
+async def test_outsider_is_none(db_session, operator, attestor, published_framework):
     """A user with neither assignment nor a live offer gets none."""
     att = await _make_attestation(
         requestor=operator,

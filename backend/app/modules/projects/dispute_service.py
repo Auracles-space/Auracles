@@ -415,9 +415,7 @@ async def list_disputes_for_admin(
         .order_by(Dispute.created_at.desc())
     )
     if status_filter is None:
-        statement = statement.where(
-            Dispute.status.in_(_ADMIN_ACTIVE_DISPUTE_STATUSES)
-        )
+        statement = statement.where(Dispute.status.in_(_ADMIN_ACTIVE_DISPUTE_STATUSES))
     else:
         statement = statement.where(Dispute.status == status_filter)
 

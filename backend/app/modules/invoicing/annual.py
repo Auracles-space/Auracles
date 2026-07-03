@@ -191,9 +191,7 @@ async def annual_line_items(
                 ),
                 "attestation_id": str(attestation.id),
                 "review_type": (
-                    (attestation.review_type or "attestation")
-                    .replace("_", " ")
-                    .title()
+                    (attestation.review_type or "attestation").replace("_", " ").title()
                 ),
                 "gross_amount": f"{gross_amount} {transaction.currency}",
                 "commission_rate": f"{(commission_rate * Decimal('100')).normalize()}%",

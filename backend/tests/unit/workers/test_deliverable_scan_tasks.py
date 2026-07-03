@@ -163,9 +163,7 @@ def test_scan_deliverable_marks_clean_visible(
     monkeypatch.setattr(
         deliverable_scan.s3.storage, "download_file", fake_download_file
     )
-    monkeypatch.setattr(
-        deliverable_scan, "scan_file_with_clamav", lambda path: "clean"
-    )
+    monkeypatch.setattr(deliverable_scan, "scan_file_with_clamav", lambda path: "clean")
 
     result = deliverable_scan.scan_deliverable_upload.apply(
         args=[str(deliverable_id)]

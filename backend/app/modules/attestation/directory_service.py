@@ -147,8 +147,7 @@ async def _verified_credentials(
             issued_date=credential.issued_date,
             expires_date=credential.expires_date,
             expired=(
-                credential.expires_date is not None
-                and credential.expires_date < today
+                credential.expires_date is not None and credential.expires_date < today
             ),
         )
         for credential in rows.scalars().all()

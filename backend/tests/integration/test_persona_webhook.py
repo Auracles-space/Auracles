@@ -151,10 +151,14 @@ async def test_approved_inquiry_marks_user_verified_once(
     async with async_session_factory() as session:
         user = await session.get(User, user_id)
         notifications = (
-            await session.execute(
-                select(Notification).where(Notification.user_id == user_id)
+            (
+                await session.execute(
+                    select(Notification).where(Notification.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert first.status_code == 200
     assert first.json()["status"] == "processed"

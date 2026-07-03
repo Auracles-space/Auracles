@@ -107,9 +107,7 @@ def _totp_cipher() -> Fernet:
 def _payout_account_cipher() -> Fernet:
     """Build the Fernet cipher used for provider payout account IDs."""
     key = (
-        get_settings()
-        .payout_account_encryption_key.get_secret_value()
-        .encode("utf-8")
+        get_settings().payout_account_encryption_key.get_secret_value().encode("utf-8")
     )
     return Fernet(key)
 
@@ -117,9 +115,7 @@ def _payout_account_cipher() -> Fernet:
 def _partner_webhook_cipher() -> Fernet:
     """Build the Fernet cipher used for Partner webhook signing secrets."""
     key = (
-        get_settings()
-        .partner_webhook_encryption_key.get_secret_value()
-        .encode("utf-8")
+        get_settings().partner_webhook_encryption_key.get_secret_value().encode("utf-8")
     )
     return Fernet(key)
 
@@ -136,8 +132,10 @@ def decrypt_totp_secret(encrypted_secret: str) -> str:
 
 def encrypt_payout_provider_account_id(provider_account_id: str) -> str:
     """Encrypt a provider payout account id before database persistence."""
-    return _payout_account_cipher().encrypt(provider_account_id.encode("utf-8")).decode(
-        "utf-8"
+    return (
+        _payout_account_cipher()
+        .encrypt(provider_account_id.encode("utf-8"))
+        .decode("utf-8")
     )
 
 
@@ -152,8 +150,8 @@ def decrypt_payout_provider_account_id(encrypted_provider_account_id: str) -> st
 
 def hash_payout_provider_account_id(provider_account_id: str) -> str:
     """Return a stable keyed lookup hash for provider payout account ids."""
-    key = get_settings().payout_account_encryption_key.get_secret_value().encode(
-        "utf-8"
+    key = (
+        get_settings().payout_account_encryption_key.get_secret_value().encode("utf-8")
     )
     return hmac.new(
         key,

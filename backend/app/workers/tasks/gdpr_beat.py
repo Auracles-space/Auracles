@@ -125,7 +125,9 @@ async def _expire_data_exports_impl() -> dict[str, int]:
                         DataExportRequest.expires_at <= now,
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         due_request_ids = [request.id for request in due_requests]
         if not due_request_ids:
@@ -145,12 +147,12 @@ async def _expire_data_exports_impl() -> dict[str, int]:
                 (
                     await db.execute(
                         select(DataExportRequest)
-                        .where(
-                            DataExportRequest.id.in_(due_request_ids)
-                        )
+                        .where(DataExportRequest.id.in_(due_request_ids))
                         .with_for_update()
                     )
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
             expired_count = 0
             for export_request in locked_requests:
@@ -184,7 +186,9 @@ async def _process_account_deletions_impl(
                         AccountDeletionRequest.scheduled_for <= now,
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         processed_count = 0
         skipped_count = 0
@@ -205,10 +209,7 @@ async def _process_account_deletions_impl(
                         request_id,
                         with_for_update=True,
                     )
-                    if (
-                        locked_request is None
-                        or locked_request.status != "scheduled"
-                    ):
+                    if locked_request is None or locked_request.status != "scheduled":
                         continue
                     locked_request.blocked_reasons = [
                         reason.model_dump(mode="json") for reason in reasons

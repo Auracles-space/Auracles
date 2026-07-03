@@ -191,25 +191,21 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
 
         rubric_version = attestation.rubric_version or rubrics.RUBRIC_VERSION
         dimension_rows = (
-            (
-                await db.execute(
-                    select(AttestationRubricDimension, AttestationRubricScore)
-                    .join(
-                        AttestationRubricScore,
-                        AttestationRubricScore.dimension_id
-                        == AttestationRubricDimension.id,
-                    )
-                    .where(
-                        AttestationRubricScore.attestation_id == attestation.id,
-                        AttestationRubricDimension.review_type
-                        == attestation.review_type,
-                        AttestationRubricDimension.version == rubric_version,
-                    )
-                    .order_by(AttestationRubricDimension.display_order)
+            await db.execute(
+                select(AttestationRubricDimension, AttestationRubricScore)
+                .join(
+                    AttestationRubricScore,
+                    AttestationRubricScore.dimension_id
+                    == AttestationRubricDimension.id,
                 )
+                .where(
+                    AttestationRubricScore.attestation_id == attestation.id,
+                    AttestationRubricDimension.review_type == attestation.review_type,
+                    AttestationRubricDimension.version == rubric_version,
+                )
+                .order_by(AttestationRubricDimension.display_order)
             )
-            .all()
-        )
+        ).all()
         methodology = await db.scalar(
             select(AttestationRubricMethodology.text_body).where(
                 AttestationRubricMethodology.review_type == attestation.review_type,

@@ -122,14 +122,12 @@ async def evaluate_quality_gate(
     if outcome == "conditional" and not stripped_conditions:
         failures.append("A conditional outcome requires conditions text.")
     if outcome != "conditional" and stripped_conditions:
-        failures.append(
-            "Conditions text is only allowed for conditional outcomes."
-        )
+        failures.append("Conditions text is only allowed for conditional outcomes.")
 
     annotation_count = await db.scalar(
-        select(func.count()).select_from(AttestationAnnotation).where(
-            AttestationAnnotation.attestation_id == attestation.id
-        )
+        select(func.count())
+        .select_from(AttestationAnnotation)
+        .where(AttestationAnnotation.attestation_id == attestation.id)
     )
     if outcome in {"conditional", "rejected"} and not annotation_count:
         failures.append("A non-approved outcome requires at least one annotation.")
@@ -140,9 +138,7 @@ async def evaluate_quality_gate(
         default=DEFAULT_MIN_WORDS,
     )
     total_words = (
-        comment_word_count
-        + len(summary.split())
-        + len(stripped_conditions.split())
+        comment_word_count + len(summary.split()) + len(stripped_conditions.split())
     )
     if total_words < min_words:
         failures.append(
@@ -160,7 +156,9 @@ async def evaluate_quality_gate(
             )
 
     open_clarifications = await db.scalar(
-        select(func.count()).select_from(AttestationClarification).where(
+        select(func.count())
+        .select_from(AttestationClarification)
+        .where(
             AttestationClarification.attestation_id == attestation.id,
             AttestationClarification.status == "open",
         )

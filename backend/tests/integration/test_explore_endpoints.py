@@ -994,9 +994,7 @@ async def test_suspended_contributor_is_hidden_from_explore_reads(
     profile_response = await client.get(f"/v1/explore/contributors/{contributor_id}")
 
     assert catalog_response.status_code == 200
-    assert [
-        item["title"] for item in catalog_response.json()["items"]
-    ] == []
+    assert [item["title"] for item in catalog_response.json()["items"]] == []
     assert detail_response.status_code == 404
     assert profile_response.status_code == 404
 
@@ -1199,8 +1197,5 @@ async def test_explore_delisted_framework_accessible_to_licensed_operator(
     assert response_unlicensed.status_code == 404
 
     # 3. Unauthenticated request -> Should return 404 Not Found
-    response_unauth = await client.get(
-        f"/v1/explore/frameworks/{framework_id}"
-    )
+    response_unauth = await client.get(f"/v1/explore/frameworks/{framework_id}")
     assert response_unauth.status_code == 404
-

@@ -156,18 +156,26 @@ async def test_registration_records_current_consent_versions(
         )
         assert user is not None
         logs = (
-            await session.execute(
-                select(ConsentLog).where(ConsentLog.user_id == user.id)
-            )
-        ).scalars().all()
-        audits = (
-            await session.execute(
-                select(AuditLog).where(
-                    AuditLog.action == "consent_recorded",
-                    AuditLog.actor_id == user.id,
+            (
+                await session.execute(
+                    select(ConsentLog).where(ConsentLog.user_id == user.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        audits = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "consent_recorded",
+                        AuditLog.actor_id == user.id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 200
     assert {log.document_type for log in logs} == {
@@ -207,9 +215,10 @@ async def test_user_can_accept_current_consent_and_view_history(
         "privacy_policy": "1.0",
     }
     assert history.json()["missing_documents"] == []
-    assert {
-        item["document_type"] for item in history.json()["items"]
-    } == {"terms_of_service", "privacy_policy"}
+    assert {item["document_type"] for item in history.json()["items"]} == {
+        "terms_of_service",
+        "privacy_policy",
+    }
 
 
 async def test_consent_history_reports_missing_documents_after_version_bump(

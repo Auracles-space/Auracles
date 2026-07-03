@@ -921,9 +921,7 @@ async def test_daily_snapshot_captures_prior_utc_day_and_dashboard_trend(
 
             async with async_session_factory() as session:
                 snapshot_rows = (
-                    (
-                        await session.execute(select(AnalyticsDailySnapshot))
-                    )
+                    (await session.execute(select(AnalyticsDailySnapshot)))
                     .scalars()
                     .all()
                 )
@@ -937,9 +935,7 @@ async def test_daily_snapshot_captures_prior_utc_day_and_dashboard_trend(
     assert second_result["created"] is False
     assert len(snapshot_rows) == 2
     latest = next(
-        row
-        for row in snapshot_rows
-        if row.snapshot_date.isoformat() == "2026-06-11"
+        row for row in snapshot_rows if row.snapshot_date.isoformat() == "2026-06-11"
     )
     assert latest.gmv_total == Decimal("520.00")
     assert latest.gmv_by_source == {

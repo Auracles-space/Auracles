@@ -261,9 +261,7 @@ async def _claimed_payouts(
     return _normalise_money(Decimal(value or "0"))
 
 
-def _blended_commission_rate(
-    cleared_gross: Decimal, cleared_net: Decimal
-) -> Decimal:
+def _blended_commission_rate(cleared_gross: Decimal, cleared_net: Decimal) -> Decimal:
     """Return the effective commission rate across cleared earnings.
 
     Returns 0 when there are no cleared earnings, avoiding division by zero.
@@ -1217,8 +1215,7 @@ async def refund_framework_purchase(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        "Refund provider call completed but a download was "
-                        "recorded."
+                        "Refund provider call completed but a download was recorded."
                     ),
                 )
 

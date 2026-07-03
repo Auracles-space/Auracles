@@ -74,7 +74,9 @@ def test_async_url_translates_sslmode_for_asyncpg() -> None:
 
     assert settings.async_database_url == "postgresql+asyncpg://u:p@host/db?ssl=require"
     # Alembic uses psycopg, which understands `sslmode` natively — keep it.
-    assert settings.sync_database_url == "postgresql+psycopg://u:p@host/db?sslmode=require"
+    assert (
+        settings.sync_database_url == "postgresql+psycopg://u:p@host/db?sslmode=require"
+    )
 
 
 def test_settings_ignores_script_only_environment_keys() -> None:

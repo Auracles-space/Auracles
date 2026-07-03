@@ -208,9 +208,9 @@ def render_invoice_pdf(invoice: Invoice, *, line_item_label: str) -> bytes:
         "total": _money(invoice.total, invoice.currency),
         "commission_percent": _percent(invoice.commission_rate),
         "commission_amount": _money(
-            (
-                invoice.subtotal - (invoice.net_amount or invoice.subtotal)
-            ).quantize(_CENTS),
+            (invoice.subtotal - (invoice.net_amount or invoice.subtotal)).quantize(
+                _CENTS
+            ),
             invoice.currency,
         ),
         "net_amount": _money(invoice.net_amount or Decimal("0.00"), invoice.currency),

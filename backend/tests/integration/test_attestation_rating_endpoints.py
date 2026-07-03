@@ -134,9 +134,7 @@ async def test_requestor_rates_report(client: AsyncClient, clean_state) -> None:
     assert body["attestation_id"] == str(attestation_id)
 
 
-async def test_contributor_requestor_can_rate(
-    client: AsyncClient, clean_state
-) -> None:
+async def test_contributor_requestor_can_rate(client: AsyncClient, clean_state) -> None:
     """A contributor requestor may rate — the endpoint is not operator-only."""
     del clean_state
     requestor = await _make_user("contributor", "requestor")

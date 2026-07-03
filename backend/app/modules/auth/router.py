@@ -343,9 +343,7 @@ async def google_callback(
 
     # The token exchange must reuse the exact redirect_uri from authorization.
     sealed_redirect = payload.get("redirect_uri")
-    redirect_uri = (
-        str(sealed_redirect) if isinstance(sealed_redirect, str) else None
-    )
+    redirect_uri = str(sealed_redirect) if isinstance(sealed_redirect, str) else None
     try:
         tokens = await exchange_code(
             code=code,
@@ -586,9 +584,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
     ]
     # Roles held but not yet usable (attestor awaiting admin approval). Surfaced
     # so the UI can prompt the user to complete or track their application.
-    pending_roles = [
-        role for role, approved_at in role_rows if approved_at is None
-    ]
+    pending_roles = [role for role, approved_at in role_rows if approved_at is None]
     return CurrentUserResponse(
         id=current_user.id,
         email=current_user.email,

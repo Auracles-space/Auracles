@@ -87,8 +87,7 @@ async def test_should_deliver_bypasses_preferences_for_critical_types() -> None:
 
 
 @pytest.mark.asyncio
-async def test_should_deliver_bypasses_money_state_critical_types(
-) -> None:
+async def test_should_deliver_bypasses_money_state_critical_types() -> None:
     """Escrow and payout state notifications chosen as critical bypass storage."""
     for notification_type in (
         "milestone_funded",

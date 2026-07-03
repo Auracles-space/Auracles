@@ -235,8 +235,10 @@ async def test_duplicate_register_returns_generic_success_without_second_user(
 
     async with async_session_factory() as session:
         users = (
-            await session.execute(select(User).where(User.email == payload["email"]))
-        ).scalars().all()
+            (await session.execute(select(User).where(User.email == payload["email"])))
+            .scalars()
+            .all()
+        )
         duplicate_audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "register_duplicate_attempt")
         )

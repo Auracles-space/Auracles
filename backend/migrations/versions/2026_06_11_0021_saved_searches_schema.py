@@ -26,8 +26,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Create saved-search tables, alert enum label, and scan config."""
     op.execute(
-        "ALTER TYPE notification_type_enum ADD VALUE IF NOT EXISTS "
-        "'saved_search_alert'"
+        "ALTER TYPE notification_type_enum ADD VALUE IF NOT EXISTS 'saved_search_alert'"
     )
     op.create_index(
         "idx_frameworks_status_published_at",

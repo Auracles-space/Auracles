@@ -535,9 +535,7 @@ async def test_evidence_download_writes_audit(
         actions = (
             (
                 await session.execute(
-                    select(AuditLog.action).where(
-                        AuditLog.target_type == "credential"
-                    )
+                    select(AuditLog.action).where(AuditLog.target_type == "credential")
                 )
             )
             .scalars()

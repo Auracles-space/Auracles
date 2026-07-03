@@ -54,9 +54,7 @@ def upgrade() -> None:
             server_default="unverified",
         ),
     )
-    op.add_column(
-        "credentials", sa.Column("credential_type", sa.Text(), nullable=True)
-    )
+    op.add_column("credentials", sa.Column("credential_type", sa.Text(), nullable=True))
     op.add_column(
         "credentials", sa.Column("verification_url", sa.Text(), nullable=True)
     )

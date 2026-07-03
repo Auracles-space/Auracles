@@ -349,7 +349,6 @@ def test_summary_generation_is_idempotent_for_key_and_notification(
     with session_factory() as session:
         notifications = session.query(Notification).filter(
             Notification.user_id == attestor,
-            Notification.dedupe_key
-            == f"attestation_annual_summary:{attestor}:2026",
+            Notification.dedupe_key == f"attestation_annual_summary:{attestor}:2026",
         )
         assert notifications.count() == 1

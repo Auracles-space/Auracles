@@ -297,9 +297,7 @@ async def partner_sales_count(
     ]
     if since is not None:
         filters.append(PartnerCommission.created_at >= since)
-    value = await db.scalar(
-        select(func.count(PartnerCommission.id)).where(*filters)
-    )
+    value = await db.scalar(select(func.count(PartnerCommission.id)).where(*filters))
     return int(value or 0)
 
 
@@ -311,12 +309,16 @@ async def recompute_partner_tiers(db: AsyncSession) -> dict[str, int]:
     processed_count = 0
     updated_count = 0
     accounts = (
-        await db.execute(
-            select(DeveloperAccount)
-            .where(DeveloperAccount.status == "active")
-            .with_for_update()
+        (
+            await db.execute(
+                select(DeveloperAccount)
+                .where(DeveloperAccount.status == "active")
+                .with_for_update()
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for account in accounts:
         processed_count += 1
@@ -561,8 +563,7 @@ async def request_partner_payout(
                 await db.execute(
                     select(PartnerCommission)
                     .where(
-                        PartnerCommission.developer_account_id
-                        == developer_account_id,
+                        PartnerCommission.developer_account_id == developer_account_id,
                         PartnerCommission.currency == currency,
                         PartnerCommission.status == "cleared",
                         PartnerCommission.payout_id.is_(None),

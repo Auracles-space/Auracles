@@ -215,10 +215,14 @@ async def create_new_current_artifact_without_license_snapshot(
         assert framework is not None
         framework.version = "2.0.0"
         old_artifacts = (
-            await session.execute(
-                select(Artifact).where(Artifact.framework_id == framework_id)
+            (
+                await session.execute(
+                    select(Artifact).where(Artifact.framework_id == framework_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for artifact in old_artifacts:
             artifact.current_for_framework = False
         new_artifact = Artifact(
@@ -446,9 +450,7 @@ async def test_operator_download_requires_license_and_verified_kyc(
     assert verified.json()["download_url"].startswith("https://s3.test/")
 
     async with async_session_factory() as session:
-        count = await session.scalar(
-            select(func.count()).select_from(ArtifactDownload)
-        )
+        count = await session.scalar(select(func.count()).select_from(ArtifactDownload))
     assert count == 1
 
 

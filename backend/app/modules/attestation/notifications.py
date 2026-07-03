@@ -97,8 +97,7 @@ def notify_request_received_for_owner(
         notification_type="attestation_requested_on_your_framework",
         title="Attestation requested on your framework",
         body=(
-            "Someone requested an independent attestation on your published "
-            "framework."
+            "Someone requested an independent attestation on your published framework."
         ),
         attestation=attestation,
         dedupe_suffix="owner",

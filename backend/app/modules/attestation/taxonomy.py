@@ -7,10 +7,19 @@ Replaces the prior free-text specializations.
 from __future__ import annotations
 
 SECTORS: frozenset[str] = frozenset({"PE", "VC", "Infrastructure", "Real Estate"})
-FRAMEWORK_CATEGORIES: frozenset[str] = frozenset({
-    "Compliance", "Governance", "Risk", "Operations", "Legal",
-    "Finance", "HR", "Technology", "Investment Management",
-})
+FRAMEWORK_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "Compliance",
+        "Governance",
+        "Risk",
+        "Operations",
+        "Legal",
+        "Finance",
+        "HR",
+        "Technology",
+        "Investment Management",
+    }
+)
 
 
 def _validate(values: list[str], allowed: frozenset[str], label: str) -> list[str]:

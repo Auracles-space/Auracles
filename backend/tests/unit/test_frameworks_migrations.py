@@ -96,12 +96,8 @@ def test_marketplace_migration_creates_query_indexes(
 ) -> None:
     """Alembic creates the indexes needed for catalog and artifact queries."""
     inspector = inspect(migrated_engine)
-    framework_indexes = {
-        index["name"] for index in inspector.get_indexes("frameworks")
-    }
-    artifact_indexes = {
-        index["name"] for index in inspector.get_indexes("artifacts")
-    }
+    framework_indexes = {index["name"] for index in inspector.get_indexes("frameworks")}
+    artifact_indexes = {index["name"] for index in inspector.get_indexes("artifacts")}
     download_indexes = {
         index["name"] for index in inspector.get_indexes("artifact_downloads")
     }
@@ -158,12 +154,8 @@ def test_marketplace_migration_marks_current_framework_artifacts(
 ) -> None:
     """Artifact rows expose current-version membership for draft versioning."""
     inspector = inspect(migrated_engine)
-    artifact_columns = {
-        column["name"] for column in inspector.get_columns("artifacts")
-    }
-    artifact_indexes = {
-        index["name"] for index in inspector.get_indexes("artifacts")
-    }
+    artifact_columns = {column["name"] for column in inspector.get_columns("artifacts")}
+    artifact_indexes = {index["name"] for index in inspector.get_indexes("artifacts")}
 
     assert "current_for_framework" in artifact_columns
     assert "idx_artifacts_current_framework" in artifact_indexes
@@ -174,9 +166,7 @@ def test_marketplace_migration_adds_license_seat_tracking(
 ) -> None:
     """License rows persist seat counts for team and enterprise grants."""
     inspector = inspect(migrated_engine)
-    license_columns = {
-        column["name"] for column in inspector.get_columns("licenses")
-    }
+    license_columns = {column["name"] for column in inspector.get_columns("licenses")}
 
     assert {"seats_used", "seats_total"}.issubset(license_columns)
 

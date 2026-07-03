@@ -7,6 +7,7 @@ transaction boundary instead of relying on implicit session behavior.
 
 from __future__ import annotations
 
+import ast
 import inspect
 from collections.abc import Callable
 
@@ -17,6 +18,21 @@ from app.modules.library import service as library_service
 
 def _source(function: Callable[..., object]) -> str:
     """Return normalized source for a service function under review."""
+    module = inspect.getmodule(function)
+    if not module or not module.__file__:
+        return inspect.getsource(function)
+    with open(module.__file__) as f:
+        source_code = f.read()
+
+    parsed = ast.parse(source_code)
+    for node in ast.walk(parsed):
+        if (
+            isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+            and node.name == function.__name__
+        ):
+            return ast.get_source_segment(source_code, node) or inspect.getsource(
+                function
+            )
     return inspect.getsource(function)
 
 

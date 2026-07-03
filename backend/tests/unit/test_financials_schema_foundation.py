@@ -126,9 +126,12 @@ def test_financials_migration_links_existing_license_and_user_tables(
     assert "stripe_customer_id" in user_columns
     assert "idx_users_stripe_customer_id" in user_indexes
     assert "fk_licenses_transaction_id_transactions" in license_foreign_keys
-    assert license_foreign_keys["fk_licenses_transaction_id_transactions"][
-        "referred_table"
-    ] == "transactions"
+    assert (
+        license_foreign_keys["fk_licenses_transaction_id_transactions"][
+            "referred_table"
+        ]
+        == "transactions"
+    )
 
 
 def test_financials_migration_downgrade_restores_phase_two_license_enum() -> None:

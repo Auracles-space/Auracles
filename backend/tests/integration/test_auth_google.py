@@ -231,9 +231,7 @@ async def test_callback_rejects_state_mismatch(
     cookie = await _seed_state(google_context["redis"])
     client.cookies.set(OAUTH_STATE_COOKIE_NAME, cookie)
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=WRONG-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=WRONG-state")
 
     assert response.status_code == 400
 
@@ -246,9 +244,7 @@ async def test_callback_rejects_missing_state_cookie(
     google_context: dict[str, Any],
 ) -> None:
     """Without the signed state cookie the callback cannot be trusted."""
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 400
 
@@ -275,9 +271,7 @@ async def test_callback_creates_passwordless_user_and_redirects_to_onboarding(
         OAUTH_STATE_COOKIE_NAME, await _seed_state(google_context["redis"])
     )
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 302
     assert "/settings/onboarding" in response.headers["location"]
@@ -327,9 +321,7 @@ async def test_callback_refuses_new_account_without_terms_acceptance(
         await _seed_state(google_context["redis"], terms_accepted=False),
     )
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 400
     assert await _user_by_email("noterms@example.com") is None
@@ -370,9 +362,7 @@ async def test_callback_auto_links_verified_email_to_existing_user(
         OAUTH_STATE_COOKIE_NAME, await _seed_state(google_context["redis"])
     )
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 302
     rows = await _oauth_rows()
@@ -420,9 +410,7 @@ async def test_callback_with_totp_user_redirects_to_2fa_without_session(
         OAUTH_STATE_COOKIE_NAME, await _seed_state(google_context["redis"])
     )
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 302
     location = response.headers["location"]
@@ -471,9 +459,7 @@ async def test_callback_refuses_link_when_google_email_unverified(
         OAUTH_STATE_COOKIE_NAME, await _seed_state(google_context["redis"])
     )
 
-    response = await client.get(
-        "/v1/auth/google/callback?code=abc&state=known-state"
-    )
+    response = await client.get("/v1/auth/google/callback?code=abc&state=known-state")
 
     assert response.status_code == 400
     assert await _oauth_rows() == []

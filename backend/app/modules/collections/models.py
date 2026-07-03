@@ -98,9 +98,7 @@ class CollectionFramework(Base):
     """Join row connecting one Collection to one member Framework."""
 
     __tablename__ = "collection_frameworks"
-    __table_args__ = (
-        Index("idx_collection_frameworks_framework", "framework_id"),
-    )
+    __table_args__ = (Index("idx_collection_frameworks_framework", "framework_id"),)
 
     collection_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

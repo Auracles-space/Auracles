@@ -644,9 +644,7 @@ async def cancel_acceptance(
             proposal.status = "rejected"
         proposal.accepted_at = None
 
-        await db.execute(
-            delete(Milestone).where(Milestone.project_id == project.id)
-        )
+        await db.execute(delete(Milestone).where(Milestone.project_id == project.id))
         project.status = "open"
         project.accepted_proposal_id = None
         project.milestone_plan_status = "draft"

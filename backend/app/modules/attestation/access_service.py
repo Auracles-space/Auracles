@@ -90,7 +90,7 @@ async def _artifact_is_preview_eligible(
     db: AsyncSession, *, framework_id: UUID, artifact_id: UUID
 ) -> bool:
     """Return True when the artifact is the framework preview.
-    
+
     Or if it is a preview version artifact.
     """
     preview_artifact_id = await db.scalar(

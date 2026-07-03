@@ -42,12 +42,16 @@ def _normalise_ip(raw_ip: str | None) -> str | None:
 async def get_current_consent_versions(db: AsyncSession) -> dict[str, str]:
     """Load current legal document versions from platform config."""
     rows = (
-        await db.execute(
-            select(PlatformConfig).where(
-                PlatformConfig.key.in_(CONSENT_DOCUMENT_CONFIG_KEYS.values())
+        (
+            await db.execute(
+                select(PlatformConfig).where(
+                    PlatformConfig.key.in_(CONSENT_DOCUMENT_CONFIG_KEYS.values())
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     values_by_key = {row.key: row.value for row in rows}
     return {
         document_type: values_by_key.get(config_key, default_version)
@@ -119,12 +123,16 @@ async def get_consent_history(
     current_versions = await get_current_consent_versions(db)
     missing_documents = await get_missing_current_consents(db, user_id)
     rows = (
-        await db.execute(
-            select(ConsentLog)
-            .where(ConsentLog.user_id == user_id)
-            .order_by(desc(ConsentLog.accepted_at))
+        (
+            await db.execute(
+                select(ConsentLog)
+                .where(ConsentLog.user_id == user_id)
+                .order_by(desc(ConsentLog.accepted_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return ConsentHistoryResponse(
         current_versions=current_versions,
         missing_documents=missing_documents,

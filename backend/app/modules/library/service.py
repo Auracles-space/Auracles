@@ -66,10 +66,7 @@ async def list_operator_library(
         .order_by(License.granted_at.desc())
     )
     total = int(
-        await db.scalar(
-            select(func.count()).select_from(base_query.subquery())
-        )
-        or 0
+        await db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
     )
     rows = await db.execute(base_query.offset((page - 1) * page_size).limit(page_size))
     return LibraryResponse(

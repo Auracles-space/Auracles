@@ -161,9 +161,9 @@ def _collection_savings(
     savings_amount = member_price_sum - collection.bundle_price
     if member_price_sum <= 0:
         return member_price_sum, savings_amount, Decimal("0.00")
-    savings_percent = (
-        (savings_amount / member_price_sum) * Decimal("100")
-    ).quantize(Decimal("0.01"))
+    savings_percent = ((savings_amount / member_price_sum) * Decimal("100")).quantize(
+        Decimal("0.01")
+    )
     return member_price_sum, savings_amount, savings_percent
 
 
@@ -487,8 +487,7 @@ async def _public_attestation_badges(
         return {}, {}
     rows = (
         await db.execute(
-            select(Attestation)
-            .where(
+            select(Attestation).where(
                 Attestation.target_type == target_type,
                 Attestation.target_id.in_(target_ids),
                 Attestation.outcome.is_not(None),
@@ -1080,15 +1079,19 @@ async def get_detail(
             detail="Framework not found.",
         )
     artifact_rows = (
-        await db.execute(
-            select(Artifact)
-            .where(
-                Artifact.framework_id == framework.id,
-                Artifact.current_for_framework.is_(True),
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
             )
-            .order_by(Artifact.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     artifacts = list(artifact_rows)
     rarity_scores = await _framework_rarity_scores(db, [framework.id])
     attestation_badges = await _framework_attestation_badges(db, [framework.id])
@@ -1371,9 +1374,7 @@ async def public_framework_cards(
         row[0]: row[1]
         for row in (
             await db.execute(
-                select(User.id, User.display_name).where(
-                    User.id.in_(contributor_ids)
-                )
+                select(User.id, User.display_name).where(User.id.in_(contributor_ids))
             )
         ).all()
     }

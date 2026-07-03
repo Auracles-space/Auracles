@@ -111,15 +111,14 @@ def migrated_database() -> Iterator[None]:
 async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
     """Reset framework/auth state and install lightweight dependency overrides."""
     from app.integrations import s3
+
     fake_storage = FakeArtifactStorage()
     await engine.dispose()
 
     async def cleanup() -> None:
         """Remove marketplace rows before deleting users in test isolation."""
         async with async_session_factory() as session:
-            await session.execute(
-                update(Framework).values(preview_artifact_id=None)
-            )
+            await session.execute(update(Framework).values(preview_artifact_id=None))
             await session.execute(delete(AuditLog))
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
@@ -1076,10 +1075,6 @@ async def test_artifact_delete_and_upload_allowed_on_pipeline_passed_framework(
         framework = await session.get(Framework, UUID(framework_id))
         assert framework is not None
         assert framework.status == "draft"
-
-
-
-
 
 
 async def test_deleting_last_artifact_resets_failed_framework_to_draft(
@@ -2086,9 +2081,7 @@ async def test_similarity_notice_acknowledgement_persists_differentiation_note(
     assert acknowledged.json()["status"] == "pipeline_passed"
     async with async_session_factory() as session:
         audit_log = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "similarity_notice_acknowledged"
-            )
+            select(AuditLog).where(AuditLog.action == "similarity_notice_acknowledged")
         )
         assert audit_log is not None
         assert audit_log.metadata_["differentiation_note"].startswith(
@@ -2246,9 +2239,7 @@ async def test_near_duplicate_band_hard_blocks_pipeline(
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
         assert framework is not None
-        assert framework.pipeline_failure_reasons == {
-            "internal_rarity": [artifact_id]
-        }
+        assert framework.pipeline_failure_reasons == {"internal_rarity": [artifact_id]}
 
 
 async def test_admin_override_unblocks_near_duplicate_hard_band(
@@ -2702,9 +2693,7 @@ async def test_admin_can_reinstate_suspended_framework(
         "reinstate-owner@auracles.space",
         ["contributor"],
     )
-    admin_id = await create_user_with_roles(
-        "reinstate-admin@auracles.space", ["admin"]
-    )
+    admin_id = await create_user_with_roles("reinstate-admin@auracles.space", ["admin"])
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))

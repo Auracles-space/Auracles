@@ -768,9 +768,7 @@ class AttestationRating(Base):
 
     __tablename__ = "attestation_ratings"
     __table_args__ = (
-        UniqueConstraint(
-            "attestation_id", name="uq_attestation_ratings_attestation"
-        ),
+        UniqueConstraint("attestation_id", name="uq_attestation_ratings_attestation"),
         CheckConstraint(
             "stars BETWEEN 1 AND 5", name="ck_attestation_ratings_stars_range"
         ),

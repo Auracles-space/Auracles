@@ -87,9 +87,7 @@ def test_downgrade_removes_slice_schema() -> None:
     try:
         inspector = inspect(engine)
         assert "attestation_badges" not in inspector.get_table_names()
-        attestation_columns = {
-            c["name"] for c in inspector.get_columns("attestations")
-        }
+        attestation_columns = {c["name"] for c in inspector.get_columns("attestations")}
         assert "framework_version_id" not in attestation_columns
     finally:
         command.upgrade(alembic_config, "head")

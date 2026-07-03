@@ -8581,6 +8581,763 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /v1/orgs:
+    post:
+      tags:
+      - Organizations
+      summary: Create organization
+      description: Create a base organization; the creator becomes its owner.
+      operationId: create_organization_v1_orgs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/orgs/mine:
+    get:
+      tags:
+      - Organizations
+      summary: List my organizations
+      description: Organizations the current user belongs to, with role and capability
+        statuses.
+      operationId: list_my_organizations_v1_orgs_mine_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationsResponse'
+      security:
+      - HTTPBearer: []
+  /v1/orgs/{slug}:
+    get:
+      tags:
+      - Organizations
+      summary: Public organization profile
+      description: Return the public organization profile with active capabilities and
+        member count, excluding member identities and private data.
+      operationId: get_public_org_v1_orgs__slug__get
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Slug
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}:
+    patch:
+      tags:
+      - Organizations
+      summary: Update an organization profile
+      description: Update editable organization profile fields as an org admin.
+      operationId: update_organization_v1_orgs__org_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Deactivate an organization
+      description: Soft-delete an organization once the owner has wound down all active
+        capabilities.
+      operationId: deactivate_organization_v1_orgs__org_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/members:
+    get:
+      tags:
+      - Organizations
+      summary: List organization members
+      description: List members of one organization. Member emails are visible only
+        to org admins and owners.
+      operationId: list_members_v1_orgs__org_id__members_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMembersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/members/{member_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Remove an organization member
+      description: Remove a member from the organization. Non-owner members may remove
+        themselves to leave the organization.
+      operationId: remove_member_v1_orgs__org_id__members__member_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Organizations
+      summary: Change an organization member role
+      description: Change a member between the member and admin roles. Ownership changes
+        use the dedicated transfer endpoint.
+      operationId: change_member_role_v1_orgs__org_id__members__member_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgMemberRoleUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMemberResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/transfer-ownership:
+    post:
+      tags:
+      - Organizations
+      summary: Transfer organization ownership
+      description: Transfer ownership to another existing member after successful two-factor
+        verification.
+      operationId: transfer_ownership_v1_orgs__org_id__transfer_ownership_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgOwnershipTransferRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/invitations:
+    post:
+      tags:
+      - Organizations
+      summary: Invite an organization member
+      description: Create a pending organization invitation, rate-limited per organization
+        and delivered by email.
+      operationId: create_invitation_v1_orgs__org_id__invitations_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgInvitationCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: List pending organization invitations
+      description: List pending invitations for one organization.
+      operationId: list_invitations_v1_orgs__org_id__invitations_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/invitations/{invitation_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Revoke an organization invitation
+      description: Revoke one pending invitation for an organization.
+      operationId: revoke_invitation_v1_orgs__org_id__invitations__invitation_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams:
+    post:
+      tags:
+      - Organizations
+      summary: Create a team
+      description: Create a new team within the organization.
+      operationId: create_team_v1_orgs__org_id__teams_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgTeamCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: List teams
+      description: List all teams in the organization, including member counts.
+      operationId: list_teams_v1_orgs__org_id__teams_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}:
+    patch:
+      tags:
+      - Organizations
+      summary: Rename a team
+      description: Rename an existing team.
+      operationId: rename_team_v1_orgs__org_id__teams__team_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgTeamRenameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Delete a team
+      description: Delete a team and its membership associations.
+      operationId: delete_team_v1_orgs__org_id__teams__team_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}/members/{member_id}:
+    put:
+      tags:
+      - Organizations
+      summary: Add a member to a team
+      description: Add an existing organization member to a team (idempotent).
+      operationId: add_team_member_v1_orgs__org_id__teams__team_id__members__member_id__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Remove a member from a team
+      description: Remove an organization member from a team.
+      operationId: remove_team_member_v1_orgs__org_id__teams__team_id__members__member_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}:
+    get:
+      tags:
+      - Organization Invitations
+      summary: Preview an organization invitation
+      description: Return the organization name, slug, role, and expiry for a live invitation.
+        The caller must be authenticated but need not match the invited email.
+      operationId: preview_invitation_v1_org_invitations__token__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationPreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}/accept:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Accept an organization invitation
+      description: Accept a pending invitation. The authenticated user's email must
+        match the invitation email. Creates a membership row and notifies the inviter.
+      operationId: accept_invitation_v1_org_invitations__token__accept_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}/decline:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Decline an organization invitation
+      description: Decline a pending invitation without joining. The authenticated user's
+        email must match the invitation email.
+      operationId: decline_invitation_v1_org_invitations__token__decline_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs:
+    get:
+      tags:
+      - Admin Organizations
+      summary: List organizations (platform admin)
+      description: Paginated organization directory for platform administrators,
+        with member counts, capability statuses, and slug/name search.
+      operationId: admin_list_orgs_v1_admin_orgs_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Query
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/suspend:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Suspend an organization (platform admin)
+      description: Suspend an organization platform-wide. Idempotent; members lose
+        org access and derived roles are re-evaluated.
+      operationId: admin_suspend_org_v1_admin_orgs__org_id__suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AccountDeletionBlockedReason:
@@ -18685,6 +19442,498 @@ components:
       - size_limit
       title: WorkspaceUploadSessionResponse
       description: Presigned POST response for a single workspace file upload.
+    OrgOwnershipTransferRequest:
+      properties:
+        new_owner_member_id:
+          type: string
+          format: uuid
+          title: New Owner Member Id
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - new_owner_member_id
+      - totp_code
+      title: OrgOwnershipTransferRequest
+      description: TOTP-gated request to transfer organization ownership.
+    OrgTeamResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        member_count:
+          type: integer
+          title: Member Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - member_count
+      - created_at
+      title: OrgTeamResponse
+      description: One organization team row with member count.
+    OrgInvitationPreviewResponse:
+      properties:
+        org_name:
+          type: string
+          title: Org Name
+        org_slug:
+          type: string
+          title: Org Slug
+        role:
+          type: string
+          title: Role
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - org_name
+      - org_slug
+      - role
+      - expires_at
+      title: OrgInvitationPreviewResponse
+      description: 'Invitation preview: what the invitee sees before accepting.'
+    OrganizationCreateRequest:
+      properties:
+        slug:
+          type: string
+          maxLength: 80
+          minLength: 3
+          pattern: ^[a-zA-Z0-9-]+$
+          title: Slug
+        name:
+          type: string
+          maxLength: 120
+          minLength: 2
+          title: Name
+        country:
+          type: string
+          maxLength: 2
+          minLength: 2
+          title: Country
+        website:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - slug
+      - name
+      - country
+      title: OrganizationCreateRequest
+      description: Request body to create an organization.
+    OrgMemberRoleUpdateRequest:
+      properties:
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+          title: Role
+      type: object
+      required:
+      - role
+      title: OrgMemberRoleUpdateRequest
+      description: Owner-scoped request to switch a member between member and admin.
+    OrgTeamsResponse:
+      properties:
+        teams:
+          items:
+            $ref: '#/components/schemas/OrgTeamResponse'
+          type: array
+          title: Teams
+      type: object
+      required:
+      - teams
+      title: OrgTeamsResponse
+      description: List wrapper for organization teams.
+    OrgInvitationCreateRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+          title: Role
+      type: object
+      required:
+      - email
+      - role
+      title: OrgInvitationCreateRequest
+      description: Admin-scoped request to invite one email address into an organization.
+    OrgInvitationsResponse:
+      properties:
+        invitations:
+          items:
+            $ref: '#/components/schemas/OrgInvitationResponse'
+          type: array
+          title: Invitations
+      type: object
+      required:
+      - invitations
+      title: OrgInvitationsResponse
+      description: List wrapper for pending organization invitations.
+    AdminOrgsResponse:
+      properties:
+        orgs:
+          items:
+            $ref: '#/components/schemas/AdminOrgResponse'
+          type: array
+          title: Orgs
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+      type: object
+      required:
+      - orgs
+      - total
+      - page
+      - page_size
+      title: AdminOrgsResponse
+      description: Paginated list of organizations for platform admins.
+    MyOrganizationResponse:
+      properties:
+        org:
+          $ref: '#/components/schemas/OrganizationResponse'
+        role:
+          type: string
+          title: Role
+        capabilities:
+          additionalProperties:
+            type: string
+          type: object
+          title: Capabilities
+      type: object
+      required:
+      - org
+      - role
+      - capabilities
+      title: MyOrganizationResponse
+      description: An organization membership visible to the current user.
+    OrgInvitationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+        role:
+          type: string
+          title: Role
+        status:
+          type: string
+          title: Status
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - status
+      - expires_at
+      - created_at
+      title: OrgInvitationResponse
+      description: One organization invitation row.
+    OrgMembersResponse:
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/OrgMemberResponse'
+          type: array
+          title: Members
+      type: object
+      required:
+      - members
+      title: OrgMembersResponse
+      description: List wrapper for organization members.
+    PublicOrganizationResponse:
+      properties:
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        logo_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Key
+        country:
+          type: string
+          title: Country
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        active_capabilities:
+          items:
+            type: string
+          type: array
+          title: Active Capabilities
+        member_count:
+          type: integer
+          title: Member Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - slug
+      - name
+      - logo_key
+      - country
+      - website
+      - description
+      - active_capabilities
+      - member_count
+      - created_at
+      title: PublicOrganizationResponse
+      description: 'Public org profile: no member identities, no PII.'
+    OrgTeamRenameRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Name
+      type: object
+      required:
+      - name
+      title: OrgTeamRenameRequest
+      description: Admin-scoped request to rename an existing team.
+    OrganizationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        logo_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Key
+        country:
+          type: string
+          title: Country
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - logo_key
+      - country
+      - website
+      - description
+      - created_at
+      title: OrganizationResponse
+      description: Public-safe organization fields.
+    OrganizationUpdateRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 120
+            minLength: 2
+          - type: 'null'
+          title: Name
+        website:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        logo_key:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Logo Key
+      type: object
+      title: OrganizationUpdateRequest
+      description: Partial update of org profile fields (admin+).
+    MyOrganizationsResponse:
+      properties:
+        organizations:
+          items:
+            $ref: '#/components/schemas/MyOrganizationResponse'
+          type: array
+          title: Organizations
+      type: object
+      required:
+      - organizations
+      title: MyOrganizationsResponse
+      description: List wrapper for the authenticated user's organizations.
+    OrgMemberResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        display_name:
+          type: string
+          title: Display Name
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        role:
+          type: string
+          title: Role
+        joined_at:
+          type: string
+          format: date-time
+          title: Joined At
+      type: object
+      required:
+      - id
+      - user_id
+      - display_name
+      - email
+      - role
+      - joined_at
+      title: OrgMemberResponse
+      description: One organization member, with email hidden from plain members.
+    OrgTeamCreateRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Name
+      type: object
+      required:
+      - name
+      title: OrgTeamCreateRequest
+      description: Admin-scoped request to create a team in an organization.
+    AdminOrgResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        country:
+          type: string
+          title: Country
+        member_count:
+          type: integer
+          title: Member Count
+        capabilities:
+          additionalProperties:
+            type: string
+          type: object
+          title: Capabilities
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+        deactivated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Deactivated At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - country
+      - member_count
+      - capabilities
+      - created_at
+      title: AdminOrgResponse
+      description: Platform-admin view of an organization.
   securitySchemes:
     HTTPBearer:
       type: http

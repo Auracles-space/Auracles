@@ -11,9 +11,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-EMAIL_PATTERN = re.compile(
-    r"\b[a-zA-Z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
-)
+EMAIL_PATTERN = re.compile(r"\b[a-zA-Z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 SENSITIVE_AUDIT_KEYS = {
     "email",

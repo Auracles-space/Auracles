@@ -56,8 +56,7 @@ async def _public_credentials_snapshot(
                 else None
             ),
             "expired": (
-                credential.expires_date is not None
-                and credential.expires_date < today
+                credential.expires_date is not None and credential.expires_date < today
             ),
         }
         for credential in rows.scalars().all()

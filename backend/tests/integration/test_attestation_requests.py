@@ -289,9 +289,7 @@ async def test_attestation_fee_resolves_by_review_type(
         assert await _attestation_fee(session, "framework", "provenance") == Decimal(
             "500.00"
         )
-        assert await _attestation_fee(session, "contributor", None) == Decimal(
-            "300.00"
-        )
+        assert await _attestation_fee(session, "contributor", None) == Decimal("300.00")
         assert await _attestation_fee(session, "operator", "expert") == Decimal(
             "300.00"
         )
@@ -643,9 +641,7 @@ async def test_owner_not_notified_again_on_operator_initiated_funding(
         callback()
 
     owner_notifications = [
-        call
-        for call in notification_calls
-        if call["user_id"] == str(owner_id)
+        call for call in notification_calls if call["user_id"] == str(owner_id)
     ]
     assert owner_notifications == []
 

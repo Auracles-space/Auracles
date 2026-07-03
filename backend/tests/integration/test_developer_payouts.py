@@ -283,9 +283,12 @@ async def test_developer_requests_partner_payout_and_lists_history(
 ) -> None:
     """Verified Developer can withdraw full cleared Partner commission balance."""
     del migrated_database
-    user_id, _account_id, payout_account_id, totp_secret = (
-        await create_partner_payout_fixture()
-    )
+    (
+        user_id,
+        _account_id,
+        payout_account_id,
+        totp_secret,
+    ) = await create_partner_payout_fixture()
 
     response = await client.post(
         "/v1/developer/payouts",

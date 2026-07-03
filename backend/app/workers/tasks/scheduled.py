@@ -21,14 +21,18 @@ async def _clear_expired_licenses() -> int:
     async with async_session_factory() as db:
         async with db.begin():
             licenses = (
-                await db.execute(
-                    select(License).where(
-                        License.status == "active",
-                        License.expires_at.is_not(None),
-                        License.expires_at < now,
+                (
+                    await db.execute(
+                        select(License).where(
+                            License.status == "active",
+                            License.expires_at.is_not(None),
+                            License.expires_at < now,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for license_row in licenses:
                 license_row.status = "expired"
                 await write_audit(

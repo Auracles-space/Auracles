@@ -27,10 +27,7 @@ def _platform_config_rows(engine: Engine) -> dict[str, str]:
     """Return the seeded reputation-related platform configuration rows."""
     with engine.connect() as connection:
         rows = connection.execute(
-            text(
-                "SELECT key, value FROM platform_config "
-                "WHERE key LIKE 'reputation_%'"
-            )
+            text("SELECT key, value FROM platform_config WHERE key LIKE 'reputation_%'")
         )
         return {row.key: row.value for row in rows}
 
@@ -59,12 +56,8 @@ def test_reputation_migration_creates_table_and_seeds_platform_config(
     """Alembic creates the score table, index, and seeded config rows."""
     inspector = inspect(migrated_engine)
     table_names = set(inspector.get_table_names())
-    columns = {
-        column["name"] for column in inspector.get_columns("reputation_scores")
-    }
-    indexes = {
-        index["name"] for index in inspector.get_indexes("reputation_scores")
-    }
+    columns = {column["name"] for column in inspector.get_columns("reputation_scores")}
+    indexes = {index["name"] for index in inspector.get_indexes("reputation_scores")}
     seeded = _platform_config_rows(migrated_engine)
 
     assert "reputation_scores" in table_names

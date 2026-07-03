@@ -824,9 +824,7 @@ async def complete_google_login(
                 detail="Could not complete Google sign-in (email unverified).",
             )
         action = (
-            "google_account_linked"
-            if user is not None
-            else "google_account_created"
+            "google_account_linked" if user is not None else "google_account_created"
         )
 
     # Refuse blocked accounts before writing the link / creating the user.

@@ -24,8 +24,12 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _NEW_APP_STATUSES = (
-    "submitted", "identity_verified", "professional_verified",
-    "expert_verified", "active", "held",
+    "submitted",
+    "identity_verified",
+    "professional_verified",
+    "expert_verified",
+    "active",
+    "held",
 )
 
 
@@ -44,12 +48,23 @@ def upgrade() -> None:
     # create them again (the same Python object is reused as each column's
     # type so SQLAlchemy's dialect-level "already created" cache applies).
     trial_status = postgresql.ENUM(
-        "assigned", "passed", "failed",
-        name="attestor_trial_status_enum", create_type=False,
+        "assigned",
+        "passed",
+        "failed",
+        name="attestor_trial_status_enum",
+        create_type=False,
     )
     body = postgresql.ENUM(
-        "cfa_institute", "aicpa", "isaca", "rics", "sra", "state_bar",
-        "fca", "acams", "other", name="attestor_credential_body_enum",
+        "cfa_institute",
+        "aicpa",
+        "isaca",
+        "rics",
+        "sra",
+        "state_bar",
+        "fca",
+        "acams",
+        "other",
+        name="attestor_credential_body_enum",
         create_type=False,
     )
     tax_type = postgresql.ENUM(
@@ -67,41 +82,82 @@ def upgrade() -> None:
     op.add_column(
         "attestor_applications", sa.Column("linkedin_url", sa.Text(), nullable=True)
     )
-    op.add_column("attestor_applications", sa.Column(
-        "professional_body_numbers", postgresql.JSONB(),
-        nullable=False, server_default=sa.text("'{}'::jsonb")))
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "professional_body_numbers",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
+    )
     op.add_column(
         "attestor_applications", sa.Column("cv_file_key", sa.Text(), nullable=True)
     )
-    op.add_column("attestor_applications", sa.Column(
-        "coi_declarations", postgresql.JSONB(),
-        nullable=False, server_default=sa.text("'[]'::jsonb")))
-    op.add_column("attestor_applications", sa.Column(
-        "coi_signed_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("attestor_applications", sa.Column(
-        "coi_expires_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("attestor_applications", sa.Column(
-        "sectors", postgresql.ARRAY(sa.Text()), nullable=False,
-        server_default=sa.text("'{}'::text[]")))
-    op.add_column("attestor_applications", sa.Column(
-        "framework_categories", postgresql.ARRAY(sa.Text()), nullable=False,
-        server_default=sa.text("'{}'::text[]")))
-    op.add_column("attestor_applications", sa.Column(
-        "needs_retag", sa.Boolean(), nullable=False, server_default=sa.text("false")))
-    op.add_column("attestor_applications", sa.Column(
-        "kyc_verified_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "coi_declarations",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
+        ),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column("coi_signed_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column("coi_expires_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "sectors",
+            postgresql.ARRAY(sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::text[]"),
+        ),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "framework_categories",
+            postgresql.ARRAY(sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::text[]"),
+        ),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "needs_retag", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
+    )
+    op.add_column(
+        "attestor_applications",
+        sa.Column("kyc_verified_at", sa.DateTime(timezone=True), nullable=True),
+    )
     op.add_column(
         "attestor_applications",
         sa.Column("kyc_name_match", sa.Boolean(), nullable=True),
     )
-    op.add_column("attestor_applications", sa.Column(
-        "tax_document_type", tax_type, nullable=True))
+    op.add_column(
+        "attestor_applications", sa.Column("tax_document_type", tax_type, nullable=True)
+    )
     op.add_column(
         "attestor_applications", sa.Column("tax_document_key", sa.Text(), nullable=True)
     )
-    op.add_column("attestor_applications", sa.Column(
-        "payout_account_id", postgresql.UUID(as_uuid=True),
-        sa.ForeignKey("payout_accounts.id", ondelete="SET NULL"), nullable=True))
+    op.add_column(
+        "attestor_applications",
+        sa.Column(
+            "payout_account_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("payout_accounts.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
 
     # 4. Data migration: map legacy statuses + seed sectors from specializations.
     op.execute(
@@ -116,41 +172,85 @@ def upgrade() -> None:
     )
 
     # 5. attestor_profiles new columns.
-    op.add_column("attestor_profiles", sa.Column(
-        "verification_level", sa.Integer(), nullable=False,
-        server_default=sa.text("1")))
-    op.add_column("attestor_profiles", sa.Column(
-        "sectors", postgresql.ARRAY(sa.Text()), nullable=False,
-        server_default=sa.text("'{}'::text[]")))
-    op.add_column("attestor_profiles", sa.Column(
-        "framework_categories", postgresql.ARRAY(sa.Text()), nullable=False,
-        server_default=sa.text("'{}'::text[]")))
-    op.add_column("attestor_profiles", sa.Column(
-        "coi_declarations", postgresql.JSONB(), nullable=False,
-        server_default=sa.text("'[]'::jsonb")))
-    op.add_column("attestor_profiles", sa.Column(
-        "coi_signed_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("attestor_profiles", sa.Column(
-        "coi_expires_at", sa.DateTime(timezone=True), nullable=True))
-    op.execute("UPDATE attestor_profiles SET sectors=specializations "
-               "WHERE array_length(specializations, 1) IS NOT NULL")
+    op.add_column(
+        "attestor_profiles",
+        sa.Column(
+            "verification_level",
+            sa.Integer(),
+            nullable=False,
+            server_default=sa.text("1"),
+        ),
+    )
+    op.add_column(
+        "attestor_profiles",
+        sa.Column(
+            "sectors",
+            postgresql.ARRAY(sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::text[]"),
+        ),
+    )
+    op.add_column(
+        "attestor_profiles",
+        sa.Column(
+            "framework_categories",
+            postgresql.ARRAY(sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::text[]"),
+        ),
+    )
+    op.add_column(
+        "attestor_profiles",
+        sa.Column(
+            "coi_declarations",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
+        ),
+    )
+    op.add_column(
+        "attestor_profiles",
+        sa.Column("coi_signed_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "attestor_profiles",
+        sa.Column("coi_expires_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.execute(
+        "UPDATE attestor_profiles SET sectors=specializations "
+        "WHERE array_length(specializations, 1) IS NOT NULL"
+    )
     op.create_index(
-        "idx_attestor_profiles_sectors_gin", "attestor_profiles", ["sectors"],
-        postgresql_using="gin")
-    op.create_index("idx_attestor_profiles_categories_gin", "attestor_profiles",
-                    ["framework_categories"], postgresql_using="gin")
+        "idx_attestor_profiles_sectors_gin",
+        "attestor_profiles",
+        ["sectors"],
+        postgresql_using="gin",
+    )
+    op.create_index(
+        "idx_attestor_profiles_categories_gin",
+        "attestor_profiles",
+        ["framework_categories"],
+        postgresql_using="gin",
+    )
 
     # 6. credentials cross-check columns.
-    op.add_column("credentials", sa.Column(
-        "issuing_body", body, nullable=True))
+    op.add_column("credentials", sa.Column("issuing_body", body, nullable=True))
     op.add_column(
         "credentials", sa.Column("good_standing", sa.Boolean(), nullable=True)
     )
-    op.add_column("credentials", sa.Column(
-        "registry_checked_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("credentials", sa.Column(
-        "registry_checked_by", postgresql.UUID(as_uuid=True),
-        sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True))
+    op.add_column(
+        "credentials",
+        sa.Column("registry_checked_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "credentials",
+        sa.Column(
+            "registry_checked_by",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
     op.add_column(
         "credentials", sa.Column("registry_reference", sa.Text(), nullable=True)
     )
@@ -158,22 +258,40 @@ def upgrade() -> None:
     # 7. attestor_trials table.
     op.create_table(
         "attestor_trials",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("application_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("attestor_applications.id", ondelete="CASCADE"),
-                  nullable=False),
-        sa.Column("seeded_framework_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("frameworks.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("status", trial_status,
-                  nullable=False, server_default="assigned"),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "application_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("attestor_applications.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "seeded_framework_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("frameworks.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column("status", trial_status, nullable=False, server_default="assigned"),
         sa.Column("attempt", sa.Integer(), nullable=False, server_default=sa.text("1")),
-        sa.Column("decided_by", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "decided_by",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("feedback", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "attempt >= 1 AND attempt <= 2", name="ck_attestor_trials_attempt_range"
         ),
@@ -191,23 +309,49 @@ def downgrade() -> None:
     """
     op.drop_index("idx_attestor_trials_application", table_name="attestor_trials")
     op.drop_table("attestor_trials")
-    for col in ("registry_reference", "registry_checked_by", "registry_checked_at",
-                "good_standing", "issuing_body"):
+    for col in (
+        "registry_reference",
+        "registry_checked_by",
+        "registry_checked_at",
+        "good_standing",
+        "issuing_body",
+    ):
         op.drop_column("credentials", col)
     op.drop_index(
         "idx_attestor_profiles_categories_gin", table_name="attestor_profiles"
     )
     op.drop_index("idx_attestor_profiles_sectors_gin", table_name="attestor_profiles")
-    for col in ("coi_expires_at", "coi_signed_at", "coi_declarations",
-                "framework_categories", "sectors", "verification_level"):
+    for col in (
+        "coi_expires_at",
+        "coi_signed_at",
+        "coi_declarations",
+        "framework_categories",
+        "sectors",
+        "verification_level",
+    ):
         op.drop_column("attestor_profiles", col)
-    for col in ("payout_account_id", "tax_document_key", "tax_document_type",
-                "kyc_name_match", "kyc_verified_at", "needs_retag",
-                "framework_categories", "sectors", "coi_expires_at", "coi_signed_at",
-                "coi_declarations", "cv_file_key", "professional_body_numbers",
-                "linkedin_url", "legal_name"):
+    for col in (
+        "payout_account_id",
+        "tax_document_key",
+        "tax_document_type",
+        "kyc_name_match",
+        "kyc_verified_at",
+        "needs_retag",
+        "framework_categories",
+        "sectors",
+        "coi_expires_at",
+        "coi_signed_at",
+        "coi_declarations",
+        "cv_file_key",
+        "professional_body_numbers",
+        "linkedin_url",
+        "legal_name",
+    ):
         op.drop_column("attestor_applications", col)
     bind = op.get_bind()
-    for name in ("attestor_trial_status_enum", "attestor_credential_body_enum",
-                 "tax_document_type_enum"):
+    for name in (
+        "attestor_trial_status_enum",
+        "attestor_credential_body_enum",
+        "tax_document_type_enum",
+    ):
         postgresql.ENUM(name=name).drop(bind, checkfirst=True)

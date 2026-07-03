@@ -126,12 +126,16 @@ async def start_identity_verification(
 async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:
     """Return the current user's KYC status and document metadata."""
     documents = (
-        await db.execute(
-            select(KycDocument)
-            .where(KycDocument.user_id == user.id)
-            .order_by(desc(KycDocument.created_at))
+        (
+            await db.execute(
+                select(KycDocument)
+                .where(KycDocument.user_id == user.id)
+                .order_by(desc(KycDocument.created_at))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return KycStatusResponse(kyc_status=user.kyc_status, documents=list(documents))
 
 

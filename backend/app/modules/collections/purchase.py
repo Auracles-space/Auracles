@@ -107,9 +107,7 @@ async def confirm_collection_purchase(
         CollectionPurchaseProcessingError: If local purchase state is invalid.
     """
     transaction = await db.scalar(
-        select(Transaction)
-        .where(Transaction.id == transaction_id)
-        .with_for_update()
+        select(Transaction).where(Transaction.id == transaction_id).with_for_update()
     )
     if transaction is None:
         raise CollectionPurchaseProcessingError("collection transaction not found")

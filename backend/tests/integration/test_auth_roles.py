@@ -132,10 +132,14 @@ async def test_user_can_self_add_contributor_or_operator_role(
 
     async with async_session_factory() as session:
         roles = (
-            await session.execute(
-                select(UserRole.role).where(UserRole.user_id == user_id)
+            (
+                await session.execute(
+                    select(UserRole.role).where(UserRole.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert response.status_code == 200
     assert set(roles) == {"operator", "contributor"}

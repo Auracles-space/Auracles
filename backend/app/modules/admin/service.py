@@ -268,9 +268,7 @@ async def _count_published_frameworks_since(
     ]
     if until is not None:
         filters.append(Framework.published_at < until)
-    result = await db.scalar(
-        select(func.count(Framework.id)).where(*filters)
-    )
+    result = await db.scalar(select(func.count(Framework.id)).where(*filters))
     return int(result or 0)
 
 
@@ -293,16 +291,16 @@ async def _count_attestations_issued_since(
     ]
     if until is not None:
         filters.append(issued_at_expr < until)
-    result = await db.scalar(
-        select(func.count(Attestation.id)).where(*filters)
-    )
+    result = await db.scalar(select(func.count(Attestation.id)).where(*filters))
     return int(result or 0)
 
 
 async def _count_open_project_disputes(db: AsyncSession) -> int:
     """Count currently open or under-review Project disputes."""
     result = await db.scalar(
-        select(func.count(Dispute.id)).where(Dispute.status.in_(ACTIVE_DISPUTE_STATUSES))
+        select(func.count(Dispute.id)).where(
+            Dispute.status.in_(ACTIVE_DISPUTE_STATUSES)
+        )
     )
     return int(result or 0)
 
@@ -826,8 +824,7 @@ async def _latest_pii_audits_by_artifact(
     if not artifact_ids:
         return {}
     result = await db.execute(
-        select(ArtifactPiiAudit)
-        .where(ArtifactPiiAudit.artifact_id.in_(artifact_ids))
+        select(ArtifactPiiAudit).where(ArtifactPiiAudit.artifact_id.in_(artifact_ids))
     )
     latest: dict[UUID, Any] = {}
     for audit in result.scalars().all():
@@ -862,9 +859,7 @@ def _rarity_review_item(
     signal_at = (
         rarity_audit.created_at if rarity_audit is not None else artifact.created_at
     )
-    signal_id = (
-        str(rarity_audit.id) if rarity_audit is not None else str(artifact.id)
-    )
+    signal_id = str(rarity_audit.id) if rarity_audit is not None else str(artifact.id)
     return {
         "signal_id": signal_id,
         "queue_type": "rarity_review",
@@ -1013,8 +1008,7 @@ async def list_moderation_queue(
 
     rarity_rows = await _list_rarity_review_rows(db)
     rarity_audits_by_artifact = {
-        artifact.id: rarity_audit
-        for artifact, _, _, rarity_audit in rarity_rows
+        artifact.id: rarity_audit for artifact, _, _, rarity_audit in rarity_rows
     }
     items: list[dict[str, Any]] = [
         _rarity_review_item(
@@ -1032,9 +1026,7 @@ async def list_moderation_queue(
         if not isinstance(blocked_ids, list):
             blocked_ids = []
         blocked_id_set = {
-            UUID(value)
-            for value in blocked_ids
-            if isinstance(value, str)
+            UUID(value) for value in blocked_ids if isinstance(value, str)
         }
         if artifact.id not in blocked_id_set:
             continue
@@ -1669,12 +1661,18 @@ async def suspend_user(
             if developer_account is not None:
                 developer_account.status = "suspended"
             api_keys = (
-                await db.execute(
-                    select(ApiKey).where(
-                        ApiKey.developer_account_id == developer_account.id
+                (
+                    await db.execute(
+                        select(ApiKey).where(
+                            ApiKey.developer_account_id == developer_account.id
+                        )
                     )
                 )
-            ).scalars().all() if developer_account is not None else []
+                .scalars()
+                .all()
+                if developer_account is not None
+                else []
+            )
             for api_key in api_keys:
                 if api_key.status != "revoked":
                     api_key.status = "revoked"
@@ -1915,8 +1913,7 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
-                    f"{key} must be between "
-                    f"{integer_minimum} and {integer_maximum}."
+                    f"{key} must be between {integer_minimum} and {integer_maximum}."
                 ),
             )
         return str(integer_value)
@@ -1967,8 +1964,7 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
             )
         try:
             parsed = {
-                factor: Decimal(str(value))
-                for factor, value in parsed_json.items()
+                factor: Decimal(str(value)) for factor, value in parsed_json.items()
             }
             reputation_weights.validate_weight_map(
                 parsed,
@@ -2020,8 +2016,7 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
-                    "reputation_prior_strength_k must be greater than or equal "
-                    "to 0."
+                    "reputation_prior_strength_k must be greater than or equal to 0."
                 ),
             )
         return _format_decimal_config(value.quantize(Decimal("0.0001")))

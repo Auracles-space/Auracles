@@ -119,9 +119,7 @@ class S3Storage:
         try:
             self._client.head_object(Bucket=bucket, Key=key)
         except ClientError as exc:
-            status_code = exc.response.get("ResponseMetadata", {}).get(
-                "HTTPStatusCode"
-            )
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             if status_code in {403, 404}:
                 return False
             raise
