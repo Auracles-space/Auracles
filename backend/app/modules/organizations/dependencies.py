@@ -66,6 +66,7 @@ async def _deny(
     user: User,
     org_id: UUID,
     metadata: dict[str, object],
+    error_code: str = "org_role_required",
 ) -> None:
     """Audit an org-RBAC denial and raise 403."""
     await write_audit(
@@ -79,7 +80,7 @@ async def _deny(
     await db.commit()
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail={"error_code": "org_role_required"},
+        detail={"error_code": error_code},
     )
 
 
@@ -102,9 +103,12 @@ def require_org_role(minimum_role: str) -> Callable[..., object]:
         assert membership is not None
 
         if organization.suspended_at is not None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"error_code": "org_suspended"},
+            await _deny(
+                db,
+                user,
+                org_id,
+                {"reason": "org_suspended"},
+                error_code="org_suspended",
             )
 
         if _ROLE_RANK[membership.role] < _ROLE_RANK[minimum_role]:

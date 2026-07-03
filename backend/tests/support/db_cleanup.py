@@ -21,14 +21,18 @@ from app.modules.notifications.models import (
     Notification,
     NotificationDeliveryMarker,
 )
+from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.shared.models.audit_log import AuditLog
 
 
 async def clear_identity_state_async(session: AsyncSession) -> None:
-    """Delete notification, audit, KYC, role, and user rows in FK-safe order."""
+    """Delete notification, audit, org, KYC, role, and user rows in FK-safe order."""
     await session.execute(delete(NotificationDeliveryMarker))
     await session.execute(delete(Notification))
     await session.execute(delete(AuditLog))
+    await session.execute(delete(OrgCapability))
+    await session.execute(delete(OrgMember))
+    await session.execute(delete(Organization))
     await session.execute(delete(IdentityVerification))
     await session.execute(delete(KycDocument))
     await session.execute(delete(UserRole))
@@ -36,10 +40,13 @@ async def clear_identity_state_async(session: AsyncSession) -> None:
 
 
 def clear_identity_state_sync(session: Session) -> None:
-    """Delete notification, audit, KYC, role, and user rows in FK-safe order."""
+    """Delete notification, audit, org, KYC, role, and user rows in FK-safe order."""
     session.execute(delete(NotificationDeliveryMarker))
     session.execute(delete(Notification))
     session.execute(delete(AuditLog))
+    session.execute(delete(OrgCapability))
+    session.execute(delete(OrgMember))
+    session.execute(delete(Organization))
     session.execute(delete(IdentityVerification))
     session.execute(delete(KycDocument))
     session.execute(delete(UserRole))

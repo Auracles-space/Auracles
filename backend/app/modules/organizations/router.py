@@ -33,6 +33,8 @@ OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
     "",
     response_model=OrganizationResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create organization",
+    description="Create a base organization; the creator becomes its owner.",
 )
 async def create_organization(
     payload: OrganizationCreateRequest,
@@ -44,7 +46,15 @@ async def create_organization(
     return OrganizationResponse.model_validate(organization)
 
 
-@router.get("/mine", response_model=MyOrganizationsResponse)
+@router.get(
+    "/mine",
+    response_model=MyOrganizationsResponse,
+    summary="List my organizations",
+    description=(
+        "Organizations the current user belongs to, with role and capability "
+        "statuses."
+    ),
+)
 async def list_my_organizations(
     user: CurrentUser,
     db: DatabaseSession,

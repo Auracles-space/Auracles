@@ -118,7 +118,10 @@ async def list_my_organizations(
         await db.execute(
             select(Organization, OrgMember.role)
             .join(OrgMember, OrgMember.org_id == Organization.id)
-            .where(OrgMember.user_id == user_id)
+            .where(
+                OrgMember.user_id == user_id,
+                Organization.deactivated_at.is_(None),
+            )
             .order_by(desc(Organization.created_at))
         )
     ).all()

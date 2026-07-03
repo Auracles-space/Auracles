@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgMember,
 )
+from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
 
 
@@ -29,16 +31,31 @@ def migrated_database() -> Iterator[None]:
     yield
 
 
-@pytest.fixture
-async def clean_orgs() -> None:
-    """Remove org rows between tests."""
-    await engine.dispose()
+async def _reset_org_state() -> None:
+    """Delete org rows and identity rows in foreign-key-safe order."""
     async with async_session_factory() as session:
         await session.execute(delete(OrgCapability))
         await session.execute(delete(OrgMember))
         await session.execute(delete(Organization))
         await clear_identity_state_async(session)
         await session.commit()
+
+
+@pytest.fixture
+async def clean_orgs() -> AsyncIterator[None]:
+    """Reset org state before and after each test.
+
+    The teardown matters: organizations.created_by references users, so
+    leftover org rows break the `delete(User)` cleanup other test files
+    rely on.
+    """
+    await engine.dispose()
+    await _reset_org_state()
+    try:
+        yield
+    finally:
+        await _reset_org_state()
+        await engine.dispose()
 
 
 async def create_user(prefix: str) -> UUID:
@@ -166,6 +183,23 @@ async def test_list_my_orgs_returns_role_and_capabilities(
     assert orgs[0]["capabilities"] == {"attestor": "pending"}
 
 
+async def test_list_my_orgs_excludes_deactivated(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """GET /v1/orgs/mine omits organizations that have been deactivated."""
+    del migrated_database, clean_orgs
+    user_id = await create_user("org-mine-deact")
+    token = create_access_token(user_id, [])
+    org = await create_org(client, token, "gone")
+    deleted = await client.delete(f"/v1/orgs/{org['id']}", headers=auth(token))
+    assert deleted.status_code == 204
+
+    response = await client.get("/v1/orgs/mine", headers=auth(token))
+
+    assert response.status_code == 200
+    assert response.json()["organizations"] == []
+
+
 async def test_public_org_profile_exposes_no_members(
     client: AsyncClient, migrated_database: None, clean_orgs: None
 ) -> None:
@@ -214,6 +248,44 @@ async def test_update_org_requires_admin(
     assert denied.status_code == 403
     assert allowed.status_code == 200
     assert allowed.json()["name"] == "New"
+
+
+async def test_suspended_org_denial_is_audited(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """A 403 on a suspended org writes an access_denied audit row.
+
+    Enforces the spec rule that all org RBAC denials are audited,
+    including denials caused by platform suspension.
+    """
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-susp")
+    token = create_access_token(owner_id, [])
+    org = await create_org(client, token, "susp")
+    org_id = UUID(str(org["id"]))
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = await session.get(Organization, org_id)
+            assert organization is not None
+            organization.suspended_at = datetime.now(UTC)
+
+    response = await client.patch(
+        f"/v1/orgs/{org_id}",
+        json={"name": "Blocked"},
+        headers=auth(token),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "org_suspended"
+    async with async_session_factory() as session:
+        audit_row = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "access_denied",
+                AuditLog.target_type == "org_rbac",
+                AuditLog.target_id == org_id,
+            )
+        )
+    assert audit_row is not None
 
 
 async def test_deactivate_blocked_while_capability_active(
