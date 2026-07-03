@@ -47,9 +47,12 @@ lands.
 capability status table + read path, org RBAC dependencies, derived-role sync utility,
 audit, rate limiting, GDPR touchpoints, admin suspend.
 
-**Out (later sub-projects):** capability applications and activation flows, KYB, NDA
+**Out (later sub-projects):** capability applications and activation flows — including
+the platform-admin review/approval pipeline for attestor orgs (admin verifies KYB and
+credentials, decides the trial, activates the capability; sub-project 2) — KYB, NDA
 signing, payout accounts, attestation re-pointing, framework access grants, purchasing,
-all frontend (org UI ships bundled with sub-project 2 frontend).
+all frontend (org UI ships bundled with sub-project 2 frontend). Org Core ships only the
+`org_capabilities` status table; no path in Org Core sets a capability `active`.
 
 ## Data model
 
