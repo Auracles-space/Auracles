@@ -178,3 +178,32 @@ class OrgInvitationPreviewResponse(BaseModel):
     org_slug: str
     role: str
     expires_at: datetime
+
+
+class OrgTeamCreateRequest(BaseModel):
+    """Admin-scoped request to create a team in an organization."""
+
+    name: str = Field(min_length=2, max_length=80)
+
+
+class OrgTeamRenameRequest(BaseModel):
+    """Admin-scoped request to rename an existing team."""
+
+    name: str = Field(min_length=2, max_length=80)
+
+
+class OrgTeamResponse(BaseModel):
+    """One organization team row with member count."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    member_count: int
+    created_at: datetime
+
+
+class OrgTeamsResponse(BaseModel):
+    """List wrapper for organization teams."""
+
+    teams: list[OrgTeamResponse]

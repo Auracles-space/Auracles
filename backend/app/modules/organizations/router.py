@@ -30,6 +30,10 @@ from app.modules.organizations.schemas import (
     OrgMembersResponse,
     OrgOwnershipTransferRequest,
     PublicOrganizationResponse,
+    OrgTeamCreateRequest,
+    OrgTeamRenameRequest,
+    OrgTeamResponse,
+    OrgTeamsResponse,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
@@ -295,6 +299,111 @@ async def revoke_invitation(
         context=context,
         invitation_id=invitation_id,
     )
+
+
+@router.post(
+    "/{org_id}/teams",
+    response_model=OrgTeamResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a team",
+    description="Create a new team within the organization.",
+)
+async def create_team(
+    org_id: UUID,
+    payload: OrgTeamCreateRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgTeamResponse:
+    """Create a new team in the organization."""
+    del org_id
+    return await service.create_team(db=db, context=context, payload=payload)
+
+
+@router.get(
+    "/{org_id}/teams",
+    response_model=OrgTeamsResponse,
+    summary="List teams",
+    description="List all teams in the organization, including member counts.",
+)
+async def list_teams(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgTeamsResponse:
+    """List teams in the organization."""
+    del org_id
+    return await service.list_teams(db=db, context=context)
+
+
+@router.patch(
+    "/{org_id}/teams/{team_id}",
+    response_model=OrgTeamResponse,
+    summary="Rename a team",
+    description="Rename an existing team.",
+)
+async def rename_team(
+    org_id: UUID,
+    team_id: UUID,
+    payload: OrgTeamRenameRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgTeamResponse:
+    """Rename a team in the organization."""
+    del org_id
+    return await service.rename_team(db=db, context=context, team_id=team_id, payload=payload)
+
+
+@router.delete(
+    "/{org_id}/teams/{team_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a team",
+    description="Delete a team and its membership associations.",
+)
+async def delete_team(
+    org_id: UUID,
+    team_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Delete a team in the organization."""
+    del org_id
+    await service.delete_team(db=db, context=context, team_id=team_id)
+
+
+@router.put(
+    "/{org_id}/teams/{team_id}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Add a member to a team",
+    description="Add an existing organization member to a team (idempotent).",
+)
+async def add_team_member(
+    org_id: UUID,
+    team_id: UUID,
+    member_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Add a member to a team."""
+    del org_id
+    await service.add_team_member(db=db, context=context, team_id=team_id, member_id=member_id)
+
+
+@router.delete(
+    "/{org_id}/teams/{team_id}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a member from a team",
+    description="Remove an organization member from a team.",
+)
+async def remove_team_member(
+    org_id: UUID,
+    team_id: UUID,
+    member_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Remove a member from a team."""
+    del org_id
+    await service.remove_team_member(db=db, context=context, team_id=team_id, member_id=member_id)
 
 
 # Invitation response routes — invitee is not yet a member, so no org RBAC.

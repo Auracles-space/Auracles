@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import desc, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,8 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgInvitation,
     OrgMember,
+    OrgTeam,
+    OrgTeamMember,
 )
 from app.modules.organizations.schemas import (
     MyOrganizationResponse,
@@ -43,6 +46,10 @@ from app.modules.organizations.schemas import (
     OrgInvitationsResponse,
     OrgMemberResponse,
     OrgMembersResponse,
+    OrgTeamCreateRequest,
+    OrgTeamRenameRequest,
+    OrgTeamResponse,
+    OrgTeamsResponse,
     PublicOrganizationResponse,
 )
 from app.workers.tasks.org_notifications import send_org_invitation
@@ -440,15 +447,59 @@ async def remove_member(
 
 
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
-    """Grant/revoke the derived user-level attestor role for this user.
+    """Grant/revoke the derived user-level attestor role for this user."""
+    from app.modules.auth.models import UserRole
 
-    Completed in the derived-roles task; safe to call from member paths
-    from day one. With no active attestor capabilities in Org Core it is
-    a no-op revoke path.
-    """
-    # Full grant/revoke logic lands with the derived-roles task; the call
-    # sites (member add/remove, capability change) are wired here first.
-    return None
+    stmt = (
+        select(1)
+        .select_from(OrgMember)
+        .join(Organization, Organization.id == OrgMember.org_id)
+        .join(
+            OrgCapability,
+            (OrgCapability.org_id == Organization.id)
+            & (OrgCapability.capability == "can_attest")
+            & (OrgCapability.status == "active"),
+        )
+        .where(
+            OrgMember.user_id == user_id,
+            Organization.suspended_at.is_(None),
+            Organization.deactivated_at.is_(None),
+        )
+        .limit(1)
+    )
+    should_have_role = (await db.scalar(stmt)) is not None
+
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        current_role = await db.scalar(
+            select(UserRole)
+            .where(UserRole.user_id == user_id, UserRole.role == "attestor")
+            .with_for_update()
+        )
+
+        if should_have_role and not current_role:
+            new_role = UserRole(user_id=user_id, role="attestor")
+            db.add(new_role)
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="role_granted",
+                target_type="user",
+                target_id=user_id,
+                metadata={"role": "attestor", "reason": "derived_from_org"},
+            )
+        elif not should_have_role and current_role:
+            await db.delete(current_role)
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="role_revoked",
+                target_type="user",
+                target_id=user_id,
+                metadata={"role": "attestor", "reason": "derived_from_org"},
+            )
 
 
 async def change_member_role(
@@ -1019,3 +1070,206 @@ async def decline_invitation(
             dedupe_key=f"org-invite-declined:{invitation_id}",
         )
 
+
+async def create_team(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    payload: OrgTeamCreateRequest,
+) -> OrgTeamResponse:
+    """Create a new team in the organization."""
+    org_id = context.org.id
+    user_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = OrgTeam(org_id=org_id, name=payload.name)
+        db.add(team)
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            if "uq_org_teams_org_name" in str(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A team with this name already exists.",
+                ) from exc
+            raise
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="org_team_created",
+            target_type="org",
+            target_id=org_id,
+            metadata={"team_id": str(team.id), "team_name": team.name},
+        )
+        return OrgTeamResponse(
+            id=team.id,
+            name=team.name,
+            member_count=0,
+            created_at=team.created_at,
+        )
+
+
+async def list_teams(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+) -> OrgTeamsResponse:
+    """List teams in the organization."""
+    org_id = context.org.id
+    stmt = (
+        select(
+            OrgTeam.id,
+            OrgTeam.name,
+            OrgTeam.created_at,
+            func.count(OrgTeamMember.member_id).label("member_count"),
+        )
+        .outerjoin(OrgTeamMember, OrgTeamMember.team_id == OrgTeam.id)
+        .where(OrgTeam.org_id == org_id)
+        .group_by(OrgTeam.id)
+        .order_by(OrgTeam.name)
+    )
+    rows = (await db.execute(stmt)).all()
+    return OrgTeamsResponse(
+        teams=[
+            OrgTeamResponse(
+                id=row.id,
+                name=row.name,
+                member_count=row.member_count,  # type: ignore[arg-type]
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+    )
+
+
+async def rename_team(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+    payload: OrgTeamRenameRequest,
+) -> OrgTeamResponse:
+    """Rename a team in the organization."""
+    org_id = context.org.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(
+                OrgTeam.id == team_id, OrgTeam.org_id == org_id
+            ).with_for_update()
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        team.name = payload.name
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            if "uq_org_teams_org_name" in str(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A team with this name already exists.",
+                ) from exc
+            raise
+
+        member_count = await db.scalar(
+            select(func.count(OrgTeamMember.member_id)).where(OrgTeamMember.team_id == team_id)
+        )
+
+        return OrgTeamResponse(
+            id=team.id,
+            name=team.name,
+            member_count=member_count or 0,
+            created_at=team.created_at,
+        )
+
+
+async def delete_team(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+) -> None:
+    """Delete a team in the organization."""
+    org_id = context.org.id
+    user_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(
+                OrgTeam.id == team_id, OrgTeam.org_id == org_id
+            )
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        team_name = team.name
+        await db.delete(team)
+
+        await write_audit(
+            db=db,
+            actor_id=user_id,
+            action="org_team_deleted",
+            target_type="org",
+            target_id=org_id,
+            metadata={"team_id": str(team_id), "team_name": team_name},
+        )
+
+
+async def add_team_member(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+    member_id: UUID,
+) -> None:
+    """Add a member to a team."""
+    org_id = context.org.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        await _get_member_row(db, org_id=org_id, member_id=member_id)
+
+        stmt = pg_insert(OrgTeamMember).values(
+            team_id=team_id, member_id=member_id
+        ).on_conflict_do_nothing()
+        await db.execute(stmt)
+
+
+async def remove_team_member(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+    member_id: UUID,
+) -> None:
+    """Remove a member from a team."""
+    org_id = context.org.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        member_row = await db.scalar(
+            select(OrgTeamMember).where(
+                OrgTeamMember.team_id == team_id,
+                OrgTeamMember.member_id == member_id
+            )
+        )
+        if not member_row:
+            raise HTTPException(status_code=404, detail="Member is not in this team.")
+
+        await db.delete(member_row)

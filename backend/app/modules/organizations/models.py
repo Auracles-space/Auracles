@@ -197,3 +197,44 @@ class OrgInvitation(CreatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+
+class OrgTeam(CreatedAtMixin, Base):
+    """A sub-grouping of members within an organization."""
+
+    __tablename__ = "org_teams"
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_org_teams_org_name"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+class OrgTeamMember(CreatedAtMixin, Base):
+    """Membership of an OrgMember in an OrgTeam."""
+
+    __tablename__ = "org_team_members"
+    __table_args__ = (
+        Index("idx_org_team_members_member", "member_id"),
+    )
+
+    team_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_teams.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    member_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
