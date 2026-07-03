@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -100,7 +99,9 @@ async def test_org_removal_cascades_out_of_teams(
     org = await create_org(client, owner_token, "casc")
     member_row = await add_member(org["id"], member_id, "member")
     team = await client.post(
-        f"/v1/orgs/{org['id']}/teams", json={"name": "Reviewers"}, headers=auth(owner_token)
+        f"/v1/orgs/{org['id']}/teams",
+        json={"name": "Reviewers"},
+        headers=auth(owner_token),
     )
     assert team.status_code == 201
     team_id = team.json()["id"]
@@ -127,17 +128,22 @@ async def test_org_removal_cascades_out_of_teams(
 async def test_create_team_duplicate_name_conflicts(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:
+    """Creating a team with a name already used in the org returns 409."""
     owner_id = await create_user("team-dup")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "dup")
 
     res1 = await client.post(
-        f"/v1/orgs/{org['id']}/teams", json={"name": "Engineering"}, headers=auth(owner_token)
+        f"/v1/orgs/{org['id']}/teams",
+        json={"name": "Engineering"},
+        headers=auth(owner_token),
     )
     assert res1.status_code == 201
 
     res2 = await client.post(
-        f"/v1/orgs/{org['id']}/teams", json={"name": "Engineering"}, headers=auth(owner_token)
+        f"/v1/orgs/{org['id']}/teams",
+        json={"name": "Engineering"},
+        headers=auth(owner_token),
     )
     assert res2.status_code == 409
 
@@ -145,6 +151,7 @@ async def test_create_team_duplicate_name_conflicts(
 async def test_add_team_member_non_org_member(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:
+    """Adding a member id that does not belong to the org returns 404."""
     owner_id = await create_user("t-owner")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "team-non")
@@ -166,6 +173,7 @@ async def test_add_team_member_non_org_member(
 async def test_add_team_member_idempotent(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:
+    """Adding the same member to a team twice returns 204 both times."""
     owner_id = await create_user("t-owner")
     member_id = await create_user("t-member")
     owner_token = create_access_token(owner_id, [])
@@ -193,6 +201,7 @@ async def test_add_team_member_idempotent(
 async def test_list_teams_shows_member_count(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:
+    """Team listing includes a live member_count per team."""
     owner_id = await create_user("t-owner")
     member_id = await create_user("t-member")
     owner_token = create_access_token(owner_id, [])
@@ -222,12 +231,15 @@ async def test_list_teams_shows_member_count(
 async def test_delete_team(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:
+    """Deleting a team returns 204 and removes it from the listing."""
     owner_id = await create_user("t-owner")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "team-del")
 
     team = await client.post(
-        f"/v1/orgs/{org['id']}/teams", json={"name": "Marketing"}, headers=auth(owner_token)
+        f"/v1/orgs/{org['id']}/teams",
+        json={"name": "Marketing"},
+        headers=auth(owner_token),
     )
     team_id = team.json()["id"]
 

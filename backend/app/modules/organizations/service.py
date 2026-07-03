@@ -447,7 +447,14 @@ async def remove_member(
 
 
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
-    """Grant/revoke the derived user-level attestor role for this user."""
+    """Grant/revoke the derived user-level attestor role for this user.
+
+    The attestor role is org-derived (spec decision 9): held while the
+    user belongs to at least one live org whose attestor capability is
+    active. Grants carry approved_at because the attestation module only
+    honors roles where approved_at is not null. Idempotent; safe on every
+    membership or capability change.
+    """
     from app.modules.auth.models import UserRole
 
     stmt = (
@@ -457,7 +464,7 @@ async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
         .join(
             OrgCapability,
             (OrgCapability.org_id == Organization.id)
-            & (OrgCapability.capability == "can_attest")
+            & (OrgCapability.capability == "attestor")
             & (OrgCapability.status == "active"),
         )
         .where(
@@ -480,25 +487,30 @@ async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
         )
 
         if should_have_role and not current_role:
-            new_role = UserRole(user_id=user_id, role="attestor")
-            db.add(new_role)
+            db.add(
+                UserRole(
+                    user_id=user_id,
+                    role="attestor",
+                    approved_at=datetime.now(UTC),
+                )
+            )
             await write_audit(
                 db=db,
-                actor_id=user_id,
-                action="role_granted",
+                actor_id=None,
+                action="org_derived_role_synced",
                 target_type="user",
                 target_id=user_id,
-                metadata={"role": "attestor", "reason": "derived_from_org"},
+                metadata={"role": "attestor", "granted": True},
             )
         elif not should_have_role and current_role:
             await db.delete(current_role)
             await write_audit(
                 db=db,
-                actor_id=user_id,
-                action="role_revoked",
+                actor_id=None,
+                action="org_derived_role_synced",
                 target_type="user",
                 target_id=user_id,
-                metadata={"role": "attestor", "reason": "derived_from_org"},
+                metadata={"role": "attestor", "granted": False},
             )
 
 
@@ -1098,7 +1110,7 @@ async def create_team(
             db=db,
             actor_id=user_id,
             action="org_team_created",
-            target_type="org",
+            target_type="organization",
             target_id=org_id,
             metadata={"team_id": str(team.id), "team_name": team.name},
         )
@@ -1135,7 +1147,7 @@ async def list_teams(
             OrgTeamResponse(
                 id=row.id,
                 name=row.name,
-                member_count=row.member_count,  # type: ignore[arg-type]
+                member_count=row.member_count,
                 created_at=row.created_at,
             )
             for row in rows
@@ -1175,7 +1187,9 @@ async def rename_team(
             raise
 
         member_count = await db.scalar(
-            select(func.count(OrgTeamMember.member_id)).where(OrgTeamMember.team_id == team_id)
+            select(func.count(OrgTeamMember.member_id)).where(
+                OrgTeamMember.team_id == team_id
+            )
         )
 
         return OrgTeamResponse(
@@ -1213,7 +1227,7 @@ async def delete_team(
             db=db,
             actor_id=user_id,
             action="org_team_deleted",
-            target_type="org",
+            target_type="organization",
             target_id=org_id,
             metadata={"team_id": str(team_id), "team_name": team_name},
         )

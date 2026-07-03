@@ -29,11 +29,11 @@ from app.modules.organizations.schemas import (
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
     OrgOwnershipTransferRequest,
-    PublicOrganizationResponse,
     OrgTeamCreateRequest,
     OrgTeamRenameRequest,
     OrgTeamResponse,
     OrgTeamsResponse,
+    PublicOrganizationResponse,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
@@ -350,7 +350,9 @@ async def rename_team(
 ) -> OrgTeamResponse:
     """Rename a team in the organization."""
     del org_id
-    return await service.rename_team(db=db, context=context, team_id=team_id, payload=payload)
+    return await service.rename_team(
+        db=db, context=context, team_id=team_id, payload=payload
+    )
 
 
 @router.delete(
@@ -385,7 +387,9 @@ async def add_team_member(
 ) -> None:
     """Add a member to a team."""
     del org_id
-    await service.add_team_member(db=db, context=context, team_id=team_id, member_id=member_id)
+    await service.add_team_member(
+        db=db, context=context, team_id=team_id, member_id=member_id
+    )
 
 
 @router.delete(
@@ -403,7 +407,9 @@ async def remove_team_member(
 ) -> None:
     """Remove a member from a team."""
     del org_id
-    await service.remove_team_member(db=db, context=context, team_id=team_id, member_id=member_id)
+    await service.remove_team_member(
+        db=db, context=context, team_id=team_id, member_id=member_id
+    )
 
 
 # Invitation response routes — invitee is not yet a member, so no org RBAC.

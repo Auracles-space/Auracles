@@ -11,12 +11,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, func, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.main import app
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserRole
 from app.modules.organizations import service
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
@@ -168,3 +168,98 @@ async def test_deactivate_organization_blocks_active_capabilities(
             await service.deactivate_organization(db=session, context=context)
 
     assert exc_info.value.status_code == 409
+
+
+async def _seed_capability(org_id: object, *, status: str = "active") -> None:
+    """Attach an attestor capability with the given status to an org."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgCapability(
+                    org_id=org_id,
+                    capability="attestor",
+                    status=status,
+                )
+            )
+
+
+async def _attestor_role(user_id: object) -> UserRole | None:
+    """Return the user's attestor role row, if any."""
+    async with async_session_factory() as session:
+        return await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == user_id, UserRole.role == "attestor"
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_sync_grants_attestor_role_for_active_org_member(
+    migrated_database: None,
+    org_service_state: None,
+) -> None:
+    """Membership in an active-attestor org grants the derived user role.
+
+    The granted row must carry approved_at — the attestation module only
+    honors roles where approved_at is not null.
+    """
+    del migrated_database, org_service_state
+    owner = await _create_user("sync-grant")
+    organization = await _seed_organization(owner, slug="sync-grant")
+    await _seed_capability(organization.id)
+
+    async with async_session_factory() as session:
+        await service.sync_derived_roles(session, user_id=owner.id)
+
+    role = await _attestor_role(owner.id)
+    assert role is not None
+    assert role.approved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_revokes_when_no_qualifying_org(
+    migrated_database: None,
+    org_service_state: None,
+) -> None:
+    """Losing the last active-attestor org membership revokes the role."""
+    del migrated_database, org_service_state
+    user = await _create_user("sync-revoke")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                UserRole(
+                    user_id=user.id,
+                    role="attestor",
+                    approved_at=datetime.now(UTC),
+                )
+            )
+
+    async with async_session_factory() as session:
+        await service.sync_derived_roles(session, user_id=user.id)
+
+    assert await _attestor_role(user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_sync_idempotent(
+    migrated_database: None,
+    org_service_state: None,
+) -> None:
+    """Running the sync twice leaves exactly one attestor role row."""
+    del migrated_database, org_service_state
+    owner = await _create_user("sync-idem")
+    organization = await _seed_organization(owner, slug="sync-idem")
+    await _seed_capability(organization.id)
+
+    async with async_session_factory() as session:
+        await service.sync_derived_roles(session, user_id=owner.id)
+    async with async_session_factory() as session:
+        await service.sync_derived_roles(session, user_id=owner.id)
+
+    async with async_session_factory() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(UserRole)
+            .where(UserRole.user_id == owner.id, UserRole.role == "attestor")
+        )
+    assert count == 1
