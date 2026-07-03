@@ -9,7 +9,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_user_allow_query
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.gdpr import consent_service, deletion_service, export_service
@@ -25,6 +25,8 @@ router = APIRouter(prefix="/gdpr", tags=["GDPR"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
+# Query-token auth is reserved for browser-navigated redirect downloads.
+DownloadUser = Annotated[User, Depends(get_current_user_allow_query)]
 
 
 def _client_ip(request: Request) -> str | None:
@@ -130,7 +132,7 @@ async def get_data_export_status(
 )
 async def download_data_export(
     export_request_id: UUID,
-    current_user: CurrentUser,
+    current_user: DownloadUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> Response:

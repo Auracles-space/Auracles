@@ -13,17 +13,6 @@ paths:
       operationId: list_platform_config_v1_admin_config_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -46,17 +35,6 @@ paths:
       operationId: update_platform_config_v1_admin_config_patch
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -86,17 +64,6 @@ paths:
       operationId: get_admin_analytics_dashboard_v1_admin_analytics_dashboard_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -135,16 +102,6 @@ paths:
           type: string
           format: date
           title: To
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: CSV export stream
@@ -197,16 +154,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -237,16 +184,6 @@ paths:
           type: string
           format: uuid
           title: User Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -312,16 +249,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -352,16 +279,6 @@ paths:
           type: string
           format: uuid
           title: User Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -398,16 +315,6 @@ paths:
           type: string
           format: uuid
           title: User Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -444,16 +351,6 @@ paths:
           type: string
           format: uuid
           title: User Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -497,16 +394,6 @@ paths:
           - type: 'null'
           default: pending
           title: Status
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -537,16 +424,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -577,16 +454,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -630,16 +497,6 @@ paths:
           type: string
           minLength: 1
           title: Key
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -675,16 +532,6 @@ paths:
             maxLength: 255
           - type: 'null'
           title: Query
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -708,17 +555,6 @@ paths:
       operationId: list_suspended_frameworks_v1_admin_frameworks_suspended_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -749,16 +585,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -795,16 +621,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -835,16 +651,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -873,17 +679,6 @@ paths:
       operationId: grant_license_v1_admin_licenses_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -920,16 +715,6 @@ paths:
           type: string
           format: uuid
           title: Escrow Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -966,16 +751,6 @@ paths:
           type: string
           format: uuid
           title: Escrow Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1004,17 +779,6 @@ paths:
       operationId: recompute_reputation_subject_v1_admin_reputation_recompute_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1061,16 +825,6 @@ paths:
           description: Filter by an exact dispute status.
           title: Status
         description: Filter by an exact dispute status.
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1101,16 +855,6 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1139,17 +883,6 @@ paths:
       operationId: request_attestation_v1_attestations_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1192,16 +925,6 @@ paths:
           type: string
           default: requestor
           title: Role
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1233,16 +956,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1280,16 +993,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '201':
           description: Successful Response
@@ -1434,16 +1137,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1474,16 +1167,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1521,16 +1204,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1568,16 +1241,6 @@ paths:
         schema:
           type: string
           title: Dimension Key
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1615,16 +1278,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1659,16 +1312,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1713,16 +1356,6 @@ paths:
           type: string
           format: uuid
           title: Annotation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1766,16 +1399,6 @@ paths:
           type: string
           format: uuid
           title: Annotation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -1803,16 +1426,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1847,16 +1460,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1901,16 +1504,6 @@ paths:
           type: string
           format: uuid
           title: Clarification Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -1947,16 +1540,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -1987,16 +1570,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2034,16 +1607,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2080,16 +1643,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2120,16 +1673,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2166,16 +1709,6 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2212,16 +1745,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2258,16 +1781,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2296,17 +1809,6 @@ paths:
       operationId: list_attestor_assignments_v1_attestor_assignments_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2329,17 +1831,6 @@ paths:
       operationId: submit_attestor_application_v1_attestor_applications_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2368,17 +1859,6 @@ paths:
       operationId: list_my_attestor_applications_v1_attestor_applications_mine_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2409,16 +1889,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2456,16 +1926,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2504,16 +1964,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2551,16 +2001,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2598,16 +2038,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2644,16 +2074,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2694,16 +2114,6 @@ paths:
             type: string
           - type: 'null'
           title: Status
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -2734,16 +2144,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2780,16 +2180,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2826,16 +2216,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2873,16 +2253,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2927,16 +2297,6 @@ paths:
           type: string
           format: uuid
           title: Trial Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -2974,16 +2334,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3012,17 +2362,6 @@ paths:
       operationId: create_credential_v1_credentials_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3050,17 +2389,6 @@ paths:
       operationId: list_credentials_v1_credentials_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3091,16 +2419,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3136,16 +2454,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -3172,16 +2480,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3220,16 +2518,6 @@ paths:
           type: string
           minLength: 1
           title: Key
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3260,16 +2548,6 @@ paths:
           type: string
           format: uuid
           title: Credential Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3313,16 +2591,6 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3353,16 +2621,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3394,16 +2652,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3441,16 +2689,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '302':
           description: Private presigned tax-invoice download URL.
@@ -3491,16 +2729,6 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '302':
           description: Private presigned earnings-statement download URL.
@@ -3540,16 +2768,6 @@ paths:
         schema:
           type: integer
           title: Year
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '302':
           description: Private presigned annual-summary download URL.
@@ -3837,17 +3055,6 @@ paths:
       operationId: me_v1_auth_me_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3870,17 +3077,6 @@ paths:
       operationId: add_role_v1_auth_roles_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -3909,17 +3105,6 @@ paths:
       operationId: totp_status_v1_auth_2fa_status_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3942,17 +3127,6 @@ paths:
       operationId: setup_totp_v1_auth_2fa_setup_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -3975,17 +3149,6 @@ paths:
       operationId: regenerate_backup_codes_v1_auth_2fa_backup_codes_regenerate_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4014,17 +3177,6 @@ paths:
       operationId: verify_totp_v1_auth_2fa_verify_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4053,17 +3205,6 @@ paths:
       operationId: disable_totp_v1_auth_2fa_disable_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4118,17 +3259,6 @@ paths:
       operationId: create_collection_v1_collections_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4157,17 +3287,6 @@ paths:
       operationId: list_my_collections_v1_collections_mine_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4198,16 +3317,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4237,16 +3346,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4283,16 +3382,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4336,16 +3425,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4376,16 +3455,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4416,16 +3485,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4448,17 +3507,6 @@ paths:
       operationId: submit_developer_application_v1_developer_applications_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4487,17 +3535,6 @@ paths:
       operationId: list_my_developer_applications_v1_developer_applications_mine_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4528,16 +3565,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4574,16 +3601,6 @@ paths:
             type: string
           - type: 'null'
           title: Status
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4614,16 +3631,6 @@ paths:
           type: string
           format: uuid
           title: Application Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4652,17 +3659,6 @@ paths:
       operationId: create_api_key_v1_developer_api_keys_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4690,17 +3686,6 @@ paths:
       operationId: list_api_keys_v1_developer_api_keys_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4723,17 +3708,6 @@ paths:
       operationId: get_developer_tier_progress_v1_developer_tier_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4756,17 +3730,6 @@ paths:
       operationId: request_partner_payout_v1_developer_payouts_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4794,17 +3757,6 @@ paths:
       operationId: list_partner_payouts_v1_developer_payouts_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4837,16 +3789,6 @@ paths:
           minimum: 1
           default: 30
           title: Days
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4879,16 +3821,6 @@ paths:
           minimum: 1
           default: 30
           title: Days
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4911,17 +3843,6 @@ paths:
       operationId: create_partner_webhook_v1_developer_webhooks_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -4949,17 +3870,6 @@ paths:
       operationId: list_partner_webhooks_v1_developer_webhooks_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -4990,16 +3900,6 @@ paths:
           type: string
           format: uuid
           title: Webhook Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5030,16 +3930,6 @@ paths:
           type: string
           format: uuid
           title: Delivery Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5070,16 +3960,6 @@ paths:
           type: string
           format: uuid
           title: Api Key Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5115,16 +3995,6 @@ paths:
           type: string
           format: uuid
           title: Api Key Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5700,17 +4570,6 @@ paths:
       operationId: create_payment_method_setup_v1_financials_payment_methods_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5738,17 +4597,6 @@ paths:
       operationId: list_payment_methods_v1_financials_payment_methods_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5789,16 +4637,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -5828,16 +4666,6 @@ paths:
         schema:
           type: string
           title: Payment Method Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5874,16 +4702,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5920,16 +4738,6 @@ paths:
           type: string
           format: uuid
           title: Collection Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -5966,16 +4774,6 @@ paths:
           type: string
           format: uuid
           title: Transaction Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6013,9 +4811,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Access token via query parameter for links
+          description: Access token via query parameter for download links
           title: Token
-        description: Access token via query parameter for links
+        description: Access token via query parameter for download links
       responses:
         '200':
           description: Successful Response
@@ -6037,17 +4835,6 @@ paths:
       operationId: get_contributor_earnings_v1_financials_earnings_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6070,17 +4857,6 @@ paths:
       operationId: onboard_payout_account_v1_financials_payout_accounts_onboard_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6109,17 +4885,6 @@ paths:
       operationId: list_payout_accounts_v1_financials_payout_accounts_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6142,17 +4907,6 @@ paths:
       operationId: request_payout_v1_financials_payouts_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6180,17 +4934,6 @@ paths:
       operationId: list_payouts_v1_financials_payouts_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6221,16 +4964,6 @@ paths:
           type: string
           format: uuid
           title: Payout Account Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6259,17 +4992,6 @@ paths:
       operationId: create_framework_v1_frameworks_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6297,17 +5019,6 @@ paths:
       operationId: list_frameworks_v1_frameworks_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6341,16 +5052,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6416,16 +5117,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6462,16 +5153,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6504,16 +5185,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6546,16 +5217,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6591,16 +5252,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -6627,16 +5278,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6667,16 +5308,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6707,16 +5338,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6753,16 +5374,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6793,16 +5404,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6833,16 +5434,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6879,16 +5470,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -6919,16 +5500,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -6965,16 +5536,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7009,16 +5570,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7055,16 +5606,6 @@ paths:
           type: string
           format: uuid
           title: Framework Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7108,16 +5649,6 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -7151,16 +5682,6 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7198,16 +5719,6 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7230,17 +5741,6 @@ paths:
       operationId: accept_current_consent_v1_gdpr_consent_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7268,17 +5768,6 @@ paths:
       operationId: list_consent_history_v1_gdpr_consent_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7301,17 +5790,6 @@ paths:
       operationId: request_data_export_v1_gdpr_exports_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '202':
           description: Successful Response
@@ -7334,17 +5812,6 @@ paths:
       operationId: get_latest_data_export_status_v1_gdpr_exports_latest_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7375,16 +5842,6 @@ paths:
           type: string
           format: uuid
           title: Export Request Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7423,9 +5880,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Access token via query parameter for links
+          description: Access token via query parameter for download links
           title: Token
-        description: Access token via query parameter for links
+        description: Access token via query parameter for download links
       responses:
         '302':
           description: Private presigned download URL.
@@ -7453,17 +5910,6 @@ paths:
       operationId: request_account_deletion_v1_gdpr_account_deletion_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7498,17 +5944,6 @@ paths:
       operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7532,17 +5967,6 @@ paths:
       operationId: cancel_account_deletion_v1_gdpr_account_deletion_cancel_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7585,16 +6009,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7632,16 +6046,6 @@ paths:
           type: string
           format: uuid
           title: Artifact Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7689,16 +6093,6 @@ paths:
           type: boolean
           default: false
           title: Unread Only
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7721,17 +6115,6 @@ paths:
       operationId: mark_all_notifications_read_v1_notifications_read_all_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7762,16 +6145,6 @@ paths:
           type: string
           format: uuid
           title: Notification Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7795,17 +6168,6 @@ paths:
       operationId: get_my_profile_v1_profiles_me_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -7828,17 +6190,6 @@ paths:
       operationId: update_my_profile_v1_profiles_me_patch
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7868,17 +6219,6 @@ paths:
       operationId: request_avatar_upload_url_v1_profiles_me_avatar_upload_url_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7908,17 +6248,6 @@ paths:
       operationId: confirm_avatar_upload_v1_profiles_me_avatar_confirm_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7948,17 +6277,6 @@ paths:
       operationId: request_banner_upload_url_v1_profiles_me_banner_upload_url_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -7988,17 +6306,6 @@ paths:
       operationId: confirm_banner_upload_v1_profiles_me_banner_confirm_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8057,17 +6364,6 @@ paths:
       operationId: create_project_v1_projects_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8137,16 +6433,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8177,16 +6463,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8216,16 +6492,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8262,16 +6528,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8307,16 +6563,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8347,16 +6593,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8387,16 +6623,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8432,16 +6658,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8472,16 +6688,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8518,16 +6724,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8565,16 +6761,6 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8612,16 +6798,6 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8664,16 +6840,6 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -8707,16 +6873,6 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8759,16 +6915,6 @@ paths:
           type: string
           format: uuid
           title: Milestone Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8813,16 +6959,6 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8867,16 +7003,6 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -8921,16 +7047,6 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -8981,16 +7097,6 @@ paths:
           type: string
           format: uuid
           title: Deliverable Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9021,16 +7127,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -9066,16 +7162,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9113,16 +7199,6 @@ paths:
           type: string
           format: uuid
           title: Dispute Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9153,16 +7229,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9200,16 +7266,6 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -9260,16 +7316,6 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9314,16 +7360,6 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9368,16 +7404,6 @@ paths:
           type: string
           format: uuid
           title: Amendment Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9415,16 +7441,6 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9462,16 +7478,6 @@ paths:
           type: string
           format: uuid
           title: Proposal Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9507,16 +7513,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -9969,16 +7965,6 @@ paths:
           type: string
           format: uuid
           title: Operator Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10001,17 +7987,6 @@ paths:
       operationId: create_saved_search_v1_saved_searches_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10039,17 +8014,6 @@ paths:
       operationId: list_saved_searches_v1_saved_searches_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10097,16 +8061,6 @@ paths:
           minimum: 1
           default: 20
           title: Page Size
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10137,16 +8091,6 @@ paths:
           type: string
           format: uuid
           title: Saved Search Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10182,16 +8126,6 @@ paths:
           type: string
           format: uuid
           title: Saved Search Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '204':
           description: Successful Response
@@ -10210,17 +8144,6 @@ paths:
       operationId: start_identity_verification_v1_settings_kyc_session_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10243,17 +8166,6 @@ paths:
       operationId: get_kyc_status_v1_settings_kyc_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10276,17 +8188,6 @@ paths:
       operationId: list_sessions_v1_settings_sessions_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10308,17 +8209,6 @@ paths:
       operationId: revoke_other_sessions_v1_settings_sessions_delete
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10342,17 +8232,6 @@ paths:
       operationId: get_notification_preferences_v1_settings_notification_preferences_get
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10374,17 +8253,6 @@ paths:
       operationId: update_notification_preferences_v1_settings_notification_preferences_patch
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10420,16 +8288,6 @@ paths:
         schema:
           type: string
           title: Session Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response
@@ -10452,17 +8310,6 @@ paths:
       operationId: request_email_change_v1_settings_account_email_change_post
       security:
       - HTTPBearer: []
-      parameters:
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10611,16 +8458,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10657,16 +8494,6 @@ paths:
           type: string
           format: uuid
           title: Project Id
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       requestBody:
         required: true
         content:
@@ -10720,16 +8547,6 @@ paths:
           minimum: 1
           default: 50
           title: Limit
-      - name: token
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for links
-          title: Token
-        description: Access token via query parameter for links
       responses:
         '200':
           description: Successful Response

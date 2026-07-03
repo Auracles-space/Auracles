@@ -129,16 +129,19 @@ export type AdminAttestationAssignRequest = {
 
 /**
  * Admin request body for resolving an Attestation dispute.
+ *
+ * Module 5 replaces the old release/refund/split money-split model with a
+ * three-outcome verdict: reject the dispute (report stands, release escrow),
+ * uphold with a refund, or uphold requiring the attestor to revise.
  */
 export type AdminAttestationDisputeResolveRequest = {
-    resolution_type: 'release' | 'refund' | 'split';
-    release_amount?: (number | string | null);
-    refund_amount?: (number | string | null);
+    outcome: 'rejected' | 'upheld_refund' | 'upheld_revise';
     resolution_notes: string;
     totp_code: string;
+    is_complex?: boolean;
 };
 
-export type resolution_type = 'release' | 'refund' | 'split';
+export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
 
 /**
  * Admin request body for refunding a needs-admin Attestation.
@@ -179,11 +182,11 @@ export type AdminConfigResponse = {
  * Single admin platform configuration change request.
  */
 export type AdminConfigUpdateItem = {
-    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
     value: string;
 };
 
-export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
 
 /**
  * Admin request body for rejecting a pending Credential.
@@ -233,6 +236,8 @@ export type AdminDisputeResolveRequest = {
     resolution_notes: string;
     totp_code: string;
 };
+
+export type resolution_type = 'release' | 'refund' | 'split';
 
 /**
  * Dispute enriched with the context an Admin needs to resolve it.
@@ -574,6 +579,42 @@ export type AmendmentResponse = {
 };
 
 /**
+ * Request body for creating one free-anchor workspace annotation.
+ */
+export type AnnotationCreateRequest = {
+    artifact_id?: (string | null);
+    location_label: string;
+    quoted_excerpt?: (string | null);
+    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
+    comment: string;
+};
+
+export type annotation_type = 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
+
+/**
+ * One persisted attestation annotation row.
+ */
+export type AnnotationResponse = {
+    id: string;
+    artifact_id: (string | null);
+    location_label: string;
+    quoted_excerpt: (string | null);
+    annotation_type: string;
+    comment: string;
+};
+
+/**
+ * Request body for replacing a workspace annotation's editable fields.
+ */
+export type AnnotationUpdateRequest = {
+    artifact_id?: (string | null);
+    location_label: string;
+    quoted_excerpt?: (string | null);
+    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
+    comment: string;
+};
+
+/**
  * Request body for creating a partner API key.
  */
 export type ApiKeyCreateRequest = {
@@ -693,11 +734,78 @@ export type ArtifactUploadUrlResponse = {
 };
 
 /**
+ * Attestor acceptance with the binding content-use acknowledgment.
+ */
+export type AttestationAcceptRequest = {
+    content_ack: boolean;
+    ack_version: string;
+};
+
+/**
+ * Presigned access grant for an Attestation framework artifact.
+ */
+export type AttestationArtifactAccessResponse = {
+    artifact_id: string;
+    attestation_id: string;
+    scope: string;
+    download_url: string;
+    expires_in: number;
+};
+
+/**
+ * Full version-locked attestation badge for the framework page.
+ */
+export type AttestationBadgeDetail = {
+    id: string;
+    review_type: string;
+    outcome: 'approved' | 'conditional' | 'rejected';
+    attestor_id: string;
+    attestor_display_name: string;
+    credentials?: Array<PublicCredentialResponse>;
+    issued_at: string;
+    framework_version: (string | null);
+    newer_version_exists: boolean;
+};
+
+export type outcome2 = 'approved' | 'conditional' | 'rejected';
+
+/**
+ * Structured review brief shown to the cohort during the offer phase.
+ */
+export type AttestationBrief = {
+    what_it_does: string;
+    use_case: string;
+    jurisdiction: string;
+    focus_areas: string;
+    desired_outcome: string;
+};
+
+/**
+ * Returned for framework requests awaiting framework-owner consent.
+ */
+export type AttestationConsentPendingResponse = {
+    id: string;
+    status: string;
+};
+
+/**
+ * Framework-owner decision on an operator-initiated attestation request.
+ */
+export type AttestationConsentRequest = {
+    decision: 'approve' | 'decline';
+};
+
+export type decision = 'approve' | 'decline';
+
+/**
  * Request body for raising an Attestation report dispute.
  */
 export type AttestationDisputeCreateRequest = {
+    category: 'scope_error' | 'process_violation' | 'material_inaccuracy' | 'conflict_of_interest';
     reason: string;
 };
+
+export type category = 'scope_error' | 'process_violation' | 'material_inaccuracy' | 'conflict_of_interest';
 
 /**
  * Attestation dispute details visible to requestors and admins.
@@ -706,11 +814,12 @@ export type AttestationDisputeResponse = {
     id: string;
     attestation_id: string;
     raised_by: string;
+    category: string;
     reason: string;
     status: string;
-    resolution_type: (string | null);
-    release_amount: (string | null);
-    refund_amount: (string | null);
+    outcome: (string | null);
+    is_complex: boolean;
+    resolution_due_at: (string | null);
     admin_id: (string | null);
     resolution_notes: (string | null);
     escalated_at: (string | null);
@@ -753,18 +862,66 @@ export type AttestationFundingResponse = {
 };
 
 /**
+ * One artifact entry in an Attestation access package.
+ */
+export type AttestationPackageArtifact = {
+    id: string;
+    filename?: (string | null);
+};
+
+/**
+ * The read-only Attestation access package scoped to the caller's entitlement.
+ */
+export type AttestationPackageResponse = {
+    attestation_id: string;
+    framework_title: string;
+    framework_category: string;
+    framework_industry: (string | null);
+    brief: ({
+    [key: string]: unknown;
+} | null);
+    entitlement: string;
+    artifacts: Array<AttestationPackageArtifact>;
+};
+
+/**
+ * Payload for submitting a rating.
+ */
+export type AttestationRatingCreate = {
+    /**
+     * 1-5 star rating.
+     */
+    stars: number;
+    /**
+     * Optional text feedback.
+     */
+    comment?: (string | null);
+};
+
+/**
+ * Response showing a saved rating.
+ */
+export type AttestationRatingResponse = {
+    id: string;
+    attestation_id: string;
+    rated_by: string;
+    stars: number;
+    comment: (string | null);
+    created_at: string;
+};
+
+/**
  * Structured report fields submitted by the assigned Attestor.
  */
 export type AttestationReportSubmitRequest = {
     outcome: 'approved' | 'conditional' | 'rejected';
     summary: string;
     scope: string;
+    conditions?: (string | null);
     evidence_references?: {
         [key: string]: unknown;
     };
 };
-
-export type outcome = 'approved' | 'conditional' | 'rejected';
 
 /**
  * Request body for creating an escrow-funded Attestation request.
@@ -772,6 +929,8 @@ export type outcome = 'approved' | 'conditional' | 'rejected';
 export type AttestationRequestCreateRequest = {
     target_type: 'framework' | 'contributor' | 'operator' | 'credential';
     target_id: string;
+    review_type?: ('quality' | 'compliance' | 'expert' | 'provenance' | null);
+    brief?: (AttestationBrief | null);
     requested_specializations: Array<(string)>;
     requested_jurisdictions: Array<(string)>;
 };
@@ -789,6 +948,10 @@ export type AttestationRequestResponse = {
     attestor_id: (string | null);
     status: string;
     outcome: (string | null);
+    review_type?: (string | null);
+    brief?: ({
+    [key: string]: unknown;
+} | null);
     requested_specializations: Array<(string)>;
     requested_jurisdictions: Array<(string)>;
     summary?: (string | null);
@@ -873,6 +1036,7 @@ export type AttestorApplicationResponse = {
     professional_references: string;
     coi_declarations: Array<CoiEntry>;
     coi_signed_at: (string | null);
+    confidentiality_signed_at: (string | null);
     coi_expires_at: (string | null);
     payout_account_id: (string | null);
     tax_document_type: (string | null);
@@ -920,6 +1084,7 @@ export type AttestorAssignmentResponse = {
     attestation_status: string;
     offer_status: string;
     cohort_index: number;
+    requestor_flagged: boolean;
     requested_specializations: Array<(string)>;
     requested_jurisdictions: Array<(string)>;
     expires_at: string;
@@ -933,6 +1098,20 @@ export type AttestorAssignmentResponse = {
 export type AttestorAssignmentsResponse = {
     assignments: Array<AttestorAssignmentResponse>;
 };
+
+/**
+ * One public entry in an Attestor's Completed Attestations list.
+ */
+export type AttestorCompletedAttestation = {
+    framework_id: string;
+    framework_title: string;
+    review_type: string;
+    outcome: 'approved' | 'conditional';
+    issued_at: string;
+    framework_version: (string | null);
+};
+
+export type outcome3 = 'approved' | 'conditional';
 
 /**
  * Admin request body for the credential registry cross-check gate.
@@ -1118,6 +1297,34 @@ export type BannerUploadUrlResponse = {
 };
 
 /**
+ * Request body for sending one attestation clarification question.
+ */
+export type ClarificationCreateRequest = {
+    question: string;
+};
+
+/**
+ * Request body for responding to one attestation clarification.
+ */
+export type ClarificationRespondRequest = {
+    response: string;
+};
+
+/**
+ * One persisted attestation clarification row.
+ */
+export type ClarificationResponse = {
+    id: string;
+    attestation_id: string;
+    question: string;
+    response: (string | null);
+    sent_at: string;
+    response_due_at: string;
+    responded_at: (string | null);
+    status: string;
+};
+
+/**
  * Request body for signing the Attestor conflict-of-interest declaration.
  */
 export type CoiDeclarationRequest = {
@@ -1127,12 +1334,18 @@ export type CoiDeclarationRequest = {
 
 /**
  * One declared conflict-of-interest relationship disclosed by an applicant.
+ *
+ * ``subject_id`` optionally links the declaration to a known platform entity
+ * so the matching engine can screen exact conflicts without relying on
+ * brittle free-text matching.
  */
 export type CoiEntry = {
     entity: string;
     entity_type: 'firm' | 'fund' | 'individual';
     relationship: 'financial' | 'advisory' | 'employment';
     within_24mo: boolean;
+    subject_id?: (string | null);
+    subject_kind?: ('user' | 'framework' | null);
 };
 
 export type entity_type = 'firm' | 'fund' | 'individual';
@@ -1208,6 +1421,13 @@ export type CollectionUpdateRequest = {
 export type ComponentHealth = {
     status: string;
     detail?: (string | null);
+};
+
+/**
+ * Attestor acceptance of the one-time confidentiality / non-use agreement.
+ */
+export type ConfidentialityAgreementRequest = {
+    accept: boolean;
 };
 
 /**
@@ -1460,7 +1680,7 @@ export type DeveloperApplicationReviewRequest = {
     totp_code: string;
 };
 
-export type decision = 'approved' | 'rejected';
+export type decision2 = 'approved' | 'rejected';
 
 /**
  * List response for Developer applications.
@@ -1829,6 +2049,7 @@ export type ExploreFrameworkDetail = {
     preview_artifact_id: (string | null);
     preview_url: (string | null);
     artifacts: Array<ExploreArtifactSummary>;
+    attestation_badges?: Array<AttestationBadgeDetail>;
 };
 
 /**
@@ -1892,7 +2113,7 @@ export type FrameworkCreate = {
     pricing: PricingConfig_Input;
 };
 
-export type category = 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
+export type category2 = 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
 
 /**
  * Compact Framework row for the Contributor's dashboard list.
@@ -2031,6 +2252,14 @@ export type HealthResponse = {
 
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
+};
+
+/**
+ * Async invoice-document generation acknowledgement.
+ */
+export type InvoiceGenerationResponse = {
+    invoice_id: string;
+    status: string;
 };
 
 /**
@@ -3057,6 +3286,23 @@ export type RoleAssignmentResponse = {
 };
 
 /**
+ * One persisted attestation rubric-score row.
+ */
+export type RubricScoreResponse = {
+    dimension_id: string;
+    score: (number | null);
+    comment: (string | null);
+};
+
+/**
+ * Draft score and comment for one rubric dimension.
+ */
+export type RubricScoreUpsertRequest = {
+    score?: (number | null);
+    comment?: (string | null);
+};
+
+/**
  * Operator request body for creating a saved Explore search.
  */
 export type SavedSearchCreateRequest = {
@@ -3299,41 +3545,17 @@ export type WorkspaceUploadSessionResponse = {
     size_limit: number;
 };
 
-export type ListPlatformConfigV1AdminConfigGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type ListPlatformConfigV1AdminConfigGetResponse = (AdminConfigResponse);
 
 export type ListPlatformConfigV1AdminConfigGetError = (HTTPValidationError);
 
 export type UpdatePlatformConfigV1AdminConfigPatchData = {
     body: AdminConfigPatchRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdatePlatformConfigV1AdminConfigPatchResponse = (AdminConfigResponse);
 
 export type UpdatePlatformConfigV1AdminConfigPatchError = (HTTPValidationError);
-
-export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetResponse = (AdminAnalyticsDashboardResponse);
 
@@ -3343,10 +3565,6 @@ export type ExportAdminAnalyticsV1AdminAnalyticsExportGetData = {
     query: {
         from: string;
         to: string;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3358,10 +3576,6 @@ export type ListModerationQueueV1AdminModerationQueueGetData = {
     query?: {
         page?: number;
         page_size?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
         type?: string;
     };
 };
@@ -3375,12 +3589,6 @@ export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
     path: {
         user_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AssignRoleV1AdminUsersUserIdRolesPatchResponse = (AdminRoleAssignmentResponse);
@@ -3393,10 +3601,6 @@ export type ListAdminUsersV1AdminUsersGetData = {
         page_size?: number;
         query?: (string | null);
         status?: string;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3409,12 +3613,6 @@ export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
     path: {
         user_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SuspendUserV1AdminUsersUserIdSuspendPostResponse = (AdminUserSuspensionResponse);
@@ -3425,12 +3623,6 @@ export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostData = {
     body: AdminUserUnsuspendRequest;
     path: {
         user_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3443,12 +3635,6 @@ export type ReviewKycV1AdminUsersUserIdKycPatchData = {
     path: {
         user_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ReviewKycV1AdminUsersUserIdKycPatchResponse = (AdminKycReviewResponse);
@@ -3458,10 +3644,6 @@ export type ReviewKycV1AdminUsersUserIdKycPatchError = (HTTPValidationError);
 export type ListCredentialReviewQueueV1AdminCredentialsGetData = {
     query?: {
         status?: ('unverified' | 'pending' | 'verified' | 'rejected' | null);
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3473,12 +3655,6 @@ export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData = {
     path: {
         credential_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostResponse = (AdminCredentialResponse);
@@ -3489,12 +3665,6 @@ export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostData = {
     body: AdminCredentialRejectRequest;
     path: {
         credential_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3508,10 +3678,6 @@ export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetD
     };
     query: {
         key: string;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3522,25 +3688,12 @@ export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetE
 export type ListAdminFrameworksV1AdminFrameworksGetData = {
     query?: {
         query?: (string | null);
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
 export type ListAdminFrameworksV1AdminFrameworksGetResponse = (AdminFrameworkDirectoryResponse);
 
 export type ListAdminFrameworksV1AdminFrameworksGetError = (HTTPValidationError);
-
-export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
 
@@ -3551,12 +3704,6 @@ export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostResponse = (AdminFrameworkStatusResponse);
@@ -3566,12 +3713,6 @@ export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostError = (HTTP
 export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData = {
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3584,12 +3725,6 @@ export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePo
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostResponse = (AdminFrameworkStatusResponse);
@@ -3598,12 +3733,6 @@ export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePo
 
 export type GrantLicenseV1AdminLicensesPostData = {
     body: AdminLicenseGrantRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GrantLicenseV1AdminLicensesPostResponse = (AdminLicenseGrantResponse);
@@ -3614,12 +3743,6 @@ export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostData = {
     body: AdminEscrowOverrideRequest;
     path: {
         escrow_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3632,12 +3755,6 @@ export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostData = {
     path: {
         escrow_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostResponse = (AdminEscrowResponse);
@@ -3646,12 +3763,6 @@ export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostError = (HTTPValidationE
 
 export type RecomputeReputationSubjectV1AdminReputationRecomputePostData = {
     body: AdminReputationRecomputeRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RecomputeReputationSubjectV1AdminReputationRecomputePostResponse = (AdminReputationRecomputeResponse);
@@ -3664,10 +3775,6 @@ export type ListProjectDisputesV1AdminProjectsDisputesGetData = {
          * Filter by an exact dispute status.
          */
         status?: ('open' | 'under_review' | 'resolved' | null);
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3680,12 +3787,6 @@ export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData
     path: {
         dispute_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostResponse = (DisputeResponse);
@@ -3694,25 +3795,15 @@ export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostErro
 
 export type RequestAttestationV1AttestationsPostData = {
     body: AttestationRequestCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
-export type RequestAttestationV1AttestationsPostResponse = (AttestationFundingResponse);
+export type RequestAttestationV1AttestationsPostResponse = ((AttestationFundingResponse | AttestationConsentPendingResponse));
 
 export type RequestAttestationV1AttestationsPostError = (HTTPValidationError);
 
 export type ListAttestationsV1AttestationsGetData = {
     query?: {
         role?: 'requestor' | 'attestor';
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -3720,412 +3811,26 @@ export type ListAttestationsV1AttestationsGetResponse = (AttestationsResponse);
 
 export type ListAttestationsV1AttestationsGetError = (HTTPValidationError);
 
-export type GetAttestationV1AttestationsAttestationIdGetData = {
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostData = {
+    body: AttestationConsentRequest;
     path: {
         attestation_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
-export type GetAttestationV1AttestationsAttestationIdGetResponse = (AttestationRequestResponse);
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostResponse = (AttestationRequestResponse);
 
-export type GetAttestationV1AttestationsAttestationIdGetError = (HTTPValidationError);
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostError = (HTTPValidationError);
 
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostData = {
+export type FundAttestationV1AttestationsAttestationIdFundPostData = {
     path: {
         attestation_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostResponse = (AttestationRequestResponse);
+export type FundAttestationV1AttestationsAttestationIdFundPostResponse = (AttestationFundingResponse);
 
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostError = (HTTPValidationError);
-
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostData = {
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostResponse = (AttestationRequestResponse);
-
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostError = (HTTPValidationError);
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
-    body: AttestationEvidenceUploadCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostData = {
-    body: AttestationReportSubmitRequest;
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostResponse = (AttestationRequestResponse);
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostError = (HTTPValidationError);
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostData = {
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostResponse = (AttestationRequestResponse);
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostError = (HTTPValidationError);
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostData = {
-    body: AttestationDisputeCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostResponse = (AttestationDisputeResponse);
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostError = (HTTPValidationError);
-
-export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostData = {
-    body: AdminAttestationDisputeResolveRequest;
-    path: {
-        dispute_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostResponse = (AttestationDisputeResponse);
-
-export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostError = (HTTPValidationError);
-
-export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostData = {
-    body: AdminAttestationAssignRequest;
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostResponse = (AttestationRequestResponse);
-
-export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostError = (HTTPValidationError);
-
-export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostData = {
-    body: AdminAttestationRefundRequest;
-    path: {
-        attestation_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostResponse = (AttestationRequestResponse);
-
-export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostError = (HTTPValidationError);
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetData = {
-    query?: {
-        status?: ('submitted' | 'identity_verified' | 'professional_verified' | 'expert_verified' | 'active' | 'rejected' | 'withdrawn' | 'held' | null);
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetResponse = (AttestorApplicationsResponse);
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetError = (HTTPValidationError);
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostData = {
-    body: AttestorActivateRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostResponse = (AttestorApplicationResponse);
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostError = (HTTPValidationError);
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostData = {
-    body: AttestorApplicationRejectRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostResponse = (AttestorApplicationResponse);
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostData = {
-    body: AttestorTrialAssignRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostResponse = (AttestorTrialResponse);
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostError = (HTTPValidationError);
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostData = {
-    body: AttestorTrialDecideRequest;
-    path: {
-        application_id: string;
-        trial_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostResponse = (AttestorApplicationResponse);
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostError = (HTTPValidationError);
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostData = {
-    body: AttestorCredentialCheckRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostResponse = (AttestorApplicationResponse);
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostError = (HTTPValidationError);
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostData = {
-    body: AttestorKycVerifyRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostResponse = (AttestorApplicationResponse);
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostError = (HTTPValidationError);
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostData = {
-    body: AttestorApplicationCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostResponse = (AttestorApplicationResponse);
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostError = (HTTPValidationError);
-
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetResponse = (AttestorApplicationsResponse);
-
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = (HTTPValidationError);
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchData = {
-    body: AttestorApplicationUpdateRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchResponse = (AttestorApplicationResponse);
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchError = (HTTPValidationError);
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostData = {
-    body: CoiDeclarationRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostResponse = (AttestorApplicationResponse);
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostError = (HTTPValidationError);
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostData = {
-    body: AttestorPayoutAttachRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostResponse = (AttestorApplicationResponse);
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostError = (HTTPValidationError);
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostData = {
-    body: AttestorTaxDocumentRequest;
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostError = (HTTPValidationError);
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchData = {
-    path: {
-        application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchResponse = (AttestorApplicationResponse);
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchError = (HTTPValidationError);
-
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetResponse = (AttestorAssignmentsResponse);
-
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetError = (HTTPValidationError);
+export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValidationError);
 
 export type ListPublicAttestorDirectoryV1AttestorsGetData = {
     query?: {
@@ -4150,28 +3855,387 @@ export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetResponse = (Att
 
 export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetError = (HTTPValidationError);
 
+export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetData = {
+    path: {
+        user_id: string;
+    };
+};
+
+export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
+
+export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetError = (HTTPValidationError);
+
+export type GetAttestationV1AttestationsAttestationIdGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationV1AttestationsAttestationIdGetResponse = (AttestationRequestResponse);
+
+export type GetAttestationV1AttestationsAttestationIdGetError = (HTTPValidationError);
+
+export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostData = {
+    body: AttestationAcceptRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostResponse = (AttestationRequestResponse);
+
+export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostError = (HTTPValidationError);
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResponse = (AttestationRequestResponse);
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutData = {
+    body: RubricScoreUpsertRequest;
+    path: {
+        attestation_id: string;
+        dimension_key: string;
+    };
+};
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutResponse = (RubricScoreResponse);
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutError = (HTTPValidationError);
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetResponse = (Array<AnnotationResponse>);
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetError = (HTTPValidationError);
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostData = {
+    body: AnnotationCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostResponse = (AnnotationResponse);
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostError = (HTTPValidationError);
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchData = {
+    body: AnnotationUpdateRequest;
+    path: {
+        annotation_id: string;
+        attestation_id: string;
+    };
+};
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchResponse = (AnnotationResponse);
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchError = (HTTPValidationError);
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteData = {
+    path: {
+        annotation_id: string;
+        attestation_id: string;
+    };
+};
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteResponse = (void);
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteError = (HTTPValidationError);
+
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetResponse = (Array<ClarificationResponse>);
+
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetError = (HTTPValidationError);
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostData = {
+    body: ClarificationCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostResponse = (ClarificationResponse);
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostError = (HTTPValidationError);
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostData = {
+    body: ClarificationRespondRequest;
+    path: {
+        attestation_id: string;
+        clarification_id: string;
+    };
+};
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostResponse = (ClarificationResponse);
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
+
+export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostResponse = (AttestationRequestResponse);
+
+export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostError = (HTTPValidationError);
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
+    body: AttestationEvidenceUploadCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
+
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostData = {
+    body: AttestationReportSubmitRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostResponse = (AttestationRequestResponse);
+
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostError = (HTTPValidationError);
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostResponse = (AttestationRequestResponse);
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostError = (HTTPValidationError);
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostData = {
+    body: AttestationDisputeCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostResponse = (AttestationDisputeResponse);
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostError = (HTTPValidationError);
+
+export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostData = {
+    body: AdminAttestationDisputeResolveRequest;
+    path: {
+        dispute_id: string;
+    };
+};
+
+export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostResponse = (AttestationDisputeResponse);
+
+export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostError = (HTTPValidationError);
+
+export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostData = {
+    body: AdminAttestationAssignRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostResponse = (AttestationRequestResponse);
+
+export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostError = (HTTPValidationError);
+
+export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostData = {
+    body: AdminAttestationRefundRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostResponse = (AttestationRequestResponse);
+
+export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostError = (HTTPValidationError);
+
+export type ListAttestorAssignmentsV1AttestorAssignmentsGetResponse = (AttestorAssignmentsResponse);
+
+export type ListAttestorAssignmentsV1AttestorAssignmentsGetError = (HTTPValidationError);
+
+export type SubmitAttestorApplicationV1AttestorApplicationsPostData = {
+    body: AttestorApplicationCreateRequest;
+};
+
+export type SubmitAttestorApplicationV1AttestorApplicationsPostResponse = (AttestorApplicationResponse);
+
+export type SubmitAttestorApplicationV1AttestorApplicationsPostError = (HTTPValidationError);
+
+export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetResponse = (AttestorApplicationsResponse);
+
+export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = (HTTPValidationError);
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchData = {
+    body: AttestorApplicationUpdateRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchResponse = (AttestorApplicationResponse);
+
+export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchError = (HTTPValidationError);
+
+export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostData = {
+    body: CoiDeclarationRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostResponse = (AttestorApplicationResponse);
+
+export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostError = (HTTPValidationError);
+
+export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostData = {
+    body: ConfidentialityAgreementRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostResponse = (AttestorApplicationResponse);
+
+export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostError = (HTTPValidationError);
+
+export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostData = {
+    body: AttestorPayoutAttachRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostResponse = (AttestorApplicationResponse);
+
+export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostError = (HTTPValidationError);
+
+export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostData = {
+    body: AttestorTaxDocumentRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostError = (HTTPValidationError);
+
+export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchResponse = (AttestorApplicationResponse);
+
+export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchError = (HTTPValidationError);
+
+export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetData = {
+    query?: {
+        status?: ('submitted' | 'identity_verified' | 'professional_verified' | 'expert_verified' | 'active' | 'rejected' | 'withdrawn' | 'held' | null);
+    };
+};
+
+export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetResponse = (AttestorApplicationsResponse);
+
+export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetError = (HTTPValidationError);
+
+export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostData = {
+    body: AttestorApplicationRejectRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostResponse = (AttestorApplicationResponse);
+
+export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
+
+export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostData = {
+    body: AttestorKycVerifyRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostResponse = (AttestorApplicationResponse);
+
+export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostError = (HTTPValidationError);
+
+export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostData = {
+    body: AttestorCredentialCheckRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostResponse = (AttestorApplicationResponse);
+
+export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostError = (HTTPValidationError);
+
+export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostData = {
+    body: AttestorTrialAssignRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostResponse = (AttestorTrialResponse);
+
+export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostError = (HTTPValidationError);
+
+export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostData = {
+    body: AttestorTrialDecideRequest;
+    path: {
+        application_id: string;
+        trial_id: string;
+    };
+};
+
+export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostResponse = (AttestorApplicationResponse);
+
+export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostError = (HTTPValidationError);
+
+export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostData = {
+    body: AttestorActivateRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostResponse = (AttestorApplicationResponse);
+
+export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostError = (HTTPValidationError);
+
 export type CreateCredentialV1CredentialsPostData = {
     body: CredentialCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateCredentialV1CredentialsPostResponse = (CredentialResponse);
 
 export type CreateCredentialV1CredentialsPostError = (HTTPValidationError);
-
-export type ListCredentialsV1CredentialsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
 
@@ -4181,12 +4245,6 @@ export type UpdateCredentialV1CredentialsCredentialIdPatchData = {
     body: CredentialUpdateRequest;
     path: {
         credential_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4198,12 +4256,6 @@ export type DeleteCredentialV1CredentialsCredentialIdDeleteData = {
     path: {
         credential_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeleteCredentialV1CredentialsCredentialIdDeleteResponse = (void);
@@ -4213,12 +4265,6 @@ export type DeleteCredentialV1CredentialsCredentialIdDeleteError = (HTTPValidati
 export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
     path: {
         credential_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4232,10 +4278,6 @@ export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData =
     };
     query: {
         key: string;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4248,17 +4290,69 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
     path: {
         credential_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostData = {
+    path: {
+        artifact_id: string;
+        attestation_id: string;
+    };
+};
+
+export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostResponse = (AttestationArtifactAccessResponse);
+
+export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostError = (HTTPValidationError);
+
+export type GetAttestationPackageV1AttestationsAttestationIdPackageGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationPackageV1AttestationsAttestationIdPackageGetResponse = (AttestationPackageResponse);
+
+export type GetAttestationPackageV1AttestationsAttestationIdPackageGetError = (HTTPValidationError);
+
+export type RateAttestationV1AttestationsAttestationIdRatingPostData = {
+    body: AttestationRatingCreate;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type RateAttestationV1AttestationsAttestationIdRatingPostResponse = (AttestationRatingResponse);
+
+export type RateAttestationV1AttestationsAttestationIdRatingPostError = (HTTPValidationError);
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (InvoiceGenerationResponse);
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (unknown | HTTPValidationError);
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (InvoiceGenerationResponse);
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (unknown | HTTPValidationError);
+
+export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetData = {
+    path: {
+        year: number;
+    };
+};
 
 export type GoogleStartV1AuthGoogleStartGetData = {
     query?: {
@@ -4339,54 +4433,21 @@ export type LogoutV1AuthLogoutPostResponse = (RegisterResponse);
 
 export type LogoutV1AuthLogoutPostError = unknown;
 
-export type MeV1AuthMeGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type MeV1AuthMeGetResponse = (CurrentUserResponse);
 
 export type MeV1AuthMeGetError = (HTTPValidationError);
 
 export type AddRoleV1AuthRolesPostData = {
     body: AddRoleRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AddRoleV1AuthRolesPostResponse = (RoleAssignmentResponse);
 
 export type AddRoleV1AuthRolesPostError = (HTTPValidationError);
 
-export type TotpStatusV1Auth2FaStatusGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
 
 export type TotpStatusV1Auth2FaStatusGetError = (HTTPValidationError);
-
-export type SetupTotpV1Auth2FaSetupPostData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
 
@@ -4394,12 +4455,6 @@ export type SetupTotpV1Auth2FaSetupPostError = (HTTPValidationError);
 
 export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostData = {
     body: TotpCodeRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostResponse = (TotpBackupCodesResponse);
@@ -4408,12 +4463,6 @@ export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostError = (HTTP
 
 export type VerifyTotpV1Auth2FaVerifyPostData = {
     body: TotpCodeRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type VerifyTotpV1Auth2FaVerifyPostResponse = (TotpStatusResponse);
@@ -4422,12 +4471,6 @@ export type VerifyTotpV1Auth2FaVerifyPostError = (HTTPValidationError);
 
 export type DisableTotpV1Auth2FaDisablePostData = {
     body: TotpCodeRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DisableTotpV1Auth2FaDisablePostResponse = (TotpStatusResponse);
@@ -4444,26 +4487,11 @@ export type VerifyTotpLoginV1Auth2FaVerifyLoginPostError = (HTTPValidationError)
 
 export type CreateCollectionV1CollectionsPostData = {
     body: CollectionCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateCollectionV1CollectionsPostResponse = (CollectionResponse);
 
 export type CreateCollectionV1CollectionsPostError = (HTTPValidationError);
-
-export type ListMyCollectionsV1CollectionsMineGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListMyCollectionsV1CollectionsMineGetResponse = (CollectionListResponse);
 
@@ -4472,12 +4500,6 @@ export type ListMyCollectionsV1CollectionsMineGetError = (HTTPValidationError);
 export type GetCollectionV1CollectionsCollectionIdGetData = {
     path: {
         collection_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4490,12 +4512,6 @@ export type UpdateCollectionV1CollectionsCollectionIdPatchData = {
     path: {
         collection_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateCollectionV1CollectionsCollectionIdPatchResponse = (CollectionResponse);
@@ -4506,12 +4522,6 @@ export type AddCollectionMemberV1CollectionsCollectionIdMembersPostData = {
     body: CollectionMemberRequest;
     path: {
         collection_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4524,12 +4534,6 @@ export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDel
         collection_id: string;
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDeleteResponse = (CollectionResponse);
@@ -4539,12 +4543,6 @@ export type RemoveCollectionMemberV1CollectionsCollectionIdMembersFrameworkIdDel
 export type PublishCollectionV1CollectionsCollectionIdPublishPostData = {
     path: {
         collection_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4556,12 +4554,6 @@ export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostData = {
     path: {
         collection_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostResponse = (CollectionResponse);
@@ -4570,26 +4562,11 @@ export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostError = (HT
 
 export type SubmitDeveloperApplicationV1DeveloperApplicationsPostData = {
     body: DeveloperApplicationCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SubmitDeveloperApplicationV1DeveloperApplicationsPostResponse = (DeveloperApplicationResponse);
 
 export type SubmitDeveloperApplicationV1DeveloperApplicationsPostError = (HTTPValidationError);
-
-export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetResponse = (DeveloperApplicationsResponse);
 
@@ -4598,12 +4575,6 @@ export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetError = (HT
 export type WithdrawDeveloperApplicationV1DeveloperApplicationsApplicationIdWithdrawPatchData = {
     path: {
         application_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4614,10 +4585,6 @@ export type WithdrawDeveloperApplicationV1DeveloperApplicationsApplicationIdWith
 export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetData = {
     query?: {
         status?: ('pending' | 'approved' | 'rejected' | 'withdrawn' | null);
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4630,12 +4597,6 @@ export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdR
     path: {
         application_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostResponse = (DeveloperApplicationResponse);
@@ -4644,39 +4605,15 @@ export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdR
 
 export type CreateApiKeyV1DeveloperApiKeysPostData = {
     body: ApiKeyCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateApiKeyV1DeveloperApiKeysPostResponse = (ApiKeyCreateResponse);
 
 export type CreateApiKeyV1DeveloperApiKeysPostError = (HTTPValidationError);
 
-export type ListApiKeysV1DeveloperApiKeysGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type ListApiKeysV1DeveloperApiKeysGetResponse = (ApiKeysResponse);
 
 export type ListApiKeysV1DeveloperApiKeysGetError = (HTTPValidationError);
-
-export type GetDeveloperTierProgressV1DeveloperTierGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetDeveloperTierProgressV1DeveloperTierGetResponse = (DeveloperTierProgressResponse);
 
@@ -4684,26 +4621,11 @@ export type GetDeveloperTierProgressV1DeveloperTierGetError = (HTTPValidationErr
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostData = {
     body: PartnerPayoutRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostResponse = (PartnerPayoutResponse);
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostError = (HTTPValidationError);
-
-export type ListPartnerPayoutsV1DeveloperPayoutsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListPartnerPayoutsV1DeveloperPayoutsGetResponse = (PartnerPayoutsResponse);
 
@@ -4712,10 +4634,6 @@ export type ListPartnerPayoutsV1DeveloperPayoutsGetError = (HTTPValidationError)
 export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetData = {
     query?: {
         days?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4726,10 +4644,6 @@ export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetError = (HTTPV
 export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetData = {
     query?: {
         days?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4739,26 +4653,11 @@ export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetError = (HTTPV
 
 export type CreatePartnerWebhookV1DeveloperWebhooksPostData = {
     body: PartnerWebhookCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreatePartnerWebhookV1DeveloperWebhooksPostResponse = (PartnerWebhookCreateResponse);
 
 export type CreatePartnerWebhookV1DeveloperWebhooksPostError = (HTTPValidationError);
-
-export type ListPartnerWebhooksV1DeveloperWebhooksGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListPartnerWebhooksV1DeveloperWebhooksGetResponse = (PartnerWebhooksResponse);
 
@@ -4767,12 +4666,6 @@ export type ListPartnerWebhooksV1DeveloperWebhooksGetError = (HTTPValidationErro
 export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteData = {
     path: {
         webhook_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4783,12 +4676,6 @@ export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteError = (HTTPV
 export type RetryPartnerWebhookDeliveryV1DeveloperWebhooksDeliveriesDeliveryIdRetryPostData = {
     path: {
         delivery_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4801,12 +4688,6 @@ export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchData = {
     path: {
         api_key_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchResponse = (ApiKeyResponse);
@@ -4816,12 +4697,6 @@ export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchError = (HTTPValidationEr
 export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteData = {
     path: {
         api_key_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4936,26 +4811,11 @@ export type GetRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGetError = 
 
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostData = {
     body: PaymentMethodSetupRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostResponse = (PaymentMethodSetupResponse);
 
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostError = (HTTPValidationError);
-
-export type ListPaymentMethodsV1FinancialsPaymentMethodsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListPaymentMethodsV1FinancialsPaymentMethodsGetResponse = (PaymentMethodsResponse);
 
@@ -4965,10 +4825,6 @@ export type ListFrameworkPurchasesV1FinancialsPurchasesGetData = {
     query?: {
         page?: number;
         page_size?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -4981,12 +4837,6 @@ export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteDa
     path: {
         payment_method_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteResponse = (PaymentMethodDeleteResponse);
@@ -4997,12 +4847,6 @@ export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostData = {
     body: PurchaseRequest;
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5015,12 +4859,6 @@ export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchaseP
     path: {
         collection_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostResponse = (PurchaseResponse);
@@ -5030,12 +4868,6 @@ export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchaseP
 export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostData = {
     path: {
         transaction_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5049,7 +4881,7 @@ export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoice
     };
     query?: {
         /**
-         * Access token via query parameter for links
+         * Access token via query parameter for download links
          */
         token?: (string | null);
     };
@@ -5059,41 +4891,17 @@ export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoice
 
 export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoiceGetError = (HTTPValidationError);
 
-export type GetContributorEarningsV1FinancialsEarningsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type GetContributorEarningsV1FinancialsEarningsGetResponse = (EarningsResponse);
 
 export type GetContributorEarningsV1FinancialsEarningsGetError = (HTTPValidationError);
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostData = {
     body: PayoutAccountOnboardRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostResponse = (PayoutAccountOnboardResponse);
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HTTPValidationError);
-
-export type ListPayoutAccountsV1FinancialsPayoutAccountsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListPayoutAccountsV1FinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
 
@@ -5101,26 +4909,11 @@ export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = (HTTPValidati
 
 export type RequestPayoutV1FinancialsPayoutsPostData = {
     body: PayoutRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestPayoutV1FinancialsPayoutsPostResponse = (PayoutResponse);
 
 export type RequestPayoutV1FinancialsPayoutsPostError = (HTTPValidationError);
-
-export type ListPayoutsV1FinancialsPayoutsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListPayoutsV1FinancialsPayoutsGetResponse = (PayoutsResponse);
 
@@ -5131,12 +4924,6 @@ export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteDa
     path: {
         payout_account_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteResponse = (PayoutAccountDeleteResponse);
@@ -5145,26 +4932,11 @@ export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteEr
 
 export type CreateFrameworkV1FrameworksPostData = {
     body: FrameworkCreate;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateFrameworkV1FrameworksPostResponse = (FrameworkResponse);
 
 export type CreateFrameworkV1FrameworksPostError = (HTTPValidationError);
-
-export type ListFrameworksV1FrameworksGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListFrameworksV1FrameworksGetResponse = (Array<FrameworkListItem>);
 
@@ -5174,12 +4946,6 @@ export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostData = {
     body: FrameworkReviewCreate;
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5202,12 +4968,6 @@ export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchResponse = (FrameworkReviewResponse);
@@ -5218,28 +4978,26 @@ export type GetFrameworkV1FrameworksFrameworkIdGetData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GetFrameworkV1FrameworksFrameworkIdGetResponse = (FrameworkResponse);
 
 export type GetFrameworkV1FrameworksFrameworkIdGetError = (HTTPValidationError);
 
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetResponse = (Array<AttestationBadgeDetail>);
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetError = (HTTPValidationError);
+
 export type UpdateFrameworkV1FrameworksFrameworkIdPatchData = {
     body: FrameworkUpdate;
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5251,12 +5009,6 @@ export type DeleteFrameworkV1FrameworksFrameworkIdDeleteData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeleteFrameworkV1FrameworksFrameworkIdDeleteResponse = (void);
@@ -5267,12 +5019,6 @@ export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
@@ -5282,12 +5028,6 @@ export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostError = (HTTPV
 export type RelistFrameworkV1FrameworksFrameworkIdRelistPostData = {
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5300,12 +5040,6 @@ export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostResponse = (FrameworkResponse);
@@ -5316,12 +5050,6 @@ export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostData = {
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
@@ -5331,12 +5059,6 @@ export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostError = (HTTPValidat
 export type AcknowledgeSoftFailV1FrameworksFrameworkIdAcknowledgeSoftFailPostData = {
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5349,12 +5071,6 @@ export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAc
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
@@ -5364,12 +5080,6 @@ export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAc
 export type PublishFrameworkV1FrameworksFrameworkIdPublishPostData = {
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5382,12 +5092,6 @@ export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPos
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
@@ -5397,12 +5101,6 @@ export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPos
 export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetData = {
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5415,12 +5113,6 @@ export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData
     path: {
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
@@ -5431,12 +5123,6 @@ export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchData = 
     body: PreviewArtifactRequest;
     path: {
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5449,12 +5135,6 @@ export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteData =
         artifact_id: string;
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
@@ -5465,12 +5145,6 @@ export type ResolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePii
     path: {
         artifact_id: string;
         framework_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5483,12 +5157,6 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
         artifact_id: string;
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
@@ -5497,52 +5165,19 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
 
 export type AcceptCurrentConsentV1GdprConsentPostData = {
     body: ConsentAcceptRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AcceptCurrentConsentV1GdprConsentPostResponse = (ConsentHistoryResponse);
 
 export type AcceptCurrentConsentV1GdprConsentPostError = (HTTPValidationError);
 
-export type ListConsentHistoryV1GdprConsentGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
 
 export type ListConsentHistoryV1GdprConsentGetError = (HTTPValidationError);
 
-export type RequestDataExportV1GdprExportsPostData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type RequestDataExportV1GdprExportsPostResponse = (DataExportRequestResponse);
 
 export type RequestDataExportV1GdprExportsPostError = (HTTPValidationError);
-
-export type GetLatestDataExportStatusV1GdprExportsLatestGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetLatestDataExportStatusV1GdprExportsLatestGetResponse = (DataExportRequestResponse);
 
@@ -5551,12 +5186,6 @@ export type GetLatestDataExportStatusV1GdprExportsLatestGetError = (HTTPValidati
 export type GetDataExportStatusV1GdprExportsExportRequestIdGetData = {
     path: {
         export_request_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5570,7 +5199,7 @@ export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
     };
     query?: {
         /**
-         * Access token via query parameter for links
+         * Access token via query parameter for download links
          */
         token?: (string | null);
     };
@@ -5578,39 +5207,15 @@ export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
 
 export type RequestAccountDeletionV1GdprAccountDeletionPostData = {
     body: AccountDeletionRequestBody;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestAccountDeletionV1GdprAccountDeletionPostResponse = (AccountDeletionStatusResponse);
 
 export type RequestAccountDeletionV1GdprAccountDeletionPostError = (AccountDeletionStatusResponse | HTTPValidationError);
 
-export type GetAccountDeletionStatusV1GdprAccountDeletionGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type GetAccountDeletionStatusV1GdprAccountDeletionGetResponse = (AccountDeletionStatusResponse);
 
 export type GetAccountDeletionStatusV1GdprAccountDeletionGetError = (HTTPValidationError);
-
-export type CancelAccountDeletionV1GdprAccountDeletionCancelPostData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type CancelAccountDeletionV1GdprAccountDeletionCancelPostResponse = (AccountDeletionStatusResponse);
 
@@ -5620,10 +5225,6 @@ export type ListLibraryV1LibraryGetData = {
     query?: {
         page?: number;
         page_size?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5636,12 +5237,6 @@ export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGe
         artifact_id: string;
         framework_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetResponse = (ArtifactDownloadResponse);
@@ -5652,10 +5247,6 @@ export type ListNotificationsV1NotificationsGetData = {
     query?: {
         page?: number;
         page_size?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
         unread_only?: boolean;
     };
 };
@@ -5663,15 +5254,6 @@ export type ListNotificationsV1NotificationsGetData = {
 export type ListNotificationsV1NotificationsGetResponse = (NotificationsResponse);
 
 export type ListNotificationsV1NotificationsGetError = (HTTPValidationError);
-
-export type MarkAllNotificationsReadV1NotificationsReadAllPostData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type MarkAllNotificationsReadV1NotificationsReadAllPostResponse = (MarkAllReadResponse);
 
@@ -5681,26 +5263,11 @@ export type MarkNotificationReadV1NotificationsNotificationIdReadPatchData = {
     path: {
         notification_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchResponse = (NotificationItem);
 
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchError = (HTTPValidationError);
-
-export type GetMyProfileV1ProfilesMeGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetMyProfileV1ProfilesMeGetResponse = (PublicProfileResponse);
 
@@ -5708,12 +5275,6 @@ export type GetMyProfileV1ProfilesMeGetError = (HTTPValidationError);
 
 export type UpdateMyProfileV1ProfilesMePatchData = {
     body: ProfileUpdateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateMyProfileV1ProfilesMePatchResponse = (PublicProfileResponse);
@@ -5722,12 +5283,6 @@ export type UpdateMyProfileV1ProfilesMePatchError = (HTTPValidationError);
 
 export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostData = {
     body: AvatarUploadUrlRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostResponse = (AvatarUploadUrlResponse);
@@ -5736,12 +5291,6 @@ export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostError = (HTTPVa
 
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostData = {
     body: AvatarConfirmRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostResponse = (PublicProfileResponse);
@@ -5750,12 +5299,6 @@ export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostError = (HTTPValidat
 
 export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostData = {
     body: BannerUploadUrlRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostResponse = (BannerUploadUrlResponse);
@@ -5764,12 +5307,6 @@ export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostError = (HTTPVa
 
 export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostData = {
     body: BannerConfirmRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostResponse = (PublicProfileResponse);
@@ -5788,12 +5325,6 @@ export type GetPublicProfileV1ProfilesUserIdGetError = (HTTPValidationError);
 
 export type CreateProjectV1ProjectsPostData = {
     body: ProjectCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateProjectV1ProjectsPostResponse = (ProjectResponse);
@@ -5806,10 +5337,6 @@ export type ListProjectsV1ProjectsGetData = {
         page_size?: number;
         role: 'contributor' | 'operator';
         scope?: 'open' | 'assigned';
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5820,12 +5347,6 @@ export type ListProjectsV1ProjectsGetError = (HTTPValidationError);
 export type GetProjectV1ProjectsProjectIdGetData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5838,12 +5359,6 @@ export type UpdateProjectV1ProjectsProjectIdPatchData = {
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateProjectV1ProjectsProjectIdPatchResponse = (ProjectResponse);
@@ -5855,12 +5370,6 @@ export type SubmitProposalV1ProjectsProjectIdProposalsPostData = {
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SubmitProposalV1ProjectsProjectIdProposalsPostResponse = (ProposalResponse);
@@ -5871,12 +5380,6 @@ export type ListProjectProposalsV1ProjectsProjectIdProposalsGetData = {
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ListProjectProposalsV1ProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
@@ -5886,12 +5389,6 @@ export type ListProjectProposalsV1ProjectsProjectIdProposalsGetError = (HTTPVali
 export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5904,12 +5401,6 @@ export type CreateMilestoneV1ProjectsProjectIdMilestonesPostData = {
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateMilestoneV1ProjectsProjectIdMilestonesPostResponse = (MilestoneResponse);
@@ -5919,12 +5410,6 @@ export type CreateMilestoneV1ProjectsProjectIdMilestonesPostError = (HTTPValidat
 export type ListMilestonesV1ProjectsProjectIdMilestonesGetData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5936,12 +5421,6 @@ export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostData =
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostResponse = (ProjectResponse);
@@ -5951,12 +5430,6 @@ export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostError 
 export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5968,12 +5441,6 @@ export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData = 
     path: {
         milestone_id: string;
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -5987,12 +5454,6 @@ export type UpdateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatchData = {
         milestone_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatchResponse = (MilestoneResponse);
@@ -6003,12 +5464,6 @@ export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteData = 
     path: {
         milestone_id: string;
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6022,12 +5477,6 @@ export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverable
         milestone_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesPostResponse = (DeliverableResponse);
@@ -6038,12 +5487,6 @@ export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverables
     path: {
         milestone_id: string;
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6057,12 +5500,6 @@ export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeli
         milestone_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetResponse = (DeliverableDownloadResponse);
@@ -6074,12 +5511,6 @@ export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverabl
         deliverable_id: string;
         milestone_id: string;
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6094,12 +5525,6 @@ export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDe
         milestone_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostResponse = (DeliverableResponse);
@@ -6112,12 +5537,6 @@ export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMiles
         milestone_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetResponse = (FrameworkPrefillResponse);
@@ -6129,12 +5548,6 @@ export type CreateDisputeV1ProjectsProjectIdDisputesPostData = {
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateDisputeV1ProjectsProjectIdDisputesPostResponse = (DisputeResponse);
@@ -6144,12 +5557,6 @@ export type CreateDisputeV1ProjectsProjectIdDisputesPostError = (HTTPValidationE
 export type ListDisputesV1ProjectsProjectIdDisputesGetData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6162,12 +5569,6 @@ export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetData = {
         dispute_id: string;
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetResponse = (DisputeResponse);
@@ -6177,12 +5578,6 @@ export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetError = (HTTPValida
 export type CloseDeliveredProjectV1ProjectsProjectIdClosePostData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6196,12 +5591,6 @@ export type ProposeAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsPost
         project_id: string;
         proposal_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type ProposeAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsPostResponse = (AmendmentResponse);
@@ -6213,12 +5602,6 @@ export type AcceptAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsAmend
         amendment_id: string;
         project_id: string;
         proposal_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6232,12 +5615,6 @@ export type RejectAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsAmend
         project_id: string;
         proposal_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RejectAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsAmendmentIdRejectPostResponse = (AmendmentResponse);
@@ -6250,12 +5627,6 @@ export type WithdrawAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsAme
         project_id: string;
         proposal_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type WithdrawAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsAmendmentIdWithdrawPatchResponse = (AmendmentResponse);
@@ -6266,12 +5637,6 @@ export type WithdrawProposalV1ProjectsProjectIdProposalsProposalIdWithdrawPatchD
     path: {
         project_id: string;
         proposal_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6284,12 +5649,6 @@ export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostData =
         project_id: string;
         proposal_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
@@ -6299,12 +5658,6 @@ export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostError 
 export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostData = {
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6430,12 +5783,6 @@ export type GetOperatorReputationV1ReputationOperatorOperatorIdGetData = {
     path: {
         operator_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GetOperatorReputationV1ReputationOperatorOperatorIdGetResponse = (ReputationResponse);
@@ -6444,26 +5791,11 @@ export type GetOperatorReputationV1ReputationOperatorOperatorIdGetError = (HTTPV
 
 export type CreateSavedSearchV1SavedSearchesPostData = {
     body: SavedSearchCreateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateSavedSearchV1SavedSearchesPostResponse = (SavedSearchResponse);
 
 export type CreateSavedSearchV1SavedSearchesPostError = (HTTPValidationError);
-
-export type ListSavedSearchesV1SavedSearchesGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type ListSavedSearchesV1SavedSearchesGetResponse = (SavedSearchListResponse);
 
@@ -6476,10 +5808,6 @@ export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetData = {
     query?: {
         page?: number;
         page_size?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6492,12 +5820,6 @@ export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchData = {
     path: {
         saved_search_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchResponse = (SavedSearchResponse);
@@ -6508,78 +5830,27 @@ export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteData = {
     path: {
         saved_search_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteResponse = (void);
 
 export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPValidationError);
 
-export type StartIdentityVerificationV1SettingsKycSessionPostData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
 
 export type StartIdentityVerificationV1SettingsKycSessionPostError = (HTTPValidationError);
-
-export type GetKycStatusV1SettingsKycGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
 export type GetKycStatusV1SettingsKycGetError = (HTTPValidationError);
 
-export type ListSessionsV1SettingsSessionsGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type ListSessionsV1SettingsSessionsGetResponse = (SessionsResponse);
 
 export type ListSessionsV1SettingsSessionsGetError = (HTTPValidationError);
 
-export type RevokeOtherSessionsV1SettingsSessionsDeleteData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
-
 export type RevokeOtherSessionsV1SettingsSessionsDeleteResponse = (RegisterResponse);
 
 export type RevokeOtherSessionsV1SettingsSessionsDeleteError = (HTTPValidationError);
-
-export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetData = {
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
-};
 
 export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetResponse = (NotificationPreferencesResponse);
 
@@ -6587,12 +5858,6 @@ export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError 
 
 export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchData = {
     body: NotificationPreferencesUpdateRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchResponse = (NotificationPreferencesResponse);
@@ -6603,12 +5868,6 @@ export type RevokeSessionV1SettingsSessionsSessionIdDeleteData = {
     path: {
         session_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RevokeSessionV1SettingsSessionsSessionIdDeleteResponse = (RegisterResponse);
@@ -6617,12 +5876,6 @@ export type RevokeSessionV1SettingsSessionsSessionIdDeleteError = (HTTPValidatio
 
 export type RequestEmailChangeV1SettingsAccountEmailChangePostData = {
     body: EmailChangeRequest;
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type RequestEmailChangeV1SettingsAccountEmailChangePostResponse = (RegisterResponse);
@@ -6670,12 +5923,6 @@ export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostDa
     path: {
         project_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
-    };
 };
 
 export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostResponse = (WorkspaceUploadSessionResponse);
@@ -6686,12 +5933,6 @@ export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostData = {
     body: WorkspaceMessageCreateRequest;
     path: {
         project_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
@@ -6706,10 +5947,6 @@ export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetData = {
     query?: {
         before?: (string | null);
         limit?: number;
-        /**
-         * Access token via query parameter for links
-         */
-        token?: (string | null);
     };
 };
 
