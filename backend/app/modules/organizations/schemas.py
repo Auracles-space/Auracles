@@ -69,3 +69,34 @@ class MyOrganizationsResponse(BaseModel):
     """List wrapper for the authenticated user's organizations."""
 
     organizations: list[MyOrganizationResponse]
+
+
+class OrganizationUpdateRequest(BaseModel):
+    """Partial update of org profile fields (admin+)."""
+
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    website: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    logo_key: str | None = Field(default=None, max_length=512)
+
+    @field_validator("name", "website", "description", "logo_key")
+    @classmethod
+    def strip_optional_value(cls, value: str | None) -> str | None:
+        """Trim optional fields while preserving null values."""
+        return value.strip() if value is not None else None
+
+
+class PublicOrganizationResponse(BaseModel):
+    """Public org profile: no member identities, no PII."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    slug: str
+    name: str
+    logo_key: str | None
+    country: str
+    website: str | None
+    description: str | None
+    active_capabilities: list[str]
+    member_count: int
+    created_at: datetime

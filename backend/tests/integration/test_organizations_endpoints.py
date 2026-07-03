@@ -19,7 +19,7 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgMember,
 )
-from app.shared.models.audit_log import AuditLog
+from tests.support.db_cleanup import clear_identity_state_async
 
 
 @pytest.fixture
@@ -37,8 +37,7 @@ async def clean_orgs() -> None:
         await session.execute(delete(OrgCapability))
         await session.execute(delete(OrgMember))
         await session.execute(delete(Organization))
-        await session.execute(delete(AuditLog))
-        await session.execute(delete(User))
+        await clear_identity_state_async(session)
         await session.commit()
 
 
@@ -61,6 +60,17 @@ async def create_user(prefix: str) -> UUID:
 def auth(token: str) -> dict[str, str]:
     """Build an Authorization header."""
     return {"Authorization": f"Bearer {token}"}
+
+
+async def create_org(client: AsyncClient, token: str, prefix: str) -> dict[str, object]:
+    """Create an org via the API; return the response body."""
+    response = await client.post(
+        "/v1/orgs",
+        json={"slug": f"{prefix}-{uuid4().hex[:6]}", "name": prefix, "country": "GB"},
+        headers=auth(token),
+    )
+    assert response.status_code == 201
+    return dict(response.json())
 
 
 async def test_create_org_seeds_owner_membership(
@@ -154,3 +164,101 @@ async def test_list_my_orgs_returns_role_and_capabilities(
     assert len(orgs) == 1
     assert orgs[0]["role"] == "owner"
     assert orgs[0]["capabilities"] == {"attestor": "pending"}
+
+
+async def test_public_org_profile_exposes_no_members(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """GET /v1/orgs/{slug} is public and returns no member PII."""
+    del migrated_database, clean_orgs
+    user_id = await create_user("org-public")
+    token = create_access_token(user_id, [])
+    org = await create_org(client, token, "pub")
+
+    response = await client.get(f"/v1/orgs/{org['slug']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["member_count"] == 1
+    assert body["active_capabilities"] == []
+    assert "members" not in body and "email" not in str(body)
+
+
+async def test_update_org_requires_admin(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """PATCH /v1/orgs/{org_id} is admin+; a plain member gets 403."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-upd-owner")
+    member_id = await create_user("org-upd-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "upd")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgMember(org_id=UUID(str(org["id"])), user_id=member_id, role="member")
+            )
+
+    member_token = create_access_token(member_id, [])
+    denied = await client.patch(
+        f"/v1/orgs/{org['id']}",
+        json={"name": "New"},
+        headers=auth(member_token),
+    )
+    allowed = await client.patch(
+        f"/v1/orgs/{org['id']}",
+        json={"name": "New"},
+        headers=auth(owner_token),
+    )
+
+    assert denied.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.json()["name"] == "New"
+
+
+async def test_deactivate_blocked_while_capability_active(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """DELETE /v1/orgs/{org_id} returns 409 while any capability is active."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-deact")
+    token = create_access_token(owner_id, [])
+    org = await create_org(client, token, "deact")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgCapability(
+                    org_id=UUID(str(org["id"])),
+                    capability="attestor",
+                    status="active",
+                )
+            )
+
+    blocked = await client.delete(f"/v1/orgs/{org['id']}", headers=auth(token))
+
+    assert blocked.status_code == 409
+
+
+async def test_deactivate_owner_only(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """DELETE /v1/orgs/{org_id} requires the owner role; admin gets 403."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-deact-owner")
+    admin_id = await create_user("org-deact-admin")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "downer")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgMember(org_id=UUID(str(org["id"])), user_id=admin_id, role="admin")
+            )
+
+    denied = await client.delete(
+        f"/v1/orgs/{org['id']}",
+        headers=auth(create_access_token(admin_id, [])),
+    )
+    allowed = await client.delete(f"/v1/orgs/{org['id']}", headers=auth(owner_token))
+
+    assert denied.status_code == 403
+    assert allowed.status_code == 204

@@ -7,22 +7,29 @@ derived attestor-role sync. RBAC lives in dependencies.py, never here.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.auth.models import User
+from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,
     OrgMember,
 )
-from app.modules.organizations.schemas import OrganizationCreateRequest
+from app.modules.organizations.schemas import (
+    OrganizationCreateRequest,
+    OrganizationResponse,
+    OrganizationUpdateRequest,
+    PublicOrganizationResponse,
+)
 
 
 async def create_organization(
@@ -133,3 +140,151 @@ async def list_my_organizations(
         (organization, role, capabilities_by_org.get(organization.id, []))
         for organization, role in memberships
     ]
+
+
+async def get_public_org(
+    db: AsyncSession,
+    *,
+    slug: str,
+) -> PublicOrganizationResponse:
+    """Return the public profile for an active organization by slug.
+
+    Args:
+        db: Async database session.
+        slug: Public organization slug from the request path.
+
+    Returns:
+        The public-safe organization profile.
+
+    Raises:
+        HTTPException(404): If the organization is unknown, deactivated, or suspended.
+    """
+    organization = await db.scalar(
+        select(Organization).where(
+            func.lower(Organization.slug) == slug.lower(),
+            Organization.deactivated_at.is_(None),
+            Organization.suspended_at.is_(None),
+        )
+    )
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        )
+
+    member_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(OrgMember)
+            .where(OrgMember.org_id == organization.id)
+        )
+    ) or 0
+    active_capabilities = list(
+        (
+            await db.scalars(
+                select(OrgCapability.capability).where(
+                    OrgCapability.org_id == organization.id,
+                    OrgCapability.status == "active",
+                )
+            )
+        ).all()
+    )
+
+    return PublicOrganizationResponse(
+        slug=organization.slug,
+        name=organization.name,
+        logo_key=organization.logo_key,
+        country=organization.country,
+        website=organization.website,
+        description=organization.description,
+        active_capabilities=sorted(active_capabilities),
+        member_count=member_count,
+        created_at=organization.created_at,
+    )
+
+
+async def update_organization(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    payload: OrganizationUpdateRequest,
+) -> OrganizationResponse:
+    """Apply a partial organization profile update.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+        payload: Partial update fields for the organization.
+
+    Returns:
+        The updated organization response.
+    """
+    org_id = context.org.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        organization = await db.scalar(
+            select(Organization).where(Organization.id == org_id)
+        )
+        assert organization is not None
+        for field in ("name", "website", "description", "logo_key"):
+            value = getattr(payload, field)
+            if value is not None:
+                setattr(organization, field, value)
+
+    await db.refresh(organization)
+    return OrganizationResponse.model_validate(organization)
+
+
+async def deactivate_organization(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+) -> None:
+    """Soft-delete an organization once all active capabilities are wound down.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC dependency.
+
+    Raises:
+        HTTPException(409): If any capability remains active.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        active_capabilities = await db.scalar(
+            select(func.count())
+            .select_from(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.status == "active",
+            )
+        )
+        if active_capabilities:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Wind down active capabilities before deactivating the "
+                    "organization."
+                ),
+            )
+
+        organization = await db.scalar(
+            select(Organization)
+            .where(Organization.id == org_id)
+            .with_for_update()
+        )
+        assert organization is not None
+        organization.deactivated_at = datetime.now(UTC)
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_deactivated",
+            target_type="organization",
+            target_id=organization.id,
+        )
