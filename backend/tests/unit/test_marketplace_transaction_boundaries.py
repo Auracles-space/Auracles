@@ -15,8 +15,22 @@ from app.modules.frameworks import service as framework_service
 from app.modules.library import service as library_service
 
 
+import ast
+
 def _source(function: Callable[..., object]) -> str:
     """Return normalized source for a service function under review."""
+    module = inspect.getmodule(function)
+    if not module or not module.__file__:
+        return inspect.getsource(function)
+    with open(module.__file__, "r") as f:
+        source_code = f.read()
+    
+    parsed = ast.parse(source_code)
+    for node in ast.walk(parsed):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == function.__name__:
+            return ast.get_source_segment(source_code, node) or inspect.getsource(function)
+        if isinstance(node, ast.FunctionDef) and node.name == function.__name__:
+            return ast.get_source_segment(source_code, node) or inspect.getsource(function)
     return inspect.getsource(function)
 
 
