@@ -82,7 +82,8 @@ async def offer_next_cohort(
         .scalars()
         .all()
     )
-    excluded_ids.update(already_offered_ids)
+    # attestor_id is nullable since the org re-point; org offers carry NULL.
+    excluded_ids.update(oid for oid in already_offered_ids if oid is not None)
     cohort_size = await _platform_int_config(
         db,
         key="attestation_cohort_size",

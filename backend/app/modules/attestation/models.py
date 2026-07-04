@@ -469,6 +469,11 @@ class Attestation(UpdatedAtMixin, Base):
         Index("idx_attestations_target", "target_type", "target_id"),
         Index("idx_attestations_attestor_status", "attestor_id", "status"),
         Index(
+            "idx_attestations_attestor_org_status",
+            "attestor_org_id",
+            "status",
+        ),
+        Index(
             "idx_attestations_status_dispute_window",
             "status",
             "dispute_window_ends_at",
@@ -491,6 +496,17 @@ class Attestation(UpdatedAtMixin, Base):
     attestor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
+        nullable=True,
+    )
+    attestor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    # Internal-only: never exposed in public/requestor response schemas.
+    reviewing_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id"),
         nullable=True,
     )
     status: Mapped[str] = mapped_column(
@@ -595,6 +611,11 @@ class AttestationOffer(Base):
             "attestor_id",
             name="uq_attestation_offers_attestation_attestor",
         ),
+        UniqueConstraint(
+            "attestation_id",
+            "org_id",
+            name="uq_attestation_offers_attestation_org",
+        ),
         Index("idx_attestation_offers_status_expires_at", "status", "expires_at"),
     )
 
@@ -608,10 +629,17 @@ class AttestationOffer(Base):
         ForeignKey("attestations.id", ondelete="CASCADE"),
         nullable=False,
     )
-    attestor_id: Mapped[UUID] = mapped_column(
+    # Legacy individual-attestor key; NULL for org offers, dropped in the
+    # final retirement migration.
+    attestor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
     )
     cohort_index: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -1122,10 +1150,28 @@ class AttestorTrial(CreatedAtMixin, Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    application_id: Mapped[UUID] = mapped_column(
+    # Legacy individual-application key; NULL for org trials, dropped in the
+    # final retirement migration.
+    application_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("attestor_applications.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+    )
+    org_application_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_attestor_applications.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    # The nominated member who performs the trial review.
+    member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
     )
     seeded_framework_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

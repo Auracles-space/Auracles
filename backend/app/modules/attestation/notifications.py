@@ -146,6 +146,9 @@ def notify_consent_declined(attestation: Attestation) -> None:
 def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> None:
     """Notify each Attestor in a newly offered cohort."""
     for offer in offers:
+        if offer.attestor_id is None:
+            # Org offers notify org owner/admins instead (Task 6 re-point).
+            continue
         _dispatch(
             user_id=offer.attestor_id,
             notification_type="attestation_offer_received",
@@ -188,6 +191,9 @@ def notify_offer_declined(attestation: Attestation, attestor_id: UUID) -> None:
 
 def notify_offer_expired(attestation: Attestation, offer: AttestationOffer) -> None:
     """Notify an Attestor when their pending offer expires."""
+    if offer.attestor_id is None:
+        # Org offers notify org owner/admins instead (Task 6 re-point).
+        return
     _dispatch(
         user_id=offer.attestor_id,
         notification_type="attestation_offer_expired",

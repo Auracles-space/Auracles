@@ -85,8 +85,13 @@ class Transaction(UpdatedAtMixin, Base):
             "net_amount >= 0",
             name="ck_transactions_net_amount_nonnegative",
         ),
+        CheckConstraint(
+            "payee_id IS NULL OR payee_org_id IS NULL",
+            name="ck_transactions_single_payee",
+        ),
         Index("idx_transactions_payer", "payer_id"),
         Index("idx_transactions_payee", "payee_id"),
+        Index("idx_transactions_payee_org", "payee_org_id"),
         Index("idx_transactions_status", "status"),
         Index("idx_transactions_ref", "ref_type", "ref_id"),
         Index("idx_transactions_provider_ref", "provider", "provider_ref"),
@@ -105,6 +110,12 @@ class Transaction(UpdatedAtMixin, Base):
     payee_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
+        nullable=True,
+    )
+    # Org beneficiary for org-attested work; mutually exclusive with payee_id.
+    payee_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
         nullable=True,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -205,8 +216,13 @@ class PayoutAccount(CreatedAtMixin, Base):
             "provider_account_lookup_hash",
             name="uq_payout_accounts_provider_account_lookup",
         ),
+        CheckConstraint(
+            "(user_id IS NULL) != (org_id IS NULL)",
+            name="ck_payout_accounts_owner_xor",
+        ),
         Index("idx_payout_accounts_user", "user_id"),
         Index("idx_payout_accounts_user_default", "user_id", "is_default"),
+        Index("idx_payout_accounts_org", "org_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -214,10 +230,16 @@ class PayoutAccount(CreatedAtMixin, Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    user_id: Mapped[UUID] = mapped_column(
+    user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+    )
+    # Exactly one of user_id / org_id owns the account (XOR CHECK).
+    org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
     )
     provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
     provider_account_id: Mapped[str] = mapped_column(Text, nullable=False)
