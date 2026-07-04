@@ -62,6 +62,11 @@ const settingsLinks: SettingsLink[] = [
     getSummary: () => "Review your history of legal term agreements.",
   },
   {
+    href: "/settings/integrations",
+    label: "Connected Accounts",
+    getSummary: () => "Manage third-party integrations like Google Drive.",
+  },
+  {
     href: "/settings/kyc",
     label: "Identity Verification",
     getSummary: () => "Verify your identity to unlock payouts and publishing.",

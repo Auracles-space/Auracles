@@ -17,6 +17,7 @@ from app.modules.auth.models import (
     User,
     UserRole,
 )
+from app.modules.integrations.models import OAuthConnection
 from app.modules.notifications.models import (
     Notification,
     NotificationDeliveryMarker,
@@ -33,6 +34,7 @@ async def clear_identity_state_async(session: AsyncSession) -> None:
     await session.execute(delete(OrgCapability))
     await session.execute(delete(OrgMember))
     await session.execute(delete(Organization))
+    await session.execute(delete(OAuthConnection))
     await session.execute(delete(IdentityVerification))
     await session.execute(delete(KycDocument))
     await session.execute(delete(UserRole))
@@ -47,6 +49,7 @@ def clear_identity_state_sync(session: Session) -> None:
     session.execute(delete(OrgCapability))
     session.execute(delete(OrgMember))
     session.execute(delete(Organization))
+    session.execute(delete(OAuthConnection))
     session.execute(delete(IdentityVerification))
     session.execute(delete(KycDocument))
     session.execute(delete(UserRole))

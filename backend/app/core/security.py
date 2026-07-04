@@ -120,6 +120,22 @@ def _partner_webhook_cipher() -> Fernet:
     return Fernet(key)
 
 
+def _connector_token_cipher() -> Fernet:
+    """Build the Fernet cipher for connector OAuth tokens at rest."""
+    key = get_settings().connector_token_encryption_key.get_secret_value()
+    return Fernet(key.encode("utf-8"))
+
+
+def encrypt_connector_token(token: str) -> str:
+    """Encrypt a connector OAuth token for storage."""
+    return _connector_token_cipher().encrypt(token.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_connector_token(encrypted: str) -> str:
+    """Decrypt a stored connector OAuth token."""
+    return _connector_token_cipher().decrypt(encrypted.encode("utf-8")).decode("utf-8")
+
+
 def encrypt_totp_secret(secret: str) -> str:
     """Encrypt a TOTP shared secret before database persistence."""
     return _totp_cipher().encrypt(secret.encode("utf-8")).decode("utf-8")

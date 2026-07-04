@@ -19,9 +19,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEV_TOTP_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
 DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
+DEV_CONNECTOR_TOKEN_ENCRYPTION_KEY = "ZGV2LWNvbm5lY3Rvci10b2tlbi0zMi1ieXRlcyEhISE="
 PLACEHOLDER_TOTP_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 PLACEHOLDER_PARTNER_WEBHOOK_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
+PLACEHOLDER_CONNECTOR_TOKEN_ENCRYPTION_KEY = "replace-with-fernet-generate-key-output"
 DEV_SECRET_KEY = "dev-only-change-me"
 PLACEHOLDER_SECRET_KEY = "replace-with-openssl-rand-hex-32"
 PLACEHOLDER_PROVIDER_SECRET = "replace-in-local-env"
@@ -108,6 +110,10 @@ class Settings(BaseSettings):
         default=SecretStr(DEV_PARTNER_WEBHOOK_ENCRYPTION_KEY),
         alias="PARTNER_WEBHOOK_ENCRYPTION_KEY",
     )
+    connector_token_encryption_key: SecretStr = Field(
+        default=SecretStr(DEV_CONNECTOR_TOKEN_ENCRYPTION_KEY),
+        alias="CONNECTOR_TOKEN_ENCRYPTION_KEY",
+    )
     cors_allowed_origins: str = Field(
         default="http://localhost:3000",
         alias="CORS_ALLOWED_ORIGINS",
@@ -179,6 +185,9 @@ class Settings(BaseSettings):
         default=None, alias="GOOGLE_CLIENT_SECRET"
     )
     google_redirect_uri: str | None = Field(default=None, alias="GOOGLE_REDIRECT_URI")
+    google_drive_redirect_uri: str | None = Field(
+        default=None, alias="GOOGLE_DRIVE_REDIRECT_URI"
+    )
     brave_search_api_key: SecretStr | None = Field(
         default=None, alias="BRAVE_SEARCH_API_KEY"
     )
@@ -245,6 +254,27 @@ class Settings(BaseSettings):
             PLACEHOLDER_PAYOUT_ACCOUNT_ENCRYPTION_KEY,
         }:
             raise ValueError("PAYOUT_ACCOUNT_ENCRYPTION_KEY must be set outside local.")
+        return self
+
+    @model_validator(mode="after")
+    def production_connector_token_key_is_not_placeholder(self) -> Self:
+        """Reject the dev connector-token encryption key outside local environments."""
+        raw_key = self.connector_token_encryption_key.get_secret_value()
+        if (
+            self.environment == "local"
+            and raw_key == PLACEHOLDER_CONNECTOR_TOKEN_ENCRYPTION_KEY
+        ):
+            self.connector_token_encryption_key = SecretStr(
+                DEV_CONNECTOR_TOKEN_ENCRYPTION_KEY
+            )
+            return self
+        if self.environment != "local" and raw_key in {
+            DEV_CONNECTOR_TOKEN_ENCRYPTION_KEY,
+            PLACEHOLDER_CONNECTOR_TOKEN_ENCRYPTION_KEY,
+        }:
+            raise ValueError(
+                "CONNECTOR_TOKEN_ENCRYPTION_KEY must be set outside local."
+            )
         return self
 
     @model_validator(mode="after")

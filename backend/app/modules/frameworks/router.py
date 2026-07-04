@@ -25,6 +25,7 @@ from app.modules.frameworks import service
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
+    ArtifactFromConnectorRequest,
     ArtifactResponse,
     ArtifactUploadUrlRequest,
     ArtifactUploadUrlResponse,
@@ -397,6 +398,33 @@ async def list_artifacts(
         db=db,
         contributor=contributor,
         framework_id=framework_id,
+    )
+
+
+@router.post(
+    "/{framework_id}/artifacts/from-connector",
+    response_model=ArtifactResponse,
+    summary="Import an Artifact from a connected source",
+    description=(
+        "Copy a file from the contributor's connected provider into "
+        "private storage as a new draft Artifact and run the standard "
+        "processing pipeline on it."
+    ),
+)
+async def import_artifact_from_connector(
+    framework_id: UUID,
+    payload: ArtifactFromConnectorRequest,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Import a connected-source file as a new draft Artifact."""
+    return await service.import_artifact_from_connector(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        payload=payload,
     )
 
 

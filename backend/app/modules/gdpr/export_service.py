@@ -46,6 +46,7 @@ from app.modules.frameworks.models import Framework, License, Review
 from app.modules.gdpr.models import DataExportRequest
 from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
+from app.modules.integrations.service import export_user_connections
 from app.modules.organizations.service import export_user_org_memberships
 from app.modules.projects.models import (
     Deliverable,
@@ -942,6 +943,9 @@ async def build_data_export_bundle(
         "reputation": {},
         "security_audit": await _collect_security_audit(db, user_id),
         "organization_memberships": await export_user_org_memberships(
+            db, user_id=user_id
+        ),
+        "connected_integrations": await export_user_connections(
             db, user_id=user_id
         ),
     }

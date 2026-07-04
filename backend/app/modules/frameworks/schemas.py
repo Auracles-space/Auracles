@@ -225,6 +225,13 @@ class FrameworkVersionCreate(BaseModel):
     artifact_inheritance: dict[UUID, bool] = Field(default_factory=dict)
 
 
+class ArtifactFromConnectorRequest(BaseModel):
+    """Import a connected-source file as a new draft Artifact."""
+
+    connection_id: UUID
+    file_id: str = Field(min_length=1, max_length=256)
+
+
 class ArtifactResponse(BaseModel):
     """Contributor-facing Artifact processing status."""
 

@@ -12,6 +12,8 @@ import {
   confirmArtifactUpload,
   requestArtifactUploadUrl,
 } from "@/lib/generated/sdk.gen";
+import { Button } from "@/components/ui/button";
+import { GoogleDrivePicker } from "@/components/modules/artifacts/google-drive-picker";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
 import {
   configureBrowserClient,
@@ -62,6 +64,7 @@ export function ArtifactUploader({
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
 
   async function handleFile(file: File | null) {
     if (!file) {
@@ -229,6 +232,27 @@ export function ArtifactUploader({
           type="file"
         />
       </label>
+      <div className="mt-4 flex flex-col gap-2">
+        <Button
+          variant="secondary"
+          onClick={() => setShowDrivePicker(!showDrivePicker)}
+          className="w-full sm:w-auto self-start"
+        >
+          {showDrivePicker ? "Cancel Import" : "Import from Google Drive"}
+        </Button>
+        {showDrivePicker && (
+          <div className="mt-2">
+            <GoogleDrivePicker
+              frameworkId={frameworkId}
+              onArtifactCreated={(artifact) => {
+                setShowDrivePicker(false);
+                setMessage("Artifact imported from Google Drive. Processing has started.");
+                onUploaded(artifact);
+              }}
+            />
+          </div>
+        )}
+      </div>
       {message ? <p className="mt-3 text-sm text-foreground-muted">{message}</p> : null}
     </section>
   );

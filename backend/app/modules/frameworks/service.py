@@ -30,6 +30,7 @@ from app.modules.frameworks.models_artifact import (
 from app.modules.frameworks.pipeline_gate import evaluate_framework_pipeline
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
+    ArtifactFromConnectorRequest,
     ArtifactResponse,
     ArtifactUploadUrlRequest,
     ArtifactUploadUrlResponse,
@@ -972,6 +973,183 @@ async def submit_framework(
         framework_id=framework.id,
     ).info("framework_submitted")
     return framework_to_response(framework)
+
+
+async def import_artifact_from_connector(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    payload: ArtifactFromConnectorRequest,
+) -> ArtifactResponse:
+    """Import a connected-source file as a new draft Artifact.
+
+    Copies the bytes from the contributor's connected provider into our
+    private S3 bucket and dispatches the standard artifact pipeline — an
+    imported artifact is indistinguishable from an uploaded one except
+    for audit metadata. Google-native documents are exported to their
+    Office equivalents before import.
+
+    Args:
+        db: Async database session.
+        contributor: The requesting contributor (must own the framework).
+        framework_id: Framework receiving the artifact.
+        payload: The connection and provider file to import.
+
+    Returns:
+        The created Artifact's processing status.
+
+    Raises:
+        HTTPException(404): Framework or connection not found/foreign.
+        HTTPException(409): Connection needs re-authorization.
+        HTTPException(413): Import would exceed the size budget.
+        HTTPException(415): Unsupported effective MIME type.
+        HTTPException(502): Provider failure.
+    """
+    # Local import: integrations depends on this module for the MIME
+    # allow-list, so the forward import stays function-scoped here too.
+    from app.integrations.google_drive import (
+        EXPORT_MIME_MAP,
+        DriveFileTooLargeError,
+        GoogleDriveAuthError,
+        GoogleDriveError,
+        download_drive_file,
+        get_drive_file_metadata,
+    )
+    from app.modules.integrations.service import (
+        get_active_connection_with_fresh_token,
+    )
+
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_editable_artifacts(framework)
+    if framework.status == "pipeline_passed":
+        framework.status = "draft"
+        framework.pipeline_failure_reasons = {}
+
+    connection, access_token = await get_active_connection_with_fresh_token(
+        db, user_id=contributor.id, connection_id=payload.connection_id
+    )
+
+    log = logger.bind(
+        module="frameworks",
+        action="import_artifact_from_connector",
+        user_id=str(contributor.id),
+        framework_id=str(framework.id),
+    )
+    try:
+        metadata = await get_drive_file_metadata(
+            access_token=access_token, file_id=payload.file_id
+        )
+    except GoogleDriveAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "reauth_required",
+                "message": "The connection is no longer authorized. Reconnect it.",
+            },
+        ) from None
+    except GoogleDriveError as exc:
+        log.error("connector_metadata_failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The file provider is unavailable.",
+        ) from exc
+
+    source_mime = str(metadata.get("mimeType", ""))
+    source_name = str(metadata.get("name", "")).strip() or "import"
+    export_mapping = EXPORT_MIME_MAP.get(source_mime)
+    if export_mapping is not None:
+        effective_mime, extension = export_mapping
+        export_mime: str | None = effective_mime
+        filename = f"{source_name}.{extension}"
+    else:
+        effective_mime = source_mime
+        export_mime = None
+        filename = source_name
+    if effective_mime not in ALLOWED_ARTIFACT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported artifact MIME type.",
+        )
+
+    existing_size = await db.scalar(
+        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(
+            Artifact.framework_id == framework.id
+        )
+    )
+    remaining = ARTIFACT_MAX_TOTAL_SIZE - int(existing_size or 0)
+    metadata_size = metadata.get("size")
+    if metadata_size is not None and int(metadata_size) > remaining:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        )
+
+    try:
+        body = await download_drive_file(
+            access_token=access_token,
+            file_id=payload.file_id,
+            export_mime=export_mime,
+            max_bytes=remaining,
+        )
+    except DriveFileTooLargeError:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        ) from None
+    except GoogleDriveAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "reauth_required",
+                "message": "The connection is no longer authorized. Reconnect it.",
+            },
+        ) from None
+    except GoogleDriveError as exc:
+        log.error("connector_download_failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The file provider is unavailable.",
+        ) from exc
+
+    artifact_id = uuid4()
+    file_key = (
+        f"frameworks/{framework.id}/artifacts/{artifact_id}."
+        f"{_extension_for_filename(filename)}"
+    )
+    artifact = Artifact(
+        id=artifact_id,
+        framework_id=framework.id,
+        name=filename,
+        file_key=file_key,
+        file_size=len(body),
+        mime_type=effective_mime,
+        processing_status="processing",
+    )
+    db.add(artifact)
+    settings = get_settings()
+    s3.storage.upload_bytes(
+        bucket=settings.s3_artifacts_bucket,
+        key=file_key,
+        body=body,
+        mime_type=effective_mime,
+    )
+    await write_audit(
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_uploaded",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={
+            "framework_id": str(framework.id),
+            "source": "google_drive",
+            "connection_id": str(connection.id),
+            "external_file_id": payload.file_id,
+        },
+    )
+    await db.commit()
+    scan_artifact.delay(str(artifact.id))
+    log.bind(artifact_id=str(artifact.id)).info("artifact_import_completed")
+    return _artifact_to_response(artifact)
 
 
 async def request_artifact_upload_url(

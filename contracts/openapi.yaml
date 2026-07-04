@@ -11,8 +11,6 @@ paths:
       summary: List Platform Config
       description: List platform financial configuration for admin review.
       operationId: list_platform_config_v1_admin_config_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -20,12 +18,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminConfigResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
     patch:
       tags:
       - Admin
@@ -33,14 +27,12 @@ paths:
       description: Update editable platform configuration. Super-admin only, with
         2FA.
       operationId: update_platform_config_v1_admin_config_patch
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminConfigPatchRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -54,6 +46,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/analytics/dashboard:
     get:
       tags:
@@ -62,8 +56,6 @@ paths:
       description: Return current-state admin analytics aggregates plus frozen daily
         trend rows from snapshot history.
       operationId: get_admin_analytics_dashboard_v1_admin_analytics_dashboard_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -71,12 +63,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminAnalyticsDashboardResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/analytics/export:
     get:
       tags:
@@ -553,8 +541,6 @@ paths:
       description: List Frameworks suspended from the marketplace for reinstatement
         review.
       operationId: list_suspended_frameworks_v1_admin_frameworks_suspended_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -562,12 +548,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminSuspendedFrameworksResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/frameworks/{framework_id}/suspend:
     post:
       tags:
@@ -677,14 +659,12 @@ paths:
       summary: Grant License
       description: Grant a Framework license to an Operator during Phase 2.
       operationId: grant_license_v1_admin_licenses_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminLicenseGrantRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -698,6 +678,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/escrows/{escrow_id}/release:
     post:
       tags:
@@ -777,14 +759,12 @@ paths:
       summary: Recompute Reputation Subject
       description: Queue an audited, 2FA-gated recompute for one reputation subject.
       operationId: recompute_reputation_subject_v1_admin_reputation_recompute_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminReputationRecomputeRequest'
+        required: true
       responses:
         '202':
           description: Successful Response
@@ -798,6 +778,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/admin/projects/disputes:
     get:
       tags:
@@ -1060,35 +1042,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors/{user_id}:
-    get:
-      tags:
-      - Attestation
-      summary: Get public Attestor directory profile
-      description: Return one active Attestor's public directory profile, including
-        safe verified credentials and completed-attestation count.
-      operationId: get_public_attestor_directory_profile_v1_attestors__user_id__get
-      parameters:
-      - name: user_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: User Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorDirectoryEntry'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestors/{user_id}/completed:
     get:
       tags:
@@ -1113,7 +1066,37 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AttestorCompletedAttestation'
-                title: Response List Attestor Completed Attestations V1 Attestors  User Id  Completed Get
+                title: Response List Attestor Completed Attestations V1 Attestors  User
+                  Id  Completed Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestors/{user_id}:
+    get:
+      tags:
+      - Attestation
+      summary: Get public Attestor directory profile
+      description: Return one active Attestor's public directory profile, including
+        safe verified credentials and completed-attestation count.
+      operationId: get_public_attestor_directory_profile_v1_attestors__user_id__get
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestorDirectoryEntry'
         '422':
           description: Validation Error
           content:
@@ -1807,8 +1790,6 @@ paths:
       summary: List Attestor Assignments
       description: List offered and accepted Attestation assignments for an Attestor.
       operationId: list_attestor_assignments_v1_attestor_assignments_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -1816,12 +1797,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestorAssignmentsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/attestor/applications:
     post:
       tags:
@@ -1829,14 +1806,12 @@ paths:
       summary: Submit Attestor Application
       description: Submit an Attestor application as any authenticated user.
       operationId: submit_attestor_application_v1_attestor_applications_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AttestorApplicationCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -1850,6 +1825,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/attestor/applications/mine:
     get:
       tags:
@@ -1857,8 +1834,6 @@ paths:
       summary: List My Attestor Applications
       description: List the authenticated user's Attestor application history.
       operationId: list_my_attestor_applications_v1_attestor_applications_mine_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -1866,12 +1841,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestorApplicationsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/attestor/applications/{application_id}:
     patch:
       tags:
@@ -2354,20 +2325,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/credentials:
+    get:
+      tags:
+      - Attestation
+      summary: List Credentials
+      description: List Credentials owned by the authenticated user.
+      operationId: list_credentials_v1_credentials_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialsResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Attestation
       summary: Create Credential
       description: Create a user-owned professional Credential.
       operationId: create_credential_v1_credentials_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CredentialCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -2381,27 +2365,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Attestation
-      summary: List Credentials
-      description: List Credentials owned by the authenticated user.
-      operationId: list_credentials_v1_credentials_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/credentials/{credential_id}:
     patch:
       tags:
@@ -2690,20 +2655,11 @@ paths:
           format: uuid
           title: Attestation Id
       responses:
-        '302':
-          description: Private presigned tax-invoice download URL.
-        '202':
-          description: Invoice PDF generation queued.
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceGenerationResponse'
-        '403':
-          description: Caller is not allowed to fetch this attestation invoice.
-        '404':
-          description: Attestation or attestation fee transaction not found.
-        '409':
-          description: Invoice is only available for settled attestations.
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -2716,8 +2672,8 @@ paths:
       - Attestation
       summary: Fetch the attestor earnings statement for a settled attestation
       description: Return the attestor-facing earnings statement PDF for a settled
-        attestation. If the PDF has not been rendered yet, queue generation and
-        return 202.
+        attestation. If the PDF has not been rendered yet, queue generation and return
+        202.
       operationId: get_attestation_earnings_statement_v1_attestations__attestation_id__earnings_statement_get
       security:
       - HTTPBearer: []
@@ -2730,21 +2686,11 @@ paths:
           format: uuid
           title: Attestation Id
       responses:
-        '302':
-          description: Private presigned earnings-statement download URL.
-        '202':
-          description: Earnings-statement PDF generation queued.
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/InvoiceGenerationResponse'
-        '403':
-          description: Caller is not allowed to fetch this earnings statement.
-        '404':
-          description: Attestation, attestor, or attestation fee transaction not
-            found.
-        '409':
-          description: Earnings statements are only available for settled attestations.
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -2769,12 +2715,11 @@ paths:
           type: integer
           title: Year
       responses:
-        '302':
-          description: Private presigned annual-summary download URL.
-        '403':
-          description: Approved Attestor profile required.
-        '404':
-          description: No earnings summary exists for the requested year.
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -3053,8 +2998,6 @@ paths:
       summary: Me
       description: Return the authenticated user's public auth profile.
       operationId: me_v1_auth_me_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3062,12 +3005,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentUserResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/roles:
     post:
       tags:
@@ -3075,14 +3014,12 @@ paths:
       summary: Add Role
       description: Self-add a non-privileged role.
       operationId: add_role_v1_auth_roles_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AddRoleRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -3096,6 +3033,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/status:
     get:
       tags:
@@ -3103,8 +3042,6 @@ paths:
       summary: Totp Status
       description: Report 2FA enablement and remaining backup-code count.
       operationId: totp_status_v1_auth_2fa_status_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3112,12 +3049,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TotpStatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/setup:
     post:
       tags:
@@ -3125,8 +3058,6 @@ paths:
       summary: Setup Totp
       description: Start TOTP setup for the authenticated user.
       operationId: setup_totp_v1_auth_2fa_setup_post
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3134,12 +3065,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TotpSetupResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/backup-codes/regenerate:
     post:
       tags:
@@ -3147,14 +3074,12 @@ paths:
       summary: Regenerate Backup Codes
       description: Issue a fresh set of backup codes after verifying a current code.
       operationId: regenerate_backup_codes_v1_auth_2fa_backup_codes_regenerate_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -3168,6 +3093,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/verify:
     post:
       tags:
@@ -3175,14 +3102,12 @@ paths:
       summary: Verify Totp
       description: Enable TOTP after validating the current code.
       operationId: verify_totp_v1_auth_2fa_verify_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -3196,6 +3121,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/disable:
     post:
       tags:
@@ -3203,14 +3130,12 @@ paths:
       summary: Disable Totp
       description: Disable TOTP after validating a current code or backup code.
       operationId: disable_totp_v1_auth_2fa_disable_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TotpCodeRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -3224,6 +3149,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/auth/2fa/verify-login:
     post:
       tags:
@@ -3257,14 +3184,12 @@ paths:
       summary: Create Collection
       description: Create a draft Collection for the authenticated Contributor.
       operationId: create_collection_v1_collections_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CollectionCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -3278,6 +3203,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/collections/mine:
     get:
       tags:
@@ -3285,8 +3212,6 @@ paths:
       summary: List My Collections
       description: List Collections owned by the authenticated Contributor.
       operationId: list_my_collections_v1_collections_mine_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3294,12 +3219,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionListResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/collections/{collection_id}:
     get:
       tags:
@@ -3505,14 +3426,12 @@ paths:
       summary: Submit Developer Application
       description: Submit a Developer application as any authenticated user.
       operationId: submit_developer_application_v1_developer_applications_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DeveloperApplicationCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -3526,6 +3445,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/developer/applications/mine:
     get:
       tags:
@@ -3533,8 +3454,6 @@ paths:
       summary: List My Developer Applications
       description: List the authenticated user's Developer application history.
       operationId: list_my_developer_applications_v1_developer_applications_mine_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3542,12 +3461,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeveloperApplicationsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/developer/applications/{application_id}/withdraw:
     patch:
       tags:
@@ -3651,20 +3566,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/api-keys:
+    get:
+      tags:
+      - Developer
+      summary: List Api Keys
+      description: List API key metadata for the active Developer account.
+      operationId: list_api_keys_v1_developer_api_keys_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeysResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Developer
       summary: Create Api Key
       description: Create a scoped API key and return the raw key exactly once.
       operationId: create_api_key_v1_developer_api_keys_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ApiKeyCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -3678,27 +3606,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Developer
-      summary: List Api Keys
-      description: List API key metadata for the active Developer account.
-      operationId: list_api_keys_v1_developer_api_keys_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeysResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/tier:
     get:
       tags:
@@ -3706,8 +3615,6 @@ paths:
       summary: Get Developer Tier Progress
       description: Return Partner commission tier and next-tier progress.
       operationId: get_developer_tier_progress_v1_developer_tier_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -3715,27 +3622,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeveloperTierProgressResponse'
-        '422':
-          description: Validation Error
+      security:
+      - HTTPBearer: []
+  /v1/developer/payouts:
+    get:
+      tags:
+      - Developer
+      summary: List Partner Payouts
+      description: List Partner payout history for the active Developer account.
+      operationId: list_partner_payouts_v1_developer_payouts_get
+      responses:
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/developer/payouts:
+                $ref: '#/components/schemas/PartnerPayoutsResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Developer
       summary: Request Partner Payout
       description: Request withdrawal of cleared Partner commission balance.
       operationId: request_partner_payout_v1_developer_payouts_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PartnerPayoutRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -3749,27 +3665,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Developer
-      summary: List Partner Payouts
-      description: List Partner payout history for the active Developer account.
-      operationId: list_partner_payouts_v1_developer_payouts_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerPayoutsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/analytics/usage:
     get:
       tags:
@@ -3835,20 +3732,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/webhooks:
+    get:
+      tags:
+      - Developer
+      summary: List Partner Webhooks
+      description: List Partner outbound webhook metadata for the active Developer.
+      operationId: list_partner_webhooks_v1_developer_webhooks_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerWebhooksResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Developer
       summary: Create Partner Webhook
       description: Register a Partner outbound webhook and return its raw secret once.
       operationId: create_partner_webhook_v1_developer_webhooks_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PartnerWebhookCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -3862,27 +3772,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Developer
-      summary: List Partner Webhooks
-      description: List Partner outbound webhook metadata for the active Developer.
-      operationId: list_partner_webhooks_v1_developer_webhooks_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerWebhooksResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/developer/webhooks/{webhook_id}:
     delete:
       tags:
@@ -4562,20 +4453,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/payment-methods:
+    get:
+      tags:
+      - Financials
+      summary: List Payment Methods
+      description: List safe metadata for the Operator's provider-held payment methods.
+      operationId: list_payment_methods_v1_financials_payment_methods_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodsResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Financials
       summary: Create Payment Method Setup
       description: Start provider-hosted setup for an Operator payment method.
       operationId: create_payment_method_setup_v1_financials_payment_methods_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PaymentMethodSetupRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -4589,27 +4493,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Financials
-      summary: List Payment Methods
-      description: List safe metadata for the Operator's provider-held payment methods.
-      operationId: list_payment_methods_v1_financials_payment_methods_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentMethodsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/purchases:
     get:
       tags:
@@ -4833,8 +4718,6 @@ paths:
       summary: Get Contributor Earnings
       description: Return refund-safe earnings balances for the Contributor.
       operationId: get_contributor_earnings_v1_financials_earnings_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -4842,12 +4725,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EarningsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/financials/payout-accounts/onboard:
     post:
       tags:
@@ -4855,14 +4734,12 @@ paths:
       summary: Onboard Payout Account
       description: Create a Stripe Express payout account for a verified Contributor.
       operationId: onboard_payout_account_v1_financials_payout_accounts_onboard_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PayoutAccountOnboardRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -4876,6 +4753,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/financials/payout-accounts:
     get:
       tags:
@@ -4883,8 +4762,6 @@ paths:
       summary: List Payout Accounts
       description: List active payout accounts for the authenticated Contributor.
       operationId: list_payout_accounts_v1_financials_payout_accounts_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -4892,27 +4769,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PayoutAccountsResponse'
-        '422':
-          description: Validation Error
+      security:
+      - HTTPBearer: []
+  /v1/financials/payouts:
+    get:
+      tags:
+      - Financials
+      summary: List Payouts
+      description: List payout history for the authenticated Contributor.
+      operationId: list_payouts_v1_financials_payouts_get
+      responses:
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/financials/payouts:
+                $ref: '#/components/schemas/PayoutsResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Financials
       summary: Request Payout
       description: Request payout of available Contributor earnings after 2FA.
       operationId: request_payout_v1_financials_payouts_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PayoutRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -4926,27 +4812,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Financials
-      summary: List Payouts
-      description: List payout history for the authenticated Contributor.
-      operationId: list_payouts_v1_financials_payouts_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PayoutsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/financials/payout-accounts/{payout_account_id}:
     delete:
       tags:
@@ -4984,20 +4851,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks:
+    get:
+      tags:
+      - Frameworks
+      summary: List Frameworks
+      description: List Frameworks owned by the authenticated Contributor.
+      operationId: list_frameworks_v1_frameworks_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/FrameworkListItem'
+                type: array
+                title: Response List Frameworks V1 Frameworks Get
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Frameworks
       summary: Create Framework
       description: Create a draft Framework for the authenticated Contributor.
       operationId: create_framework_v1_frameworks_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/FrameworkCreate'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -5011,30 +4894,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Frameworks
-      summary: List Frameworks
-      description: List Frameworks owned by the authenticated Contributor.
-      operationId: list_frameworks_v1_frameworks_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/FrameworkListItem'
-                title: Response List Frameworks V1 Frameworks Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/reviews:
     post:
       tags:
@@ -5166,41 +5027,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/frameworks/{framework_id}/attestation-badges:
-    get:
-      tags:
-      - Frameworks
-      summary: List all attestation badges for a framework (owner or admin)
-      description: "Return the full attestation provenance for a framework.\n\nOnly\
-        \ the framework owner or an admin may read this surface. It includes\nrejected\
-        \ determinations hidden from the public framework page."
-      operationId: list_framework_attestation_badges_v1_frameworks__framework_id__attestation_badges_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: framework_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Framework Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AttestationBadgeDetail'
-                title: Response List Framework Attestation Badges V1 Frameworks  Framework Id  Attestation Badges Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
     patch:
       tags:
       - Frameworks
@@ -5255,6 +5081,45 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/attestation-badges:
+    get:
+      tags:
+      - Frameworks
+      summary: List all attestation badges for a framework (owner or admin)
+      description: 'Return the full attestation provenance for a framework.
+
+
+        Only the framework owner or an admin may read this surface. It includes
+
+        rejected determinations hidden from the public framework page.'
+      operationId: list_framework_attestation_badges_v1_frameworks__framework_id__attestation_badges_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttestationBadgeDetail'
+                title: Response List Framework Attestation Badges V1 Frameworks  Framework
+                  Id  Attestation Badges Get
         '422':
           description: Validation Error
           content:
@@ -5553,6 +5418,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/artifacts/from-connector:
+    post:
+      tags:
+      - Frameworks
+      summary: Import an Artifact from a connected source
+      description: Copy a file from the contributor's connected provider into private
+        storage as a new draft Artifact and run the standard processing pipeline on
+        it.
+      operationId: import_artifact_from_connector_v1_frameworks__framework_id__artifacts_from_connector_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactFromConnectorRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:
@@ -5733,41 +5636,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/consent:
-    post:
-      tags:
-      - GDPR
-      summary: Accept Current Consent
-      description: Record acceptance of the current legal document versions.
-      operationId: accept_current_consent_v1_gdpr_consent_post
-      security:
-      - HTTPBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConsentAcceptRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConsentHistoryResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
     get:
       tags:
       - GDPR
       summary: List Consent History
       description: Return the user's consent status and append-only history.
       operationId: list_consent_history_v1_gdpr_consent_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryResponse'
       security:
       - HTTPBearer: []
+    post:
+      tags:
+      - GDPR
+      summary: Accept Current Consent
+      description: Record acceptance of the current legal document versions.
+      operationId: accept_current_consent_v1_gdpr_consent_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentAcceptRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -5781,6 +5676,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/gdpr/exports:
     post:
       tags:
@@ -5788,8 +5685,6 @@ paths:
       summary: Request Data Export
       description: Request an async GDPR JSON data export for the current user.
       operationId: request_data_export_v1_gdpr_exports_post
-      security:
-      - HTTPBearer: []
       responses:
         '202':
           description: Successful Response
@@ -5797,12 +5692,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataExportRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/gdpr/exports/latest:
     get:
       tags:
@@ -5810,8 +5701,6 @@ paths:
       summary: Get Latest Data Export Status
       description: Return the current user's latest GDPR data export request status.
       operationId: get_latest_data_export_status_v1_gdpr_exports_latest_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -5819,12 +5708,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DataExportRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/gdpr/exports/{export_request_id}:
     get:
       tags:
@@ -5901,6 +5786,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/account-deletion:
+    get:
+      tags:
+      - GDPR
+      summary: Get account deletion status
+      description: Return the latest GDPR account-deletion request for the current
+        user.
+      operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - GDPR
@@ -5908,14 +5809,12 @@ paths:
       description: Schedule GDPR account deletion after password confirmation and
         the configured cooling-off period.
       operationId: request_account_deletion_v1_gdpr_account_deletion_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AccountDeletionRequestBody'
+        required: true
       responses:
         '202':
           description: Account deletion scheduled during cooling-off.
@@ -5935,28 +5834,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - GDPR
-      summary: Get account deletion status
-      description: Return the latest GDPR account-deletion request for the current
-        user.
-      operationId: get_account_deletion_status_v1_gdpr_account_deletion_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDeletionStatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/account-deletion/cancel:
     post:
       tags:
@@ -5965,8 +5844,6 @@ paths:
       description: Cancel the current user's scheduled GDPR account deletion during
         the cooling-off window.
       operationId: cancel_account_deletion_v1_gdpr_account_deletion_cancel_post
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -5976,6 +5853,184 @@ paths:
                 $ref: '#/components/schemas/AccountDeletionStatusResponse'
         '404':
           description: Account deletion request not found.
+      security:
+      - HTTPBearer: []
+  /v1/integrations/connectors:
+    get:
+      tags:
+      - Integrations
+      summary: List connector providers and connection status
+      description: Report every supported external file provider with the authenticated
+        user's connection status and account email.
+      operationId: list_connectors_v1_integrations_connectors_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorsResponse'
+      security:
+      - HTTPBearer: []
+  /v1/integrations/connectors/{provider}/connect:
+    post:
+      tags:
+      - Integrations
+      summary: Start connecting an external file provider
+      description: Begin the OAuth consent flow for a provider. Returns the authorization
+        URL to navigate to and seals the CSRF state and PKCE verifier in a signed,
+        HttpOnly cookie.
+      operationId: connect_provider_v1_integrations_connectors__provider__connect_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorConnectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/integrations/connectors/{provider}/callback:
+    get:
+      tags:
+      - Integrations
+      summary: Complete a provider consent round trip
+      description: Public browser-redirect target for the provider's consent screen.
+        Validates the signed state cookie, redeems the authorization code, stores
+        the encrypted tokens, and redirects back to settings.
+      operationId: provider_callback_v1_integrations_connectors__provider__callback_get
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+      - name: error
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      - name: auracles_connector_state
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auracles Connector State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/integrations/connectors/{provider}:
+    delete:
+      tags:
+      - Integrations
+      summary: Disconnect an external file provider
+      description: Best-effort token revocation at the provider, then mark the connection
+        revoked and discard the stored tokens. Idempotent.
+      operationId: disconnect_provider_v1_integrations_connectors__provider__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/integrations/connectors/{provider}/files:
+    get:
+      tags:
+      - Integrations
+      summary: Browse files in a connected provider
+      description: One page of the contributor's files from the connected provider,
+        newest first, with an importability flag per file.
+      operationId: list_connector_files_v1_integrations_connectors__provider__files_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 256
+          - type: 'null'
+          title: Query
+      - name: page_token
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Page Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorFilesResponse'
         '422':
           description: Validation Error
           content:
@@ -6113,8 +6168,6 @@ paths:
       summary: Mark All Notifications Read
       description: Mark every unread notification owned by the current user as read.
       operationId: mark_all_notifications_read_v1_notifications_read_all_post
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -6122,12 +6175,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MarkAllReadResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/notifications/{notification_id}/read:
     patch:
       tags:
@@ -6158,23 +6207,200 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/profiles/me:
-    get:
+  /v1/orgs:
+    post:
       tags:
-      - Profiles
-      summary: Get my own profile
-      description: Return the authenticated user's own profile. The owner always sees
-        their full content; the is_limited flag reflects moderation state.
-      operationId: get_my_profile_v1_profiles_me_get
+      - Organizations
+      summary: Create organization
+      description: Create a base organization; the creator becomes its owner.
+      operationId: create_organization_v1_orgs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /v1/orgs/mine:
+    get:
+      tags:
+      - Organizations
+      summary: List my organizations
+      description: Organizations the current user belongs to, with role and capability
+        statuses.
+      operationId: list_my_organizations_v1_orgs_mine_get
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PublicProfileResponse'
+                $ref: '#/components/schemas/MyOrganizationsResponse'
+      security:
+      - HTTPBearer: []
+  /v1/orgs/{slug}:
+    get:
+      tags:
+      - Organizations
+      summary: Public organization profile
+      description: Return the public organization profile with active capabilities
+        and member count, excluding member identities and private data.
+      operationId: get_public_org_v1_orgs__slug__get
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Slug
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}:
+    patch:
+      tags:
+      - Organizations
+      summary: Update an organization profile
+      description: Update editable organization profile fields as an org admin.
+      operationId: update_organization_v1_orgs__org_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Deactivate an organization
+      description: Soft-delete an organization once the owner has wound down all active
+        capabilities.
+      operationId: deactivate_organization_v1_orgs__org_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/members:
+    get:
+      tags:
+      - Organizations
+      summary: List organization members
+      description: List members of one organization. Member emails are visible only
+        to org admins and owners.
+      operationId: list_members_v1_orgs__org_id__members_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMembersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/members/{member_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Remove an organization member
+      description: Remove a member from the organization. Non-owner members may remove
+        themselves to leave the organization.
+      operationId: remove_member_v1_orgs__org_id__members__member_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -6183,19 +6409,592 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     patch:
       tags:
-      - Profiles
-      summary: Update my profile
-      description: 'Update the authenticated user''s editable profile fields (headline,
-        bio, location, website). Partial update: omitted fields are unchanged.'
-      operationId: update_my_profile_v1_profiles_me_patch
+      - Organizations
+      summary: Change an organization member role
+      description: Change a member between the member and admin roles. Ownership changes
+        use the dedicated transfer endpoint.
+      operationId: change_member_role_v1_orgs__org_id__members__member_id__patch
       security:
       - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
+              $ref: '#/components/schemas/OrgMemberRoleUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMemberResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/transfer-ownership:
+    post:
+      tags:
+      - Organizations
+      summary: Transfer organization ownership
+      description: Transfer ownership to another existing member after successful
+        two-factor verification.
+      operationId: transfer_ownership_v1_orgs__org_id__transfer_ownership_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgOwnershipTransferRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/invitations:
+    post:
+      tags:
+      - Organizations
+      summary: Invite an organization member
+      description: Create a pending organization invitation, rate-limited per organization
+        and delivered by email.
+      operationId: create_invitation_v1_orgs__org_id__invitations_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgInvitationCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: List pending organization invitations
+      description: List pending invitations for one organization.
+      operationId: list_invitations_v1_orgs__org_id__invitations_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/invitations/{invitation_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Revoke an organization invitation
+      description: Revoke one pending invitation for an organization.
+      operationId: revoke_invitation_v1_orgs__org_id__invitations__invitation_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams:
+    post:
+      tags:
+      - Organizations
+      summary: Create a team
+      description: Create a new team within the organization.
+      operationId: create_team_v1_orgs__org_id__teams_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgTeamCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: List teams
+      description: List all teams in the organization, including member counts.
+      operationId: list_teams_v1_orgs__org_id__teams_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}:
+    patch:
+      tags:
+      - Organizations
+      summary: Rename a team
+      description: Rename an existing team.
+      operationId: rename_team_v1_orgs__org_id__teams__team_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgTeamRenameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Delete a team
+      description: Delete a team and its membership associations.
+      operationId: delete_team_v1_orgs__org_id__teams__team_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}/members/{member_id}:
+    put:
+      tags:
+      - Organizations
+      summary: Add a member to a team
+      description: Add an existing organization member to a team (idempotent).
+      operationId: add_team_member_v1_orgs__org_id__teams__team_id__members__member_id__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Remove a member from a team
+      description: Remove an organization member from a team.
+      operationId: remove_team_member_v1_orgs__org_id__teams__team_id__members__member_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Member Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}:
+    get:
+      tags:
+      - Organization Invitations
+      summary: Preview an organization invitation
+      description: Return the organization name, slug, role, and expiry for a live
+        invitation. The caller must be authenticated but need not match the invited
+        email.
+      operationId: preview_invitation_v1_org_invitations__token__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvitationPreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}/accept:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Accept an organization invitation
+      description: Accept a pending invitation. The authenticated user's email must
+        match the invitation email. Creates a membership row and notifies the inviter.
+      operationId: accept_invitation_v1_org_invitations__token__accept_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/{token}/decline:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Decline an organization invitation
+      description: Decline a pending invitation without joining. The authenticated
+        user's email must match the invitation email.
+      operationId: decline_invitation_v1_org_invitations__token__decline_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs:
+    get:
+      tags:
+      - Admin Organizations
+      summary: List organizations (platform admin)
+      description: Paginated organization directory for platform administrators, with
+        member counts, capability statuses, and slug/name search.
+      operationId: admin_list_orgs_v1_admin_orgs_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Query
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/suspend:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Suspend an organization (platform admin)
+      description: Suspend an organization platform-wide. Idempotent; members lose
+        org access and derived roles are re-evaluated.
+      operationId: admin_suspend_org_v1_admin_orgs__org_id__suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/profiles/me:
+    get:
+      tags:
+      - Profiles
+      summary: Get my own profile
+      description: Return the authenticated user's own profile. The owner always sees
+        their full content; the is_limited flag reflects moderation state.
+      operationId: get_my_profile_v1_profiles_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileResponse'
+      security:
+      - HTTPBearer: []
+    patch:
+      tags:
+      - Profiles
+      summary: Update my profile
+      description: 'Update the authenticated user''s editable profile fields (headline,
+        bio, location, website). Partial update: omitted fields are unchanged.'
+      operationId: update_my_profile_v1_profiles_me_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
               $ref: '#/components/schemas/ProfileUpdateRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -6209,6 +7008,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/profiles/me/avatar/upload-url:
     post:
       tags:
@@ -6217,14 +7018,12 @@ paths:
       description: Return a presigned POST target for the authenticated user's avatar.
         Image type and size are validated before the target is issued.
       operationId: request_avatar_upload_url_v1_profiles_me_avatar_upload_url_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AvatarUploadUrlRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -6238,6 +7037,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/profiles/me/avatar/confirm:
     post:
       tags:
@@ -6246,14 +7047,12 @@ paths:
       description: Confirm a completed avatar upload and publish it on the profile.
         The object must exist and the key must belong to the caller.
       operationId: confirm_avatar_upload_v1_profiles_me_avatar_confirm_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AvatarConfirmRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -6267,6 +7066,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/profiles/me/banner/upload-url:
     post:
       tags:
@@ -6275,14 +7076,12 @@ paths:
       description: Return a presigned POST target for the authenticated user's profile
         banner. Image type and size are validated before the target is issued.
       operationId: request_banner_upload_url_v1_profiles_me_banner_upload_url_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/BannerUploadUrlRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -6296,6 +7095,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/profiles/me/banner/confirm:
     post:
       tags:
@@ -6304,14 +7105,12 @@ paths:
       description: Confirm a completed banner upload and publish it on the profile.
         The object must exist and the key must belong to the caller.
       operationId: confirm_banner_upload_v1_profiles_me_banner_confirm_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/BannerConfirmRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -6325,6 +7124,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/profiles/{user_id}:
     get:
       tags:
@@ -7979,20 +8780,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /v1/saved-searches:
+    get:
+      tags:
+      - Saved Searches
+      summary: List Saved Searches
+      description: List saved searches owned by the authenticated Operator.
+      operationId: list_saved_searches_v1_saved_searches_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedSearchListResponse'
+      security:
+      - HTTPBearer: []
     post:
       tags:
       - Saved Searches
       summary: Create Saved Search
       description: Create an Operator-owned saved Explore search.
       operationId: create_saved_search_v1_saved_searches_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SavedSearchCreateRequest'
+        required: true
       responses:
         '201':
           description: Successful Response
@@ -8006,27 +8820,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Saved Searches
-      summary: List Saved Searches
-      description: List saved searches owned by the authenticated Operator.
-      operationId: list_saved_searches_v1_saved_searches_get
       security:
       - HTTPBearer: []
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SavedSearchListResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/saved-searches/{saved_search_id}/run:
     get:
       tags:
@@ -8142,8 +8937,6 @@ paths:
       summary: Start Identity Verification
       description: Start a Persona identity-verification session for the current user.
       operationId: start_identity_verification_v1_settings_kyc_session_post
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -8151,12 +8944,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KycVerificationSessionResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/kyc:
     get:
       tags:
@@ -8164,8 +8953,6 @@ paths:
       summary: Get Kyc Status
       description: Return the authenticated user's KYC status.
       operationId: get_kyc_status_v1_settings_kyc_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -8173,12 +8960,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KycStatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/sessions:
     get:
       tags:
@@ -8186,8 +8969,6 @@ paths:
       summary: List Sessions
       description: Return active browser refresh-token sessions for the current user.
       operationId: list_sessions_v1_settings_sessions_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -8195,20 +8976,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
     delete:
       tags:
       - Settings
       summary: Revoke Other Sessions
       description: Revoke all browser refresh-token sessions except the current one.
       operationId: revoke_other_sessions_v1_settings_sessions_delete
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -8216,12 +8991,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/notification-preferences:
     get:
       tags:
@@ -8230,8 +9001,6 @@ paths:
       description: Return the authenticated user's effective notification preference
         matrix.
       operationId: get_notification_preferences_v1_settings_notification_preferences_get
-      security:
-      - HTTPBearer: []
       responses:
         '200':
           description: Successful Response
@@ -8239,26 +9008,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationPreferencesResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
     patch:
       tags:
       - Settings
       summary: Update Notification Preferences
       description: Persist owner-scoped notification preference updates.
       operationId: update_notification_preferences_v1_settings_notification_preferences_patch
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -8272,6 +9035,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/sessions/{session_id}:
     delete:
       tags:
@@ -8308,14 +9073,12 @@ paths:
       summary: Request Email Change
       description: Start a verified account email change.
       operationId: request_email_change_v1_settings_account_email_change_post
-      security:
-      - HTTPBearer: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EmailChangeRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -8329,6 +9092,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/account/email-change/confirm:
     post:
       tags:
@@ -8581,763 +9346,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-  /v1/orgs:
-    post:
-      tags:
-      - Organizations
-      summary: Create organization
-      description: Create a base organization; the creator becomes its owner.
-      operationId: create_organization_v1_orgs_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrganizationCreateRequest'
-        required: true
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrganizationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /v1/orgs/mine:
-    get:
-      tags:
-      - Organizations
-      summary: List my organizations
-      description: Organizations the current user belongs to, with role and capability
-        statuses.
-      operationId: list_my_organizations_v1_orgs_mine_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MyOrganizationsResponse'
-      security:
-      - HTTPBearer: []
-  /v1/orgs/{slug}:
-    get:
-      tags:
-      - Organizations
-      summary: Public organization profile
-      description: Return the public organization profile with active capabilities and
-        member count, excluding member identities and private data.
-      operationId: get_public_org_v1_orgs__slug__get
-      parameters:
-      - name: slug
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Slug
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublicOrganizationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}:
-    patch:
-      tags:
-      - Organizations
-      summary: Update an organization profile
-      description: Update editable organization profile fields as an org admin.
-      operationId: update_organization_v1_orgs__org_id__patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrganizationUpdateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrganizationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Organizations
-      summary: Deactivate an organization
-      description: Soft-delete an organization once the owner has wound down all active
-        capabilities.
-      operationId: deactivate_organization_v1_orgs__org_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/members:
-    get:
-      tags:
-      - Organizations
-      summary: List organization members
-      description: List members of one organization. Member emails are visible only
-        to org admins and owners.
-      operationId: list_members_v1_orgs__org_id__members_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgMembersResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/members/{member_id}:
-    delete:
-      tags:
-      - Organizations
-      summary: Remove an organization member
-      description: Remove a member from the organization. Non-owner members may remove
-        themselves to leave the organization.
-      operationId: remove_member_v1_orgs__org_id__members__member_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: member_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Member Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    patch:
-      tags:
-      - Organizations
-      summary: Change an organization member role
-      description: Change a member between the member and admin roles. Ownership changes
-        use the dedicated transfer endpoint.
-      operationId: change_member_role_v1_orgs__org_id__members__member_id__patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: member_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Member Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgMemberRoleUpdateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgMemberResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/transfer-ownership:
-    post:
-      tags:
-      - Organizations
-      summary: Transfer organization ownership
-      description: Transfer ownership to another existing member after successful two-factor
-        verification.
-      operationId: transfer_ownership_v1_orgs__org_id__transfer_ownership_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgOwnershipTransferRequest'
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/invitations:
-    post:
-      tags:
-      - Organizations
-      summary: Invite an organization member
-      description: Create a pending organization invitation, rate-limited per organization
-        and delivered by email.
-      operationId: create_invitation_v1_orgs__org_id__invitations_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgInvitationCreateRequest'
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgInvitationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Organizations
-      summary: List pending organization invitations
-      description: List pending invitations for one organization.
-      operationId: list_invitations_v1_orgs__org_id__invitations_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgInvitationsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/invitations/{invitation_id}:
-    delete:
-      tags:
-      - Organizations
-      summary: Revoke an organization invitation
-      description: Revoke one pending invitation for an organization.
-      operationId: revoke_invitation_v1_orgs__org_id__invitations__invitation_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: invitation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Invitation Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/teams:
-    post:
-      tags:
-      - Organizations
-      summary: Create a team
-      description: Create a new team within the organization.
-      operationId: create_team_v1_orgs__org_id__teams_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgTeamCreateRequest'
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgTeamResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Organizations
-      summary: List teams
-      description: List all teams in the organization, including member counts.
-      operationId: list_teams_v1_orgs__org_id__teams_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgTeamsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/teams/{team_id}:
-    patch:
-      tags:
-      - Organizations
-      summary: Rename a team
-      description: Rename an existing team.
-      operationId: rename_team_v1_orgs__org_id__teams__team_id__patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: team_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Team Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgTeamRenameRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgTeamResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Organizations
-      summary: Delete a team
-      description: Delete a team and its membership associations.
-      operationId: delete_team_v1_orgs__org_id__teams__team_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: team_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Team Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/orgs/{org_id}/teams/{team_id}/members/{member_id}:
-    put:
-      tags:
-      - Organizations
-      summary: Add a member to a team
-      description: Add an existing organization member to a team (idempotent).
-      operationId: add_team_member_v1_orgs__org_id__teams__team_id__members__member_id__put
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: team_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Team Id
-      - name: member_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Member Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Organizations
-      summary: Remove a member from a team
-      description: Remove an organization member from a team.
-      operationId: remove_team_member_v1_orgs__org_id__teams__team_id__members__member_id__delete
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      - name: team_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Team Id
-      - name: member_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Member Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/org-invitations/{token}:
-    get:
-      tags:
-      - Organization Invitations
-      summary: Preview an organization invitation
-      description: Return the organization name, slug, role, and expiry for a live invitation.
-        The caller must be authenticated but need not match the invited email.
-      operationId: preview_invitation_v1_org_invitations__token__get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: token
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Token
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgInvitationPreviewResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/org-invitations/{token}/accept:
-    post:
-      tags:
-      - Organization Invitations
-      summary: Accept an organization invitation
-      description: Accept a pending invitation. The authenticated user's email must
-        match the invitation email. Creates a membership row and notifies the inviter.
-      operationId: accept_invitation_v1_org_invitations__token__accept_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: token
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Token
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MyOrganizationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/org-invitations/{token}/decline:
-    post:
-      tags:
-      - Organization Invitations
-      summary: Decline an organization invitation
-      description: Decline a pending invitation without joining. The authenticated user's
-        email must match the invitation email.
-      operationId: decline_invitation_v1_org_invitations__token__decline_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: token
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Token
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/orgs:
-    get:
-      tags:
-      - Admin Organizations
-      summary: List organizations (platform admin)
-      description: Paginated organization directory for platform administrators,
-        with member counts, capability statuses, and slug/name search.
-      operationId: admin_list_orgs_v1_admin_orgs_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: query
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            maxLength: 120
-          - type: 'null'
-          title: Query
-      - name: page
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 1
-          default: 1
-          title: Page
-      - name: page_size
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 100
-          minimum: 1
-          default: 20
-          title: Page Size
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminOrgsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/orgs/{org_id}/suspend:
-    post:
-      tags:
-      - Admin Organizations
-      summary: Suspend an organization (platform admin)
-      description: Suspend an organization platform-wide. Idempotent; members lose
-        org access and derived roles are re-evaluated.
-      operationId: admin_suspend_org_v1_admin_orgs__org_id__suspend_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: org_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Org Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AccountDeletionBlockedReason:
@@ -9791,6 +9799,7 @@ components:
           - reputation_weights_framework
           - reputation_weights_contributor
           - reputation_weights_operator
+          - reputation_weights_attestor
           - reputation_min_activity_framework
           - reputation_min_activity_contributor
           - reputation_min_activity_operator
@@ -10514,6 +10523,80 @@ components:
       - page_size
       title: AdminModerationQueueResponse
       description: Paginated moderation queue response for admin review surfaces.
+    AdminOrgResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        country:
+          type: string
+          title: Country
+        member_count:
+          type: integer
+          title: Member Count
+        capabilities:
+          additionalProperties:
+            type: string
+          type: object
+          title: Capabilities
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
+        deactivated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Deactivated At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - country
+      - member_count
+      - capabilities
+      - created_at
+      title: AdminOrgResponse
+      description: Platform-admin view of an organization.
+    AdminOrgsResponse:
+      properties:
+        orgs:
+          items:
+            $ref: '#/components/schemas/AdminOrgResponse'
+          type: array
+          title: Orgs
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+      type: object
+      required:
+      - orgs
+      - total
+      - page
+      - page_size
+      title: AdminOrgsResponse
+      description: Paginated list of organizations for platform admins.
     AdminRarityBlockOverrideRequest:
       properties:
         reason:
@@ -10534,6 +10617,7 @@ components:
           - framework
           - contributor
           - operator
+          - attestor
           title: Subject Type
         subject_id:
           type: string
@@ -11209,6 +11293,23 @@ components:
       - expires_in
       title: ArtifactDownloadResponse
       description: Response containing a short-lived licensed Artifact download URL.
+    ArtifactFromConnectorRequest:
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          title: Connection Id
+        file_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: File Id
+      type: object
+      required:
+      - connection_id
+      - file_id
+      title: ArtifactFromConnectorRequest
+      description: Import a connected-source file as a new draft Artifact.
     ArtifactResponse:
       properties:
         id:
@@ -11397,6 +11498,58 @@ components:
       - expires_in
       title: AttestationArtifactAccessResponse
       description: Presigned access grant for an Attestation framework artifact.
+    AttestationBadgeDetail:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        review_type:
+          type: string
+          title: Review Type
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          - rejected
+          title: Outcome
+        attestor_id:
+          type: string
+          format: uuid
+          title: Attestor Id
+        attestor_display_name:
+          type: string
+          title: Attestor Display Name
+        credentials:
+          items:
+            $ref: '#/components/schemas/PublicCredentialResponse'
+          type: array
+          title: Credentials
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        framework_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Version
+        newer_version_exists:
+          type: boolean
+          title: Newer Version Exists
+      type: object
+      required:
+      - id
+      - review_type
+      - outcome
+      - attestor_id
+      - attestor_display_name
+      - issued_at
+      - framework_version
+      - newer_version_exists
+      title: AttestationBadgeDetail
+      description: Full version-locked attestation badge for the framework page.
     AttestationBrief:
       properties:
         what_it_does:
@@ -12402,6 +12555,43 @@ components:
       - assignments
       title: AttestorAssignmentsResponse
       description: List response for an Attestor's open offers and accepted work.
+    AttestorCompletedAttestation:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        framework_title:
+          type: string
+          title: Framework Title
+        review_type:
+          type: string
+          title: Review Type
+        outcome:
+          type: string
+          enum:
+          - approved
+          - conditional
+          title: Outcome
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        framework_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Version
+      type: object
+      required:
+      - framework_id
+      - framework_title
+      - review_type
+      - outcome
+      - issued_at
+      - framework_version
+      title: AttestorCompletedAttestation
+      description: One public entry in an Attestor's Completed Attestations list.
     AttestorCredentialCheckRequest:
       properties:
         credential_id:
@@ -12431,58 +12621,6 @@ components:
       - totp_code
       title: AttestorCredentialCheckRequest
       description: Admin request body for the credential registry cross-check gate.
-    AttestationBadgeDetail:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        review_type:
-          type: string
-          title: Review Type
-        outcome:
-          type: string
-          enum:
-          - approved
-          - conditional
-          - rejected
-          title: Outcome
-        attestor_id:
-          type: string
-          format: uuid
-          title: Attestor Id
-        attestor_display_name:
-          type: string
-          title: Attestor Display Name
-        credentials:
-          items:
-            $ref: '#/components/schemas/PublicCredentialResponse'
-          type: array
-          title: Credentials
-        issued_at:
-          type: string
-          format: date-time
-          title: Issued At
-        framework_version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Framework Version
-        newer_version_exists:
-          type: boolean
-          title: Newer Version Exists
-      type: object
-      required:
-      - id
-      - review_type
-      - outcome
-      - attestor_id
-      - attestor_display_name
-      - issued_at
-      - framework_version
-      - newer_version_exists
-      title: AttestationBadgeDetail
-      description: Full version-locked attestation badge for the framework page.
     AttestorDirectoryEntry:
       properties:
         user_id:
@@ -12523,6 +12661,10 @@ components:
           - type: number
           - type: 'null'
           title: Reputation
+        certified:
+          type: boolean
+          title: Certified
+          default: false
       type: object
       required:
       - user_id
@@ -12548,43 +12690,6 @@ components:
       - attestors
       title: AttestorDirectoryResponse
       description: Public list response for the Attestor directory.
-    AttestorCompletedAttestation:
-      properties:
-        framework_id:
-          type: string
-          format: uuid
-          title: Framework Id
-        framework_title:
-          type: string
-          title: Framework Title
-        review_type:
-          type: string
-          title: Review Type
-        outcome:
-          type: string
-          enum:
-          - approved
-          - conditional
-          title: Outcome
-        issued_at:
-          type: string
-          format: date-time
-          title: Issued At
-        framework_version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Framework Version
-      type: object
-      required:
-      - framework_id
-      - framework_title
-      - review_type
-      - outcome
-      - issued_at
-      - framework_version
-      title: AttestorCompletedAttestation
-      description: One public entry in an Attestor's Completed Attestations list.
     AttestorKycVerifyRequest:
       properties:
         name_match:
@@ -13205,6 +13310,113 @@ components:
       - accept
       title: ConfidentialityAgreementRequest
       description: Attestor acceptance of the one-time confidentiality / non-use agreement.
+    ConnectorConnectResponse:
+      properties:
+        authorization_url:
+          type: string
+          title: Authorization Url
+      type: object
+      required:
+      - authorization_url
+      title: ConnectorConnectResponse
+      description: The provider consent URL the browser should navigate to.
+    ConnectorFileItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        mime_type:
+          type: string
+          title: Mime Type
+        size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size
+        modified_time:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Modified Time
+        icon_link:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Icon Link
+        importable:
+          type: boolean
+          title: Importable
+      type: object
+      required:
+      - id
+      - name
+      - mime_type
+      - importable
+      title: ConnectorFileItem
+      description: One importable file in the contributor's connected Drive.
+    ConnectorFilesResponse:
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/ConnectorFileItem'
+          type: array
+          title: Files
+        next_page_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Page Token
+      type: object
+      required:
+      - files
+      title: ConnectorFilesResponse
+      description: One page of Drive files plus the pagination cursor.
+    ConnectorStatusItem:
+      properties:
+        provider:
+          type: string
+          title: Provider
+        connected:
+          type: boolean
+          title: Connected
+        connection_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Connection Id
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        account_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Email
+      type: object
+      required:
+      - provider
+      - connected
+      title: ConnectorStatusItem
+      description: Connection status for one supported provider.
+    ConnectorsResponse:
+      properties:
+        connectors:
+          items:
+            $ref: '#/components/schemas/ConnectorStatusItem'
+          type: array
+          title: Connectors
+      type: object
+      required:
+      - connectors
+      title: ConnectorsResponse
+      description: Connection status for every supported provider.
     ConsentAcceptRequest:
       properties:
         accept_terms:
@@ -16038,21 +16250,6 @@ components:
       - components
       title: HealthResponse
       description: Platform readiness response for external health checks.
-    InvoiceGenerationResponse:
-      properties:
-        invoice_id:
-          type: string
-          format: uuid
-          title: Invoice Id
-        status:
-          type: string
-          title: Status
-      type: object
-      required:
-      - invoice_id
-      - status
-      title: InvoiceGenerationResponse
-      description: Async invoice-document generation acknowledgement.
     KycDocumentResponse:
       properties:
         id:
@@ -16501,6 +16698,37 @@ components:
       - milestones
       title: MilestonesResponse
       description: List response for Project Milestones.
+    MyOrganizationResponse:
+      properties:
+        org:
+          $ref: '#/components/schemas/OrganizationResponse'
+        role:
+          type: string
+          title: Role
+        capabilities:
+          additionalProperties:
+            type: string
+          type: object
+          title: Capabilities
+      type: object
+      required:
+      - org
+      - role
+      - capabilities
+      title: MyOrganizationResponse
+      description: An organization membership visible to the current user.
+    MyOrganizationsResponse:
+      properties:
+        organizations:
+          items:
+            $ref: '#/components/schemas/MyOrganizationResponse'
+          type: array
+          title: Organizations
+      type: object
+      required:
+      - organizations
+      title: MyOrganizationsResponse
+      description: List wrapper for the authenticated user's organizations.
     NotificationItem:
       properties:
         id:
@@ -16684,6 +16912,342 @@ components:
       - page_size
       title: NotificationsResponse
       description: Paginated notification list plus unread badge count.
+    OrgInvitationCreateRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+          title: Role
+      type: object
+      required:
+      - email
+      - role
+      title: OrgInvitationCreateRequest
+      description: Admin-scoped request to invite one email address into an organization.
+    OrgInvitationPreviewResponse:
+      properties:
+        org_name:
+          type: string
+          title: Org Name
+        org_slug:
+          type: string
+          title: Org Slug
+        role:
+          type: string
+          title: Role
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - org_name
+      - org_slug
+      - role
+      - expires_at
+      title: OrgInvitationPreviewResponse
+      description: 'Invitation preview: what the invitee sees before accepting.'
+    OrgInvitationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+        role:
+          type: string
+          title: Role
+        status:
+          type: string
+          title: Status
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - status
+      - expires_at
+      - created_at
+      title: OrgInvitationResponse
+      description: One organization invitation row.
+    OrgInvitationsResponse:
+      properties:
+        invitations:
+          items:
+            $ref: '#/components/schemas/OrgInvitationResponse'
+          type: array
+          title: Invitations
+      type: object
+      required:
+      - invitations
+      title: OrgInvitationsResponse
+      description: List wrapper for pending organization invitations.
+    OrgMemberResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        display_name:
+          type: string
+          title: Display Name
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        role:
+          type: string
+          title: Role
+        joined_at:
+          type: string
+          format: date-time
+          title: Joined At
+      type: object
+      required:
+      - id
+      - user_id
+      - display_name
+      - email
+      - role
+      - joined_at
+      title: OrgMemberResponse
+      description: One organization member, with email hidden from plain members.
+    OrgMemberRoleUpdateRequest:
+      properties:
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+          title: Role
+      type: object
+      required:
+      - role
+      title: OrgMemberRoleUpdateRequest
+      description: Owner-scoped request to switch a member between member and admin.
+    OrgMembersResponse:
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/OrgMemberResponse'
+          type: array
+          title: Members
+      type: object
+      required:
+      - members
+      title: OrgMembersResponse
+      description: List wrapper for organization members.
+    OrgOwnershipTransferRequest:
+      properties:
+        new_owner_member_id:
+          type: string
+          format: uuid
+          title: New Owner Member Id
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - new_owner_member_id
+      - totp_code
+      title: OrgOwnershipTransferRequest
+      description: TOTP-gated request to transfer organization ownership.
+    OrgTeamCreateRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Name
+      type: object
+      required:
+      - name
+      title: OrgTeamCreateRequest
+      description: Admin-scoped request to create a team in an organization.
+    OrgTeamRenameRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Name
+      type: object
+      required:
+      - name
+      title: OrgTeamRenameRequest
+      description: Admin-scoped request to rename an existing team.
+    OrgTeamResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        member_count:
+          type: integer
+          title: Member Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - member_count
+      - created_at
+      title: OrgTeamResponse
+      description: One organization team row with member count.
+    OrgTeamsResponse:
+      properties:
+        teams:
+          items:
+            $ref: '#/components/schemas/OrgTeamResponse'
+          type: array
+          title: Teams
+      type: object
+      required:
+      - teams
+      title: OrgTeamsResponse
+      description: List wrapper for organization teams.
+    OrganizationCreateRequest:
+      properties:
+        slug:
+          type: string
+          maxLength: 80
+          minLength: 3
+          pattern: ^[a-zA-Z0-9-]+$
+          title: Slug
+        name:
+          type: string
+          maxLength: 120
+          minLength: 2
+          title: Name
+        country:
+          type: string
+          maxLength: 2
+          minLength: 2
+          title: Country
+        website:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - slug
+      - name
+      - country
+      title: OrganizationCreateRequest
+      description: Request body to create an organization.
+    OrganizationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        logo_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Key
+        country:
+          type: string
+          title: Country
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - slug
+      - name
+      - logo_key
+      - country
+      - website
+      - description
+      - created_at
+      title: OrganizationResponse
+      description: Public-safe organization fields.
+    OrganizationUpdateRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 120
+            minLength: 2
+          - type: 'null'
+          title: Name
+        website:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        logo_key:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Logo Key
+      type: object
+      title: OrganizationUpdateRequest
+      description: Partial update of org profile fields (admin+).
     PartnerAttestationReportResponse:
       properties:
         id:
@@ -18405,9 +18969,63 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: "Verified Credential fields safe for public profile display.\n\n\
-        Never exposes evidence keys, verification URL, reference number, or review\n\
-        metadata \u2014 anti-gaming and PII protection."
+      description: 'Verified Credential fields safe for public profile display.
+
+
+        Never exposes evidence keys, verification URL, reference number, or review
+
+        metadata — anti-gaming and PII protection.'
+    PublicOrganizationResponse:
+      properties:
+        slug:
+          type: string
+          title: Slug
+        name:
+          type: string
+          title: Name
+        logo_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Key
+        country:
+          type: string
+          title: Country
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        active_capabilities:
+          items:
+            type: string
+          type: array
+          title: Active Capabilities
+        member_count:
+          type: integer
+          title: Member Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - slug
+      - name
+      - logo_key
+      - country
+      - website
+      - description
+      - active_capabilities
+      - member_count
+      - created_at
+      title: PublicOrganizationResponse
+      description: 'Public org profile: no member identities, no PII.'
     PublicProfileResponse:
       properties:
         id:
@@ -19442,498 +20060,6 @@ components:
       - size_limit
       title: WorkspaceUploadSessionResponse
       description: Presigned POST response for a single workspace file upload.
-    OrgOwnershipTransferRequest:
-      properties:
-        new_owner_member_id:
-          type: string
-          format: uuid
-          title: New Owner Member Id
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - new_owner_member_id
-      - totp_code
-      title: OrgOwnershipTransferRequest
-      description: TOTP-gated request to transfer organization ownership.
-    OrgTeamResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        name:
-          type: string
-          title: Name
-        member_count:
-          type: integer
-          title: Member Count
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - id
-      - name
-      - member_count
-      - created_at
-      title: OrgTeamResponse
-      description: One organization team row with member count.
-    OrgInvitationPreviewResponse:
-      properties:
-        org_name:
-          type: string
-          title: Org Name
-        org_slug:
-          type: string
-          title: Org Slug
-        role:
-          type: string
-          title: Role
-        expires_at:
-          type: string
-          format: date-time
-          title: Expires At
-      type: object
-      required:
-      - org_name
-      - org_slug
-      - role
-      - expires_at
-      title: OrgInvitationPreviewResponse
-      description: 'Invitation preview: what the invitee sees before accepting.'
-    OrganizationCreateRequest:
-      properties:
-        slug:
-          type: string
-          maxLength: 80
-          minLength: 3
-          pattern: ^[a-zA-Z0-9-]+$
-          title: Slug
-        name:
-          type: string
-          maxLength: 120
-          minLength: 2
-          title: Name
-        country:
-          type: string
-          maxLength: 2
-          minLength: 2
-          title: Country
-        website:
-          anyOf:
-          - type: string
-            maxLength: 255
-          - type: 'null'
-          title: Website
-        description:
-          anyOf:
-          - type: string
-            maxLength: 2000
-          - type: 'null'
-          title: Description
-      type: object
-      required:
-      - slug
-      - name
-      - country
-      title: OrganizationCreateRequest
-      description: Request body to create an organization.
-    OrgMemberRoleUpdateRequest:
-      properties:
-        role:
-          type: string
-          enum:
-          - admin
-          - member
-          title: Role
-      type: object
-      required:
-      - role
-      title: OrgMemberRoleUpdateRequest
-      description: Owner-scoped request to switch a member between member and admin.
-    OrgTeamsResponse:
-      properties:
-        teams:
-          items:
-            $ref: '#/components/schemas/OrgTeamResponse'
-          type: array
-          title: Teams
-      type: object
-      required:
-      - teams
-      title: OrgTeamsResponse
-      description: List wrapper for organization teams.
-    OrgInvitationCreateRequest:
-      properties:
-        email:
-          type: string
-          format: email
-          title: Email
-        role:
-          type: string
-          enum:
-          - admin
-          - member
-          title: Role
-      type: object
-      required:
-      - email
-      - role
-      title: OrgInvitationCreateRequest
-      description: Admin-scoped request to invite one email address into an organization.
-    OrgInvitationsResponse:
-      properties:
-        invitations:
-          items:
-            $ref: '#/components/schemas/OrgInvitationResponse'
-          type: array
-          title: Invitations
-      type: object
-      required:
-      - invitations
-      title: OrgInvitationsResponse
-      description: List wrapper for pending organization invitations.
-    AdminOrgsResponse:
-      properties:
-        orgs:
-          items:
-            $ref: '#/components/schemas/AdminOrgResponse'
-          type: array
-          title: Orgs
-        total:
-          type: integer
-          title: Total
-        page:
-          type: integer
-          title: Page
-        page_size:
-          type: integer
-          title: Page Size
-      type: object
-      required:
-      - orgs
-      - total
-      - page
-      - page_size
-      title: AdminOrgsResponse
-      description: Paginated list of organizations for platform admins.
-    MyOrganizationResponse:
-      properties:
-        org:
-          $ref: '#/components/schemas/OrganizationResponse'
-        role:
-          type: string
-          title: Role
-        capabilities:
-          additionalProperties:
-            type: string
-          type: object
-          title: Capabilities
-      type: object
-      required:
-      - org
-      - role
-      - capabilities
-      title: MyOrganizationResponse
-      description: An organization membership visible to the current user.
-    OrgInvitationResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        email:
-          type: string
-          title: Email
-        role:
-          type: string
-          title: Role
-        status:
-          type: string
-          title: Status
-        expires_at:
-          type: string
-          format: date-time
-          title: Expires At
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - id
-      - email
-      - role
-      - status
-      - expires_at
-      - created_at
-      title: OrgInvitationResponse
-      description: One organization invitation row.
-    OrgMembersResponse:
-      properties:
-        members:
-          items:
-            $ref: '#/components/schemas/OrgMemberResponse'
-          type: array
-          title: Members
-      type: object
-      required:
-      - members
-      title: OrgMembersResponse
-      description: List wrapper for organization members.
-    PublicOrganizationResponse:
-      properties:
-        slug:
-          type: string
-          title: Slug
-        name:
-          type: string
-          title: Name
-        logo_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Logo Key
-        country:
-          type: string
-          title: Country
-        website:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Website
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Description
-        active_capabilities:
-          items:
-            type: string
-          type: array
-          title: Active Capabilities
-        member_count:
-          type: integer
-          title: Member Count
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - slug
-      - name
-      - logo_key
-      - country
-      - website
-      - description
-      - active_capabilities
-      - member_count
-      - created_at
-      title: PublicOrganizationResponse
-      description: 'Public org profile: no member identities, no PII.'
-    OrgTeamRenameRequest:
-      properties:
-        name:
-          type: string
-          maxLength: 80
-          minLength: 2
-          title: Name
-      type: object
-      required:
-      - name
-      title: OrgTeamRenameRequest
-      description: Admin-scoped request to rename an existing team.
-    OrganizationResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        slug:
-          type: string
-          title: Slug
-        name:
-          type: string
-          title: Name
-        logo_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Logo Key
-        country:
-          type: string
-          title: Country
-        website:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Website
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Description
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - id
-      - slug
-      - name
-      - logo_key
-      - country
-      - website
-      - description
-      - created_at
-      title: OrganizationResponse
-      description: Public-safe organization fields.
-    OrganizationUpdateRequest:
-      properties:
-        name:
-          anyOf:
-          - type: string
-            maxLength: 120
-            minLength: 2
-          - type: 'null'
-          title: Name
-        website:
-          anyOf:
-          - type: string
-            maxLength: 255
-          - type: 'null'
-          title: Website
-        description:
-          anyOf:
-          - type: string
-            maxLength: 2000
-          - type: 'null'
-          title: Description
-        logo_key:
-          anyOf:
-          - type: string
-            maxLength: 512
-          - type: 'null'
-          title: Logo Key
-      type: object
-      title: OrganizationUpdateRequest
-      description: Partial update of org profile fields (admin+).
-    MyOrganizationsResponse:
-      properties:
-        organizations:
-          items:
-            $ref: '#/components/schemas/MyOrganizationResponse'
-          type: array
-          title: Organizations
-      type: object
-      required:
-      - organizations
-      title: MyOrganizationsResponse
-      description: List wrapper for the authenticated user's organizations.
-    OrgMemberResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        user_id:
-          type: string
-          format: uuid
-          title: User Id
-        display_name:
-          type: string
-          title: Display Name
-        email:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Email
-        role:
-          type: string
-          title: Role
-        joined_at:
-          type: string
-          format: date-time
-          title: Joined At
-      type: object
-      required:
-      - id
-      - user_id
-      - display_name
-      - email
-      - role
-      - joined_at
-      title: OrgMemberResponse
-      description: One organization member, with email hidden from plain members.
-    OrgTeamCreateRequest:
-      properties:
-        name:
-          type: string
-          maxLength: 80
-          minLength: 2
-          title: Name
-      type: object
-      required:
-      - name
-      title: OrgTeamCreateRequest
-      description: Admin-scoped request to create a team in an organization.
-    AdminOrgResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        slug:
-          type: string
-          title: Slug
-        name:
-          type: string
-          title: Name
-        country:
-          type: string
-          title: Country
-        member_count:
-          type: integer
-          title: Member Count
-        capabilities:
-          additionalProperties:
-            type: string
-          type: object
-          title: Capabilities
-        suspended_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Suspended At
-        deactivated_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Deactivated At
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - id
-      - slug
-      - name
-      - country
-      - member_count
-      - capabilities
-      - created_at
-      title: AdminOrgResponse
-      description: Platform-admin view of an organization.
   securitySchemes:
     HTTPBearer:
       type: http

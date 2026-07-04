@@ -16,10 +16,15 @@ from app.core.config import Settings, get_settings
 REFRESH_COOKIE_NAME = "refresh_token"
 SESSION_HINT_COOKIE_NAME = "session_hint"
 OAUTH_STATE_COOKIE_NAME = "oauth_state"
+CONNECTOR_STATE_COOKIE_NAME = "auracles_connector_state"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 2_592_000
 # The OAuth state cookie only has to survive the round trip to Google's consent
 # screen and back, so it expires quickly to limit the replay window.
 OAUTH_STATE_MAX_AGE_SECONDS = 600
+CONNECTOR_STATE_MAX_AGE_SECONDS = 600
+# Scoped to the integrations API so the connector cookie never rides along
+# on unrelated requests.
+CONNECTOR_STATE_COOKIE_PATH = "/v1/integrations"
 # Root path so the cookie is sent under the frontend `/api` proxy prefix
 # (`/api/v1/auth/refresh`) as well as direct `/v1/auth/refresh` in local dev.
 # A narrower path scoped the cookie out of the proxied request and broke
@@ -227,6 +232,106 @@ def clear_oauth_state_cookie(
     response.delete_cookie(
         key=OAUTH_STATE_COOKIE_NAME,
         path=OAUTH_STATE_COOKIE_PATH,
+        secure=resolved_settings.cookie_secure,
+        httponly=True,
+        samesite=resolved_settings.cookie_samesite,
+    )
+
+
+def create_connector_state_value(
+    *,
+    state: str,
+    verifier: str,
+    user_id: str,
+    settings: Settings | None = None,
+) -> str:
+    """Create a signed connector OAuth state payload.
+
+    Carries the CSRF ``state``, the PKCE ``verifier``, and the initiating
+    ``user_id`` — the provider callback arrives as an unauthenticated
+    browser redirect, so the cookie is what binds the grant back to the
+    signed-in contributor. Signed with SECRET_KEY; a tampered value is
+    rejected at read time.
+    """
+    resolved_settings = settings or get_settings()
+    expires_at = datetime.now(UTC) + timedelta(
+        seconds=CONNECTOR_STATE_MAX_AGE_SECONDS
+    )
+    payload = {
+        "state": state,
+        "verifier": verifier,
+        "user_id": user_id,
+        "exp": int(expires_at.timestamp()),
+    }
+    encoded = _base64url_encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    return f"{encoded}.{_sign(encoded, resolved_settings)}"
+
+
+def set_connector_state_cookie(
+    response: Response,
+    *,
+    state: str,
+    verifier: str,
+    user_id: str,
+    settings: Settings | None = None,
+) -> None:
+    """Attach the signed HttpOnly connector OAuth state cookie."""
+    resolved_settings = settings or get_settings()
+    response.set_cookie(
+        key=CONNECTOR_STATE_COOKIE_NAME,
+        value=create_connector_state_value(
+            state=state,
+            verifier=verifier,
+            user_id=user_id,
+            settings=resolved_settings,
+        ),
+        max_age=CONNECTOR_STATE_MAX_AGE_SECONDS,
+        path=CONNECTOR_STATE_COOKIE_PATH,
+        secure=resolved_settings.cookie_secure,
+        httponly=True,
+        samesite=resolved_settings.cookie_samesite,
+    )
+
+
+def read_connector_state_value(
+    raw: str | None,
+    settings: Settings | None = None,
+) -> dict[str, object] | None:
+    """Verify and decode a connector state cookie value.
+
+    Returns:
+        The decoded payload dict, or None if the value is missing,
+        malformed, signature-invalid, or expired.
+    """
+    if not raw or "." not in raw:
+        return None
+    resolved_settings = settings or get_settings()
+    encoded, _, signature = raw.rpartition(".")
+    if not hmac.compare_digest(signature, _sign(encoded, resolved_settings)):
+        return None
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(_pad_b64url(encoded)))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    exp = payload.get("exp")
+    if not isinstance(exp, int) or exp < int(datetime.now(UTC).timestamp()):
+        return None
+    return payload
+
+
+def clear_connector_state_cookie(
+    response: Response,
+    settings: Settings | None = None,
+) -> None:
+    """Clear the connector state cookie once the consent round trip completes."""
+    resolved_settings = settings or get_settings()
+    response.delete_cookie(
+        key=CONNECTOR_STATE_COOKIE_NAME,
+        path=CONNECTOR_STATE_COOKIE_PATH,
         secure=resolved_settings.cookie_secure,
         httponly=True,
         samesite=resolved_settings.cookie_samesite,

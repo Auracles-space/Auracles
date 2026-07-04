@@ -53,6 +53,7 @@ class FakeArtifactStorage:
         self.existing_keys: set[str] = set()
         self.presigned_requests: list[tuple[str, str, str, int, int]] = []
         self.copy_requests: list[tuple[str, str, str, str]] = []
+        self.uploaded_bytes: list[tuple[str, str, bytes, str]] = []
 
     def presigned_post(
         self,
@@ -90,6 +91,17 @@ class FakeArtifactStorage:
             (source_bucket, source_key, destination_bucket, destination_key)
         )
         self.existing_keys.add(destination_key)
+
+    def upload_bytes(
+        self,
+        bucket: str,
+        key: str,
+        body: bytes,
+        mime_type: str,
+    ) -> None:
+        """Record an upload and mark the destination object as present."""
+        self.uploaded_bytes.append((bucket, key, body, mime_type))
+        self.existing_keys.add(key)
 
 
 @pytest.fixture
@@ -2898,3 +2910,276 @@ async def test_non_draft_framework_update_policy_and_delete_lock(
 
     assert updated.status_code == update_status
     assert deleted.status_code == 409
+
+
+async def _seed_drive_connection(
+    user_id: UUID,
+    *,
+    access_token: str = "import-at",
+) -> UUID:
+    """Insert an active Drive connection for the copy-in tests."""
+    from datetime import timedelta
+
+    from app.core.security import encrypt_connector_token
+    from app.modules.integrations.models import OAuthConnection
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            connection = OAuthConnection(
+                user_id=user_id,
+                provider="google_drive",
+                access_token_encrypted=encrypt_connector_token(access_token),
+                token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+                scopes="https://www.googleapis.com/auth/drive.readonly",
+            )
+            session.add(connection)
+            await session.flush()
+            return connection.id
+
+
+def _mock_drive_file(
+    respx_mock: Any,
+    *,
+    file_id: str,
+    name: str,
+    mime_type: str,
+    size: str | None,
+    content: bytes,
+    export: bool = False,
+) -> None:
+    """Mock the Drive metadata + download (or export) endpoints."""
+    import httpx
+
+    metadata: dict[str, Any] = {"id": file_id, "name": name, "mimeType": mime_type}
+    if size is not None:
+        metadata["size"] = size
+    base = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+    respx_mock.get(base, params__contains={"fields": "id,name,mimeType,size"}).mock(
+        return_value=httpx.Response(200, json=metadata)
+    )
+    if export:
+        respx_mock.get(f"{base}/export").mock(
+            return_value=httpx.Response(200, content=content)
+        )
+    else:
+        respx_mock.get(base, params__contains={"alt": "media"}).mock(
+            return_value=httpx.Response(200, content=content)
+        )
+
+
+async def test_import_from_connector_creates_processing_artifact(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Importing a binary Drive file copies bytes in and dispatches the scan."""
+    import respx
+
+    scanned: list[str] = []
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        type("FakeTask", (), {"delay": staticmethod(scanned.append)}),
+    )
+    contributor_id = await create_user_with_roles(
+        "connector-import@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    connection_id = await _seed_drive_connection(contributor_id)
+
+    with respx.mock as respx_mock:
+        _mock_drive_file(
+            respx_mock,
+            file_id="file123",
+            name="playbook.pdf",
+            mime_type="application/pdf",
+            size="13",
+            content=b"dummy content",
+        )
+        response = await client.post(
+            f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+            headers=auth_headers(contributor_id, ["contributor"]),
+            json={"connection_id": str(connection_id), "file_id": "file123"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "playbook.pdf"
+    assert data["processing_status"] == "processing"
+    assert data["file_size"] == len(b"dummy content")
+    assert scanned == [data["id"]]
+
+    storage = framework_test_context["storage"]
+    assert storage.uploaded_bytes
+    _, key, body, mime_type = storage.uploaded_bytes[-1]
+    assert body == b"dummy content"
+    assert mime_type == "application/pdf"
+    assert key.startswith(f"frameworks/{framework_id}/artifacts/")
+
+    async with async_session_factory() as session:
+        audit = (
+            (
+                await session.execute(
+                    select(AuditLog)
+                    .where(AuditLog.action == "artifact_uploaded")
+                    .order_by(AuditLog.created_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+    assert audit is not None
+    assert audit.metadata_["source"] == "google_drive"
+    assert audit.metadata_["connection_id"] == str(connection_id)
+    assert audit.metadata_["external_file_id"] == "file123"
+
+
+async def test_import_from_connector_exports_google_native_docs(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Google Doc is exported to DOCX and named with the mapped extension."""
+    import respx
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        type("FakeTask", (), {"delay": staticmethod(lambda _: None)}),
+    )
+    contributor_id = await create_user_with_roles(
+        "connector-native@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    connection_id = await _seed_drive_connection(contributor_id)
+
+    with respx.mock as respx_mock:
+        _mock_drive_file(
+            respx_mock,
+            file_id="doc42",
+            name="Strategy Notes",
+            mime_type="application/vnd.google-apps.document",
+            size=None,
+            content=b"DOCX-BYTES",
+            export=True,
+        )
+        response = await client.post(
+            f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+            headers=auth_headers(contributor_id, ["contributor"]),
+            json={"connection_id": str(connection_id), "file_id": "doc42"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Strategy Notes.docx"
+    assert data["file_size"] == len(b"DOCX-BYTES")
+
+    storage = framework_test_context["storage"]
+    _, key, body, mime_type = storage.uploaded_bytes[-1]
+    assert body == b"DOCX-BYTES"
+    assert mime_type == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert key.endswith(".docx")
+
+
+async def test_import_from_connector_rejects_unsupported_mime(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A Drive file whose effective MIME is not allowed returns 415."""
+    import httpx
+    import respx
+
+    contributor_id = await create_user_with_roles(
+        "connector-mime@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    connection_id = await _seed_drive_connection(contributor_id)
+
+    with respx.mock as respx_mock:
+        respx_mock.get("https://www.googleapis.com/drive/v3/files/vid1").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": "vid1",
+                    "name": "clip.mp4",
+                    "mimeType": "video/mp4",
+                    "size": "10",
+                },
+            )
+        )
+        response = await client.post(
+            f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+            headers=auth_headers(contributor_id, ["contributor"]),
+            json={"connection_id": str(connection_id), "file_id": "vid1"},
+        )
+
+    assert response.status_code == 415
+    async with async_session_factory() as session:
+        count = await session.scalar(
+            select(func.count(Artifact.id)).where(
+                Artifact.framework_id == UUID(framework_id)
+            )
+        )
+    assert count == 0
+
+
+async def test_import_from_connector_rejects_oversized_metadata(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A file whose known size exceeds the budget 413s before downloading."""
+    import httpx
+    import respx
+
+    contributor_id = await create_user_with_roles(
+        "connector-size@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    connection_id = await _seed_drive_connection(contributor_id)
+
+    with respx.mock as respx_mock:
+        respx_mock.get("https://www.googleapis.com/drive/v3/files/big1").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": "big1",
+                    "name": "huge.pdf",
+                    "mimeType": "application/pdf",
+                    "size": str(600 * 1024 * 1024),
+                },
+            )
+        )
+        response = await client.post(
+            f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+            headers=auth_headers(contributor_id, ["contributor"]),
+            json={"connection_id": str(connection_id), "file_id": "big1"},
+        )
+
+    assert response.status_code == 413
+
+
+async def test_import_from_connector_foreign_connection_is_404(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Another user's connection id must not be usable for imports."""
+    contributor_id = await create_user_with_roles(
+        "connector-owner@auracles.space", ["contributor"]
+    )
+    other_id = await create_user_with_roles(
+        "connector-other@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    foreign_connection_id = await _seed_drive_connection(other_id)
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={"connection_id": str(foreign_connection_id), "file_id": "f1"},
+    )
+    assert response.status_code == 404

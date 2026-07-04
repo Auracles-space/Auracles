@@ -182,11 +182,11 @@ export type AdminConfigResponse = {
  * Single admin platform configuration change request.
  */
 export type AdminConfigUpdateItem = {
-    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+    key: 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
     value: string;
 };
 
-export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
 
 /**
  * Admin request body for rejecting a pending Credential.
@@ -465,13 +465,13 @@ export type AdminRarityBlockOverrideRequest = {
  * Request body for an audited single-subject reputation recompute.
  */
 export type AdminReputationRecomputeRequest = {
-    subject_type: 'framework' | 'contributor' | 'operator';
+    subject_type: 'framework' | 'contributor' | 'operator' | 'attestor';
     subject_id: string;
     reason: string;
     totp_code: string;
 };
 
-export type subject_type = 'framework' | 'contributor' | 'operator';
+export type subject_type = 'framework' | 'contributor' | 'operator' | 'attestor';
 
 /**
  * Acknowledgement that a recompute was queued.
@@ -711,6 +711,14 @@ export type ArtifactDownloadResponse = {
     license_id: string;
     download_url: string;
     expires_in: number;
+};
+
+/**
+ * Import a connected-source file as a new draft Artifact.
+ */
+export type ArtifactFromConnectorRequest = {
+    connection_id: string;
+    file_id: string;
 };
 
 /**
@@ -1164,6 +1172,7 @@ export type AttestorDirectoryEntry = {
     credentials: Array<PublicCredentialResponse>;
     completed_attestations: number;
     reputation: (number | null);
+    certified?: boolean;
 };
 
 /**
@@ -1455,6 +1464,52 @@ export type ComponentHealth = {
  */
 export type ConfidentialityAgreementRequest = {
     accept: boolean;
+};
+
+/**
+ * The provider consent URL the browser should navigate to.
+ */
+export type ConnectorConnectResponse = {
+    authorization_url: string;
+};
+
+/**
+ * One importable file in the contributor's connected Drive.
+ */
+export type ConnectorFileItem = {
+    id: string;
+    name: string;
+    mime_type: string;
+    size?: (number | null);
+    modified_time?: (string | null);
+    icon_link?: (string | null);
+    importable: boolean;
+};
+
+/**
+ * One page of Drive files plus the pagination cursor.
+ */
+export type ConnectorFilesResponse = {
+    files: Array<ConnectorFileItem>;
+    next_page_token?: (string | null);
+};
+
+/**
+ * Connection status for every supported provider.
+ */
+export type ConnectorsResponse = {
+    connectors: Array<ConnectorStatusItem>;
+};
+
+/**
+ * Connection status for one supported provider.
+ */
+export type ConnectorStatusItem = {
+    provider: string;
+    connected: boolean;
+    connection_id?: (string | null);
+    status?: (string | null);
+    account_email?: (string | null);
 };
 
 /**
@@ -2279,14 +2334,6 @@ export type HealthResponse = {
 
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
-};
-
-/**
- * Async invoice-document generation acknowledgement.
- */
-export type InvoiceGenerationResponse = {
-    invoice_id: string;
-    status: string;
 };
 
 /**
@@ -3746,7 +3793,7 @@ export type WorkspaceUploadSessionResponse = {
 
 export type ListPlatformConfigV1AdminConfigGetResponse = (AdminConfigResponse);
 
-export type ListPlatformConfigV1AdminConfigGetError = (HTTPValidationError);
+export type ListPlatformConfigV1AdminConfigGetError = unknown;
 
 export type UpdatePlatformConfigV1AdminConfigPatchData = {
     body: AdminConfigPatchRequest;
@@ -3758,7 +3805,7 @@ export type UpdatePlatformConfigV1AdminConfigPatchError = (HTTPValidationError);
 
 export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetResponse = (AdminAnalyticsDashboardResponse);
 
-export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetError = (HTTPValidationError);
+export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetError = unknown;
 
 export type ExportAdminAnalyticsV1AdminAnalyticsExportGetData = {
     query: {
@@ -3896,7 +3943,7 @@ export type ListAdminFrameworksV1AdminFrameworksGetError = (HTTPValidationError)
 
 export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
 
-export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetError = (HTTPValidationError);
+export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetError = unknown;
 
 export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
     body: AdminFrameworkSuspendRequest;
@@ -4044,16 +4091,6 @@ export type ListPublicAttestorDirectoryV1AttestorsGetResponse = (AttestorDirecto
 
 export type ListPublicAttestorDirectoryV1AttestorsGetError = (HTTPValidationError);
 
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetData = {
-    path: {
-        user_id: string;
-    };
-};
-
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetResponse = (AttestorDirectoryEntry);
-
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetError = (HTTPValidationError);
-
 export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetData = {
     path: {
         user_id: string;
@@ -4063,6 +4100,16 @@ export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetData =
 export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
 
 export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetError = (HTTPValidationError);
+
+export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetData = {
+    path: {
+        user_id: string;
+    };
+};
+
+export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetResponse = (AttestorDirectoryEntry);
+
+export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetError = (HTTPValidationError);
 
 export type GetAttestationV1AttestationsAttestationIdGetData = {
     path: {
@@ -4272,7 +4319,7 @@ export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostErro
 
 export type ListAttestorAssignmentsV1AttestorAssignmentsGetResponse = (AttestorAssignmentsResponse);
 
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetError = (HTTPValidationError);
+export type ListAttestorAssignmentsV1AttestorAssignmentsGetError = unknown;
 
 export type SubmitAttestorApplicationV1AttestorApplicationsPostData = {
     body: AttestorApplicationCreateRequest;
@@ -4284,7 +4331,7 @@ export type SubmitAttestorApplicationV1AttestorApplicationsPostError = (HTTPVali
 
 export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetResponse = (AttestorApplicationsResponse);
 
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = (HTTPValidationError);
+export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = unknown;
 
 export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchData = {
     body: AttestorApplicationUpdateRequest;
@@ -4428,6 +4475,10 @@ export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdA
 
 export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostError = (HTTPValidationError);
 
+export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
+
+export type ListCredentialsV1CredentialsGetError = unknown;
+
 export type CreateCredentialV1CredentialsPostData = {
     body: CredentialCreateRequest;
 };
@@ -4435,10 +4486,6 @@ export type CreateCredentialV1CredentialsPostData = {
 export type CreateCredentialV1CredentialsPostResponse = (CredentialResponse);
 
 export type CreateCredentialV1CredentialsPostError = (HTTPValidationError);
-
-export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
-
-export type ListCredentialsV1CredentialsGetError = (HTTPValidationError);
 
 export type UpdateCredentialV1CredentialsCredentialIdPatchData = {
     body: CredentialUpdateRequest;
@@ -4533,9 +4580,9 @@ export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData = {
     };
 };
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (InvoiceGenerationResponse);
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (unknown);
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (unknown | HTTPValidationError);
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (HTTPValidationError);
 
 export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetData = {
     path: {
@@ -4543,15 +4590,19 @@ export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsSt
     };
 };
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (InvoiceGenerationResponse);
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (unknown);
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (unknown | HTTPValidationError);
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
 
 export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetData = {
     path: {
         year: number;
     };
 };
+
+export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetResponse = (unknown);
+
+export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetError = (HTTPValidationError);
 
 export type GoogleStartV1AuthGoogleStartGetData = {
     query?: {
@@ -4634,7 +4685,7 @@ export type LogoutV1AuthLogoutPostError = unknown;
 
 export type MeV1AuthMeGetResponse = (CurrentUserResponse);
 
-export type MeV1AuthMeGetError = (HTTPValidationError);
+export type MeV1AuthMeGetError = unknown;
 
 export type AddRoleV1AuthRolesPostData = {
     body: AddRoleRequest;
@@ -4646,11 +4697,11 @@ export type AddRoleV1AuthRolesPostError = (HTTPValidationError);
 
 export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
 
-export type TotpStatusV1Auth2FaStatusGetError = (HTTPValidationError);
+export type TotpStatusV1Auth2FaStatusGetError = unknown;
 
 export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
 
-export type SetupTotpV1Auth2FaSetupPostError = (HTTPValidationError);
+export type SetupTotpV1Auth2FaSetupPostError = unknown;
 
 export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostData = {
     body: TotpCodeRequest;
@@ -4694,7 +4745,7 @@ export type CreateCollectionV1CollectionsPostError = (HTTPValidationError);
 
 export type ListMyCollectionsV1CollectionsMineGetResponse = (CollectionListResponse);
 
-export type ListMyCollectionsV1CollectionsMineGetError = (HTTPValidationError);
+export type ListMyCollectionsV1CollectionsMineGetError = unknown;
 
 export type GetCollectionV1CollectionsCollectionIdGetData = {
     path: {
@@ -4769,7 +4820,7 @@ export type SubmitDeveloperApplicationV1DeveloperApplicationsPostError = (HTTPVa
 
 export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetResponse = (DeveloperApplicationsResponse);
 
-export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetError = (HTTPValidationError);
+export type ListMyDeveloperApplicationsV1DeveloperApplicationsMineGetError = unknown;
 
 export type WithdrawDeveloperApplicationV1DeveloperApplicationsApplicationIdWithdrawPatchData = {
     path: {
@@ -4802,6 +4853,10 @@ export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdR
 
 export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostError = (HTTPValidationError);
 
+export type ListApiKeysV1DeveloperApiKeysGetResponse = (ApiKeysResponse);
+
+export type ListApiKeysV1DeveloperApiKeysGetError = unknown;
+
 export type CreateApiKeyV1DeveloperApiKeysPostData = {
     body: ApiKeyCreateRequest;
 };
@@ -4810,13 +4865,13 @@ export type CreateApiKeyV1DeveloperApiKeysPostResponse = (ApiKeyCreateResponse);
 
 export type CreateApiKeyV1DeveloperApiKeysPostError = (HTTPValidationError);
 
-export type ListApiKeysV1DeveloperApiKeysGetResponse = (ApiKeysResponse);
-
-export type ListApiKeysV1DeveloperApiKeysGetError = (HTTPValidationError);
-
 export type GetDeveloperTierProgressV1DeveloperTierGetResponse = (DeveloperTierProgressResponse);
 
-export type GetDeveloperTierProgressV1DeveloperTierGetError = (HTTPValidationError);
+export type GetDeveloperTierProgressV1DeveloperTierGetError = unknown;
+
+export type ListPartnerPayoutsV1DeveloperPayoutsGetResponse = (PartnerPayoutsResponse);
+
+export type ListPartnerPayoutsV1DeveloperPayoutsGetError = unknown;
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostData = {
     body: PartnerPayoutRequest;
@@ -4825,10 +4880,6 @@ export type RequestPartnerPayoutV1DeveloperPayoutsPostData = {
 export type RequestPartnerPayoutV1DeveloperPayoutsPostResponse = (PartnerPayoutResponse);
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostError = (HTTPValidationError);
-
-export type ListPartnerPayoutsV1DeveloperPayoutsGetResponse = (PartnerPayoutsResponse);
-
-export type ListPartnerPayoutsV1DeveloperPayoutsGetError = (HTTPValidationError);
 
 export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetData = {
     query?: {
@@ -4850,6 +4901,10 @@ export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetResponse = (De
 
 export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetError = (HTTPValidationError);
 
+export type ListPartnerWebhooksV1DeveloperWebhooksGetResponse = (PartnerWebhooksResponse);
+
+export type ListPartnerWebhooksV1DeveloperWebhooksGetError = unknown;
+
 export type CreatePartnerWebhookV1DeveloperWebhooksPostData = {
     body: PartnerWebhookCreateRequest;
 };
@@ -4857,10 +4912,6 @@ export type CreatePartnerWebhookV1DeveloperWebhooksPostData = {
 export type CreatePartnerWebhookV1DeveloperWebhooksPostResponse = (PartnerWebhookCreateResponse);
 
 export type CreatePartnerWebhookV1DeveloperWebhooksPostError = (HTTPValidationError);
-
-export type ListPartnerWebhooksV1DeveloperWebhooksGetResponse = (PartnerWebhooksResponse);
-
-export type ListPartnerWebhooksV1DeveloperWebhooksGetError = (HTTPValidationError);
 
 export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteData = {
     path: {
@@ -5008,6 +5059,10 @@ export type GetRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGetResponse
 
 export type GetRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGetError = (HTTPValidationError);
 
+export type ListPaymentMethodsV1FinancialsPaymentMethodsGetResponse = (PaymentMethodsResponse);
+
+export type ListPaymentMethodsV1FinancialsPaymentMethodsGetError = unknown;
+
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostData = {
     body: PaymentMethodSetupRequest;
 };
@@ -5015,10 +5070,6 @@ export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostData = {
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostResponse = (PaymentMethodSetupResponse);
 
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostError = (HTTPValidationError);
-
-export type ListPaymentMethodsV1FinancialsPaymentMethodsGetResponse = (PaymentMethodsResponse);
-
-export type ListPaymentMethodsV1FinancialsPaymentMethodsGetError = (HTTPValidationError);
 
 export type ListFrameworkPurchasesV1FinancialsPurchasesGetData = {
     query?: {
@@ -5092,7 +5143,7 @@ export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoice
 
 export type GetContributorEarningsV1FinancialsEarningsGetResponse = (EarningsResponse);
 
-export type GetContributorEarningsV1FinancialsEarningsGetError = (HTTPValidationError);
+export type GetContributorEarningsV1FinancialsEarningsGetError = unknown;
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostData = {
     body: PayoutAccountOnboardRequest;
@@ -5104,7 +5155,11 @@ export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HT
 
 export type ListPayoutAccountsV1FinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
 
-export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = (HTTPValidationError);
+export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = unknown;
+
+export type ListPayoutsV1FinancialsPayoutsGetResponse = (PayoutsResponse);
+
+export type ListPayoutsV1FinancialsPayoutsGetError = unknown;
 
 export type RequestPayoutV1FinancialsPayoutsPostData = {
     body: PayoutRequest;
@@ -5113,10 +5168,6 @@ export type RequestPayoutV1FinancialsPayoutsPostData = {
 export type RequestPayoutV1FinancialsPayoutsPostResponse = (PayoutResponse);
 
 export type RequestPayoutV1FinancialsPayoutsPostError = (HTTPValidationError);
-
-export type ListPayoutsV1FinancialsPayoutsGetResponse = (PayoutsResponse);
-
-export type ListPayoutsV1FinancialsPayoutsGetError = (HTTPValidationError);
 
 export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteData = {
     body: PayoutAccountDeleteRequest;
@@ -5129,6 +5180,10 @@ export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteRe
 
 export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteError = (HTTPValidationError);
 
+export type ListFrameworksV1FrameworksGetResponse = (Array<FrameworkListItem>);
+
+export type ListFrameworksV1FrameworksGetError = unknown;
+
 export type CreateFrameworkV1FrameworksPostData = {
     body: FrameworkCreate;
 };
@@ -5136,10 +5191,6 @@ export type CreateFrameworkV1FrameworksPostData = {
 export type CreateFrameworkV1FrameworksPostResponse = (FrameworkResponse);
 
 export type CreateFrameworkV1FrameworksPostError = (HTTPValidationError);
-
-export type ListFrameworksV1FrameworksGetResponse = (Array<FrameworkListItem>);
-
-export type ListFrameworksV1FrameworksGetError = (HTTPValidationError);
 
 export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostData = {
     body: FrameworkReviewCreate;
@@ -5183,16 +5234,6 @@ export type GetFrameworkV1FrameworksFrameworkIdGetResponse = (FrameworkResponse)
 
 export type GetFrameworkV1FrameworksFrameworkIdGetError = (HTTPValidationError);
 
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetResponse = (Array<AttestationBadgeDetail>);
-
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetError = (HTTPValidationError);
-
 export type UpdateFrameworkV1FrameworksFrameworkIdPatchData = {
     body: FrameworkUpdate;
     path: {
@@ -5213,6 +5254,16 @@ export type DeleteFrameworkV1FrameworksFrameworkIdDeleteData = {
 export type DeleteFrameworkV1FrameworksFrameworkIdDeleteResponse = (void);
 
 export type DeleteFrameworkV1FrameworksFrameworkIdDeleteError = (HTTPValidationError);
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetResponse = (Array<AttestationBadgeDetail>);
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetError = (HTTPValidationError);
 
 export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostData = {
     path: {
@@ -5307,6 +5358,17 @@ export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetResponse = (Array<Ar
 
 export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetError = (HTTPValidationError);
 
+export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostData = {
+    body: ArtifactFromConnectorRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostResponse = (ArtifactResponse);
+
+export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostError = (HTTPValidationError);
+
 export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {
@@ -5362,6 +5424,10 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
 
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
 
+export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
+
+export type ListConsentHistoryV1GdprConsentGetError = unknown;
+
 export type AcceptCurrentConsentV1GdprConsentPostData = {
     body: ConsentAcceptRequest;
 };
@@ -5370,17 +5436,13 @@ export type AcceptCurrentConsentV1GdprConsentPostResponse = (ConsentHistoryRespo
 
 export type AcceptCurrentConsentV1GdprConsentPostError = (HTTPValidationError);
 
-export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
-
-export type ListConsentHistoryV1GdprConsentGetError = (HTTPValidationError);
-
 export type RequestDataExportV1GdprExportsPostResponse = (DataExportRequestResponse);
 
-export type RequestDataExportV1GdprExportsPostError = (HTTPValidationError);
+export type RequestDataExportV1GdprExportsPostError = unknown;
 
 export type GetLatestDataExportStatusV1GdprExportsLatestGetResponse = (DataExportRequestResponse);
 
-export type GetLatestDataExportStatusV1GdprExportsLatestGetError = (HTTPValidationError);
+export type GetLatestDataExportStatusV1GdprExportsLatestGetError = unknown;
 
 export type GetDataExportStatusV1GdprExportsExportRequestIdGetData = {
     path: {
@@ -5404,6 +5466,10 @@ export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
     };
 };
 
+export type GetAccountDeletionStatusV1GdprAccountDeletionGetResponse = (AccountDeletionStatusResponse);
+
+export type GetAccountDeletionStatusV1GdprAccountDeletionGetError = unknown;
+
 export type RequestAccountDeletionV1GdprAccountDeletionPostData = {
     body: AccountDeletionRequestBody;
 };
@@ -5412,13 +5478,62 @@ export type RequestAccountDeletionV1GdprAccountDeletionPostResponse = (AccountDe
 
 export type RequestAccountDeletionV1GdprAccountDeletionPostError = (AccountDeletionStatusResponse | HTTPValidationError);
 
-export type GetAccountDeletionStatusV1GdprAccountDeletionGetResponse = (AccountDeletionStatusResponse);
-
-export type GetAccountDeletionStatusV1GdprAccountDeletionGetError = (HTTPValidationError);
-
 export type CancelAccountDeletionV1GdprAccountDeletionCancelPostResponse = (AccountDeletionStatusResponse);
 
-export type CancelAccountDeletionV1GdprAccountDeletionCancelPostError = (unknown | HTTPValidationError);
+export type CancelAccountDeletionV1GdprAccountDeletionCancelPostError = (unknown);
+
+export type ListConnectorsV1IntegrationsConnectorsGetResponse = (ConnectorsResponse);
+
+export type ListConnectorsV1IntegrationsConnectorsGetError = unknown;
+
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostData = {
+    path: {
+        provider: string;
+    };
+};
+
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostResponse = (ConnectorConnectResponse);
+
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostError = (HTTPValidationError);
+
+export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetData = {
+    path: {
+        provider: string;
+    };
+    query?: {
+        code?: (string | null);
+        error?: (string | null);
+        state?: (string | null);
+    };
+};
+
+export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetResponse = (unknown);
+
+export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetError = (HTTPValidationError);
+
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteData = {
+    path: {
+        provider: string;
+    };
+};
+
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteResponse = (void);
+
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteError = (HTTPValidationError);
+
+export type ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetData = {
+    path: {
+        provider: string;
+    };
+    query?: {
+        page_token?: (string | null);
+        query?: (string | null);
+    };
+};
+
+export type ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetResponse = (ConnectorFilesResponse);
+
+export type ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetError = (HTTPValidationError);
 
 export type ListLibraryV1LibraryGetData = {
     query?: {
@@ -5456,7 +5571,7 @@ export type ListNotificationsV1NotificationsGetError = (HTTPValidationError);
 
 export type MarkAllNotificationsReadV1NotificationsReadAllPostResponse = (MarkAllReadResponse);
 
-export type MarkAllNotificationsReadV1NotificationsReadAllPostError = (HTTPValidationError);
+export type MarkAllNotificationsReadV1NotificationsReadAllPostError = unknown;
 
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchData = {
     path: {
@@ -5468,9 +5583,248 @@ export type MarkNotificationReadV1NotificationsNotificationIdReadPatchResponse =
 
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchError = (HTTPValidationError);
 
+export type CreateOrganizationV1OrgsPostData = {
+    body: OrganizationCreateRequest;
+};
+
+export type CreateOrganizationV1OrgsPostResponse = (OrganizationResponse);
+
+export type CreateOrganizationV1OrgsPostError = (HTTPValidationError);
+
+export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse);
+
+export type ListMyOrganizationsV1OrgsMineGetError = unknown;
+
+export type GetPublicOrgV1OrgsSlugGetData = {
+    path: {
+        slug: string;
+    };
+};
+
+export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
+
+export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
+
+export type UpdateOrganizationV1OrgsOrgIdPatchData = {
+    body: OrganizationUpdateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type UpdateOrganizationV1OrgsOrgIdPatchResponse = (OrganizationResponse);
+
+export type UpdateOrganizationV1OrgsOrgIdPatchError = (HTTPValidationError);
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
+
+export type ListMembersV1OrgsOrgIdMembersGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
+
+export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchData = {
+    body: OrgMemberRoleUpdateRequest;
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchResponse = (OrgMemberResponse);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchError = (HTTPValidationError);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostData = {
+    body: OrgOwnershipTransferRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostResponse = (void);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostError = (HTTPValidationError);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostData = {
+    body: OrgInvitationCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostResponse = (OrgInvitationResponse);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostError = (HTTPValidationError);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
+    path: {
+        invitation_id: string;
+        org_id: string;
+    };
+};
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostData = {
+    body: OrgTeamCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateTeamV1OrgsOrgIdTeamsPostResponse = (OrgTeamResponse);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostError = (HTTPValidationError);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListTeamsV1OrgsOrgIdTeamsGetResponse = (OrgTeamsResponse);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetError = (HTTPValidationError);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchData = {
+    body: OrgTeamRenameRequest;
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchResponse = (OrgTeamResponse);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchError = (HTTPValidationError);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutResponse = (void);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutError = (HTTPValidationError);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type PreviewInvitationV1OrgInvitationsTokenGetData = {
+    path: {
+        token: string;
+    };
+};
+
+export type PreviewInvitationV1OrgInvitationsTokenGetResponse = (OrgInvitationPreviewResponse);
+
+export type PreviewInvitationV1OrgInvitationsTokenGetError = (HTTPValidationError);
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostData = {
+    path: {
+        token: string;
+    };
+};
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostResponse = (MyOrganizationResponse);
+
+export type AcceptInvitationV1OrgInvitationsTokenAcceptPostError = (HTTPValidationError);
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostData = {
+    path: {
+        token: string;
+    };
+};
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostResponse = (void);
+
+export type DeclineInvitationV1OrgInvitationsTokenDeclinePostError = (HTTPValidationError);
+
+export type AdminListOrgsV1AdminOrgsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type AdminListOrgsV1AdminOrgsGetResponse = (AdminOrgsResponse);
+
+export type AdminListOrgsV1AdminOrgsGetError = (HTTPValidationError);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+
 export type GetMyProfileV1ProfilesMeGetResponse = (PublicProfileResponse);
 
-export type GetMyProfileV1ProfilesMeGetError = (HTTPValidationError);
+export type GetMyProfileV1ProfilesMeGetError = unknown;
 
 export type UpdateMyProfileV1ProfilesMePatchData = {
     body: ProfileUpdateRequest;
@@ -5988,6 +6342,10 @@ export type GetOperatorReputationV1ReputationOperatorOperatorIdGetResponse = (Re
 
 export type GetOperatorReputationV1ReputationOperatorOperatorIdGetError = (HTTPValidationError);
 
+export type ListSavedSearchesV1SavedSearchesGetResponse = (SavedSearchListResponse);
+
+export type ListSavedSearchesV1SavedSearchesGetError = unknown;
+
 export type CreateSavedSearchV1SavedSearchesPostData = {
     body: SavedSearchCreateRequest;
 };
@@ -5995,10 +6353,6 @@ export type CreateSavedSearchV1SavedSearchesPostData = {
 export type CreateSavedSearchV1SavedSearchesPostResponse = (SavedSearchResponse);
 
 export type CreateSavedSearchV1SavedSearchesPostError = (HTTPValidationError);
-
-export type ListSavedSearchesV1SavedSearchesGetResponse = (SavedSearchListResponse);
-
-export type ListSavedSearchesV1SavedSearchesGetError = (HTTPValidationError);
 
 export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetData = {
     path: {
@@ -6037,23 +6391,23 @@ export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPVali
 
 export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
 
-export type StartIdentityVerificationV1SettingsKycSessionPostError = (HTTPValidationError);
+export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
 
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
-export type GetKycStatusV1SettingsKycGetError = (HTTPValidationError);
+export type GetKycStatusV1SettingsKycGetError = unknown;
 
 export type ListSessionsV1SettingsSessionsGetResponse = (SessionsResponse);
 
-export type ListSessionsV1SettingsSessionsGetError = (HTTPValidationError);
+export type ListSessionsV1SettingsSessionsGetError = unknown;
 
 export type RevokeOtherSessionsV1SettingsSessionsDeleteResponse = (RegisterResponse);
 
-export type RevokeOtherSessionsV1SettingsSessionsDeleteError = (HTTPValidationError);
+export type RevokeOtherSessionsV1SettingsSessionsDeleteError = unknown;
 
 export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetResponse = (NotificationPreferencesResponse);
 
-export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError = (HTTPValidationError);
+export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError = unknown;
 
 export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchData = {
     body: NotificationPreferencesUpdateRequest;
@@ -6156,245 +6510,6 @@ export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetError = (HTTPVali
 export type GetHealthV1HealthGetResponse = (HealthResponse);
 
 export type GetHealthV1HealthGetError = (HealthResponse);
-
-export type CreateOrganizationV1OrgsPostData = {
-    body: OrganizationCreateRequest;
-};
-
-export type CreateOrganizationV1OrgsPostResponse = (OrganizationResponse);
-
-export type CreateOrganizationV1OrgsPostError = (HTTPValidationError);
-
-export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse);
-
-export type ListMyOrganizationsV1OrgsMineGetError = unknown;
-
-export type GetPublicOrgV1OrgsSlugGetData = {
-    path: {
-        slug: string;
-    };
-};
-
-export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
-
-export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
-
-export type UpdateOrganizationV1OrgsOrgIdPatchData = {
-    body: OrganizationUpdateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type UpdateOrganizationV1OrgsOrgIdPatchResponse = (OrganizationResponse);
-
-export type UpdateOrganizationV1OrgsOrgIdPatchError = (HTTPValidationError);
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
-
-export type ListMembersV1OrgsOrgIdMembersGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
-
-export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
-    path: {
-        member_id: string;
-        org_id: string;
-    };
-};
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteResponse = (void);
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteError = (HTTPValidationError);
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchData = {
-    body: OrgMemberRoleUpdateRequest;
-    path: {
-        member_id: string;
-        org_id: string;
-    };
-};
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchResponse = (OrgMemberResponse);
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchError = (HTTPValidationError);
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostData = {
-    body: OrgOwnershipTransferRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostResponse = (void);
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostError = (HTTPValidationError);
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostData = {
-    body: OrgInvitationCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostResponse = (OrgInvitationResponse);
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostError = (HTTPValidationError);
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
-    path: {
-        invitation_id: string;
-        org_id: string;
-    };
-};
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
-
-export type CreateTeamV1OrgsOrgIdTeamsPostData = {
-    body: OrgTeamCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateTeamV1OrgsOrgIdTeamsPostResponse = (OrgTeamResponse);
-
-export type CreateTeamV1OrgsOrgIdTeamsPostError = (HTTPValidationError);
-
-export type ListTeamsV1OrgsOrgIdTeamsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListTeamsV1OrgsOrgIdTeamsGetResponse = (OrgTeamsResponse);
-
-export type ListTeamsV1OrgsOrgIdTeamsGetError = (HTTPValidationError);
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchData = {
-    body: OrgTeamRenameRequest;
-    path: {
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchResponse = (OrgTeamResponse);
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchError = (HTTPValidationError);
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
-    path: {
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
-    path: {
-        member_id: string;
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutResponse = (void);
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutError = (HTTPValidationError);
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
-    path: {
-        member_id: string;
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
-
-export type PreviewInvitationV1OrgInvitationsTokenGetData = {
-    path: {
-        token: string;
-    };
-};
-
-export type PreviewInvitationV1OrgInvitationsTokenGetResponse = (OrgInvitationPreviewResponse);
-
-export type PreviewInvitationV1OrgInvitationsTokenGetError = (HTTPValidationError);
-
-export type AcceptInvitationV1OrgInvitationsTokenAcceptPostData = {
-    path: {
-        token: string;
-    };
-};
-
-export type AcceptInvitationV1OrgInvitationsTokenAcceptPostResponse = (MyOrganizationResponse);
-
-export type AcceptInvitationV1OrgInvitationsTokenAcceptPostError = (HTTPValidationError);
-
-export type DeclineInvitationV1OrgInvitationsTokenDeclinePostData = {
-    path: {
-        token: string;
-    };
-};
-
-export type DeclineInvitationV1OrgInvitationsTokenDeclinePostResponse = (void);
-
-export type DeclineInvitationV1OrgInvitationsTokenDeclinePostError = (HTTPValidationError);
-
-export type AdminListOrgsV1AdminOrgsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        query?: (string | null);
-    };
-};
-
-export type AdminListOrgsV1AdminOrgsGetResponse = (AdminOrgsResponse);
-
-export type AdminListOrgsV1AdminOrgsGetError = (HTTPValidationError);
-
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
-
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
 
 // Compatibility aliases used by application code.
 export type ExploreAttestationStatus = ListFrameworksV1ExploreFrameworksGetData["query"] extends infer Query ? NonNullable<Query extends { attestation_status?: infer Value } ? Value : never> : never;
