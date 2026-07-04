@@ -61,7 +61,7 @@ const CONFIG_GROUPS: { title: string; keys: ConfigKey[] }[] = [
     keys: [
       "attestation_cohort_size",
       "attestation_offer_accept_hours",
-      "attestation_dispute_window_days",
+      "attestation_dispute_window_business_days",
       "attestation_completion_sla_days_framework",
       "attestation_completion_sla_days_contributor",
       "attestation_completion_sla_days_operator",

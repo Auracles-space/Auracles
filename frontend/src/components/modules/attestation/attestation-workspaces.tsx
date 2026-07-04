@@ -214,7 +214,7 @@ export function AttestationRequestorPanel() {
     setError(null);
     configureBrowserClient();
     const result = await createAttestationDispute({
-      body: { reason: disputeReason },
+      body: { reason: disputeReason, category: "scope_error" },
       headers: getAccessTokenHeaders(),
       path: { attestation_id: attestationId },
     });
@@ -409,8 +409,7 @@ export function AttestorApplicationPanel() {
    */
   function startEdit(application: AttestorApplicationResponse) {
     setEditingId(application.id);
-    setSpecializations(application.specializations.join(", "));
-    setJurisdictions(application.jurisdictions.join(", "));
+    setJurisdictions(application.jurisdictions?.join(", ") ?? "");
     setCredentialsSummary(application.credentials_summary);
     setProfessionalReferences(application.professional_references);
     setError(null);
@@ -425,11 +424,13 @@ export function AttestorApplicationPanel() {
     setNotice(null);
     configureBrowserClient();
     const body = {
+      legal_name: "",
+      sectors: [],
+      framework_categories: [],
       credentials_summary: credentialsSummary,
       jurisdictions: splitCsv(jurisdictions),
       professional_references: professionalReferences,
       sample_work: {},
-      specializations: splitCsv(specializations),
     };
     const result = editingId
       ? await updateAttestorApplication({
@@ -516,11 +517,6 @@ export function AttestorApplicationPanel() {
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Specializations
-            <Input  onChange={(event) => setSpecializations(event.target.value)} placeholder="e.g. ISO 27001, SOC 2" value={specializations} />
-            <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
             <Input  onChange={(event) => setJurisdictions(event.target.value)} placeholder="e.g. US, EU, NG" value={jurisdictions} />
             <span className="text-xs font-normal text-foreground-subtle">Comma-separated. At least one.</span>
@@ -606,11 +602,16 @@ export function AttestorAssignmentsPanel() {
   ) {
     setError(null);
     configureBrowserClient();
-    const call = decision === "accept" ? acceptAttestationOffer : declineAttestationOffer;
-    const result = await call({
-      headers: getAccessTokenHeaders(),
-      path: { attestation_id: assignment.attestation_id },
-    });
+    const result = decision === "accept" 
+      ? await acceptAttestationOffer({
+          body: { content_ack: true, ack_version: "v1" },
+          headers: getAccessTokenHeaders(),
+          path: { attestation_id: assignment.attestation_id },
+        })
+      : await declineAttestationOffer({
+          headers: getAccessTokenHeaders(),
+          path: { attestation_id: assignment.attestation_id },
+        });
     if (!result.response.ok) {
       setError(describeGeneratedError(result.error));
       return;
@@ -820,12 +821,8 @@ export function AdminAttestationPanel() {
     configureBrowserClient();
     const result = await resolveAttestationDispute({
       body: {
-        refund_amount:
-          resolutionType === "split" ? refundAmount || null : undefined,
-        release_amount:
-          resolutionType === "split" ? releaseAmount || null : undefined,
+        outcome: resolutionType === "refund" ? "upheld_refund" : "rejected",
         resolution_notes: manualReason,
-        resolution_type: resolutionType,
         totp_code: totpCode,
       },
       headers: getAccessTokenHeaders(),
@@ -1096,14 +1093,6 @@ function ApplicationList({
                   Attestor Application
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {application.specializations.map((spec) => (
-                    <span
-                      key={spec}
-                      className="inline-flex items-center rounded-lg border border-border-default bg-surface-2 px-2 py-0.5 text-xs font-semibold text-foreground-muted"
-                    >
-                      {spec}
-                    </span>
-                  ))}
                   {application.jurisdictions.map((jur) => (
                     <span
                       key={jur}
