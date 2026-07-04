@@ -2016,7 +2016,7 @@ export const disconnectProviderV1IntegrationsConnectorsProviderDelete = <ThrowOn
 
 /**
  * Browse files in a connected provider
- * One page of the contributor's files from the connected provider, newest first, with an importability flag per file.
+ * One page of the contributor's files and folders from the connected provider, folders first. Browsing is scoped to folder_id (root when omitted); a query searches globally.
  */
 export const listConnectorFilesV1IntegrationsConnectorsProviderFilesGet = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetResponse, ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetError, ThrowOnError>({

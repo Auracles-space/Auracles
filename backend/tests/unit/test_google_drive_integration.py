@@ -94,22 +94,51 @@ async def test_refresh_invalid_grant_raises_auth_error() -> None:
 
 
 @respx.mock
-async def test_list_drive_files_excludes_folders_and_escapes_query() -> None:
-    """Browse excludes folders and single-quote-escapes the search term."""
+async def test_list_drive_files_search_is_global_and_escaped() -> None:
+    """A search term produces a global, escaped query with no parent scope."""
     route = respx.get("https://www.googleapis.com/drive/v3/files").mock(
         return_value=httpx.Response(
             200, json={"files": [{"id": "f1"}], "nextPageToken": "cursor"}
         )
     )
     page = await list_drive_files(
-        access_token="at", query="bob's plan", page_token=None
+        access_token="at", query="bob's plan", page_token=None, folder_id="ignored"
     )
-    q = parse_qs(urlsplit(str(route.calls.last.request.url)).query)["q"][0]
-    assert "mimeType != 'application/vnd.google-apps.folder'" in q
+    params = parse_qs(urlsplit(str(route.calls.last.request.url)).query)
+    q = params["q"][0]
     assert "trashed = false" in q
     assert "name contains 'bob\\'s plan'" in q
+    assert "in parents" not in q
+    assert params["orderBy"] == ["folder,modifiedTime desc"]
     assert page["files"] == [{"id": "f1"}]
     assert page["next_page_token"] == "cursor"
+
+
+@respx.mock
+async def test_list_drive_files_browses_my_drive_root_by_default() -> None:
+    """Without a search term or folder, browsing lists the My Drive root."""
+    route = respx.get("https://www.googleapis.com/drive/v3/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    await list_drive_files(
+        access_token="at", query=None, page_token=None, folder_id=None
+    )
+    q = parse_qs(urlsplit(str(route.calls.last.request.url)).query)["q"][0]
+    assert "'root' in parents" in q
+    assert "name contains" not in q
+
+
+@respx.mock
+async def test_list_drive_files_scopes_to_folder() -> None:
+    """A folder id scopes browsing to that folder's children, escaped."""
+    route = respx.get("https://www.googleapis.com/drive/v3/files").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    await list_drive_files(
+        access_token="at", query=None, page_token=None, folder_id="fold'er-1"
+    )
+    q = parse_qs(urlsplit(str(route.calls.last.request.url)).query)["q"][0]
+    assert "'fold\\'er-1' in parents" in q
 
 
 @respx.mock

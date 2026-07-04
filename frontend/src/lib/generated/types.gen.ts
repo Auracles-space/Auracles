@@ -1474,7 +1474,10 @@ export type ConnectorConnectResponse = {
 };
 
 /**
- * One importable file in the contributor's connected Drive.
+ * One file or folder in the contributor's connected Drive.
+ *
+ * Folders are navigation targets for the picker (``is_folder=True``)
+ * and are never importable themselves.
  */
 export type ConnectorFileItem = {
     id: string;
@@ -1484,6 +1487,7 @@ export type ConnectorFileItem = {
     modified_time?: (string | null);
     icon_link?: (string | null);
     importable: boolean;
+    is_folder?: boolean;
 };
 
 /**
@@ -5526,6 +5530,7 @@ export type ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetData = {
         provider: string;
     };
     query?: {
+        folder_id?: (string | null);
         page_token?: (string | null);
         query?: (string | null);
     };

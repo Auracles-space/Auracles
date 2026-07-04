@@ -5994,8 +5994,9 @@ paths:
       tags:
       - Integrations
       summary: Browse files in a connected provider
-      description: One page of the contributor's files from the connected provider,
-        newest first, with an importability flag per file.
+      description: One page of the contributor's files and folders from the connected
+        provider, folders first. Browsing is scoped to folder_id (root when omitted);
+        a query searches globally.
       operationId: list_connector_files_v1_integrations_connectors__provider__files_get
       security:
       - HTTPBearer: []
@@ -6024,6 +6025,15 @@ paths:
             maxLength: 512
           - type: 'null'
           title: Page Token
+      - name: folder_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 256
+          - type: 'null'
+          title: Folder Id
       responses:
         '200':
           description: Successful Response
@@ -13350,6 +13360,10 @@ components:
         importable:
           type: boolean
           title: Importable
+        is_folder:
+          type: boolean
+          title: Is Folder
+          default: false
       type: object
       required:
       - id
@@ -13357,7 +13371,12 @@ components:
       - mime_type
       - importable
       title: ConnectorFileItem
-      description: One importable file in the contributor's connected Drive.
+      description: 'One file or folder in the contributor''s connected Drive.
+
+
+        Folders are navigation targets for the picker (``is_folder=True``)
+
+        and are never importable themselves.'
     ConnectorFilesResponse:
       properties:
         files:

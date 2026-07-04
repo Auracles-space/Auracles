@@ -61,6 +61,28 @@ const VIDEO_FILE: ConnectorFileItem = {
   importable: false,
 };
 
+const DOCX_FILE: ConnectorFileItem = {
+  id: "file-3",
+  name: "notes.docx",
+  mime_type:
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  size: 1024,
+  modified_time: null,
+  icon_link: null,
+  importable: true,
+};
+
+const FOLDER: ConnectorFileItem = {
+  id: "folder-1",
+  name: "Playbooks",
+  mime_type: "application/vnd.google-apps.folder",
+  size: null,
+  modified_time: null,
+  icon_link: null,
+  importable: false,
+  is_folder: true,
+};
+
 /** Mock the connectors lookup with the given items. */
 function mockConnectors(connectors: ConnectorStatusItem[]): void {
   listConnectors.mockResolvedValue({
@@ -192,6 +214,105 @@ describe("GoogleDrivePicker", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Import" }));
     expect(
       await screen.findByText("The request could not be completed."),
+    ).toBeInTheDocument();
+  });
+
+  it("opens a folder and returns to My Drive via the breadcrumb", async () => {
+    mockConnectors([CONNECTED]);
+    listFiles
+      .mockResolvedValueOnce({
+        data: { files: [FOLDER, PDF_FILE], next_page_token: null },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as never)
+      .mockResolvedValueOnce({
+        data: { files: [DOCX_FILE], next_page_token: null },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as never)
+      .mockResolvedValueOnce({
+        data: { files: [FOLDER, PDF_FILE], next_page_token: null },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as never);
+
+    render(
+      <GoogleDrivePicker frameworkId="fw-1" onArtifactCreated={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+    expect(await screen.findByText("notes.docx")).toBeInTheDocument();
+    expect(listFiles.mock.calls[1][0]).toMatchObject({
+      query: { folder_id: "folder-1" },
+    });
+    expect(screen.getByText("Playbooks")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "My Drive" }));
+    expect(await screen.findByText("playbook.pdf")).toBeInTheDocument();
+    expect(listFiles.mock.calls[2][0]).toMatchObject({ query: {} });
+  });
+
+  it("imports every checked file sequentially", async () => {
+    mockConnectors([CONNECTED]);
+    mockFilesPage([PDF_FILE, DOCX_FILE]);
+    importArtifact.mockResolvedValue({
+      data: { id: "artifact-1", processing_status: "processing" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    const onArtifactCreated = vi.fn();
+
+    render(
+      <GoogleDrivePicker
+        frameworkId="fw-1"
+        onArtifactCreated={onArtifactCreated}
+      />,
+    );
+    fireEvent.click(await screen.findByLabelText("Select playbook.pdf"));
+    fireEvent.click(screen.getByLabelText("Select notes.docx"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Import selected (2)" }),
+    );
+
+    await waitFor(() => expect(onArtifactCreated).toHaveBeenCalledTimes(2));
+    expect(importArtifact.mock.calls[0][0]).toMatchObject({
+      body: { file_id: "file-1" },
+    });
+    expect(importArtifact.mock.calls[1][0]).toMatchObject({
+      body: { file_id: "file-3" },
+    });
+  });
+
+  it("continues a batch after one file fails and names the failure", async () => {
+    mockConnectors([CONNECTED]);
+    mockFilesPage([PDF_FILE, DOCX_FILE]);
+    importArtifact
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: { detail: "Framework artifacts exceed the 500MB limit." },
+        response: new Response(null, { status: 413 }),
+      } as never)
+      .mockResolvedValueOnce({
+        data: { id: "artifact-2", processing_status: "processing" },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      } as never);
+    const onArtifactCreated = vi.fn();
+
+    render(
+      <GoogleDrivePicker
+        frameworkId="fw-1"
+        onArtifactCreated={onArtifactCreated}
+      />,
+    );
+    fireEvent.click(await screen.findByLabelText("Select playbook.pdf"));
+    fireEvent.click(screen.getByLabelText("Select notes.docx"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Import selected (2)" }),
+    );
+
+    await waitFor(() => expect(onArtifactCreated).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText("Could not import: playbook.pdf"),
     ).toBeInTheDocument();
   });
 

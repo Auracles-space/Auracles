@@ -25,6 +25,7 @@ from app.integrations.google_oauth import (
 )
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 _DRIVE_TIMEOUT_SECONDS = 30.0
@@ -291,13 +292,20 @@ async def list_drive_files(
     access_token: str,
     query: str | None,
     page_token: str | None,
+    folder_id: str | None = None,
 ) -> dict[str, Any]:
-    """List the user's non-folder Drive files, newest first.
+    """List Drive files and folders for the import picker, folders first.
+
+    Two modes: a search term runs globally across the user's Drive (so
+    shared files stay findable), while browsing without one is scoped to
+    the children of ``folder_id`` (My Drive root when omitted).
 
     Args:
         access_token: A valid Drive access token.
         query: Optional name-contains search term (escaped before use).
+            When given, ``folder_id`` is ignored — search is global.
         page_token: Optional cursor from a previous page.
+        folder_id: Optional folder to browse into (escaped before use).
 
     Returns:
         Dict with ``files`` (raw Drive file dicts) and ``next_page_token``.
@@ -306,14 +314,17 @@ async def list_drive_files(
         GoogleDriveAuthError: On 401/403 from Drive.
         GoogleDriveError: On other failures.
     """
-    q = "trashed = false and mimeType != 'application/vnd.google-apps.folder'"
+    clauses = ["trashed = false"]
     if query:
-        q += f" and name contains '{_escape_drive_query(query)}'"
+        clauses.append(f"name contains '{_escape_drive_query(query)}'")
+    else:
+        parent = _escape_drive_query(folder_id) if folder_id else "root"
+        clauses.append(f"'{parent}' in parents")
     params: dict[str, str] = {
-        "q": q,
+        "q": " and ".join(clauses),
         "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime,iconLink)",
         "pageSize": str(_DRIVE_PAGE_SIZE),
-        "orderBy": "modifiedTime desc",
+        "orderBy": "folder,modifiedTime desc",
     }
     if page_token:
         params["pageToken"] = page_token

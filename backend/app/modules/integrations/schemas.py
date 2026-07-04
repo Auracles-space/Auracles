@@ -37,7 +37,11 @@ class ConnectorConnectResponse(BaseModel):
 
 
 class ConnectorFileItem(BaseModel):
-    """One importable file in the contributor's connected Drive."""
+    """One file or folder in the contributor's connected Drive.
+
+    Folders are navigation targets for the picker (``is_folder=True``)
+    and are never importable themselves.
+    """
 
     id: str
     name: str
@@ -46,6 +50,7 @@ class ConnectorFileItem(BaseModel):
     modified_time: datetime | None = None
     icon_link: str | None = None
     importable: bool
+    is_folder: bool = False
 
 
 class ConnectorFilesResponse(BaseModel):

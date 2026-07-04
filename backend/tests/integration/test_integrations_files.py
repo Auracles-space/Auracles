@@ -167,6 +167,11 @@ async def test_browse_maps_files_with_importability(
                         "mimeType": "video/mp4",
                         "size": "10",
                     },
+                    {
+                        "id": "d1",
+                        "name": "Playbooks",
+                        "mimeType": "application/vnd.google-apps.folder",
+                    },
                 ],
                 "nextPageToken": "cursor-2",
             },
@@ -182,9 +187,12 @@ async def test_browse_maps_files_with_importability(
     by_id = {item["id"]: item for item in payload["files"]}
     assert by_id["f1"]["importable"] is True
     assert by_id["f1"]["size"] == 2048
+    assert by_id["f1"]["is_folder"] is False
     assert by_id["f2"]["importable"] is True
     assert by_id["f2"]["size"] is None
     assert by_id["f3"]["importable"] is False
+    assert by_id["d1"]["is_folder"] is True
+    assert by_id["d1"]["importable"] is False
 
 
 @respx.mock
@@ -258,6 +266,26 @@ async def test_browse_dead_refresh_grant_marks_reauth_required(
     row = await _connection(connection_id)
     assert row is not None
     assert row.status == "reauth_required"
+
+
+@respx.mock
+async def test_browse_scopes_to_requested_folder(
+    client: AsyncClient, migrated_database: None, browse_context: dict[str, Any]
+) -> None:
+    """The folder_id parameter scopes the Drive query to that folder."""
+    user_id = browse_context["user_id"]
+    await _seed_connection(user_id)
+    route = respx.get(FILES_URL).mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    response = await client.get(
+        "/v1/integrations/connectors/google-drive/files",
+        params={"folder_id": "folder-1"},
+        headers=_headers(user_id),
+    )
+    assert response.status_code == 200
+    q = parse_qs(urlsplit(str(route.calls.last.request.url)).query)["q"][0]
+    assert "'folder-1' in parents" in q
 
 
 async def test_browse_without_connection_is_404(

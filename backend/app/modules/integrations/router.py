@@ -234,8 +234,9 @@ async def disconnect_provider(
     response_model=ConnectorFilesResponse,
     summary="Browse files in a connected provider",
     description=(
-        "One page of the contributor's files from the connected provider, "
-        "newest first, with an importability flag per file."
+        "One page of the contributor's files and folders from the "
+        "connected provider, folders first. Browsing is scoped to "
+        "folder_id (root when omitted); a query searches globally."
     ),
 )
 async def list_connector_files(
@@ -244,6 +245,7 @@ async def list_connector_files(
     db: DatabaseSession,
     query: Annotated[str | None, Query(max_length=256)] = None,
     page_token: Annotated[str | None, Query(max_length=512)] = None,
+    folder_id: Annotated[str | None, Query(max_length=256)] = None,
 ) -> ConnectorFilesResponse:
     """Browse the connected provider's files for the import picker."""
     return await service.browse_files(
@@ -252,4 +254,5 @@ async def list_connector_files(
         provider_segment=provider,
         query=query,
         page_token=page_token,
+        folder_id=folder_id,
     )

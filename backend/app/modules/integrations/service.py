@@ -26,6 +26,7 @@ from app.integrations import google_drive
 from app.integrations.google_drive import (
     DRIVE_SCOPE,
     EXPORT_MIME_MAP,
+    FOLDER_MIME_TYPE,
     GoogleDriveAuthError,
     GoogleDriveError,
 )
@@ -387,8 +388,9 @@ async def browse_files(
     provider_segment: str,
     query: str | None,
     page_token: str | None,
+    folder_id: str | None = None,
 ) -> ConnectorFilesResponse:
-    """List the user's Drive files for the import picker.
+    """List the user's Drive files and folders for the import picker.
 
     Raises:
         HTTPException(404): Unknown provider or no connection.
@@ -401,7 +403,10 @@ async def browse_files(
     )
     try:
         page = await google_drive.list_drive_files(
-            access_token=access_token, query=query, page_token=page_token
+            access_token=access_token,
+            query=query,
+            page_token=page_token,
+            folder_id=folder_id,
         )
     except GoogleDriveAuthError:
         await _mark_reauth_required(db, connection.id)
@@ -422,6 +427,7 @@ async def browse_files(
     for raw in page["files"]:
         mime_type = str(raw.get("mimeType", ""))
         size_value = raw.get("size")
+        is_folder = mime_type == FOLDER_MIME_TYPE
         files.append(
             ConnectorFileItem(
                 id=str(raw.get("id", "")),
@@ -430,7 +436,8 @@ async def browse_files(
                 size=int(size_value) if size_value is not None else None,
                 modified_time=raw.get("modifiedTime"),
                 icon_link=raw.get("iconLink"),
-                importable=_is_importable(mime_type),
+                importable=not is_folder and _is_importable(mime_type),
+                is_folder=is_folder,
             )
         )
     return ConnectorFilesResponse(

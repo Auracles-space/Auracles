@@ -256,6 +256,9 @@ def test_settings_rejects_dev_connector_token_key_outside_local() -> None:
             TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
             PAYOUT_ACCOUNT_ENCRYPTION_KEY=_VALID_PAYOUT_ACCOUNT_KEY,
             PARTNER_WEBHOOK_ENCRYPTION_KEY=_VALID_PARTNER_WEBHOOK_KEY,
+            # Explicit dev key: a developer's .env may carry a real one, and
+            # explicit kwargs are the only .env-independent way to test this.
+            CONNECTOR_TOKEN_ENCRYPTION_KEY=config.DEV_CONNECTOR_TOKEN_ENCRYPTION_KEY,
             STRIPE_SECRET_KEY="sk_live_real",
             STRIPE_WEBHOOK_SECRET="whsec_real",
         )
