@@ -8,19 +8,22 @@ org-as-attestor/contributor/operator sub-projects.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,6 +59,24 @@ ORG_INVITATION_STATUS_ENUM = ENUM(
     "revoked",
     "expired",
     name="org_invitation_status_enum",
+    create_type=False,
+)
+ORG_ATTESTOR_APPLICATION_STATUS_ENUM = ENUM(
+    "draft",
+    "submitted",
+    "needs_info",
+    "approved",
+    "rejected",
+    name="org_attestor_application_status_enum",
+    create_type=False,
+)
+# Reuses the PG enum created by the individual attestor migrations; the type
+# survives the individual pipeline retirement because org applications share it.
+ORG_TAX_DOCUMENT_TYPE_ENUM = ENUM(
+    "w9",
+    "w8ben",
+    "other",
+    name="tax_document_type_enum",
     create_type=False,
 )
 
@@ -233,4 +254,239 @@ class OrgTeamMember(CreatedAtMixin, Base):
         PG_UUID(as_uuid=True),
         ForeignKey("org_members.id", ondelete="CASCADE"),
         primary_key=True,
+    )
+
+
+class OrgAttestorApplication(UpdatedAtMixin, Base):
+    """Org application for the attestor capability with per-gate stamps.
+
+    Replaces the individual attestor_applications flow: KYB fields,
+    matching inputs, owner-signed undertakings, payout/tax gates, and the
+    nominated trial member all live on one row so the admin gate checklist
+    reads directly from it.
+    """
+
+    __tablename__ = "org_attestor_applications"
+    __table_args__ = (
+        Index(
+            "uq_org_attestor_app_live",
+            "org_id",
+            unique=True,
+            postgresql_where=text("status IN ('draft', 'submitted', 'needs_info')"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        ORG_ATTESTOR_APPLICATION_STATUS_ENUM,
+        nullable=False,
+        server_default="draft",
+    )
+    legal_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    incorporation_doc_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    kyb_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    kyb_verified_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    sectors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    framework_categories: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    credentials_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    sample_work: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    professional_references: Mapped[str] = mapped_column(Text, nullable=False)
+    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    coi_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    coi_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    payout_account_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("payout_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tax_document_type: Mapped[str | None] = mapped_column(
+        ORG_TAX_DOCUMENT_TYPE_ENUM,
+        nullable=True,
+    )
+    tax_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trial_attestation_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # SET NULL (not CASCADE): removing the nominated member must not delete
+    # the application's KYB record; the org re-nominates instead.
+    trial_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    admin_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class OrgAttestorProfile(UpdatedAtMixin, Base):
+    """Approved org attestor matching profile copied from its application."""
+
+    __tablename__ = "org_attestor_profiles"
+    __table_args__ = (
+        Index(
+            "idx_org_attestor_profiles_specializations_gin",
+            "specializations",
+            postgresql_using="gin",
+        ),
+        Index(
+            "idx_org_attestor_profiles_jurisdictions_gin",
+            "jurisdictions",
+            postgresql_using="gin",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    sectors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    framework_categories: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+    verification_level: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
+    coi_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    coi_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    coi_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    late_submission_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    suspension_review_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    certified_attestor_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class OrgMemberNda(CreatedAtMixin, Base):
+    """A member's signed platform NDA for org attestation work.
+
+    One row per member; re-signing after a version bump updates
+    nda_version and signed_at in place (Task 3 service behavior).
+    """
+
+    __tablename__ = "org_member_ndas"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    member_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    nda_version: Mapped[str] = mapped_column(Text, nullable=False)
+    signed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
     )
