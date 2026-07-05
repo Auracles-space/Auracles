@@ -411,6 +411,46 @@ def notify_attestor_warning(user_id: UUID, *, reason: str) -> bool:
     return True
 
 
+def notify_org_attestor_warning(
+    recipient_id: UUID, *, org_id: UUID, reason: str
+) -> bool:
+    """Notify one org owner/admin that an upheld dispute warned the organization.
+
+    The reviewing member who staffed the disputed attestation is never named;
+    the warning attaches to the organization and its managers are notified.
+
+    Args:
+        recipient_id: An owner or admin of the warned organization.
+        org_id: The warned attestor organization.
+        reason: Short human-readable warning reason (no PII).
+
+    Returns:
+        True if the notification was enqueued; False if dispatch failed.
+    """
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(recipient_id),
+            notification_type="org_attestor_warning_issued",
+            title="A dispute was upheld against your organization",
+            body=(
+                "An admin upheld a dispute on one of your organization's "
+                "attestations and recorded a formal warning. Repeated warnings "
+                "trigger a review."
+            ),
+            payload={"reason": reason, "org_id": str(org_id)},
+            link=_attestor_onboarding_link(),
+            dedupe_key=f"org_attestor_warning_issued:{org_id}:{recipient_id}:{reason}",
+        )
+    except Exception as exc:
+        logger.bind(
+            module="attestation",
+            action="queue_org_attestor_warning_notification",
+            org_id=org_id,
+        ).error("notification_dispatch_failed", error=str(exc))
+        return False
+    return True
+
+
 def notify_refunded(attestation: Attestation, *, reason: str) -> None:
     """Notify the requestor that an Attestation fee was refunded."""
     _dispatch(

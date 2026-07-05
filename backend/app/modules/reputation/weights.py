@@ -43,12 +43,17 @@ _DEFAULT_WEIGHTS: dict[str, dict[str, str]] = {
         "rating": "0.75",
         "reliability": "0.25",
     },
+    "attestor_org": {
+        "rating": "0.75",
+        "reliability": "0.25",
+    },
 }
 _DEFAULT_MIN_ACTIVITY = {
     "framework": 3,
     "contributor": 1,
     "operator": 1,
     "attestor": 3,
+    "attestor_org": 3,
 }
 
 

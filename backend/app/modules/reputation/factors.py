@@ -362,3 +362,87 @@ async def attestor_factors(
     )
 
     return {"rating": rating, "reliability": reliability}
+
+
+async def org_attestor_factors(
+    db: AsyncSession,
+    org_id: UUID,
+    cfg: ReputationConfig,
+) -> dict[str, FactorResult]:
+    """Aggregate reputation factors for one attestor organization.
+
+    The org-level mirror of :func:`attestor_factors`: signals key on the
+    organization's stood attestations (``attestor_org_id``), its requestor
+    ratings, its upheld warnings, and its profile late-submission count. The
+    reviewing member who staffed each review never enters the score.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: Organization id of the attestor being scored.
+        cfg: Loaded ``attestor_org`` reputation config.
+
+    Returns:
+        Mapping of ``rating`` and ``reliability`` factor results.
+    """
+    from app.modules.organizations.models import OrgAttestorProfile
+
+    stood_attestation_ids = (
+        select(Attestation.id)
+        .where(
+            Attestation.attestor_org_id == org_id,
+            Attestation.status == "closed",
+            Attestation.report_published_eligible.is_(True),
+        )
+        .scalar_subquery()
+    )
+
+    avg_stars, rating_count = (
+        await db.execute(
+            select(
+                func.avg(AttestationRating.stars),
+                func.count(AttestationRating.id),
+            ).where(AttestationRating.attestation_id.in_(stood_attestation_ids))
+        )
+    ).one()
+    rating = FactorResult(
+        _avg_review_norm(Decimal(str(avg_stars)) if avg_stars is not None else None),
+        int(rating_count or 0),
+    )
+
+    stood_count = int(
+        await db.scalar(
+            select(func.count()).select_from(
+                select(Attestation.id)
+                .where(
+                    Attestation.attestor_org_id == org_id,
+                    Attestation.status == "closed",
+                    Attestation.report_published_eligible.is_(True),
+                )
+                .subquery()
+            )
+        )
+        or 0
+    )
+    warning_count = int(
+        await db.scalar(
+            select(func.count(AttestorWarning.id)).where(
+                AttestorWarning.attestor_org_id == org_id
+            )
+        )
+        or 0
+    )
+    late_count = int(
+        await db.scalar(
+            select(OrgAttestorProfile.late_submission_count).where(
+                OrgAttestorProfile.org_id == org_id
+            )
+        )
+        or 0
+    )
+    penalty = cfg.reliability_penalty * Decimal(warning_count + late_count)
+    reliability = FactorResult(
+        max(Decimal("0"), Decimal("1") - penalty),
+        stood_count,
+    )
+
+    return {"rating": rating, "reliability": reliability}

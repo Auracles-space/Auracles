@@ -208,6 +208,7 @@ async def test_recompute_reputation_batch_scores_every_subject_type(
         "contributor": 1,
         "operator": 1,
         "attestor": 0,
+        "attestor_org": 0,
     }
 
     async with async_session_factory() as session:

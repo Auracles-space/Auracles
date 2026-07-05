@@ -841,6 +841,15 @@ class AttestorWarning(Base):
             "attestor_id",
             "created_at",
         ),
+        Index(
+            "idx_attestor_warnings_org_created",
+            "attestor_org_id",
+            "created_at",
+        ),
+        CheckConstraint(
+            "(attestor_id IS NULL) != (attestor_org_id IS NULL)",
+            name="ck_attestor_warnings_attestor_xor",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -848,10 +857,15 @@ class AttestorWarning(Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    attestor_id: Mapped[UUID] = mapped_column(
+    attestor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    attestor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
     )
     dispute_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

@@ -22,6 +22,7 @@ from app.modules.organizations.models import (
     OrgAttestorProfile,
     OrgMember,
 )
+from app.modules.reputation import service as reputation_service
 
 _COMPLETED_ATTESTATION_STATUSES = ("released", "resolved", "closed")
 
@@ -106,10 +107,24 @@ async def _directory_entry(
             db=db, org_id=organization.id
         ),
         member_count=await _member_count(db=db, org_id=organization.id),
-        # Org reputation scoring is wired in Task 10; None until then.
-        reputation=None,
+        reputation=await _org_reputation(db=db, org_id=organization.id),
         certified=profile.certified_attestor_at is not None,
     )
+
+
+async def _org_reputation(*, db: AsyncSession, org_id: UUID) -> float | None:
+    """Return the org's published reputation number, or None while provisional.
+
+    Mirrors the public-surface visibility rule: a cold-start (provisional) or
+    never-scored organization reads as None so the directory shows the "New"
+    badge rather than an unearned number.
+    """
+    score = await reputation_service.get_score(
+        db, subject_type="attestor_org", subject_id=org_id
+    )
+    if score is None or score.is_provisional or score.score is None:
+        return None
+    return float(score.score)
 
 
 async def _completed_attestations(*, db: AsyncSession, org_id: UUID) -> int:

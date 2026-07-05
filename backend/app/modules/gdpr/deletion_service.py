@@ -29,6 +29,7 @@ from app.modules.gdpr.schemas import (
     AccountDeletionRequestBody,
     AccountDeletionStatusResponse,
 )
+from app.modules.organizations.models import OrgMember
 from app.modules.organizations.service import user_deletion_org_blockers
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 
@@ -278,6 +279,28 @@ async def _count_active_attestations(db: AsyncSession, user_id: UUID) -> int:
     )
 
 
+async def _count_active_reviewing_assignments(
+    db: AsyncSession, user_id: UUID
+) -> int:
+    """Return in-flight attestations the user staffs as an org reviewing member.
+
+    Deleting a member mid-review would orphan an active org attestation, so a
+    reviewing member with an in-flight review is blocked from deletion until the
+    review reaches a terminal state.
+    """
+    return int(
+        await db.scalar(
+            select(func.count(func.distinct(Attestation.id)))
+            .join(OrgMember, OrgMember.id == Attestation.reviewing_member_id)
+            .where(
+                Attestation.status.in_(ACTIVE_ATTESTATION_STATUSES),
+                OrgMember.user_id == user_id,
+            )
+        )
+        or 0
+    )
+
+
 async def collect_blocked_reasons(
     *,
     db: AsyncSession,
@@ -331,6 +354,20 @@ async def collect_blocked_reasons(
                 code="active_attestation",
                 message="Close active attestations before requesting account deletion.",
                 count=active_attestation_count,
+            )
+        )
+    reviewing_assignment_count = await _count_active_reviewing_assignments(
+        db, user_id
+    )
+    if reviewing_assignment_count > 0:
+        reasons.append(
+            AccountDeletionBlockedReason(
+                code="active_reviewing_assignment",
+                message=(
+                    "Complete your in-flight attestation reviews before "
+                    "requesting account deletion."
+                ),
+                count=reviewing_assignment_count,
             )
         )
 

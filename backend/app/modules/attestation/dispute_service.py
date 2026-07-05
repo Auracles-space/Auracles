@@ -197,6 +197,8 @@ async def resolve_dispute(
         now = datetime.now(UTC)
         escrow_id_value: str | None = None
         warned_attestor_id: UUID | None = None
+        warned_org_id: UUID | None = None
+        warned_org_recipients: list[UUID] = []
         if outcome == "rejected":
             escrow = await _load_attestation_escrow(db=db, attestation=attestation)
             escrow_id_value = str(escrow.id)
@@ -244,15 +246,25 @@ async def resolve_dispute(
         dispute.admin_id = admin_id
         dispute.resolution_notes = notes
         dispute.resolved_at = now
-        if outcome in _UPHELD_OUTCOMES and attestation.attestor_id is not None:
-            warned_attestor_id = attestation.attestor_id
-            await _write_warning(
-                db,
-                attestor_id=attestation.attestor_id,
-                dispute_id=dispute.id,
-                reason=f"Dispute upheld ({outcome}): {notes}",
-                now=now,
-            )
+        if outcome in _UPHELD_OUTCOMES:
+            if attestation.attestor_org_id is not None:
+                warned_org_id = attestation.attestor_org_id
+                warned_org_recipients = await _write_org_warning(
+                    db,
+                    org_id=attestation.attestor_org_id,
+                    dispute_id=dispute.id,
+                    reason=f"Dispute upheld ({outcome}): {notes}",
+                    now=now,
+                )
+            elif attestation.attestor_id is not None:
+                warned_attestor_id = attestation.attestor_id
+                await _write_warning(
+                    db,
+                    attestor_id=attestation.attestor_id,
+                    dispute_id=dispute.id,
+                    reason=f"Dispute upheld ({outcome}): {notes}",
+                    now=now,
+                )
         resolution_metadata: dict[str, str] = {
             "attestation_id": str(attestation.id),
             "outcome": outcome,
@@ -286,6 +298,13 @@ async def resolve_dispute(
         attestation_notifications.notify_attestor_warning(
             warned_attestor_id, reason=f"Dispute upheld ({outcome})."
         )
+    if warned_org_id is not None:
+        for recipient_id in warned_org_recipients:
+            attestation_notifications.notify_org_attestor_warning(
+                recipient_id,
+                org_id=warned_org_id,
+                reason=f"Dispute upheld ({outcome}).",
+            )
     return dispute
 
 
@@ -697,6 +716,89 @@ async def attestor_upheld_warning_count(
         )
     )
     return int(count or 0)
+
+
+async def org_attestor_upheld_warning_count(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Count an org's formal warnings in the trailing 12 months.
+
+    The org-level mirror of :func:`attestor_upheld_warning_count`: warnings
+    keyed to ``attestor_org_id`` accrue on every upheld dispute. The rolling
+    count drives the org's suspension-review flag (spec section 4.7).
+    """
+    current_time = now or datetime.now(UTC)
+    cutoff = current_time - timedelta(days=SUSPENSION_REVIEW_WINDOW_DAYS)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AttestorWarning)
+        .where(
+            AttestorWarning.attestor_org_id == org_id,
+            AttestorWarning.created_at >= cutoff,
+        )
+    )
+    return int(count or 0)
+
+
+async def _write_org_warning(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    dispute_id: UUID,
+    reason: str,
+    now: datetime,
+) -> list[UUID]:
+    """Record one org warning and flag suspension review if due.
+
+    Writes the warning against the organization, and — when the rolling count
+    reaches ``SUSPENSION_REVIEW_THRESHOLD`` — stamps the org attestor profile's
+    ``suspension_review_at`` and audits it. Never deactivates an org; the flag
+    is a human-review signal only. The reviewing member is never named.
+
+    Returns:
+        The owner/admin user ids to notify of the warning (resolved while the
+        session is live, for post-commit dispatch).
+    """
+    from app.modules.attestation.matching_service import _org_manager_ids
+    from app.modules.organizations.models import OrgAttestorProfile
+
+    db.add(
+        AttestorWarning(
+            attestor_org_id=org_id,
+            dispute_id=dispute_id,
+            reason=reason,
+        )
+    )
+    await db.flush()
+    recipients = await _org_manager_ids(db, org_id)
+    count = await org_attestor_upheld_warning_count(db, org_id=org_id, now=now)
+    if count < SUSPENSION_REVIEW_THRESHOLD:
+        return recipients
+    profile = await db.scalar(
+        select(OrgAttestorProfile)
+        .where(OrgAttestorProfile.org_id == org_id)
+        .with_for_update()
+    )
+    if profile is None or profile.suspension_review_at is not None:
+        return recipients
+    profile.suspension_review_at = now
+    await write_audit(
+        db=db,
+        actor_id=None,
+        action="org_attestor_suspension_review_flagged",
+        target_type="attestor_org",
+        target_id=org_id,
+        metadata={"upheld_warnings": count},
+    )
+    logger.bind(
+        module="attestation",
+        action="org_attestor_suspension_review_flagged",
+        org_id=org_id,
+    ).warning("org_attestor_suspension_review_flagged")
+    return recipients
 
 
 async def _write_warning(

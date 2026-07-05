@@ -22,7 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.reputation.models import ReputationScore
 from app.modules.reputation.weights import ReputationConfig, load_config
 
-VALID_SUBJECT_TYPES = ("framework", "contributor", "operator", "attestor")
+VALID_SUBJECT_TYPES = (
+    "framework",
+    "contributor",
+    "operator",
+    "attestor",
+    "attestor_org",
+)
 
 _TWO = Decimal("0.01")
 _FOUR = Decimal("0.0001")
@@ -165,6 +171,7 @@ async def subject_exists(
     from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import UserRole
     from app.modules.frameworks.models import Framework
+    from app.modules.organizations.models import OrgAttestorProfile
 
     if subject_type == "framework":
         return (
@@ -175,6 +182,15 @@ async def subject_exists(
         return (
             await db.scalar(
                 select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
+            )
+            is not None
+        )
+    if subject_type == "attestor_org":
+        return (
+            await db.scalar(
+                select(OrgAttestorProfile.id).where(
+                    OrgAttestorProfile.org_id == subject_id
+                )
             )
             is not None
         )
@@ -197,6 +213,7 @@ async def _public_subject_exists(
     from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import User, UserRole
     from app.modules.frameworks.models import Framework
+    from app.modules.organizations.models import Organization, OrgAttestorProfile
 
     if subject_type == "framework":
         return (
@@ -240,6 +257,21 @@ async def _public_subject_exists(
                 select(AttestorProfile.id).where(
                     AttestorProfile.user_id == subject_id,
                     AttestorProfile.active.is_(True),
+                )
+            )
+            is not None
+        )
+
+    if subject_type == "attestor_org":
+        return (
+            await db.scalar(
+                select(OrgAttestorProfile.id)
+                .join(Organization, Organization.id == OrgAttestorProfile.org_id)
+                .where(
+                    OrgAttestorProfile.org_id == subject_id,
+                    OrgAttestorProfile.active.is_(True),
+                    Organization.suspended_at.is_(None),
+                    Organization.deactivated_at.is_(None),
                 )
             )
             is not None

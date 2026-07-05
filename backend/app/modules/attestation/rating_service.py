@@ -113,7 +113,13 @@ async def submit_rating(
         await db.flush()
         await db.refresh(rating)
     log.info("attestation_rated")
-    if attestation.attestor_id is not None:
+    if attestation.attestor_org_id is not None:
+        from app.workers.tasks.reputation import recompute_subject_task
+
+        recompute_subject_task.delay(
+            "attestor_org", str(attestation.attestor_org_id)
+        )
+    elif attestation.attestor_id is not None:
         from app.workers.tasks.reputation import recompute_subject_task
 
         recompute_subject_task.delay("attestor", str(attestation.attestor_id))

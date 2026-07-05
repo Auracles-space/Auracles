@@ -47,6 +47,7 @@ from app.modules.gdpr.models import DataExportRequest
 from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
 from app.modules.integrations.service import export_user_connections
+from app.modules.organizations.models import OrgMember, OrgMemberNda
 from app.modules.organizations.service import export_user_org_memberships
 from app.modules.projects.models import (
     Deliverable,
@@ -582,6 +583,29 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
         .scalars()
         .all()
     )
+    nda_signatures = (
+        await db.execute(
+            select(OrgMemberNda.nda_version, OrgMemberNda.signed_at)
+            .join(OrgMember, OrgMember.id == OrgMemberNda.member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(OrgMemberNda.signed_at)
+        )
+    ).all()
+    # Reviewing-member assignment history: attestations this user personally
+    # staffed on behalf of an attestor org. Ids and dates only — never the
+    # report content, requestor identity, or the org's earnings.
+    reviewing_assignments = (
+        await db.execute(
+            select(
+                Attestation.id,
+                Attestation.accepted_at,
+                Attestation.updated_at,
+            )
+            .join(OrgMember, OrgMember.id == Attestation.reviewing_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Attestation.updated_at)
+        )
+    ).all()
     return {
         "applications": [
             {
@@ -632,6 +656,21 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
                 "updated_at": _json_value(row.updated_at),
             }
             for row in attestations
+        ],
+        "nda_signatures": [
+            {
+                "nda_version": nda_version,
+                "signed_at": _json_value(signed_at),
+            }
+            for nda_version, signed_at in nda_signatures
+        ],
+        "reviewing_member_assignments": [
+            {
+                "attestation_id": str(attestation_id),
+                "accepted_at": _json_value(accepted_at),
+                "updated_at": _json_value(updated_at),
+            }
+            for attestation_id, accepted_at, updated_at in reviewing_assignments
         ],
     }
 
