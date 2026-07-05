@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation import quality_gate, rubrics
+from app.modules.attestation.dependencies import resolve_attestor_actor
 from app.modules.attestation.models import (
     Attestation,
     AttestationUploadSession,
@@ -33,6 +34,7 @@ from app.modules.attestation.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig
+from app.modules.organizations.models import OrgAttestorProfile
 from app.shared.business_days import add_business_days
 from app.workers.tasks.attestation_pdf import render_attestation_report_pdf
 from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
@@ -80,7 +82,7 @@ async def create_report_evidence_upload_session(
         await _load_assigned_attestation_for_update(
             db=db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"in_review", "revision_requested"},
         )
         upload_session = AttestationUploadSession(
@@ -134,7 +136,7 @@ async def submit_report(
         attestation = await _load_assigned_attestation_for_update(
             db=db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"in_review", "revision_requested"},
         )
         failures = await quality_gate.evaluate_quality_gate(
@@ -182,13 +184,22 @@ async def submit_report(
             and now > attestation.completion_due_at
         ):
             attestation.submitted_late = True
-            profile = await db.scalar(
-                select(AttestorProfile)
-                .where(AttestorProfile.user_id == attestor_id)
-                .with_for_update()
-            )
-            if profile is not None:
-                profile.late_submission_count += 1
+            if attestation.attestor_org_id is not None:
+                org_profile = await db.scalar(
+                    select(OrgAttestorProfile)
+                    .where(OrgAttestorProfile.org_id == attestation.attestor_org_id)
+                    .with_for_update()
+                )
+                if org_profile is not None:
+                    org_profile.late_submission_count += 1
+            else:
+                profile = await db.scalar(
+                    select(AttestorProfile)
+                    .where(AttestorProfile.user_id == attestor_id)
+                    .with_for_update()
+                )
+                if profile is not None:
+                    profile.late_submission_count += 1
             await write_audit(
                 db=db,
                 actor_id=attestor_id,
@@ -316,10 +327,14 @@ async def _load_assigned_attestation_for_update(
     *,
     db: AsyncSession,
     attestation_id: UUID,
-    attestor_id: UUID,
+    user_id: UUID,
     allowed_statuses: set[str],
 ) -> Attestation:
-    """Load a locked Attestation assigned to one Attestor in an allowed state."""
+    """Load a locked Attestation writable by its reviewing member in a state.
+
+    The reviewing member (or, during coexistence, the legacy assigned attestor)
+    holds write access; unrelated callers are hidden the attestation (404).
+    """
     attestation = await db.scalar(
         select(Attestation).where(Attestation.id == attestation_id).with_for_update()
     )
@@ -328,11 +343,7 @@ async def _load_assigned_attestation_for_update(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestation not found.",
         )
-    if attestation.attestor_id != attestor_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attestation not found.",
-        )
+    await resolve_attestor_actor(db, attestation=attestation, user_id=user_id)
     if attestation.status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

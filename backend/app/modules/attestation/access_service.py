@@ -21,6 +21,7 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation import matching_service
+from app.modules.attestation.dependencies import attestor_actor
 from app.modules.attestation.models import (
     Attestation,
     AttestationArtifactAccess,
@@ -34,6 +35,7 @@ from app.modules.attestation.schemas import (
 from app.modules.auth.models import User
 from app.modules.frameworks.models import Framework, FrameworkVersionArtifact
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.organizations.models import OrgMember
 
 AccessScope = Literal["preview", "full", "none"]
 
@@ -59,25 +61,40 @@ async def attestation_access_scope(
         user: The requesting user.
 
     Returns:
-        "full" for the assigned attestor in a review state with an acknowledgment,
-        "preview" for a cohort member holding a live offer, otherwise "none".
+        "full" for the reviewing member in a review state with an acknowledgment,
+        "preview" for a cohort org's manager holding a live offer, else "none".
     """
-    # Full: assigned attestor + review-active status + content-use ack
+    # Full: reviewing member (or legacy assignee) + review-active + content ack
+    actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
     if (
-        attestation.attestor_id == user.id
+        actor.is_reviewing_member
         and attestation.status in FULL_ACCESS_STATUSES
         and attestation.content_ack_at is not None
     ):
         return "full"
 
-    # Preview: cohort member with a live "offered" offer
-    offer_status = await db.scalar(
+    # Preview: a cohort org's owner/admin holding a live "offered" offer.
+    offer_org = await db.scalar(
+        select(AttestationOffer.org_id)
+        .join(OrgMember, OrgMember.org_id == AttestationOffer.org_id)
+        .where(
+            AttestationOffer.attestation_id == attestation.id,
+            AttestationOffer.status == "offered",
+            OrgMember.user_id == user.id,
+            OrgMember.role.in_(("owner", "admin")),
+        )
+    )
+    if offer_org is not None:
+        return "preview"
+
+    # Legacy individual cohort member with a live "offered" offer (coexistence).
+    legacy_offer_status = await db.scalar(
         select(AttestationOffer.status).where(
             AttestationOffer.attestation_id == attestation.id,
             AttestationOffer.attestor_id == user.id,
         )
     )
-    if offer_status == "offered":
+    if legacy_offer_status == "offered":
         return "preview"
 
     return "none"

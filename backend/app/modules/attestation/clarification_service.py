@@ -18,13 +18,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.attestation import notifications as attestation_notifications
+from app.modules.attestation.dependencies import attestor_actor
 from app.modules.attestation.models import Attestation, AttestationClarification
 from app.modules.attestation.workspace_service import load_workspace_attestation
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig
+from app.modules.organizations.models import OrgMember
 
 CLARIFICATION_RESPONSE_HOURS_DEFAULT = 48
 MAX_CLARIFICATIONS = 2
+
+
+async def _attestor_recipient_id(
+    db: AsyncSession, attestation: Attestation
+) -> UUID | None:
+    """Resolve the attestor-side notification recipient for an attestation.
+
+    Returns the legacy assignee's user id when set, else the staffed reviewing
+    member's user id, else None (no attestor assigned yet).
+    """
+    if attestation.attestor_id is not None:
+        return attestation.attestor_id
+    if attestation.reviewing_member_id is not None:
+        recipient_id: UUID | None = await db.scalar(
+            select(OrgMember.user_id).where(
+                OrgMember.id == attestation.reviewing_member_id
+            )
+        )
+        return recipient_id
+    return None
 
 
 async def _response_hours(db: AsyncSession) -> int:
@@ -96,7 +118,7 @@ async def send_clarification(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"in_review"},
         )
         total = await db.scalar(
@@ -176,14 +198,18 @@ async def list_clarifications(
         HTTPException: 404 when the attestation is not visible to this user.
     """
     attestation = await db.get(Attestation, attestation_id)
-    if attestation is None or user.id not in {
-        attestation.requestor_id,
-        attestation.attestor_id,
-    }:
+    if attestation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestation not found.",
         )
+    if user.id != attestation.requestor_id:
+        actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
+        if not (actor.is_reviewing_member or actor.is_org_manager):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
     rows = await db.execute(
         select(AttestationClarification)
         .where(AttestationClarification.attestation_id == attestation_id)
@@ -274,10 +300,11 @@ async def respond_to_clarification(
         await db.flush()
 
     await db.refresh(clarification)
-    if attestation.attestor_id is not None:
+    recipient_id = await _attestor_recipient_id(db, attestation)
+    if recipient_id is not None:
         attestation_notifications.notify_clarification_answered(
             attestation,
-            attestor_id=attestation.attestor_id,
+            attestor_id=recipient_id,
             clarification_id=clarification.id,
         )
     return clarification
@@ -341,11 +368,13 @@ async def expire_clarifications(
             )
             expired_count += 1
 
-        if attestation is not None and attestation.attestor_id is not None:
-            attestation_notifications.notify_clarification_answered(
-                attestation,
-                attestor_id=attestation.attestor_id,
-                clarification_id=clarification_id,
-            )
+        if attestation is not None:
+            recipient_id = await _attestor_recipient_id(db, attestation)
+            if recipient_id is not None:
+                attestation_notifications.notify_clarification_answered(
+                    attestation,
+                    attestor_id=recipient_id,
+                    clarification_id=clarification_id,
+                )
 
     return expired_count

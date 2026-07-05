@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.attestation.dependencies import attestor_actor
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig, Transaction
@@ -198,7 +199,8 @@ async def get_earnings_statement(
     """
     attestation = await _load_settled_attestation(db, attestation_id)
     is_admin = await _is_admin(db, user)
-    if user.id != attestation.attestor_id and not is_admin:
+    actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
+    if not (actor.is_reviewing_member or actor.is_org_manager) and not is_admin:
         logger.bind(
             module="attestation",
             action="attestation_earnings_statement_denied",

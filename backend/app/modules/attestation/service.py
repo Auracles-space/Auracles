@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -29,6 +29,7 @@ from app.modules.attestation.schemas import (
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
+from app.modules.organizations.models import OrgMember
 
 IN_FLIGHT_ATTESTATION_STATUSES = {
     "pending_fee",
@@ -63,7 +64,20 @@ async def list_attestations_for_user(
     if role == "requestor":
         predicate = Attestation.requestor_id == user.id
     elif role == "attestor":
-        predicate = Attestation.attestor_id == user.id
+        # A user sees attestor-side work they perform (legacy assignee or
+        # reviewing member) plus, as an org owner/admin, all of the org's work.
+        reviewing_member_ids = select(OrgMember.id).where(
+            OrgMember.user_id == user.id
+        )
+        managed_org_ids = select(OrgMember.org_id).where(
+            OrgMember.user_id == user.id,
+            OrgMember.role.in_(("owner", "admin")),
+        )
+        predicate = or_(
+            Attestation.attestor_id == user.id,
+            Attestation.reviewing_member_id.in_(reviewing_member_ids),
+            Attestation.attestor_org_id.in_(managed_org_ids),
+        )
     else:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

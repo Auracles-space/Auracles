@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.attestation import rubrics
+from app.modules.attestation.dependencies import resolve_attestor_actor
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
@@ -26,6 +27,7 @@ from app.modules.attestation.models import (
     AttestorProfile,
 )
 from app.modules.auth.models import User
+from app.modules.organizations.models import OrgAttestorProfile
 
 ANNOTATION_TYPES = {
     "endorsement",
@@ -39,41 +41,92 @@ async def load_workspace_attestation(
     db: AsyncSession,
     *,
     attestation_id: UUID,
-    attestor_id: UUID,
+    user_id: UUID,
     allowed_statuses: set[str],
     lock: bool = True,
+    allow_managers: bool = False,
 ) -> Attestation:
-    """Load one assigned attestation, hiding existence on assignee mismatch.
+    """Load one attestation for its attestor-side actor, hiding non-actors.
+
+    Authorization is delegated to :func:`resolve_attestor_actor`: the reviewing
+    member (or, during coexistence, the legacy assigned attestor) may act on
+    write surfaces, and org owners/admins are admitted read-only when
+    ``allow_managers`` is set. Unrelated callers receive 404.
 
     Args:
         db: Async database session.
         attestation_id: Attestation row to load.
-        attestor_id: Authenticated attestor expected to own the assignment.
+        user_id: Authenticated caller's id (captured before any rollback).
         allowed_statuses: States in which the requested operation is permitted.
         lock: Whether to take a `FOR UPDATE` row lock.
+        allow_managers: Whether org owners/admins are admitted (read surfaces).
 
     Returns:
         The matching attestation row.
 
     Raises:
-        HTTPException: 404 when the attestation is missing or assigned to a
-            different attestor, or 409 when the status is not allowed.
+        HTTPException: 404 when the attestation is missing or hidden from the
+            caller, 403 when an attestor-org member is not authorized for the
+            surface, or 409 when the status is not allowed.
     """
     statement = select(Attestation).where(Attestation.id == attestation_id)
     if lock:
         statement = statement.with_for_update()
     attestation = await db.scalar(statement)
-    if attestation is None or attestation.attestor_id != attestor_id:
+    if attestation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestation not found.",
         )
+    await resolve_attestor_actor(
+        db, attestation=attestation, user_id=user_id, allow_managers=allow_managers
+    )
     if attestation.status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Attestation is not in a workspace-editable state.",
         )
     return attestation
+
+
+async def _has_valid_coi(
+    db: AsyncSession,
+    *,
+    attestation: Attestation,
+    attestor_id: UUID,
+    now: datetime,
+) -> bool:
+    """Return whether the acting attestor holds a current signed CoI.
+
+    For org attestations the CoI lives on the staffed org's
+    :class:`OrgAttestorProfile`; during individual-attestor coexistence the
+    legacy assignee's :class:`AttestorProfile` is consulted instead.
+    """
+    if attestation.attestor_org_id is not None:
+        signed_at = await db.scalar(
+            select(OrgAttestorProfile.coi_signed_at).where(
+                OrgAttestorProfile.org_id == attestation.attestor_org_id,
+                OrgAttestorProfile.active.is_(True),
+            )
+        )
+        expires_at = await db.scalar(
+            select(OrgAttestorProfile.coi_expires_at).where(
+                OrgAttestorProfile.org_id == attestation.attestor_org_id,
+                OrgAttestorProfile.active.is_(True),
+            )
+        )
+    else:
+        profile = await db.scalar(
+            select(AttestorProfile).where(
+                AttestorProfile.user_id == attestor_id,
+                AttestorProfile.active.is_(True),
+            )
+        )
+        if profile is None:
+            return False
+        signed_at = profile.coi_signed_at
+        expires_at = profile.coi_expires_at
+    return signed_at is not None and expires_at is not None and expires_at > now
 
 
 async def start_review(
@@ -105,7 +158,7 @@ async def start_review(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"accepted", "in_review"},
         )
         if attestation.status == "in_review":
@@ -116,17 +169,8 @@ async def start_review(
                 detail="Content acknowledgment is required before review starts.",
             )
 
-        profile = await db.scalar(
-            select(AttestorProfile).where(
-                AttestorProfile.user_id == attestor_id,
-                AttestorProfile.active.is_(True),
-            )
-        )
-        if (
-            profile is None
-            or profile.coi_signed_at is None
-            or profile.coi_expires_at is None
-            or profile.coi_expires_at <= current_time
+        if not await _has_valid_coi(
+            db, attestation=attestation, attestor_id=attestor_id, now=current_time
         ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -187,7 +231,7 @@ async def upsert_rubric_score(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"in_review"},
         )
         dimension = await db.scalar(
@@ -245,13 +289,13 @@ async def list_annotations(
     Raises:
         HTTPException: 404 on assignee mismatch or 409 outside readable states.
     """
-    attestor_id = attestor.id
     await load_workspace_attestation(
         db,
         attestation_id=attestation_id,
-        attestor_id=attestor_id,
+        user_id=attestor.id,
         allowed_statuses={"in_review", "report_submitted"},
         lock=False,
+        allow_managers=True,
     )
     rows = await db.scalars(
         select(AttestationAnnotation)
@@ -291,12 +335,12 @@ async def create_annotation(
         HTTPException: 404 on assignee mismatch, 409 outside `in_review`, or
             422 for an invalid annotation type.
     """
-    attestor_id = attestor.id
     if annotation_type not in ANNOTATION_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unknown annotation type.",
         )
+    attestor_id = attestor.id
     if db.in_transaction():
         await db.rollback()
 
@@ -304,7 +348,7 @@ async def create_annotation(
         attestation = await load_workspace_attestation(
             db,
             attestation_id=attestation_id,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             allowed_statuses={"in_review"},
         )
         annotation = AttestationAnnotation(
@@ -325,15 +369,15 @@ async def create_annotation(
 async def _load_owned_annotation(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    user_id: UUID,
     attestation_id: UUID,
     annotation_id: UUID,
 ) -> AttestationAnnotation:
-    """Load one annotation owned by the assigned attestor.
+    """Load one annotation from a workspace the caller may write.
 
     Args:
         db: Async database session.
-        attestor_id: Assigned attestor expected to own the workspace.
+        user_id: Authenticated reviewing member's id (rollback-safe).
         attestation_id: Parent workspace attestation.
         annotation_id: Annotation row to load.
 
@@ -347,7 +391,7 @@ async def _load_owned_annotation(
     await load_workspace_attestation(
         db,
         attestation_id=attestation_id,
-        attestor_id=attestor_id,
+        user_id=user_id,
         allowed_statuses={"in_review"},
     )
     annotation = await db.scalar(
@@ -406,7 +450,7 @@ async def update_annotation(
     async with db.begin():
         annotation = await _load_owned_annotation(
             db,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             attestation_id=attestation_id,
             annotation_id=annotation_id,
         )
@@ -445,7 +489,7 @@ async def delete_annotation(
     async with db.begin():
         annotation = await _load_owned_annotation(
             db,
-            attestor_id=attestor_id,
+            user_id=attestor_id,
             attestation_id=attestation_id,
             annotation_id=annotation_id,
         )

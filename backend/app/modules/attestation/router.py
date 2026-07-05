@@ -326,7 +326,7 @@ async def accept_attestation_offer(
 )
 async def start_attestation_review(
     attestation_id: UUID,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> AttestationRequestResponse:
     """Open the assigned Attestor's review workspace."""
@@ -351,7 +351,7 @@ async def upsert_attestation_rubric_score(
     attestation_id: UUID,
     dimension_key: str,
     payload: RubricScoreUpsertRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> RubricScoreResponse:
     """Create or update one rubric score in the review workspace."""
@@ -377,7 +377,7 @@ async def upsert_attestation_rubric_score(
 )
 async def list_attestation_annotations(
     attestation_id: UUID,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> list[AnnotationResponse]:
     """List the assigned Attestor's workspace annotations."""
@@ -401,7 +401,7 @@ async def list_attestation_annotations(
 async def create_attestation_annotation(
     attestation_id: UUID,
     payload: AnnotationCreateRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> AnnotationResponse:
     """Create one clause-level annotation in the review workspace."""
@@ -431,7 +431,7 @@ async def update_attestation_annotation(
     attestation_id: UUID,
     annotation_id: UUID,
     payload: AnnotationUpdateRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> AnnotationResponse:
     """Update one clause-level workspace annotation."""
@@ -460,7 +460,7 @@ async def update_attestation_annotation(
 async def delete_attestation_annotation(
     attestation_id: UUID,
     annotation_id: UUID,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> None:
     """Delete one clause-level workspace annotation."""
@@ -511,7 +511,7 @@ async def list_attestation_clarifications(
 async def create_attestation_clarification(
     attestation_id: UUID,
     payload: ClarificationCreateRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> ClarificationResponse:
     """Create one attestation clarification from the assigned attestor."""
@@ -577,7 +577,7 @@ async def decline_attestation_offer(
 async def create_attestation_report_evidence_upload_session(
     attestation_id: UUID,
     payload: AttestationEvidenceUploadCreateRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> AttestationEvidenceUploadSessionResponse:
     """Create a presigned POST upload session for report evidence."""
@@ -596,7 +596,7 @@ async def create_attestation_report_evidence_upload_session(
 async def submit_attestation_report(
     attestation_id: UUID,
     payload: AttestationReportSubmitRequest,
-    attestor: ApprovedAttestorUser,
+    attestor: CurrentUser,
     db: DatabaseSession,
 ) -> AttestationRequestResponse:
     """Submit the assigned Attestor's structured report and queue PDF rendering."""
