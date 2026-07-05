@@ -220,20 +220,19 @@ class ProfileStats(BaseModel):
     """Aggregated marketplace analytics shown on the profile.
 
     All values are derived from public records (published Frameworks, public
-    reviews, completed attestations), not self-reported.
+    reviews), not self-reported. Attestation is an organizational activity
+    credited to the attestor org, so it is not advertised on individual user
+    profiles.
 
     Attributes:
         frameworks_published: Count of the user's published Frameworks.
         reviews_received: Count of reviews across the user's Frameworks.
         average_rating: Mean review score (1 decimal), or None if no reviews.
-        attestations_performed: Count of attestations the user completed as an
-            Attestor.
     """
 
     frameworks_published: int = 0
     reviews_received: int = 0
     average_rating: float | None = None
-    attestations_performed: int = 0
 
 
 class PublicProfileResponse(BaseModel):

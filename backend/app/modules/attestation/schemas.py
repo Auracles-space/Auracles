@@ -717,16 +717,22 @@ class PublicCredentialResponse(BaseModel):
 
 
 class AttestorDirectoryEntry(BaseModel):
-    """Public Attestor directory row safe for anonymous browsing."""
+    """Public attestor-organization directory row safe for anonymous browsing.
 
-    user_id: UUID
-    display_name: str
+    Lists the organization's public matching profile, completed-attestation
+    count, member count, and certification mark. Never exposes individual member
+    identities — attestation is credited to the organization, not its reviewers.
+    """
+
+    org_id: UUID
+    name: str
+    slug: str
     sectors: list[str]
     framework_categories: list[str]
     jurisdictions: list[str]
     verification_level: int
-    credentials: list[PublicCredentialResponse]
     completed_attestations: int
+    member_count: int
     reputation: float | None
     certified: bool = False
 

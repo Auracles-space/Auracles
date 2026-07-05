@@ -826,15 +826,17 @@ async def test_profile_stats_zero_for_fresh_user(
     assert stats["frameworks_published"] == 0
     assert stats["reviews_received"] == 0
     assert stats["average_rating"] is None
-    assert stats["attestations_performed"] == 0
+    # Attestation is credited to the attestor org, not advertised on user
+    # profiles (Task 9); the field is gone from ProfileStats.
+    assert "attestations_performed" not in stats
 
 
-async def test_profile_stats_counts_published_frameworks_and_attestations(
+async def test_profile_stats_counts_published_frameworks_only(
     client: AsyncClient,
     migrated_database: None,
     profile_test_context: None,
 ) -> None:
-    """Stats count published Frameworks and completed attestations performed."""
+    """Stats count published Frameworks; attestation is not advertised here."""
     from decimal import Decimal
 
     user_id = await create_user("profile-stats@auracles.space", ["contributor"])
@@ -862,24 +864,11 @@ async def test_profile_stats_counts_published_frameworks_and_attestations(
                     license_types=["single_user"],
                 )
             )
-            session.add(
-                Attestation(
-                    target_type="framework",
-                    target_id=uuid4(),
-                    requestor_id=user_id,
-                    attestor_id=user_id,
-                    status="report_submitted",
-                    fee_amount=Decimal("100"),
-                    currency="USD",
-                    requested_specializations=[],
-                    requested_jurisdictions=[],
-                )
-            )
 
     stats = (await client.get(f"/v1/profiles/{user_id}")).json()["stats"]
 
     assert stats["frameworks_published"] == 1
-    assert stats["attestations_performed"] == 1
+    assert "attestations_performed" not in stats
 
 
 async def test_suspended_profile_withholds_stats(

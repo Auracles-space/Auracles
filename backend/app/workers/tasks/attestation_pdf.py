@@ -26,6 +26,7 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.auth.models import User
+from app.modules.organizations.models import Organization, OrgAttestorProfile
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -128,7 +129,11 @@ REPORT_TEMPLATE = Environment(autoescape=True).from_string(
         <div class="block">{{ outcome }} · Weighted score {{ weighted_overall }}</div>
         <h2>Attestor Identity</h2>
         <div class="block">
-          <p>{{ attestor_name }} &lt;{{ attestor_email }}&gt;</p>
+          {% if attestor_email %}
+            <p>{{ attestor_name }} &lt;{{ attestor_email }}&gt;</p>
+          {% else %}
+            <p>{{ attestor_name }}</p>
+          {% endif %}
           <p>Verification level {{ verification_level }}</p>
           {% if credentials %}
             <p>Credentials:</p>
@@ -160,6 +165,63 @@ def _build_report_html(context: dict[str, Any]) -> str:
     return REPORT_TEMPLATE.render(**context)
 
 
+async def _report_attestor_identity(
+    db: Any,
+    *,
+    attestation: Attestation,
+    attestor_user: User | None,
+    profile: AttestorProfile | None,
+) -> dict[str, Any]:
+    """Resolve the attestor-identity block for the report PDF.
+
+    Org attestations present the organization's name and snapshotted verification
+    level with no email (organizations carry no billing email, and the report is
+    a shared document) and no individual credentials — the report never names the
+    reviewing member. Legacy individual attestations present the assignee's name,
+    email, verification level, and verified credentials.
+
+    Raises:
+        ValueError: A legacy individual attestation has no resolvable attestor.
+    """
+    if attestation.attestor_org_id is not None:
+        org = await db.scalar(
+            select(Organization).where(Organization.id == attestation.attestor_org_id)
+        )
+        level = await db.scalar(
+            select(OrgAttestorProfile.verification_level).where(
+                OrgAttestorProfile.org_id == attestation.attestor_org_id
+            )
+        )
+        return {
+            "name": org.name if org is not None else "Attestor",
+            "email": None,
+            "verification_level": level if level is not None else 1,
+            "credentials": [],
+        }
+
+    if attestor_user is None:
+        raise ValueError("Attestation report attestor not found.")
+    credentials = (
+        (
+            await db.execute(
+                select(Credential)
+                .where(Credential.user_id == attestor_user.id)
+                .order_by(Credential.issued_date.desc(), Credential.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "name": attestor_user.display_name,
+        "email": attestor_user.email,
+        "verification_level": profile.verification_level if profile is not None else 1,
+        "credentials": [
+            f"{credential.title} ({credential.issuer})" for credential in credentials
+        ],
+    }
+
+
 async def _build_report_context(attestation_id: str) -> dict[str, Any]:
     """Load one submitted attestation and assemble the report-render context."""
     parsed_attestation_id = UUID(attestation_id)
@@ -170,7 +232,7 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         row = await db.execute(
             select(Attestation, requestor, attestor, AttestorProfile)
             .join(requestor, requestor.id == Attestation.requestor_id)
-            .join(attestor, attestor.id == Attestation.attestor_id)
+            .outerjoin(attestor, attestor.id == Attestation.attestor_id)
             .outerjoin(AttestorProfile, AttestorProfile.user_id == attestor.id)
             .where(
                 Attestation.id == parsed_attestation_id,
@@ -188,6 +250,13 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
             or attestation.issued_at is None
         ):
             raise ValueError("Attestation report is incomplete.")
+
+        attestor_identity = await _report_attestor_identity(
+            db,
+            attestation=attestation,
+            attestor_user=attestor_user,
+            profile=profile,
+        )
 
         rubric_version = attestation.rubric_version or rubrics.RUBRIC_VERSION
         dimension_rows = (
@@ -223,18 +292,6 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
             .scalars()
             .all()
         )
-        credentials = (
-            (
-                await db.execute(
-                    select(Credential)
-                    .where(Credential.user_id == attestor_user.id)
-                    .order_by(Credential.issued_date.desc(), Credential.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-
     score_map = {
         dimension.key: score.score
         for dimension, score in dimension_rows
@@ -260,12 +317,10 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         "target_id": str(attestation.target_id),
         "requestor_name": requestor_user.display_name,
         "requestor_email": requestor_user.email,
-        "attestor_name": attestor_user.display_name,
-        "attestor_email": attestor_user.email,
-        "verification_level": profile.verification_level if profile is not None else 1,
-        "credentials": [
-            f"{credential.title} ({credential.issuer})" for credential in credentials
-        ],
+        "attestor_name": attestor_identity["name"],
+        "attestor_email": attestor_identity["email"],
+        "verification_level": attestor_identity["verification_level"],
+        "credentials": attestor_identity["credentials"],
         "summary": attestation.summary,
         "scope": attestation.scope,
         "methodology": methodology or "",

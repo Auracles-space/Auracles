@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pyotp
@@ -226,88 +225,6 @@ async def _seed_owner_application(
             application_id = application.id
 
     return application_id, applicant_id, auth_headers(applicant_id, ["contributor"])
-
-
-async def _seed_directory_attestor(
-    *,
-    email: str,
-    profile_active: bool,
-    sectors: list[str],
-    framework_categories: list[str],
-    jurisdictions: list[str],
-    completed_statuses: list[str],
-) -> UUID:
-    """Create an Attestor profile plus public-safe and private credential rows."""
-    user_id = await create_user(email, roles=["contributor"])
-    requestor_id = await create_user(
-        f"requestor-for-{email}",
-        roles=["contributor"],
-    )
-    async with async_session_factory() as session:
-        async with session.begin():
-            user = await session.get(User, user_id)
-            assert user is not None
-            user.display_name = email.split("@")[0].replace("-", " ").title()
-
-            session.add(
-                AttestorProfile(
-                    user_id=user_id,
-                    specializations=sectors + framework_categories,
-                    jurisdictions=jurisdictions,
-                    active=profile_active,
-                    verification_level=4,
-                    sectors=sectors,
-                    framework_categories=framework_categories,
-                    coi_declarations=[
-                        {
-                            "entity": "Hidden Capital",
-                            "entity_type": "firm",
-                            "relationship": "advisory",
-                            "within_24mo": True,
-                        }
-                    ],
-                    coi_signed_at=datetime(2026, 6, 1),
-                    coi_expires_at=datetime(2027, 6, 1),
-                )
-            )
-            session.add(
-                Credential(
-                    user_id=user_id,
-                    title="Chartered Financial Analyst",
-                    issuer="CFA Institute",
-                    issued_date=date(2021, 1, 15),
-                    credential_type="CFA",
-                    verification_status="verified",
-                    reference_number="PRIVATE-REF-001",
-                    verification_url="https://secret.example.com/verify",
-                    evidence_file_keys=["credentials/private.pdf"],
-                    registry_reference="registry-hidden-001",
-                )
-            )
-            session.add(
-                Credential(
-                    user_id=user_id,
-                    title="Pending Credential",
-                    issuer="Pending Body",
-                    issued_date=date(2024, 1, 15),
-                    verification_status="pending",
-                )
-            )
-            for index, status in enumerate(completed_statuses, start=1):
-                session.add(
-                    Attestation(
-                        target_type="framework",
-                        target_id=user_id,
-                        requestor_id=requestor_id,
-                        attestor_id=user_id,
-                        status=status,
-                        fee_amount=Decimal("100.00") + index,
-                        requested_specializations=["Compliance"],
-                        requested_jurisdictions=["US"],
-                    )
-                )
-
-    return user_id
 
 
 @pytest.mark.usefixtures("migrated_database")
@@ -1290,117 +1207,10 @@ async def test_admin_rejects_expert_verified_attestor_application(
     assert application.status == "rejected"
 
 
-@pytest.mark.usefixtures("migrated_database")
-async def test_list_public_attestor_directory_shows_only_active_safe_entries(
-    client: AsyncClient,
-    attestor_application_context,  # noqa: F811
-) -> None:
-    """The public directory lists active Attestors only and strips sensitive data."""
-    visible_attestor_id = await _seed_directory_attestor(
-        email="active-directory-attestor@example.com",
-        profile_active=True,
-        sectors=["PE"],
-        framework_categories=["Compliance"],
-        jurisdictions=["US"],
-        completed_statuses=["released", "resolved", "closed"],
-    )
-    hidden_attestor_id = await _seed_directory_attestor(
-        email="inactive-directory-attestor@example.com",
-        profile_active=False,
-        sectors=["VC"],
-        framework_categories=["ESG"],
-        jurisdictions=["UK"],
-        completed_statuses=["released"],
-    )
-
-    response = await client.get("/v1/attestors")
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    attestors = body["attestors"]
-    assert [entry["user_id"] for entry in attestors] == [str(visible_attestor_id)]
-    assert str(hidden_attestor_id) not in response.text
-
-    entry = attestors[0]
-    assert entry["display_name"] == "Active Directory Attestor"
-    assert entry["sectors"] == ["PE"]
-    assert entry["framework_categories"] == ["Compliance"]
-    assert entry["jurisdictions"] == ["US"]
-    assert entry["verification_level"] == 4
-    assert entry["completed_attestations"] == 3
-    assert entry["reputation"] is None
-    assert [credential["title"] for credential in entry["credentials"]] == [
-        "Chartered Financial Analyst"
-    ]
-
-    serialized = response.text
-    assert "Pending Credential" not in serialized
-    assert "PRIVATE-REF-001" not in serialized
-    assert "https://secret.example.com/verify" not in serialized
-    assert "credentials/private.pdf" not in serialized
-    assert "registry-hidden-001" not in serialized
-    assert "coi" not in serialized.lower()
-    assert "tax" not in serialized.lower()
-    assert "payout" not in serialized.lower()
-
-
-@pytest.mark.usefixtures("migrated_database")
-async def test_list_public_attestor_directory_filters_by_sector(
-    client: AsyncClient,
-    attestor_application_context,  # noqa: F811
-) -> None:
-    """The public directory applies sector filters against active profiles."""
-    pe_attestor_id = await _seed_directory_attestor(
-        email="pe-directory-attestor@example.com",
-        profile_active=True,
-        sectors=["PE"],
-        framework_categories=["Compliance"],
-        jurisdictions=["US"],
-        completed_statuses=["released"],
-    )
-    await _seed_directory_attestor(
-        email="vc-directory-attestor@example.com",
-        profile_active=True,
-        sectors=["VC"],
-        framework_categories=["ESG"],
-        jurisdictions=["UK"],
-        completed_statuses=["closed"],
-    )
-
-    response = await client.get("/v1/attestors", params={"sector": "PE"})
-
-    assert response.status_code == 200, response.text
-    assert [entry["user_id"] for entry in response.json()["attestors"]] == [
-        str(pe_attestor_id)
-    ]
-
-
-@pytest.mark.usefixtures("migrated_database")
-async def test_get_public_attestor_directory_profile_returns_active_attestor(
-    client: AsyncClient,
-    attestor_application_context,  # noqa: F811
-) -> None:
-    """The public directory detail endpoint returns one active Attestor profile."""
-    attestor_id = await _seed_directory_attestor(
-        email="detail-directory-attestor@example.com",
-        profile_active=True,
-        sectors=["PE"],
-        framework_categories=["Compliance"],
-        jurisdictions=["US"],
-        completed_statuses=["released", "closed"],
-    )
-
-    response = await client.get(f"/v1/attestors/{attestor_id}")
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["user_id"] == str(attestor_id)
-    assert body["display_name"] == "Detail Directory Attestor"
-    assert body["sectors"] == ["PE"]
-    assert body["completed_attestations"] == 2
-    assert [credential["title"] for credential in body["credentials"]] == [
-        "Chartered Financial Analyst"
-    ]
+# The public attestor directory now lists attestor *organizations*, not
+# individual attestors. Its endpoint + no-leak coverage lives in
+# tests/integration/test_attestor_directory.py (Task 9). Individual directory
+# seeding was removed here with the endpoint move.
 
 
 # Each admin onboarding gate verifies TOTP *before* loading or mutating the

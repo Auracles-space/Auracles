@@ -988,14 +988,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors:
+  /v1/attestor-orgs:
     get:
       tags:
       - Attestation
-      summary: List public Attestor directory
-      description: Return active Attestors for public directory browsing, with optional
-        taxonomy and verification-level filters.
-      operationId: list_public_attestor_directory_v1_attestors_get
+      summary: List public attestor-organization directory
+      description: Return active attestor organizations for public directory browsing,
+        with optional taxonomy and verification-level filters.
+      operationId: list_public_attestor_directory_v1_attestor_orgs_get
       parameters:
       - name: sector
         in: query
@@ -1042,21 +1042,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors/{user_id}/completed:
+  /v1/attestor-orgs/{org_id}/completed:
     get:
       tags:
       - Attestation
-      summary: List an attestor's public completed attestations
-      description: Return the attestor's public positive completed attestations.
-      operationId: list_attestor_completed_attestations_v1_attestors__user_id__completed_get
+      summary: List an attestor organization's public completed attestations
+      description: Return the org's public positive completed attestations.
+      operationId: list_attestor_completed_attestations_v1_attestor_orgs__org_id__completed_get
       parameters:
-      - name: user_id
+      - name: org_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: User Id
+          title: Org Id
       responses:
         '200':
           description: Successful Response
@@ -1066,7 +1066,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AttestorCompletedAttestation'
-                title: Response List Attestor Completed Attestations V1 Attestors  User
+                title: Response List Attestor Completed Attestations V1 Attestor Orgs  Org
                   Id  Completed Get
         '422':
           description: Validation Error
@@ -1074,22 +1074,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors/{user_id}:
+  /v1/attestor-orgs/{org_id}:
     get:
       tags:
       - Attestation
-      summary: Get public Attestor directory profile
-      description: Return one active Attestor's public directory profile, including
-        safe verified credentials and completed-attestation count.
-      operationId: get_public_attestor_directory_profile_v1_attestors__user_id__get
+      summary: Get public attestor-organization directory profile
+      description: Return one active attestor organization's public directory profile,
+        including its matching taxonomy, member count, and completed count.
+      operationId: get_public_attestor_directory_profile_v1_attestor_orgs__org_id__get
       parameters:
-      - name: user_id
+      - name: org_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: User Id
+          title: Org Id
       responses:
         '200':
           description: Successful Response
@@ -12449,12 +12449,30 @@ components:
           - rejected
           title: Outcome
         attestor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Attestor Id
+        attestor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Attestor Org Id
+        attestor_org_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attestor Org Slug
         attestor_display_name:
           type: string
           title: Attestor Display Name
+        verification_level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Verification Level
         credentials:
           items:
             $ref: '#/components/schemas/PublicCredentialResponse'
@@ -12477,13 +12495,22 @@ components:
       - id
       - review_type
       - outcome
-      - attestor_id
       - attestor_display_name
       - issued_at
       - framework_version
       - newer_version_exists
       title: AttestationBadgeDetail
-      description: Full version-locked attestation badge for the framework page.
+      description: 'Full version-locked attestation badge for the framework page.
+
+
+        Presents attestor-org identity for org-attested badges (``attestor_org_id``
+        /
+
+        ``attestor_org_slug`` set, ``attestor_id`` null) and legacy individual
+
+        identity for pre-org badges (``attestor_id`` set, org fields null). Never
+
+        exposes the reviewing member who performed an org attestation.'
     AttestationBrief:
       properties:
         what_it_does:
@@ -13557,13 +13584,16 @@ components:
       description: Admin request body for the credential registry cross-check gate.
     AttestorDirectoryEntry:
       properties:
-        user_id:
+        org_id:
           type: string
           format: uuid
-          title: User Id
-        display_name:
+          title: Org Id
+        name:
           type: string
-          title: Display Name
+          title: Name
+        slug:
+          type: string
+          title: Slug
         sectors:
           items:
             type: string
@@ -13582,14 +13612,12 @@ components:
         verification_level:
           type: integer
           title: Verification Level
-        credentials:
-          items:
-            $ref: '#/components/schemas/PublicCredentialResponse'
-          type: array
-          title: Credentials
         completed_attestations:
           type: integer
           title: Completed Attestations
+        member_count:
+          type: integer
+          title: Member Count
         reputation:
           anyOf:
           - type: number
@@ -13601,17 +13629,26 @@ components:
           default: false
       type: object
       required:
-      - user_id
-      - display_name
+      - org_id
+      - name
+      - slug
       - sectors
       - framework_categories
       - jurisdictions
       - verification_level
-      - credentials
       - completed_attestations
+      - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: Public Attestor directory row safe for anonymous browsing.
+      description: 'Public attestor-organization directory row safe for anonymous
+        browsing.
+
+
+        Lists the organization''s public matching profile, completed-attestation
+
+        count, member count, and certification mark. Never exposes individual member
+
+        identities — attestation is credited to the organization, not its reviewers.'
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -20189,19 +20226,15 @@ components:
           - type: number
           - type: 'null'
           title: Average Rating
-        attestations_performed:
-          type: integer
-          title: Attestations Performed
-          default: 0
       type: object
       title: ProfileStats
       description: "Aggregated marketplace analytics shown on the profile.\n\nAll\
-        \ values are derived from public records (published Frameworks, public\nreviews,\
-        \ completed attestations), not self-reported.\n\nAttributes:\n    frameworks_published:\
-        \ Count of the user's published Frameworks.\n    reviews_received: Count of\
-        \ reviews across the user's Frameworks.\n    average_rating: Mean review score\
-        \ (1 decimal), or None if no reviews.\n    attestations_performed: Count of\
-        \ attestations the user completed as an\n        Attestor."
+        \ values are derived from public records (published Frameworks, public\nreviews),\
+        \ not self-reported. Attestation is an organizational activity\ncredited to\
+        \ the attestor org, so it is not advertised on individual user\nprofiles.\n\
+        \nAttributes:\n    frameworks_published: Count of the user's published Frameworks.\n\
+        \    reviews_received: Count of reviews across the user's Frameworks.\n  \
+        \  average_rating: Mean review score (1 decimal), or None if no reviews."
     ProfileUpdateRequest:
       properties:
         headline:
@@ -20835,7 +20868,6 @@ components:
           default:
             frameworks_published: 0
             reviews_received: 0
-            attestations_performed: 0
         roles:
           items:
             type: string

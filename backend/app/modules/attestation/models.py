@@ -1219,6 +1219,11 @@ class AttestationBadge(CreatedAtMixin, Base):
         ),
         Index("idx_attestation_badges_framework", "framework_id"),
         Index("idx_attestation_badges_attestor", "attestor_id"),
+        Index("idx_attestation_badges_attestor_org", "attestor_org_id"),
+        CheckConstraint(
+            "(attestor_id IS NULL) != (attestor_org_id IS NULL)",
+            name="ck_attestation_badges_attestor_xor",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -1244,11 +1249,18 @@ class AttestationBadge(CreatedAtMixin, Base):
         ATTESTATION_OUTCOME_ENUM,
         nullable=False,
     )
-    attestor_id: Mapped[UUID] = mapped_column(
+    attestor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
     )
+    attestor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    attestor_org_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attestor_display_name: Mapped[str] = mapped_column(Text, nullable=False)
     credentials_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,

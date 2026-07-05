@@ -564,7 +564,10 @@ async def _framework_badge_details(
             review_type=badge.review_type,
             outcome=badge.outcome,
             attestor_id=badge.attestor_id,
+            attestor_org_id=badge.attestor_org_id,
+            attestor_org_slug=badge.attestor_org_slug,
             attestor_display_name=badge.attestor_display_name,
+            verification_level=badge.verification_level,
             credentials=[
                 PublicCredentialResponse.model_validate(item)
                 for item in badge.credentials_snapshot

@@ -220,12 +220,12 @@ async def list_attestations(
 
 
 @router.get(
-    "/attestors",
+    "/attestor-orgs",
     response_model=AttestorDirectoryResponse,
-    summary="List public Attestor directory",
+    summary="List public attestor-organization directory",
     description=(
-        "Return active Attestors for public directory browsing, with optional "
-        "taxonomy and verification-level filters."
+        "Return active attestor organizations for public directory browsing, "
+        "with optional taxonomy and verification-level filters."
     ),
 )
 async def list_public_attestor_directory(
@@ -235,7 +235,7 @@ async def list_public_attestor_directory(
     jurisdiction: str | None = Query(default=None),
     level: int | None = Query(default=None),
 ) -> AttestorDirectoryResponse:
-    """Return active public Attestor directory entries."""
+    """Return active public attestor-organization directory entries."""
     attestors = await directory_service.list_directory(
         db=db,
         sector=sector,
@@ -247,33 +247,33 @@ async def list_public_attestor_directory(
 
 
 @router.get(
-    "/attestors/{user_id}/completed",
+    "/attestor-orgs/{org_id}/completed",
     response_model=list[AttestorCompletedAttestation],
-    summary="List an attestor's public completed attestations",
+    summary="List an attestor organization's public completed attestations",
 )
 async def list_attestor_completed_attestations(
-    user_id: UUID,
+    org_id: UUID,
     db: DatabaseSession,
 ) -> list[AttestorCompletedAttestation]:
-    """Return the attestor's public positive completed attestations."""
-    return await badge_service.list_attestor_completed(db, attestor_id=user_id)
+    """Return the org's public positive completed attestations."""
+    return await badge_service.list_attestor_completed(db, org_id=org_id)
 
 
 @router.get(
-    "/attestors/{user_id}",
+    "/attestor-orgs/{org_id}",
     response_model=AttestorDirectoryEntry,
-    summary="Get public Attestor directory profile",
+    summary="Get public attestor-organization directory profile",
     description=(
-        "Return one active Attestor's public directory profile, including "
-        "safe verified credentials and completed-attestation count."
+        "Return one active attestor organization's public directory profile, "
+        "including its matching taxonomy, member count, and completed count."
     ),
 )
 async def get_public_attestor_directory_profile(
-    user_id: UUID,
+    org_id: UUID,
     db: DatabaseSession,
 ) -> AttestorDirectoryEntry:
-    """Return one active public Attestor directory entry."""
-    return await directory_service.get_directory_profile(db=db, user_id=user_id)
+    """Return one active public attestor-organization directory entry."""
+    return await directory_service.get_directory_profile(db=db, org_id=org_id)
 
 
 @router.get(

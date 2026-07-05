@@ -39,13 +39,22 @@ class ExploreAttestationBadge(BaseModel):
 
 
 class AttestationBadgeDetail(BaseModel):
-    """Full version-locked attestation badge for the framework page."""
+    """Full version-locked attestation badge for the framework page.
+
+    Presents attestor-org identity for org-attested badges (``attestor_org_id`` /
+    ``attestor_org_slug`` set, ``attestor_id`` null) and legacy individual
+    identity for pre-org badges (``attestor_id`` set, org fields null). Never
+    exposes the reviewing member who performed an org attestation.
+    """
 
     id: UUID
     review_type: str
     outcome: Literal["approved", "conditional", "rejected"]
-    attestor_id: UUID
+    attestor_id: UUID | None = None
+    attestor_org_id: UUID | None = None
+    attestor_org_slug: str | None = None
     attestor_display_name: str
+    verification_level: int | None = None
     credentials: list[PublicCredentialResponse] = Field(default_factory=list)
     issued_at: datetime
     framework_version: str | None

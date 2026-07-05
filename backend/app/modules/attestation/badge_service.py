@@ -17,7 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.attestation.models import Attestation, AttestationBadge, Credential
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationBadge,
+    AttestorProfile,
+    Credential,
+)
 from app.modules.attestation.schemas import (
     AttestorCompletedAttestation,
     PublicCredentialResponse,
@@ -25,6 +30,7 @@ from app.modules.attestation.schemas import (
 from app.modules.auth.models import User
 from app.modules.explore.schemas import AttestationBadgeDetail
 from app.modules.frameworks.models import Framework, FrameworkVersion
+from app.modules.organizations.models import Organization, OrgAttestorProfile
 
 _PUBLIC_BADGE_OUTCOMES = ("approved", "conditional")
 
@@ -32,7 +38,7 @@ _PUBLIC_BADGE_OUTCOMES = ("approved", "conditional")
 async def _public_credentials_snapshot(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    attestor_id: UUID | None,
 ) -> list[dict[str, object]]:
     """Return verified credentials as public-safe JSON snapshot dictionaries."""
     rows = await db.execute(
@@ -63,6 +69,66 @@ async def _public_credentials_snapshot(
     ]
 
 
+async def _badge_attestor_identity(
+    db: AsyncSession,
+    *,
+    attestation: Attestation,
+) -> dict[str, object]:
+    """Resolve the badge identity snapshot for one publication-eligible Attestation.
+
+    Org attestations snapshot the organization's name and slug plus its profile
+    verification level; organizations carry no credential rows, so their snapshot
+    lists none. Legacy individual attestations snapshot the assignee's display
+    name, verified credentials, and profile verification level. Exactly one of
+    ``attestor_id`` / ``attestor_org_id`` is populated (badge XOR CHECK).
+
+    Args:
+        db: Async SQLAlchemy session.
+        attestation: Publication-eligible Attestation (org- or user-attested).
+
+    Returns:
+        Column values for the immutable badge snapshot.
+    """
+    if attestation.attestor_org_id is not None:
+        org = await db.scalar(
+            select(Organization).where(Organization.id == attestation.attestor_org_id)
+        )
+        level = await db.scalar(
+            select(OrgAttestorProfile.verification_level).where(
+                OrgAttestorProfile.org_id == attestation.attestor_org_id
+            )
+        )
+        return {
+            "attestor_id": None,
+            "attestor_org_id": attestation.attestor_org_id,
+            "attestor_org_slug": org.slug if org is not None else None,
+            "verification_level": level,
+            "display_name": org.name if org is not None else "Attestor",
+            "credentials": [],
+        }
+
+    display_name = await db.scalar(
+        select(User.display_name).where(User.id == attestation.attestor_id)
+    )
+    level = await db.scalar(
+        select(AttestorProfile.verification_level).where(
+            AttestorProfile.user_id == attestation.attestor_id
+        )
+    )
+    credentials = await _public_credentials_snapshot(
+        db,
+        attestor_id=attestation.attestor_id,
+    )
+    return {
+        "attestor_id": attestation.attestor_id,
+        "attestor_org_id": None,
+        "attestor_org_slug": None,
+        "verification_level": level,
+        "display_name": display_name if isinstance(display_name, str) else "Attestor",
+        "credentials": credentials,
+    }
+
+
 async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
     """Write the immutable badge snapshot for a closed, eligible Attestation.
 
@@ -77,7 +143,9 @@ async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
         return
     if not attestation.report_published_eligible:
         return
-    if attestation.attestor_id is None or attestation.outcome is None:
+    if attestation.outcome is None:
+        return
+    if attestation.attestor_org_id is None and attestation.attestor_id is None:
         return
 
     version: str | None = None
@@ -90,13 +158,7 @@ async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
         if isinstance(resolved_version, str):
             version = resolved_version
 
-    display_name = await db.scalar(
-        select(User.display_name).where(User.id == attestation.attestor_id)
-    )
-    credentials = await _public_credentials_snapshot(
-        db,
-        attestor_id=attestation.attestor_id,
-    )
+    identity = await _badge_attestor_identity(db, attestation=attestation)
 
     await db.execute(
         pg_insert(AttestationBadge)
@@ -105,11 +167,12 @@ async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
             framework_id=attestation.target_id,
             review_type=attestation.review_type,
             outcome=attestation.outcome,
-            attestor_id=attestation.attestor_id,
-            attestor_display_name=(
-                display_name if isinstance(display_name, str) else "Attestor"
-            ),
-            credentials_snapshot=credentials,
+            attestor_id=identity["attestor_id"],
+            attestor_org_id=identity["attestor_org_id"],
+            attestor_org_slug=identity["attestor_org_slug"],
+            verification_level=identity["verification_level"],
+            attestor_display_name=identity["display_name"],
+            credentials_snapshot=identity["credentials"],
             framework_version=version,
             issued_at=attestation.closed_at or datetime.now(UTC),
         )
@@ -126,13 +189,13 @@ async def publish_badge(db: AsyncSession, *, attestation: Attestation) -> None:
 async def list_attestor_completed(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    org_id: UUID,
 ) -> list[AttestorCompletedAttestation]:
-    """Return an attestor's public positive completed attestations, newest first.
+    """Return an attestor org's public positive completed attestations, newest first.
 
     Args:
         db: Async SQLAlchemy session.
-        attestor_id: User id of the attestor.
+        org_id: Id of the attestor organization.
 
     Returns:
         Positive completed-attestation entries with framework titles.
@@ -142,7 +205,7 @@ async def list_attestor_completed(
             select(AttestationBadge, Framework.title)
             .join(Framework, Framework.id == AttestationBadge.framework_id)
             .where(
-                AttestationBadge.attestor_id == attestor_id,
+                AttestationBadge.attestor_org_id == org_id,
                 AttestationBadge.outcome.in_(_PUBLIC_BADGE_OUTCOMES),
             )
             .order_by(AttestationBadge.issued_at.desc())
@@ -188,7 +251,10 @@ async def list_framework_provenance(
             review_type=badge.review_type,
             outcome=badge.outcome,
             attestor_id=badge.attestor_id,
+            attestor_org_id=badge.attestor_org_id,
+            attestor_org_slug=badge.attestor_org_slug,
             attestor_display_name=badge.attestor_display_name,
+            verification_level=badge.verification_level,
             credentials=[
                 PublicCredentialResponse.model_validate(cred)
                 for cred in badge.credentials_snapshot
