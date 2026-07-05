@@ -6874,6 +6874,251 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application:
+    post:
+      tags:
+      - Organizations
+      summary: Open an org attestor application
+      description: Open (or reapply for) an attestor-capability application as a draft.
+        Org owner/admin only.
+      operationId: create_attestor_application_v1_orgs__org_id__attestor_application_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorApplicationCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: Get the org attestor application
+      description: Return the org's current attestor application and its gate checklist.
+        Org owner/admin only.
+      operationId: get_attestor_application_v1_orgs__org_id__attestor_application_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Organizations
+      summary: Edit the org attestor application
+      description: Partially edit a draft or needs-info application; supply payout_account_id
+        to link an org-owned payout account. Owner/admin only.
+      operationId: update_attestor_application_v1_orgs__org_id__attestor_application_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorApplicationUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application/submit:
+    post:
+      tags:
+      - Organizations
+      summary: Submit the org attestor application
+      description: Submit a completed application for admin review. Rate-limited per
+        org. Owner/admin only.
+      operationId: submit_attestor_application_v1_orgs__org_id__attestor_application_submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application/sign-undertakings:
+    post:
+      tags:
+      - Organizations
+      summary: Sign the org attestor undertakings
+      description: Owner-sign the conflict-of-interest and confidentiality undertakings.
+        TOTP-gated; org owner only.
+      operationId: sign_attestor_undertakings_v1_orgs__org_id__attestor_application_sign_undertakings_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgUndertakingsSignRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application/tax-document:
+    post:
+      tags:
+      - Organizations
+      summary: Create a tax-document upload session
+      description: Create a presigned upload session for the org's tax document and
+        stamp the document type/key on the application. Owner/admin only.
+      operationId: set_attestor_tax_document_v1_orgs__org_id__attestor_application_tax_document_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorTaxDocumentRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application/nominate-trial-member:
+    post:
+      tags:
+      - Organizations
+      summary: Nominate the trial member
+      description: Nominate the org member who performs the calibration trial; the
+        member must have signed the current NDA. Owner/admin only.
+      operationId: nominate_attestor_trial_member_v1_orgs__org_id__attestor_application_nominate_trial_member_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgNominateTrialMemberRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -16998,6 +17243,395 @@ components:
       - page_size
       title: NotificationsResponse
       description: Paginated notification list plus unread badge count.
+    OrgAttestorApplicationCreateRequest:
+      properties:
+        legal_name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 2
+          - type: 'null'
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Registration Number
+        incorporation_doc_keys:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Incorporation Doc Keys
+        sectors:
+          items:
+            type: string
+          type: array
+          maxItems: 4
+          minItems: 1
+          title: Sectors
+        framework_categories:
+          items:
+            type: string
+          type: array
+          maxItems: 9
+          minItems: 1
+          title: Framework Categories
+        jurisdictions:
+          items:
+            type: string
+          type: array
+          maxItems: 25
+          minItems: 1
+          title: Jurisdictions
+        credentials_summary:
+          type: string
+          maxLength: 5000
+          minLength: 10
+          title: Credentials Summary
+        sample_work:
+          additionalProperties: true
+          type: object
+          title: Sample Work
+        professional_references:
+          type: string
+          maxLength: 5000
+          minLength: 3
+          title: Professional References
+      type: object
+      required:
+      - sectors
+      - framework_categories
+      - jurisdictions
+      - credentials_summary
+      - professional_references
+      title: OrgAttestorApplicationCreateRequest
+      description: 'Request body to open (or reapply for) an org attestor application.
+
+
+        KYB fields (legal name, registration number, incorporation documents)
+
+        are optional at draft time and gated for completeness at submit; the
+
+        matching and credentials fields are required so the draft row satisfies
+
+        its NOT NULL columns.'
+    OrgAttestorApplicationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        org_id:
+          type: string
+          format: uuid
+          title: Org Id
+        status:
+          type: string
+          title: Status
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
+        incorporation_doc_keys:
+          items:
+            type: string
+          type: array
+          title: Incorporation Doc Keys
+        sectors:
+          items:
+            type: string
+          type: array
+          title: Sectors
+        framework_categories:
+          items:
+            type: string
+          type: array
+          title: Framework Categories
+        jurisdictions:
+          items:
+            type: string
+          type: array
+          title: Jurisdictions
+        credentials_summary:
+          type: string
+          title: Credentials Summary
+        sample_work:
+          additionalProperties: true
+          type: object
+          title: Sample Work
+        professional_references:
+          type: string
+          title: Professional References
+        coi_declarations:
+          items:
+            $ref: '#/components/schemas/CoiEntry'
+          type: array
+          title: Coi Declarations
+        coi_signed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Coi Signed At
+        coi_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Coi Expires At
+        confidentiality_signed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Confidentiality Signed At
+        payout_account_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payout Account Id
+        tax_document_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tax Document Type
+        tax_document_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tax Document Key
+        trial_member_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Trial Member Id
+        trial_attestation_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Trial Attestation Id
+        kyb_verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Kyb Verified At
+        admin_feedback:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin Feedback
+        reviewed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewed At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        gate_checklist:
+          $ref: '#/components/schemas/OrgAttestorGateChecklist'
+      type: object
+      required:
+      - id
+      - org_id
+      - status
+      - legal_name
+      - registration_number
+      - incorporation_doc_keys
+      - sectors
+      - framework_categories
+      - jurisdictions
+      - credentials_summary
+      - sample_work
+      - professional_references
+      - coi_declarations
+      - coi_signed_at
+      - coi_expires_at
+      - confidentiality_signed_at
+      - payout_account_id
+      - tax_document_type
+      - tax_document_key
+      - trial_member_id
+      - trial_attestation_id
+      - kyb_verified_at
+      - admin_feedback
+      - reviewed_at
+      - created_at
+      - gate_checklist
+      title: OrgAttestorApplicationResponse
+      description: 'Org attestor application visible to org owner/admins and platform
+        admins.
+
+
+        Excludes no confidential reviewing-member identity (there is none on the
+
+        application); the tax document key is an S3 key, not a secret.'
+    OrgAttestorApplicationUpdateRequest:
+      properties:
+        legal_name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 2
+          - type: 'null'
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Registration Number
+        incorporation_doc_keys:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 20
+          - type: 'null'
+          title: Incorporation Doc Keys
+        sectors:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 4
+            minItems: 1
+          - type: 'null'
+          title: Sectors
+        framework_categories:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 9
+            minItems: 1
+          - type: 'null'
+          title: Framework Categories
+        jurisdictions:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 25
+            minItems: 1
+          - type: 'null'
+          title: Jurisdictions
+        credentials_summary:
+          anyOf:
+          - type: string
+            maxLength: 5000
+            minLength: 10
+          - type: 'null'
+          title: Credentials Summary
+        sample_work:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Sample Work
+        professional_references:
+          anyOf:
+          - type: string
+            maxLength: 5000
+            minLength: 3
+          - type: 'null'
+          title: Professional References
+        payout_account_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payout Account Id
+      type: object
+      title: OrgAttestorApplicationUpdateRequest
+      description: 'Partial edit of a draft or needs-info org attestor application.
+
+
+        Every field is optional: only supplied fields are applied. Setting
+
+        ``payout_account_id`` links an org-owned payout account to the gate.'
+    OrgAttestorGateChecklist:
+      properties:
+        kyb_verified:
+          type: boolean
+          title: Kyb Verified
+        credentials_reviewed:
+          type: boolean
+          title: Credentials Reviewed
+        undertakings_signed:
+          type: boolean
+          title: Undertakings Signed
+        payout_account_linked:
+          type: boolean
+          title: Payout Account Linked
+        tax_document_uploaded:
+          type: boolean
+          title: Tax Document Uploaded
+        trial_passed:
+          type: boolean
+          title: Trial Passed
+      type: object
+      required:
+      - kyb_verified
+      - credentials_reviewed
+      - undertakings_signed
+      - payout_account_linked
+      - tax_document_uploaded
+      - trial_passed
+      title: OrgAttestorGateChecklist
+      description: 'Per-gate readiness flags for an org attestor application.
+
+
+        Mirrors the admin activation gates so the org can see what remains
+
+        before its application can be approved.'
+    OrgAttestorTaxDocumentRequest:
+      properties:
+        tax_document_type:
+          type: string
+          enum:
+          - w9
+          - w8ben
+          - other
+          title: Tax Document Type
+        file_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: File Name
+        content_type:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Content Type
+        size_bytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+      type: object
+      required:
+      - tax_document_type
+      - file_name
+      - content_type
+      - size_bytes
+      title: OrgAttestorTaxDocumentRequest
+      description: Request body to create a presigned tax-document upload session.
     OrgInvitationCreateRequest:
       properties:
         email:
@@ -17169,6 +17803,18 @@ components:
       - current_version
       title: OrgNdaStatusResponse
       description: A member's NDA status for one organization.
+    OrgNominateTrialMemberRequest:
+      properties:
+        member_id:
+          type: string
+          format: uuid
+          title: Member Id
+      type: object
+      required:
+      - member_id
+      title: OrgNominateTrialMemberRequest
+      description: Request body to nominate the member who performs the calibration
+        trial.
     OrgOwnershipTransferRequest:
       properties:
         new_owner_member_id:
@@ -17246,6 +17892,37 @@ components:
       - teams
       title: OrgTeamsResponse
       description: List wrapper for organization teams.
+    OrgUndertakingsSignRequest:
+      properties:
+        declarations:
+          items:
+            $ref: '#/components/schemas/CoiEntry'
+          type: array
+          title: Declarations
+        accept_policy:
+          type: boolean
+          title: Accept Policy
+        accept_confidentiality:
+          type: boolean
+          title: Accept Confidentiality
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - declarations
+      - accept_policy
+      - accept_confidentiality
+      - totp_code
+      title: OrgUndertakingsSignRequest
+      description: 'Owner-signed conflict-of-interest and confidentiality undertakings.
+
+
+        TOTP-gated: signing stamps the CoI and confidentiality timestamps and
+
+        sets the CoI expiry one validity period out.'
     OrganizationCreateRequest:
       properties:
         slug:

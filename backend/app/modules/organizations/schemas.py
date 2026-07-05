@@ -6,11 +6,37 @@ membership management, and public-safe profile reads.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.modules.attestation.schemas import CoiEntry
+from app.modules.attestation.taxonomy import validate_categories, validate_sectors
+
+_PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x1f\x7f]")
+
+
+def _ensure_safe_prose(value: str) -> str:
+    """Reject markup delimiters and control characters in prose fields."""
+    if _PROSE_FORBIDDEN.search(value):
+        raise ValueError("text may not contain '<', '>', or control characters.")
+    return value
+
+
+def _clean_labels(values: list[str]) -> list[str]:
+    """Trim, drop empties, and de-duplicate free-text labels (first-seen)."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        item = raw.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        cleaned.append(item)
+    return cleaned
 
 
 class OrganizationCreateRequest(BaseModel):
@@ -242,3 +268,176 @@ class OrgNdaStatusResponse(BaseModel):
     current_version: str
     signed_version: str | None = None
     signed_at: datetime | None = None
+
+
+class OrgAttestorApplicationCreateRequest(BaseModel):
+    """Request body to open (or reapply for) an org attestor application.
+
+    KYB fields (legal name, registration number, incorporation documents)
+    are optional at draft time and gated for completeness at submit; the
+    matching and credentials fields are required so the draft row satisfies
+    its NOT NULL columns.
+    """
+
+    legal_name: str | None = Field(default=None, min_length=2, max_length=200)
+    registration_number: str | None = Field(default=None, min_length=1, max_length=200)
+    incorporation_doc_keys: list[str] = Field(default_factory=list, max_length=20)
+    sectors: list[str] = Field(min_length=1, max_length=4)
+    framework_categories: list[str] = Field(min_length=1, max_length=9)
+    jurisdictions: list[str] = Field(min_length=1, max_length=25)
+    credentials_summary: str = Field(min_length=10, max_length=5000)
+    sample_work: dict[str, Any] = Field(default_factory=dict)
+    professional_references: str = Field(min_length=3, max_length=5000)
+
+    @field_validator("sectors")
+    @classmethod
+    def _clean_sectors(cls, value: list[str]) -> list[str]:
+        """Validate sectors against the controlled taxonomy."""
+        return validate_sectors(value)
+
+    @field_validator("framework_categories")
+    @classmethod
+    def _clean_categories(cls, value: list[str]) -> list[str]:
+        """Validate framework categories against the controlled taxonomy."""
+        return validate_categories(value)
+
+    @field_validator("jurisdictions")
+    @classmethod
+    def _clean_jurisdictions(cls, value: list[str]) -> list[str]:
+        """Trim and de-duplicate jurisdiction labels."""
+        return _clean_labels(value)
+
+    @field_validator("legal_name", "credentials_summary", "professional_references")
+    @classmethod
+    def _clean_prose(cls, value: str | None) -> str | None:
+        """Reject markup/control characters in prose fields."""
+        return _ensure_safe_prose(value) if value is not None else None
+
+
+class OrgAttestorApplicationUpdateRequest(BaseModel):
+    """Partial edit of a draft or needs-info org attestor application.
+
+    Every field is optional: only supplied fields are applied. Setting
+    ``payout_account_id`` links an org-owned payout account to the gate.
+    """
+
+    legal_name: str | None = Field(default=None, min_length=2, max_length=200)
+    registration_number: str | None = Field(default=None, min_length=1, max_length=200)
+    incorporation_doc_keys: list[str] | None = Field(default=None, max_length=20)
+    sectors: list[str] | None = Field(default=None, min_length=1, max_length=4)
+    framework_categories: list[str] | None = Field(
+        default=None, min_length=1, max_length=9
+    )
+    jurisdictions: list[str] | None = Field(default=None, min_length=1, max_length=25)
+    credentials_summary: str | None = Field(
+        default=None, min_length=10, max_length=5000
+    )
+    sample_work: dict[str, Any] | None = None
+    professional_references: str | None = Field(
+        default=None, min_length=3, max_length=5000
+    )
+    payout_account_id: UUID | None = None
+
+    @field_validator("sectors")
+    @classmethod
+    def _clean_sectors(cls, value: list[str] | None) -> list[str] | None:
+        """Validate sectors against the controlled taxonomy when supplied."""
+        return validate_sectors(value) if value is not None else None
+
+    @field_validator("framework_categories")
+    @classmethod
+    def _clean_categories(cls, value: list[str] | None) -> list[str] | None:
+        """Validate framework categories against the taxonomy when supplied."""
+        return validate_categories(value) if value is not None else None
+
+    @field_validator("jurisdictions")
+    @classmethod
+    def _clean_jurisdictions(cls, value: list[str] | None) -> list[str] | None:
+        """Trim and de-duplicate jurisdiction labels when supplied."""
+        return _clean_labels(value) if value is not None else None
+
+    @field_validator("legal_name", "credentials_summary", "professional_references")
+    @classmethod
+    def _clean_prose(cls, value: str | None) -> str | None:
+        """Reject markup/control characters in prose fields when supplied."""
+        return _ensure_safe_prose(value) if value is not None else None
+
+
+class OrgUndertakingsSignRequest(BaseModel):
+    """Owner-signed conflict-of-interest and confidentiality undertakings.
+
+    TOTP-gated: signing stamps the CoI and confidentiality timestamps and
+    sets the CoI expiry one validity period out.
+    """
+
+    declarations: list[CoiEntry]
+    accept_policy: bool
+    accept_confidentiality: bool
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class OrgAttestorTaxDocumentRequest(BaseModel):
+    """Request body to create a presigned tax-document upload session."""
+
+    tax_document_type: Literal["w9", "w8ben", "other"]
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class OrgNominateTrialMemberRequest(BaseModel):
+    """Request body to nominate the member who performs the calibration trial."""
+
+    member_id: UUID
+
+
+class OrgAttestorGateChecklist(BaseModel):
+    """Per-gate readiness flags for an org attestor application.
+
+    Mirrors the admin activation gates so the org can see what remains
+    before its application can be approved.
+    """
+
+    kyb_verified: bool
+    credentials_reviewed: bool
+    undertakings_signed: bool
+    payout_account_linked: bool
+    tax_document_uploaded: bool
+    trial_passed: bool
+
+
+class OrgAttestorApplicationResponse(BaseModel):
+    """Org attestor application visible to org owner/admins and platform admins.
+
+    Excludes no confidential reviewing-member identity (there is none on the
+    application); the tax document key is an S3 key, not a secret.
+    """
+
+    id: UUID
+    org_id: UUID
+    status: str
+    legal_name: str | None
+    registration_number: str | None
+    incorporation_doc_keys: list[str]
+    sectors: list[str]
+    framework_categories: list[str]
+    jurisdictions: list[str]
+    credentials_summary: str
+    sample_work: dict[str, Any]
+    professional_references: str
+    coi_declarations: list[CoiEntry]
+    coi_signed_at: datetime | None
+    coi_expires_at: datetime | None
+    confidentiality_signed_at: datetime | None
+    payout_account_id: UUID | None
+    tax_document_type: str | None
+    tax_document_key: str | None
+    trial_member_id: UUID | None
+    trial_attestation_id: UUID | None
+    kyb_verified_at: datetime | None
+    admin_feedback: str | None
+    reviewed_at: datetime | None
+    created_at: datetime
+    gate_checklist: OrgAttestorGateChecklist
+
+    model_config = ConfigDict(from_attributes=True)

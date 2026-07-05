@@ -13,9 +13,17 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
+from app.modules.attestation.schemas import (
+    CredentialEvidenceUploadSessionResponse,
+)
 from app.modules.auth.models import User
-from app.modules.organizations import nda_service, service
+from app.modules.organizations import (
+    attestor_application_service,
+    nda_service,
+    service,
+)
 from app.modules.organizations.dependencies import OrgContext, require_org_role
+from app.modules.organizations.models import OrgAttestorApplication
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     MyOrganizationResponse,
@@ -23,6 +31,11 @@ from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgAttestorApplicationCreateRequest,
+    OrgAttestorApplicationResponse,
+    OrgAttestorApplicationUpdateRequest,
+    OrgAttestorGateChecklist,
+    OrgAttestorTaxDocumentRequest,
     OrgInvitationCreateRequest,
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
@@ -31,11 +44,13 @@ from app.modules.organizations.schemas import (
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
     OrgNdaStatusResponse,
+    OrgNominateTrialMemberRequest,
     OrgOwnershipTransferRequest,
     OrgTeamCreateRequest,
     OrgTeamRenameRequest,
     OrgTeamResponse,
     OrgTeamsResponse,
+    OrgUndertakingsSignRequest,
     PublicOrganizationResponse,
 )
 
@@ -48,6 +63,44 @@ OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
+ORG_ATTESTOR_APPLY_RATE_LIMITER = RateLimiter(
+    namespace="org_attestor_apply", limit=3, window=86400
+)
+
+
+def _application_response(
+    application: OrgAttestorApplication,
+    checklist: OrgAttestorGateChecklist,
+) -> OrgAttestorApplicationResponse:
+    """Assemble the application response with its derived gate checklist."""
+    return OrgAttestorApplicationResponse(
+        id=application.id,
+        org_id=application.org_id,
+        status=application.status,
+        legal_name=application.legal_name,
+        registration_number=application.registration_number,
+        incorporation_doc_keys=application.incorporation_doc_keys,
+        sectors=application.sectors,
+        framework_categories=application.framework_categories,
+        jurisdictions=application.jurisdictions,
+        credentials_summary=application.credentials_summary,
+        sample_work=application.sample_work,
+        professional_references=application.professional_references,
+        coi_declarations=application.coi_declarations,
+        coi_signed_at=application.coi_signed_at,
+        coi_expires_at=application.coi_expires_at,
+        confidentiality_signed_at=application.confidentiality_signed_at,
+        payout_account_id=application.payout_account_id,
+        tax_document_type=application.tax_document_type,
+        tax_document_key=application.tax_document_key,
+        trial_member_id=application.trial_member_id,
+        trial_attestation_id=application.trial_attestation_id,
+        kyb_verified_at=application.kyb_verified_at,
+        admin_feedback=application.admin_feedback,
+        reviewed_at=application.reviewed_at,
+        created_at=application.created_at,
+        gate_checklist=checklist,
+    )
 
 
 @router.post(
@@ -472,6 +525,181 @@ async def sign_nda(
         signed_version=nda_status.signed_version,
         signed_at=nda_status.signed_at,
     )
+
+
+@router.post(
+    "/{org_id}/attestor-application",
+    response_model=OrgAttestorApplicationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Open an org attestor application",
+    description=(
+        "Open (or reapply for) an attestor-capability application as a draft. "
+        "Org owner/admin only."
+    ),
+)
+async def create_attestor_application(
+    org_id: UUID,
+    payload: OrgAttestorApplicationCreateRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Create a draft org attestor application."""
+    await attestor_application_service.create_application(
+        db, org_id=org_id, actor_id=context.user.id, payload=payload
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
+
+
+@router.get(
+    "/{org_id}/attestor-application",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Get the org attestor application",
+    description=(
+        "Return the org's current attestor application and its gate checklist. "
+        "Org owner/admin only."
+    ),
+)
+async def get_attestor_application(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Return the org's attestor application with its gate checklist."""
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
+
+
+@router.patch(
+    "/{org_id}/attestor-application",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Edit the org attestor application",
+    description=(
+        "Partially edit a draft or needs-info application; supply "
+        "payout_account_id to link an org-owned payout account. Owner/admin only."
+    ),
+)
+async def update_attestor_application(
+    org_id: UUID,
+    payload: OrgAttestorApplicationUpdateRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Partially edit the org's draft attestor application."""
+    await attestor_application_service.update_application(
+        db, org_id=org_id, actor_id=context.user.id, payload=payload
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
+
+
+@router.post(
+    "/{org_id}/attestor-application/submit",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Submit the org attestor application",
+    description=(
+        "Submit a completed application for admin review. Rate-limited per org. "
+        "Owner/admin only."
+    ),
+)
+async def submit_attestor_application(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgAttestorApplicationResponse:
+    """Submit the org's attestor application for review."""
+    await ORG_ATTESTOR_APPLY_RATE_LIMITER.check(
+        cast(RedisCounter, redis), str(org_id)
+    )
+    await attestor_application_service.submit_application(
+        db, org_id=org_id, actor_id=context.user.id
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
+
+
+@router.post(
+    "/{org_id}/attestor-application/sign-undertakings",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Sign the org attestor undertakings",
+    description=(
+        "Owner-sign the conflict-of-interest and confidentiality undertakings. "
+        "TOTP-gated; org owner only."
+    ),
+)
+async def sign_attestor_undertakings(
+    org_id: UUID,
+    payload: OrgUndertakingsSignRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgAttestorApplicationResponse:
+    """Owner-sign the org attestor undertakings."""
+    await attestor_application_service.sign_undertakings(
+        db, redis, org_id=org_id, user=context.user, payload=payload
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
+
+
+@router.post(
+    "/{org_id}/attestor-application/tax-document",
+    response_model=CredentialEvidenceUploadSessionResponse,
+    summary="Create a tax-document upload session",
+    description=(
+        "Create a presigned upload session for the org's tax document and "
+        "stamp the document type/key on the application. Owner/admin only."
+    ),
+)
+async def set_attestor_tax_document(
+    org_id: UUID,
+    payload: OrgAttestorTaxDocumentRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned tax-document upload session for the application."""
+    return await attestor_application_service.set_tax_document(
+        db, org_id=org_id, actor_id=context.user.id, payload=payload
+    )
+
+
+@router.post(
+    "/{org_id}/attestor-application/nominate-trial-member",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Nominate the trial member",
+    description=(
+        "Nominate the org member who performs the calibration trial; the member "
+        "must have signed the current NDA. Owner/admin only."
+    ),
+)
+async def nominate_attestor_trial_member(
+    org_id: UUID,
+    payload: OrgNominateTrialMemberRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Nominate the org member who performs the calibration trial."""
+    await attestor_application_service.nominate_trial_member(
+        db,
+        org_id=org_id,
+        actor_id=context.user.id,
+        member_id=payload.member_id,
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
 
 
 # Invitation response routes — invitee is not yet a member, so no org RBAC.
