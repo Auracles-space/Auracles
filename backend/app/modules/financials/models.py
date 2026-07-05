@@ -266,7 +266,13 @@ class PayoutAccount(CreatedAtMixin, Base):
 
 
 class Payout(Base):
-    """Contributor payout request and provider transfer status."""
+    """Payout request and provider transfer status for one beneficiary.
+
+    A payout belongs to exactly one beneficiary: an individual Contributor
+    (``contributor_id``) or an Organization (``org_id``) for org-attested
+    earnings. The XOR CHECK enforces the single-beneficiary rule, mirroring the
+    ``transactions.payee_id``/``payee_org_id`` and ``payout_accounts`` shape.
+    """
 
     __tablename__ = "payouts"
     __table_args__ = (
@@ -279,7 +285,12 @@ class Payout(Base):
             "net_amount >= 0",
             name="ck_payouts_net_amount_nonnegative",
         ),
+        CheckConstraint(
+            "(contributor_id IS NULL) != (org_id IS NULL)",
+            name="ck_payouts_beneficiary_xor",
+        ),
         Index("idx_payouts_contributor", "contributor_id"),
+        Index("idx_payouts_org", "org_id"),
         Index("idx_payouts_status", "status"),
         Index("idx_payouts_provider_ref", "provider_ref"),
     )
@@ -289,10 +300,16 @@ class Payout(Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    contributor_id: Mapped[UUID] = mapped_column(
+    contributor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    # Org beneficiary for org-attested earnings; XOR with contributor_id.
+    org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
     )
     payout_account_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

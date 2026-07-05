@@ -28,6 +28,11 @@ from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.financials.service import INVOICE_URL_TTL_SECONDS
 from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.annual import annual_summary_key
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorApplication,
+    OrgMember,
+)
 from app.workers.tasks.invoicing import generate_invoice_document
 
 
@@ -178,6 +183,60 @@ async def get_tax_invoice(
     return await _deliver_invoice(invoice.id, invoice.s3_key)
 
 
+async def _earnings_buyer_identity(
+    db: AsyncSession, attestation: Attestation
+) -> tuple[str, str]:
+    """Resolve the earnings-statement buyer name and email for one attestation.
+
+    Org-staffed attestations bill to the organization's legal name (falling back
+    to the org name) and the org owner's email — orgs carry no billing email of
+    their own. Legacy individual attestations bill to the assignee's name and
+    email. The reviewing member's identity is never used as the buyer: earnings
+    settle to the org, not the individual reviewer.
+
+    Raises:
+        HTTPException(404): No attestor identity can be resolved.
+    """
+    if attestation.attestor_org_id is not None:
+        org = await db.get(Organization, attestation.attestor_org_id)
+        if org is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor not found.",
+            )
+        legal_name = await db.scalar(
+            select(OrgAttestorApplication.legal_name).where(
+                OrgAttestorApplication.org_id == org.id,
+                OrgAttestorApplication.status == "approved",
+            )
+        )
+        owner_email = await db.scalar(
+            select(User.email)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .where(OrgMember.org_id == org.id, OrgMember.role == "owner")
+            .limit(1)
+        )
+        if owner_email is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestor not found.",
+            )
+        return (legal_name or org.name), owner_email
+
+    if attestation.attestor_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestor not found.",
+        )
+    attestor = await db.get(User, attestation.attestor_id)
+    if attestor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestor not found.",
+        )
+    return attestor.display_name, attestor.email
+
+
 async def get_earnings_statement(
     db: AsyncSession,
     *,
@@ -213,17 +272,7 @@ async def get_earnings_statement(
         )
 
     transaction = await _attestation_fee_transaction(db, attestation_id)
-    if attestation.attestor_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attestor not found.",
-        )
-    attestor = await db.get(User, attestation.attestor_id)
-    if attestor is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attestor not found.",
-        )
+    buyer_name, buyer_email = await _earnings_buyer_identity(db, attestation)
 
     commission_rate = await _attestation_commission_rate(db)
     net_amount = (transaction.amount * (Decimal("1") - commission_rate)).quantize(
@@ -239,8 +288,8 @@ async def get_earnings_statement(
         currency=transaction.currency,
         subtotal=transaction.amount,
         seller=invoicing_service.seller_identity(settings),
-        buyer_name=attestor.display_name,
-        buyer_email=attestor.email,
+        buyer_name=buyer_name,
+        buyer_email=buyer_email,
         commission_rate=commission_rate,
         net_amount=net_amount,
     )

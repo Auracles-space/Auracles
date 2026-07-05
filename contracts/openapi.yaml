@@ -7305,6 +7305,143 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/earnings:
+    get:
+      tags:
+      - Organizations
+      summary: Organization attestation earnings
+      description: Released attestation earnings and available payout balance for
+        the organization. Owner/admin only.
+      operationId: get_org_earnings_v1_orgs__org_id__financials_earnings_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarningsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payout-accounts:
+    post:
+      tags:
+      - Organizations
+      summary: Onboard an organization payout account
+      description: Create a provider-held payout destination owned by the organization.
+        Provider routing follows the org's registered country. Owner/admin only.
+      operationId: onboard_org_payout_account_v1_orgs__org_id__financials_payout_accounts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPayoutAccountOnboardRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountOnboardResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payouts:
+    post:
+      tags:
+      - Organizations
+      summary: Request an organization payout
+      description: Request a payout of the org's available attestation earnings. TOTP-gated
+        (requester's own TOTP); requires an approved attestor application and a verified
+        org payout account. Owner/admin only.
+      operationId: request_org_payout_v1_orgs__org_id__financials_payouts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/invoices:
+    get:
+      tags:
+      - Organizations
+      summary: Organization issued invoices
+      description: List invoices issued for the organization's attested work. Non-sensitive
+        metadata only. Owner/admin only.
+      operationId: list_org_invoices_v1_orgs__org_id__financials_invoices_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -18424,6 +18561,60 @@ components:
       - invitations
       title: OrgInvitationsResponse
       description: List wrapper for pending organization invitations.
+    OrgInvoiceListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        doc_type:
+          type: string
+          title: Doc Type
+        issue_date:
+          type: string
+          format: date-time
+          title: Issue Date
+        currency:
+          type: string
+          title: Currency
+        total:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+        source_ref_type:
+          type: string
+          title: Source Ref Type
+        source_ref_id:
+          type: string
+          format: uuid
+          title: Source Ref Id
+      type: object
+      required:
+      - id
+      - invoice_number
+      - doc_type
+      - issue_date
+      - currency
+      - total
+      - source_ref_type
+      - source_ref_id
+      title: OrgInvoiceListItem
+      description: One org-attested invoice's non-sensitive metadata for list views.
+    OrgInvoicesResponse:
+      properties:
+        invoices:
+          items:
+            $ref: '#/components/schemas/OrgInvoiceListItem'
+          type: array
+          title: Invoices
+      type: object
+      required:
+      - invoices
+      title: OrgInvoicesResponse
+      description: Response body for an organization's issued invoice list.
     OrgMemberResponse:
       properties:
         id:
@@ -18538,6 +18729,33 @@ components:
       - totp_code
       title: OrgOwnershipTransferRequest
       description: TOTP-gated request to transfer organization ownership.
+    OrgPayoutAccountOnboardRequest:
+      properties:
+        provider:
+          type: string
+          const: stripe
+          title: Provider
+        refresh_url:
+          type: string
+          minLength: 1
+          title: Refresh Url
+        return_url:
+          type: string
+          minLength: 1
+          title: Return Url
+      additionalProperties: false
+      type: object
+      required:
+      - provider
+      - refresh_url
+      - return_url
+      title: OrgPayoutAccountOnboardRequest
+      description: 'Request body for onboarding an organization payout destination.
+
+
+        The organization''s registered ``country`` is authoritative for provider
+
+        routing, so — unlike the individual request — no country is accepted here.'
     OrgReassignReviewerRequest:
       properties:
         reviewing_member_id:

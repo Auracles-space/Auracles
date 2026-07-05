@@ -43,6 +43,13 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
                 "status": payout.status,
             }
 
+        # Beneficiary is exactly one of a Contributor or an Organization
+        # (XOR on the payout row); tag the transfer with whichever is set.
+        beneficiary_meta = (
+            {"contributor_id": str(payout.contributor_id)}
+            if payout.contributor_id is not None
+            else {"org_id": str(payout.org_id)}
+        )
         transfer = await stripe.create_transfer(
             amount=payout.net_amount,
             currency=payout.currency,
@@ -51,7 +58,7 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             ),
             metadata={
                 "payout_id": str(payout.id),
-                "contributor_id": str(payout.contributor_id),
+                **beneficiary_meta,
             },
             idempotency_key=f"payout:{payout.id}",
         )

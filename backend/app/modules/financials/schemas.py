@@ -213,3 +213,36 @@ class PayoutsResponse(BaseModel):
     """Response body for Contributor payout history."""
 
     payouts: list[PayoutResponse]
+
+
+class OrgPayoutAccountOnboardRequest(BaseModel):
+    """Request body for onboarding an organization payout destination.
+
+    The organization's registered ``country`` is authoritative for provider
+    routing, so — unlike the individual request — no country is accepted here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: PayoutProvider
+    refresh_url: str = Field(min_length=1)
+    return_url: str = Field(min_length=1)
+
+
+class OrgInvoiceListItem(BaseModel):
+    """One org-attested invoice's non-sensitive metadata for list views."""
+
+    id: UUID
+    invoice_number: str
+    doc_type: str
+    issue_date: datetime
+    currency: str
+    total: Decimal
+    source_ref_type: str
+    source_ref_id: UUID
+
+
+class OrgInvoicesResponse(BaseModel):
+    """Response body for an organization's issued invoice list."""
+
+    invoices: list[OrgInvoiceListItem]
