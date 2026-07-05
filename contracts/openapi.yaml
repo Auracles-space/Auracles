@@ -6811,6 +6811,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/nda:
+    get:
+      tags:
+      - Organizations
+      summary: Get my NDA status
+      description: 'Return the caller''s platform NDA status for this organization:
+        whether signing is required (attestor capability pending or active) and any
+        existing signature.'
+      operationId: get_nda_status_v1_orgs__org_id__nda_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgNdaStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/nda/sign:
+    post:
+      tags:
+      - Organizations
+      summary: Sign the platform NDA
+      description: Sign (or re-sign after a version bump) the platform NDA required
+        for org attestation work. Rate-limited per user.
+      operationId: sign_nda_v1_orgs__org_id__nda_sign_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgNdaStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -16729,6 +16792,10 @@ components:
             type: string
           type: object
           title: Capabilities
+        nda_required:
+          type: boolean
+          title: Nda Required
+          default: false
       type: object
       required:
       - org
@@ -17077,6 +17144,31 @@ components:
       - members
       title: OrgMembersResponse
       description: List wrapper for organization members.
+    OrgNdaStatusResponse:
+      properties:
+        required:
+          type: boolean
+          title: Required
+        current_version:
+          type: string
+          title: Current Version
+        signed_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Signed Version
+        signed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Signed At
+      type: object
+      required:
+      - required
+      - current_version
+      title: OrgNdaStatusResponse
+      description: A member's NDA status for one organization.
     OrgOwnershipTransferRequest:
       properties:
         new_owner_member_id:

@@ -68,6 +68,9 @@ class MyOrganizationResponse(BaseModel):
     org: OrganizationResponse
     role: str
     capabilities: dict[str, str]
+    # True when the org's attestor capability is pending/active, so the
+    # frontend can chain invitation acceptance straight into NDA signing.
+    nda_required: bool = False
 
 
 class MyOrganizationsResponse(BaseModel):
@@ -230,3 +233,12 @@ class AdminOrgsResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class OrgNdaStatusResponse(BaseModel):
+    """A member's NDA status for one organization."""
+
+    required: bool
+    current_version: str
+    signed_version: str | None = None
+    signed_at: datetime | None = None

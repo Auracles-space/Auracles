@@ -1013,6 +1013,8 @@ async def accept_invitation(
         org=OrganizationResponse.model_validate(org_obj),
         role=invited_role,
         capabilities=capabilities,
+        # Signal for the frontend to chain straight into NDA signing.
+        nda_required=capabilities.get("attestor") in ("pending", "active"),
     )
 
 

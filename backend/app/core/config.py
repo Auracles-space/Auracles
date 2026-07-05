@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     s3_reports_bucket: str = Field(
         default="auracles-reports-dev", alias="S3_REPORTS_BUCKET"
     )
+    # Current platform NDA document version for org attestation work.
+    # Bumping it invalidates member assignability until they re-sign.
+    org_member_nda_version: str = Field(
+        default="1.0", alias="ORG_MEMBER_NDA_VERSION"
+    )
     invoice_seller_name: str = Field(
         default="Auracles (pending registration)",
         alias="INVOICE_SELLER_NAME",

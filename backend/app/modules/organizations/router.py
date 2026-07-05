@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -11,9 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
 from app.modules.auth.models import User
-from app.modules.organizations import service
+from app.modules.organizations import nda_service, service
 from app.modules.organizations.dependencies import OrgContext, require_org_role
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
@@ -29,6 +30,7 @@ from app.modules.organizations.schemas import (
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
+    OrgNdaStatusResponse,
     OrgOwnershipTransferRequest,
     OrgTeamCreateRequest,
     OrgTeamRenameRequest,
@@ -44,6 +46,8 @@ RedisClient = Annotated[Redis, Depends(get_redis)]
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
+
+NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
 
 
 @router.post(
@@ -409,6 +413,64 @@ async def remove_team_member(
     del org_id
     await service.remove_team_member(
         db=db, context=context, team_id=team_id, member_id=member_id
+    )
+
+
+@router.get(
+    "/{org_id}/nda",
+    response_model=OrgNdaStatusResponse,
+    summary="Get my NDA status",
+    description=(
+        "Return the caller's platform NDA status for this organization: "
+        "whether signing is required (attestor capability pending or "
+        "active) and any existing signature."
+    ),
+)
+async def get_nda_status(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgNdaStatusResponse:
+    """Return the caller's NDA status for one organization."""
+    del org_id
+    nda_status = await nda_service.get_nda_status(
+        db, org_id=context.org.id, user_id=context.user.id
+    )
+    return OrgNdaStatusResponse(
+        required=nda_status.required,
+        current_version=nda_status.current_version,
+        signed_version=nda_status.signed_version,
+        signed_at=nda_status.signed_at,
+    )
+
+
+@router.post(
+    "/{org_id}/nda/sign",
+    response_model=OrgNdaStatusResponse,
+    summary="Sign the platform NDA",
+    description=(
+        "Sign (or re-sign after a version bump) the platform NDA required "
+        "for org attestation work. Rate-limited per user."
+    ),
+)
+async def sign_nda(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgNdaStatusResponse:
+    """Sign the platform NDA as an organization member."""
+    del org_id
+    await NDA_SIGN_RATE_LIMITER.check(cast(RedisCounter, redis), str(context.user.id))
+    await nda_service.sign_nda(db, org_id=context.org.id, user_id=context.user.id)
+    nda_status = await nda_service.get_nda_status(
+        db, org_id=context.org.id, user_id=context.user.id
+    )
+    return OrgNdaStatusResponse(
+        required=nda_status.required,
+        current_version=nda_status.current_version,
+        signed_version=nda_status.signed_version,
+        signed_at=nda_status.signed_at,
     )
 
 
