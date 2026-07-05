@@ -31,9 +31,12 @@ from app.modules.organizations.schemas import (
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgAttestorAdminListItem,
+    OrgAttestorAdminListResponse,
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationResponse,
     OrgAttestorApplicationUpdateRequest,
+    OrgAttestorFeedbackRequest,
     OrgAttestorGateChecklist,
     OrgAttestorTaxDocumentRequest,
     OrgInvitationCreateRequest,
@@ -811,3 +814,218 @@ async def admin_suspend_org(
 ) -> None:
     """Suspend an organization platform-wide (idempotent)."""
     await service.admin_suspend_org(db=db, admin=admin, org_id=org_id)
+
+
+@admin_orgs_router.post(
+    "/{org_id}/attestor-capability/suspend",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Suspend an org's attestor capability (platform admin)",
+    description=(
+        "Suspend an org's attestor capability; the profile is retained but "
+        "excluded from matching and members' derived roles are re-evaluated."
+    ),
+)
+async def admin_suspend_attestor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Suspend an org's attestor capability."""
+    await attestor_application_service.admin_set_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/attestor-capability/reinstate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reinstate an org's attestor capability (platform admin)",
+    description=(
+        "Reactivate a suspended org attestor capability and its profile; "
+        "members' derived roles are re-evaluated."
+    ),
+)
+async def admin_reinstate_attestor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Reinstate a suspended org attestor capability."""
+    await attestor_application_service.admin_set_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="active"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/attestor-capability/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke an org's attestor capability (platform admin)",
+    description=(
+        "Revoke an org's attestor capability and deactivate its profile; "
+        "members' derived roles are re-evaluated."
+    ),
+)
+async def admin_revoke_attestor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Revoke an org's attestor capability."""
+    await attestor_application_service.admin_set_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+    )
+
+
+# Platform-admin org attestor application review pipeline.
+admin_org_attestor_router = APIRouter(
+    prefix="/admin/org-attestor-applications",
+    tags=["Admin Org Attestor"],
+)
+
+
+def _admin_application_response(
+    application: OrgAttestorApplication,
+    checklist: OrgAttestorGateChecklist,
+) -> OrgAttestorApplicationResponse:
+    """Assemble the admin application response with its gate checklist."""
+    return _application_response(application, checklist)
+
+
+@admin_org_attestor_router.get(
+    "",
+    response_model=OrgAttestorAdminListResponse,
+    summary="List org attestor applications (platform admin)",
+    description="Paginated review queue, optionally filtered by status.",
+)
+async def admin_list_org_attestor_applications(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    status_filter: str | None = Query(default=None, alias="status", max_length=40),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> OrgAttestorAdminListResponse:
+    """List org attestor applications for platform-admin review."""
+    del admin
+    rows, total = await attestor_application_service.admin_list_applications(
+        db, status_filter=status_filter, page=page, page_size=page_size
+    )
+    return OrgAttestorAdminListResponse(
+        applications=[OrgAttestorAdminListItem.model_validate(row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/verify-kyb",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Verify KYB (platform admin)",
+    description="Stamp the KYB-verified gate on an application under review.",
+)
+async def admin_verify_kyb(
+    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> OrgAttestorApplicationResponse:
+    """Verify an application's KYB documents."""
+    await attestor_application_service.admin_verify_kyb(
+        db, application_id=application_id, admin_id=admin.id
+    )
+    application, checklist = (
+        await attestor_application_service.get_application_by_id(
+            db, application_id=application_id
+        )
+    )
+    return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/needs-info",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Return an application for more info (platform admin)",
+    description="Move a submitted application to needs_info with feedback.",
+)
+async def admin_needs_info(
+    application_id: UUID,
+    payload: OrgAttestorFeedbackRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Return an application to the org for more information."""
+    await attestor_application_service.admin_needs_info(
+        db,
+        application_id=application_id,
+        admin_id=admin.id,
+        feedback=payload.feedback,
+    )
+    application, checklist = (
+        await attestor_application_service.get_application_by_id(
+            db, application_id=application_id
+        )
+    )
+    return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/start-trial",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Start the calibration trial (platform admin)",
+    description="Assign the calibration trial to the nominated org member.",
+)
+async def admin_start_trial(
+    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> OrgAttestorApplicationResponse:
+    """Assign the calibration trial to the nominated member."""
+    await attestor_application_service.admin_start_trial(
+        db, application_id=application_id, admin_id=admin.id
+    )
+    application, checklist = (
+        await attestor_application_service.get_application_by_id(
+            db, application_id=application_id
+        )
+    )
+    return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/approve",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Approve and activate (platform admin)",
+    description=(
+        "Approve a fully gated application: create the profile, activate the "
+        "attestor capability, and grant every member the derived attestor role."
+    ),
+)
+async def admin_approve(
+    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> OrgAttestorApplicationResponse:
+    """Approve and activate an org attestor application."""
+    await attestor_application_service.admin_approve(
+        db, application_id=application_id, admin_id=admin.id
+    )
+    application, checklist = (
+        await attestor_application_service.get_application_by_id(
+            db, application_id=application_id
+        )
+    )
+    return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/reject",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Reject an application (platform admin)",
+    description="Terminally reject an application under review with feedback.",
+)
+async def admin_reject(
+    application_id: UUID,
+    payload: OrgAttestorFeedbackRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Terminally reject an org attestor application."""
+    await attestor_application_service.admin_reject(
+        db,
+        application_id=application_id,
+        admin_id=admin.id,
+        feedback=payload.feedback,
+    )
+    application, checklist = (
+        await attestor_application_service.get_application_by_id(
+            db, application_id=application_id
+        )
+    )
+    return _admin_application_response(application, checklist)

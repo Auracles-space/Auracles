@@ -25,6 +25,7 @@ from app.modules.integrations.router import router as integrations_router
 from app.modules.library.router import router as library_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.organizations.router import (
+    admin_org_attestor_router,
     admin_orgs_router,
 )
 from app.modules.organizations.router import (
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     application.include_router(organizations_router, prefix="/v1")
     application.include_router(org_invitation_router, prefix="/v1")
     application.include_router(admin_orgs_router, prefix="/v1")
+    application.include_router(admin_org_attestor_router, prefix="/v1")
     application.include_router(profiles_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
     application.include_router(partner_router, prefix="/v1")

@@ -15,12 +15,13 @@ dependencies; this layer assumes an authorized org owner/admin actor.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +41,7 @@ from app.modules.financials.models import PayoutAccount
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
     OrgAttestorApplication,
+    OrgAttestorProfile,
     OrgCapability,
     OrgMember,
 )
@@ -240,6 +242,30 @@ async def get_application(
         .where(OrgAttestorApplication.org_id == org_id)
         .order_by(OrgAttestorApplication.created_at.desc())
         .limit(1)
+    )
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Org attestor application not found.",
+        )
+    checklist = await _gate_checklist(db, application)
+    return application, checklist
+
+
+async def get_application_by_id(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+) -> tuple[OrgAttestorApplication, OrgAttestorGateChecklist]:
+    """Return one application (by id) and its gate checklist, for admin reads.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+    """
+    application = await db.scalar(
+        select(OrgAttestorApplication).where(
+            OrgAttestorApplication.id == application_id
+        )
     )
     if application is None:
         raise HTTPException(
@@ -584,3 +610,459 @@ async def nominate_trial_member(
             metadata={"member_id": str(member_id)},
         )
     return application
+
+
+# ---------------------------------------------------------------------------
+# Platform-admin review pipeline and capability activation
+# ---------------------------------------------------------------------------
+
+
+async def _load_admin_application(
+    db: AsyncSession,
+    application_id: UUID,
+) -> OrgAttestorApplication:
+    """Load and lock one org attestor application by id, or raise 404."""
+    application = await db.scalar(
+        select(OrgAttestorApplication)
+        .where(OrgAttestorApplication.id == application_id)
+        .with_for_update()
+    )
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Org attestor application not found.",
+        )
+    return application
+
+
+def _org_profile_specializations(application: OrgAttestorApplication) -> list[str]:
+    """Derive legacy-matcher specializations from onboarding taxonomy fields."""
+    values: list[str] = []
+    for item in [*application.sectors, *application.framework_categories]:
+        if item not in values:
+            values.append(item)
+    return values
+
+
+def _missing_approval_gates(
+    application: OrgAttestorApplication,
+    *,
+    trial_passed: bool,
+) -> list[str]:
+    """Return any unsatisfied approval gates for an org application."""
+    missing: list[str] = []
+    if application.kyb_verified_at is None:
+        missing.append("kyb_verified")
+    if application.coi_signed_at is None:
+        missing.append("undertakings_coi")
+    if application.confidentiality_signed_at is None:
+        missing.append("undertakings_confidentiality")
+    if application.payout_account_id is None:
+        missing.append("payout_account")
+    if not application.tax_document_key:
+        missing.append("tax_document")
+    if not trial_passed:
+        missing.append("trial_passed")
+    if not application.sectors:
+        missing.append("sectors")
+    if not application.framework_categories:
+        missing.append("framework_categories")
+    return missing
+
+
+async def admin_list_applications(
+    db: AsyncSession,
+    *,
+    status_filter: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[list[OrgAttestorApplication], int]:
+    """Return a page of org attestor applications for admin review.
+
+    Args:
+        db: Async session.
+        status_filter: Optional status to filter the queue by.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A tuple of the page's applications and the total row count.
+    """
+    base = select(OrgAttestorApplication)
+    if status_filter is not None:
+        base = base.where(OrgAttestorApplication.status == status_filter)
+    total = await db.scalar(
+        select(func.count()).select_from(base.subquery())
+    )
+    rows = (
+        await db.scalars(
+            base.order_by(OrgAttestorApplication.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    return list(rows), int(total or 0)
+
+
+async def admin_verify_kyb(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+) -> OrgAttestorApplication:
+    """Stamp the KYB-verified gate on a submitted/needs-info application.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+        HTTPException(409): If the application is not under review.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        if application.status not in ("submitted", "needs_info"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only applications under review can be KYB-verified.",
+            )
+        application.kyb_verified_at = datetime.now(UTC)
+        application.kyb_verified_by = admin_id
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_kyb_verified",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"org_id": str(application.org_id)},
+        )
+    return application
+
+
+async def admin_needs_info(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+    feedback: str,
+) -> OrgAttestorApplication:
+    """Return a submitted application to the org for more information.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+        HTTPException(409): If the application is not in ``submitted``.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        if application.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted applications can be sent back for info.",
+            )
+        now = datetime.now(UTC)
+        application.status = "needs_info"
+        application.admin_feedback = feedback
+        application.reviewed_by = admin_id
+        application.reviewed_at = now
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_needs_info",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"org_id": str(application.org_id)},
+        )
+    return application
+
+
+async def admin_start_trial(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+) -> AttestorTrial:
+    """Assign the calibration trial to the nominated org member.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+        HTTPException(409): If the application is not under review.
+        HTTPException(422): If no trial member has been nominated.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        if application.status not in ("submitted", "needs_info"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only applications under review can start a trial.",
+            )
+        if application.trial_member_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Nominate a trial member before starting the trial.",
+            )
+        attempts = await db.scalar(
+            select(func.count())
+            .select_from(AttestorTrial)
+            .where(AttestorTrial.org_application_id == application_id)
+        )
+        trial = AttestorTrial(
+            org_application_id=application_id,
+            org_id=application.org_id,
+            member_id=application.trial_member_id,
+            status="assigned",
+            attempt=int(attempts or 0) + 1,
+        )
+        db.add(trial)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_trial_assigned",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"trial_id": str(trial.id), "attempt": trial.attempt},
+        )
+    return trial
+
+
+async def _create_org_profile(
+    db: AsyncSession,
+    application: OrgAttestorApplication,
+    approved_at: datetime,
+) -> None:
+    """Create or refresh the org's live attestor matching profile."""
+    specializations = _org_profile_specializations(application)
+    profile = await db.scalar(
+        select(OrgAttestorProfile)
+        .where(OrgAttestorProfile.org_id == application.org_id)
+        .with_for_update()
+    )
+    if profile is None:
+        profile = OrgAttestorProfile(
+            org_id=application.org_id,
+            specializations=specializations,
+            jurisdictions=application.jurisdictions,
+            sectors=application.sectors,
+            framework_categories=application.framework_categories,
+            active=True,
+            verification_level=4,
+            approved_at=approved_at,
+            coi_declarations=application.coi_declarations,
+            coi_signed_at=application.coi_signed_at,
+            coi_expires_at=application.coi_expires_at,
+            confidentiality_signed_at=application.confidentiality_signed_at,
+        )
+        db.add(profile)
+        return
+    profile.specializations = specializations
+    profile.jurisdictions = application.jurisdictions
+    profile.sectors = application.sectors
+    profile.framework_categories = application.framework_categories
+    profile.active = True
+    profile.verification_level = 4
+    profile.approved_at = approved_at
+    profile.coi_declarations = application.coi_declarations
+    profile.coi_signed_at = application.coi_signed_at
+    profile.coi_expires_at = application.coi_expires_at
+    profile.confidentiality_signed_at = application.confidentiality_signed_at
+
+
+async def _sync_org_member_roles(db: AsyncSession, org_id: UUID) -> None:
+    """Re-evaluate the derived attestor role for every member of an org.
+
+    Imported lazily to avoid a module import cycle with the org service.
+    ``sync_derived_roles`` manages its own transaction, so this must run
+    after the caller's own transaction has committed.
+    """
+    from app.modules.organizations import service as org_service
+
+    member_ids = (
+        await db.scalars(
+            select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+        )
+    ).all()
+    for user_id in member_ids:
+        await org_service.sync_derived_roles(db, user_id=user_id)
+
+
+async def admin_approve(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+) -> OrgAttestorApplication:
+    """Approve a fully gated application and activate the org attestor capability.
+
+    In one transaction: transitions the application to ``approved``, creates or
+    refreshes the org attestor profile, and activates the attestor capability.
+    Then, after commit, re-evaluates the derived attestor role for every member
+    (the derived-role sync reads the now-committed active capability).
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+        HTTPException(409): If the application is not ``submitted``.
+        HTTPException(422): If any approval gate is unsatisfied.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    now = datetime.now(UTC)
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        if application.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted applications can be approved.",
+            )
+        trial_passed = await _trial_passed(db, application.id)
+        missing = _missing_approval_gates(application, trial_passed=trial_passed)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Missing approval gates: {', '.join(missing)}.",
+            )
+
+        await _create_org_profile(db, application, now)
+
+        capability = await db.scalar(
+            select(OrgCapability)
+            .where(
+                OrgCapability.org_id == application.org_id,
+                OrgCapability.capability == "attestor",
+            )
+            .with_for_update()
+        )
+        if capability is None:
+            capability = OrgCapability(
+                org_id=application.org_id,
+                capability="attestor",
+                status="active",
+                activated_at=now,
+            )
+            db.add(capability)
+        else:
+            capability.status = "active"
+            capability.activated_at = now
+
+        application.status = "approved"
+        application.reviewed_by = admin_id
+        application.reviewed_at = now
+        org_id = application.org_id
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_activated",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"org_id": str(org_id), "verification_level": 4},
+        )
+
+    await _sync_org_member_roles(db, org_id)
+    await db.refresh(application)
+    logger.bind(
+        module="organizations",
+        action="org_attestor_activated",
+        user_id=str(admin_id),
+    ).info("Org attestor capability activated")
+    return application
+
+
+async def admin_reject(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+    feedback: str,
+) -> OrgAttestorApplication:
+    """Terminally reject an org attestor application under review.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+        HTTPException(409): If the application is already approved or rejected.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        if application.status in ("approved", "rejected"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Application has already been decided.",
+            )
+        now = datetime.now(UTC)
+        application.status = "rejected"
+        application.admin_feedback = feedback
+        application.reviewed_by = admin_id
+        application.reviewed_at = now
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_application_rejected",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"org_id": str(application.org_id)},
+        )
+    return application
+
+
+async def admin_set_capability_status(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    admin_id: UUID,
+    status_value: Literal["suspended", "active", "revoked"],
+) -> None:
+    """Suspend, reinstate, or revoke an org's attestor capability.
+
+    Revocation marks the matching profile inactive; suspension leaves the
+    profile intact (matching filters on the capability status). Reinstatement
+    reactivates the profile. Every member's derived attestor role is then
+    re-evaluated after commit.
+
+    Raises:
+        HTTPException(404): If the org has no attestor capability.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        capability = await db.scalar(
+            select(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == "attestor",
+            )
+            .with_for_update()
+        )
+        if capability is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Org attestor capability not found.",
+            )
+        capability.status = status_value
+        profile = await db.scalar(
+            select(OrgAttestorProfile)
+            .where(OrgAttestorProfile.org_id == org_id)
+            .with_for_update()
+        )
+        if profile is not None:
+            if status_value == "revoked":
+                profile.active = False
+            elif status_value == "active":
+                profile.active = True
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action=f"org_attestor_capability_{status_value}",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"status": status_value},
+        )
+
+    await _sync_org_member_roles(db, org_id)
+    logger.bind(
+        module="organizations",
+        action="org_attestor_capability_status",
+        user_id=str(admin_id),
+    ).info("Org attestor capability status changed")

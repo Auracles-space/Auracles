@@ -441,3 +441,36 @@ class OrgAttestorApplicationResponse(BaseModel):
     gate_checklist: OrgAttestorGateChecklist
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrgAttestorAdminListItem(BaseModel):
+    """Slim admin-queue row for one org attestor application.
+
+    Omits the heavy content and gate checklist so the queue stays cheap to
+    render; admins open the full application for detail.
+    """
+
+    id: UUID
+    org_id: UUID
+    status: str
+    legal_name: str | None
+    kyb_verified_at: datetime | None
+    reviewed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrgAttestorAdminListResponse(BaseModel):
+    """Paginated admin queue of org attestor applications."""
+
+    applications: list[OrgAttestorAdminListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class OrgAttestorFeedbackRequest(BaseModel):
+    """Admin feedback body for needs-info and reject actions."""
+
+    feedback: str = Field(min_length=1, max_length=5000)

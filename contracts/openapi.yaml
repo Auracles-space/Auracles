@@ -7283,6 +7283,299 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/attestor-capability/suspend:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Suspend an org's attestor capability (platform admin)
+      description: Suspend an org's attestor capability; the profile is retained but
+        excluded from matching and members' derived roles are re-evaluated.
+      operationId: admin_suspend_attestor_capability_v1_admin_orgs__org_id__attestor_capability_suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/attestor-capability/reinstate:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Reinstate an org's attestor capability (platform admin)
+      description: Reactivate a suspended org attestor capability and its profile;
+        members' derived roles are re-evaluated.
+      operationId: admin_reinstate_attestor_capability_v1_admin_orgs__org_id__attestor_capability_reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/attestor-capability/revoke:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Revoke an org's attestor capability (platform admin)
+      description: Revoke an org's attestor capability and deactivate its profile;
+        members' derived roles are re-evaluated.
+      operationId: admin_revoke_attestor_capability_v1_admin_orgs__org_id__attestor_capability_revoke_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: List org attestor applications (platform admin)
+      description: Paginated review queue, optionally filtered by status.
+      operationId: admin_list_org_attestor_applications_v1_admin_org_attestor_applications_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 40
+          - type: 'null'
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorAdminListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/verify-kyb:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Verify KYB (platform admin)
+      description: Stamp the KYB-verified gate on an application under review.
+      operationId: admin_verify_kyb_v1_admin_org_attestor_applications__application_id__verify_kyb_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/needs-info:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Return an application for more info (platform admin)
+      description: Move a submitted application to needs_info with feedback.
+      operationId: admin_needs_info_v1_admin_org_attestor_applications__application_id__needs_info_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorFeedbackRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/start-trial:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Start the calibration trial (platform admin)
+      description: Assign the calibration trial to the nominated org member.
+      operationId: admin_start_trial_v1_admin_org_attestor_applications__application_id__start_trial_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/approve:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Approve and activate (platform admin)
+      description: 'Approve a fully gated application: create the profile, activate
+        the attestor capability, and grant every member the derived attestor role.'
+      operationId: admin_approve_v1_admin_org_attestor_applications__application_id__approve_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/reject:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Reject an application (platform admin)
+      description: Terminally reject an application under review with feedback.
+      operationId: admin_reject_v1_admin_org_attestor_applications__application_id__reject_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorFeedbackRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/profiles/me:
     get:
       tags:
@@ -17243,6 +17536,80 @@ components:
       - page_size
       title: NotificationsResponse
       description: Paginated notification list plus unread badge count.
+    OrgAttestorAdminListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        org_id:
+          type: string
+          format: uuid
+          title: Org Id
+        status:
+          type: string
+          title: Status
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
+        kyb_verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Kyb Verified At
+        reviewed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewed At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - org_id
+      - status
+      - legal_name
+      - kyb_verified_at
+      - reviewed_at
+      - created_at
+      title: OrgAttestorAdminListItem
+      description: 'Slim admin-queue row for one org attestor application.
+
+
+        Omits the heavy content and gate checklist so the queue stays cheap to
+
+        render; admins open the full application for detail.'
+    OrgAttestorAdminListResponse:
+      properties:
+        applications:
+          items:
+            $ref: '#/components/schemas/OrgAttestorAdminListItem'
+          type: array
+          title: Applications
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+      type: object
+      required:
+      - applications
+      - total
+      - page
+      - page_size
+      title: OrgAttestorAdminListResponse
+      description: Paginated admin queue of org attestor applications.
     OrgAttestorApplicationCreateRequest:
       properties:
         legal_name:
@@ -17566,6 +17933,18 @@ components:
         Every field is optional: only supplied fields are applied. Setting
 
         ``payout_account_id`` links an org-owned payout account to the gate.'
+    OrgAttestorFeedbackRequest:
+      properties:
+        feedback:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Feedback
+      type: object
+      required:
+      - feedback
+      title: OrgAttestorFeedbackRequest
+      description: Admin feedback body for needs-info and reject actions.
     OrgAttestorGateChecklist:
       properties:
         kyb_verified:
