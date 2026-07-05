@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -430,6 +430,8 @@ async def remove_member(
                 detail="Only the owner can remove an admin.",
             )
 
+        await _guard_and_release_member_reviews(db, member_id=target.id)
+
         removed_user_id = target.user_id
         await db.delete(target)
         await write_audit(
@@ -445,6 +447,69 @@ async def remove_member(
         )
 
     await sync_derived_roles(db, user_id=removed_user_id)
+
+
+_IN_FLIGHT_REVIEW_STATUSES = (
+    "accepted",
+    "in_review",
+    "report_submitted",
+    "revision_requested",
+    "disputed",
+)
+
+
+async def _guard_and_release_member_reviews(
+    db: AsyncSession,
+    *,
+    member_id: UUID,
+) -> None:
+    """Block removal on started reviews; unassign unstarted ones.
+
+    A member holding a started, in-flight attestation review cannot be removed
+    until a platform admin resolves it (409). Unstarted assignments are simply
+    unstaffed (``reviewing_member_id`` cleared) so the org can restaff.
+
+    Raises:
+        HTTPException(409): The member has a started, in-flight review.
+    """
+    from app.modules.attestation.models import Attestation
+
+    started = await db.scalar(
+        select(func.count())
+        .select_from(Attestation)
+        .where(
+            Attestation.reviewing_member_id == member_id,
+            Attestation.review_started_at.is_not(None),
+            Attestation.status.in_(_IN_FLIGHT_REVIEW_STATUSES),
+        )
+    )
+    if started and int(started) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This member has a started attestation review. A platform admin "
+                "must resolve it before removal."
+            ),
+        )
+    result = await db.execute(
+        update(Attestation)
+        .where(
+            Attestation.reviewing_member_id == member_id,
+            Attestation.review_started_at.is_(None),
+            Attestation.status.in_(_IN_FLIGHT_REVIEW_STATUSES),
+        )
+        .values(reviewing_member_id=None)
+        .returning(Attestation.id)
+    )
+    for (attestation_id,) in result.all():
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="attestation_reviewer_unassigned",
+            target_type="attestation",
+            target_id=attestation_id,
+            metadata={"reason": "member_removed", "member_id": str(member_id)},
+        )
 
 
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:

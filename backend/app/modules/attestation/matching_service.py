@@ -21,12 +21,17 @@ from app.modules.attestation import scoring
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
-    AttestorProfile,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgCapability,
+    OrgMember,
+)
 
 DEFAULT_COHORT_SIZE = 3
 DEFAULT_OFFER_ACCEPT_HOURS = 48
@@ -40,9 +45,9 @@ DEFAULT_COMPLETION_GRACE_HOURS = 24
 
 @dataclass(frozen=True)
 class ScoredCandidate:
-    """A scored, eligible Attestor candidate for one Attestation request."""
+    """A scored, eligible attestor-org candidate for one Attestation request."""
 
-    user_id: UUID
+    org_id: UUID
     score: float
     breakdown: dict[str, float]
 
@@ -70,11 +75,11 @@ async def offer_next_cohort(
         if active_offer is not None:
             return []
 
-    excluded_ids = await _excluded_attestor_ids(db, attestation)
+    excluded_ids = await _excluded_org_ids(db, attestation)
     already_offered_ids = set(
         (
             await db.execute(
-                select(AttestationOffer.attestor_id).where(
+                select(AttestationOffer.org_id).where(
                     AttestationOffer.attestation_id == attestation.id
                 )
             )
@@ -82,7 +87,6 @@ async def offer_next_cohort(
         .scalars()
         .all()
     )
-    # attestor_id is nullable since the org re-point; org offers carry NULL.
     excluded_ids.update(oid for oid in already_offered_ids if oid is not None)
     cohort_size = await _platform_int_config(
         db,
@@ -125,7 +129,7 @@ async def offer_next_cohort(
     offers = [
         AttestationOffer(
             attestation_id=attestation.id,
-            attestor_id=candidate.user_id,
+            org_id=candidate.org_id,
             cohort_index=cohort_index,
             status="offered",
             offered_at=current_time,
@@ -145,9 +149,9 @@ async def offer_next_cohort(
         target_id=attestation.id,
         metadata={
             "cohort_index": cohort_index,
-            "attestor_ids": [str(candidate.user_id) for candidate in candidates],
+            "org_ids": [str(candidate.org_id) for candidate in candidates],
             "scores": {
-                str(candidate.user_id): candidate.score for candidate in candidates
+                str(candidate.org_id): candidate.score for candidate in candidates
             },
             "expires_at": expires_at.isoformat(),
         },
@@ -171,6 +175,43 @@ async def list_attestor_assignments(
         .order_by(AttestationOffer.offered_at.desc(), AttestationOffer.id)
     )
     return [(offer, attestation) for offer, attestation in rows.all()]
+
+
+async def list_org_offers(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> list[tuple[AttestationOffer, Attestation]]:
+    """Return open and accepted cohort offers made to one attestor org."""
+    rows = await db.execute(
+        select(AttestationOffer, Attestation)
+        .join(Attestation, Attestation.id == AttestationOffer.attestation_id)
+        .where(
+            AttestationOffer.org_id == org_id,
+            AttestationOffer.status.in_(("offered", "accepted")),
+        )
+        .order_by(AttestationOffer.offered_at.desc(), AttestationOffer.id)
+    )
+    return [(offer, attestation) for offer, attestation in rows.all()]
+
+
+async def list_org_attestations(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    reviewing_member_id: UUID | None = None,
+) -> list[Attestation]:
+    """List an org's attestations; optionally scoped to one reviewing member.
+
+    Owner/admin callers pass ``reviewing_member_id=None`` to see all org
+    attestations; a plain member passes their own membership id to see only the
+    rows they are staffed on.
+    """
+    query = select(Attestation).where(Attestation.attestor_org_id == org_id)
+    if reviewing_member_id is not None:
+        query = query.where(Attestation.reviewing_member_id == reviewing_member_id)
+    query = query.order_by(Attestation.updated_at.desc(), Attestation.id)
+    return list((await db.execute(query)).scalars().all())
 
 
 async def get_attestation_for_user(
@@ -326,9 +367,206 @@ async def decline_attestation_offer(
             )
     await db.refresh(attestation)
     attestation_notifications.notify_offer_declined(attestation, attestor_id)
-    attestation_notifications.notify_offers(attestation, next_offers)
+    await notify_new_offers(db, attestation, next_offers)
     if attestation.status == "needs_admin":
         attestation_notifications.notify_needs_admin(attestation)
+    return attestation
+
+
+async def accept_org_offer(
+    db: AsyncSession,
+    *,
+    offer_id: UUID,
+    org_id: UUID,
+    actor_id: UUID,
+    reviewing_member_id: UUID,
+) -> Attestation:
+    """Accept an org cohort offer and staff it with a reviewing member.
+
+    The org owner/admin (enforced by the router dependency) supplies the
+    ``reviewing_member_id`` who will perform the review. Validates that the
+    member belongs to the org, has signed the current NDA, and is under the
+    per-member concurrency cap. Writes ``attestor_org_id`` +
+    ``reviewing_member_id`` — never the legacy ``attestor_id``.
+
+    Raises:
+        HTTPException(403): Org attestor capability is not active.
+        HTTPException(404): Offer or nominated member not found for this org.
+        HTTPException(409): Offer is no longer available or has expired.
+        HTTPException(422): Member is unsigned (``nda_required``) or at capacity
+            (``member_at_capacity``).
+    """
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        current_time = datetime.now(UTC)
+        offer = await _load_locked_org_offer(db, offer_id=offer_id, org_id=org_id)
+        attestation = await _load_locked_attestation(db, offer.attestation_id)
+        await _require_active_attestor_capability(db, org_id)
+        member = await _load_assignable_member(
+            db,
+            org_id=org_id,
+            member_id=reviewing_member_id,
+        )
+        if attestation.status != "offered" or offer.status != "offered":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attestation offer is no longer available.",
+            )
+        if offer.expires_at <= current_time:
+            offer.status = "expired"
+            offer.responded_at = current_time
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attestation offer has expired.",
+            )
+
+        completion_days = await _completion_sla_days(db, attestation.target_type)
+        attestation.status = "accepted"
+        attestation.attestor_org_id = org_id
+        attestation.reviewing_member_id = member.id
+        attestation.accepted_at = current_time
+        attestation.completion_due_at = current_time + timedelta(days=completion_days)
+        offer.status = "accepted"
+        offer.responded_at = current_time
+        await db.execute(
+            update(AttestationOffer)
+            .where(
+                AttestationOffer.attestation_id == attestation.id,
+                AttestationOffer.id != offer.id,
+                AttestationOffer.status == "offered",
+            )
+            .values(status="superseded", responded_at=current_time)
+        )
+        # reviewing_member_id is an internal assignment fact; kept out of any
+        # public/requestor response schema, present only in the audit trail.
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="attestation_accepted",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "offer_id": str(offer.id),
+                "attestor_org_id": str(org_id),
+                "reviewing_member_id": str(member.id),
+                "completion_due_at": attestation.completion_due_at.isoformat(),
+            },
+        )
+    await db.refresh(attestation)
+    attestation_notifications.notify_org_offer_accepted(attestation, org_id=org_id)
+    return attestation
+
+
+async def decline_org_offer(
+    db: AsyncSession,
+    *,
+    offer_id: UUID,
+    org_id: UUID,
+    actor_id: UUID,
+) -> Attestation:
+    """Decline an org cohort offer and advance matching when exhausted.
+
+    Raises:
+        HTTPException(403): Org attestor capability is not active.
+        HTTPException(404): Offer not found for this org.
+        HTTPException(409): Offer is no longer available.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    next_offers: list[AttestationOffer] = []
+    async with db.begin():
+        current_time = datetime.now(UTC)
+        offer = await _load_locked_org_offer(db, offer_id=offer_id, org_id=org_id)
+        attestation = await _load_locked_attestation(db, offer.attestation_id)
+        await _require_active_attestor_capability(db, org_id)
+        if offer.status != "offered":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attestation offer is no longer available.",
+            )
+        offer.status = "declined"
+        offer.responded_at = current_time
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="attestation_declined",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"offer_id": str(offer.id), "org_id": str(org_id)},
+        )
+        if await _current_cohort_is_exhausted(db, attestation.id, offer.cohort_index):
+            attestation.status = "matching"
+            next_offers = await offer_next_cohort(
+                db,
+                attestation_id=attestation.id,
+                now=current_time,
+            )
+    await db.refresh(attestation)
+    await notify_new_offers(db, attestation, next_offers)
+    if attestation.status == "needs_admin":
+        attestation_notifications.notify_needs_admin(attestation)
+    return attestation
+
+
+async def reassign_reviewing_member(
+    db: AsyncSession,
+    *,
+    attestation_id: UUID,
+    org_id: UUID,
+    actor_id: UUID,
+    reviewing_member_id: UUID,
+) -> Attestation:
+    """Restaff an accepted org attestation before its review starts.
+
+    Allowed only while ``review_started_at`` is unset; after the reviewing
+    member opens the workspace, only a platform admin may reassign
+    (dispute/incident path).
+
+    Raises:
+        HTTPException(404): Attestation not assigned to this org, or member not
+            found for this org.
+        HTTPException(409): Review has already started.
+        HTTPException(422): Member is unsigned (``nda_required``) or at capacity
+            (``member_at_capacity``).
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        attestation = await _load_locked_attestation(db, attestation_id)
+        if attestation.attestor_org_id != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        if attestation.review_started_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Review has started; reassignment requires an admin.",
+            )
+        member = await _load_assignable_member(
+            db,
+            org_id=org_id,
+            member_id=reviewing_member_id,
+        )
+        previous_member_id = attestation.reviewing_member_id
+        attestation.reviewing_member_id = member.id
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="attestation_reviewer_reassigned",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "attestor_org_id": str(org_id),
+                "previous_member_id": (
+                    str(previous_member_id) if previous_member_id else None
+                ),
+                "reviewing_member_id": str(member.id),
+            },
+        )
+    await db.refresh(attestation)
     return attestation
 
 
@@ -403,7 +641,7 @@ async def expire_stale_offers(
                 )
         for expired_offer in expired_offers:
             attestation_notifications.notify_offer_expired(attestation, expired_offer)
-        attestation_notifications.notify_offers(attestation, next_offers)
+        await notify_new_offers(db, attestation, next_offers)
         if attestation.status == "needs_admin":
             attestation_notifications.notify_needs_admin(attestation)
     return expired_count
@@ -491,7 +729,7 @@ async def revoke_overdue_attestations(
                 attestation,
                 old_attestor_id=old_attestor_id,
             )
-        attestation_notifications.notify_offers(attestation, next_offers)
+        await notify_new_offers(db, attestation, next_offers)
         if attestation.status == "needs_admin":
             attestation_notifications.notify_needs_admin(attestation)
     return revoked_count
@@ -567,9 +805,9 @@ async def send_coi_resign_reminders(
     profiles = list(
         (
             await db.execute(
-                select(AttestorProfile).where(
-                    AttestorProfile.active.is_(True),
-                    AttestorProfile.coi_expires_at.is_not(None),
+                select(OrgAttestorProfile).where(
+                    OrgAttestorProfile.active.is_(True),
+                    OrgAttestorProfile.coi_expires_at.is_not(None),
                 )
             )
         )
@@ -589,20 +827,29 @@ async def send_coi_resign_reminders(
         )
         if already_reminded:
             continue
+        recipients = await _org_manager_ids(db, profile.org_id)
+        if not recipients:
+            continue
         if current_time >= expires_at:
-            dispatched = attestation_notifications.notify_coi_lapsed(
-                profile.user_id,
-                expires_at=expires_at,
+            dispatched = all(
+                attestation_notifications.notify_coi_lapsed(
+                    recipient,
+                    expires_at=expires_at,
+                )
+                for recipient in recipients
             )
         elif current_time >= reminder_window_start:
-            dispatched = attestation_notifications.notify_coi_expiring(
-                profile.user_id,
-                expires_at=expires_at,
+            dispatched = all(
+                attestation_notifications.notify_coi_expiring(
+                    recipient,
+                    expires_at=expires_at,
+                )
+                for recipient in recipients
             )
         else:
             continue
         # Only mark reminded on a confirmed enqueue — a broker outage must not
-        # silently skip this attestor until their next signing cycle.
+        # silently skip this org until their next signing cycle.
         if not dispatched:
             continue
         profile.coi_reminder_sent_at = current_time
@@ -691,6 +938,145 @@ async def _load_locked_offer(
     )
 
 
+async def _load_locked_org_offer(
+    db: AsyncSession,
+    *,
+    offer_id: UUID,
+    org_id: UUID,
+) -> AttestationOffer:
+    """Load and row-lock one org's offer by id, or raise a typed 404."""
+    offer = type_cast(
+        AttestationOffer | None,
+        await db.scalar(
+            select(AttestationOffer)
+            .where(
+                AttestationOffer.id == offer_id,
+                AttestationOffer.org_id == org_id,
+            )
+            .with_for_update()
+        ),
+    )
+    if offer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation offer not found.",
+        )
+    return offer
+
+
+async def _require_active_attestor_capability(db: AsyncSession, org_id: UUID) -> None:
+    """Raise 403 ``capability_suspended`` unless the org attestor cap is active."""
+    active = await db.scalar(
+        select(OrgCapability.id).where(
+            OrgCapability.org_id == org_id,
+            OrgCapability.capability == "attestor",
+            OrgCapability.status == "active",
+        )
+    )
+    if active is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+
+
+async def _load_assignable_member(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    member_id: UUID,
+) -> OrgMember:
+    """Load an org member and confirm they may be staffed on an attestation.
+
+    Raises:
+        HTTPException(404): Member does not belong to this org.
+        HTTPException(422): Member has not signed the current NDA
+            (``nda_required``) or is at the per-member concurrency cap
+            (``member_at_capacity``).
+    """
+    from app.modules.organizations import nda_service
+
+    member = await db.scalar(
+        select(OrgMember).where(
+            OrgMember.id == member_id,
+            OrgMember.org_id == org_id,
+        )
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found in this organization.",
+        )
+    if not await nda_service.member_is_assignable(db, member_id=member.id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"error_code": "nda_required"},
+        )
+    concurrency_cap = await _platform_int_config(
+        db,
+        key="attestation_concurrency_cap",
+        default=DEFAULT_CONCURRENCY_CAP,
+        minimum=1,
+    )
+    if await _active_assignment_count(db, member.id) >= concurrency_cap:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"error_code": "member_at_capacity"},
+        )
+    return member
+
+
+async def _org_manager_ids(db: AsyncSession, org_id: UUID) -> list[UUID]:
+    """Return user ids of the org's owner and admins (offer notification fanout)."""
+    rows = await db.execute(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == org_id,
+            OrgMember.role.in_(("owner", "admin")),
+        )
+    )
+    return list(rows.scalars().all())
+
+
+async def resolve_offer_recipients(
+    db: AsyncSession,
+    offers: list[AttestationOffer],
+) -> dict[UUID, list[UUID]]:
+    """Resolve owner/admin notification recipients per org offer while db is live."""
+    recipients: dict[UUID, list[UUID]] = {}
+    for offer in offers:
+        if offer.org_id is not None:
+            recipients[offer.id] = await _org_manager_ids(db, offer.org_id)
+    return recipients
+
+
+def dispatch_offer_notifications(
+    attestation: Attestation,
+    offers: list[AttestationOffer],
+    recipients: dict[UUID, list[UUID]],
+) -> None:
+    """Dispatch offer-received notifications to org managers (post-commit)."""
+    for offer in offers:
+        if offer.org_id is not None:
+            for recipient_id in recipients.get(offer.id, []):
+                attestation_notifications.notify_org_offer_received(
+                    attestation,
+                    offer=offer,
+                    recipient_id=recipient_id,
+                )
+        elif offer.attestor_id is not None:
+            attestation_notifications.notify_offers(attestation, [offer])
+
+
+async def notify_new_offers(
+    db: AsyncSession,
+    attestation: Attestation,
+    offers: list[AttestationOffer],
+) -> None:
+    """Resolve org offer recipients and dispatch offer-received notifications."""
+    recipients = await resolve_offer_recipients(db, offers)
+    dispatch_offer_notifications(attestation, offers, recipients)
+
+
 async def _load_funded_fee_transaction(
     db: AsyncSession,
     attestation_id: UUID,
@@ -742,16 +1128,32 @@ async def _load_completed_fee_transaction(
     return transaction
 
 
-async def _excluded_attestor_ids(
+async def _excluded_org_ids(
     db: AsyncSession,
     attestation: Attestation,
 ) -> set[UUID]:
-    """Return users who must never receive offers for this Attestation."""
-    excluded_ids = {attestation.requestor_id}
+    """Return attestor orgs that must never receive offers for this Attestation.
+
+    Self-review guard: exclude any org where the requestor is a member, and any
+    org where the target framework's owner is a member. Per-declaration CoI
+    screening against org ``coi_declarations`` happens later in ranking.
+    """
+    conflicted_user_ids = {attestation.requestor_id}
     owner_id = await _target_owner_id(db, attestation)
     if owner_id is not None:
-        excluded_ids.add(owner_id)
-    return excluded_ids
+        conflicted_user_ids.add(owner_id)
+    org_ids = (
+        (
+            await db.execute(
+                select(OrgMember.org_id).where(
+                    OrgMember.user_id.in_(conflicted_user_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(org_ids)
 
 
 async def _target_owner_id(
@@ -821,13 +1223,26 @@ async def _framework_category(db: AsyncSession, attestation: Attestation) -> str
     )
 
 
-async def _active_assignment_count(db: AsyncSession, attestor_id: UUID) -> int:
-    """Count one Attestor's active, content-holding assignments."""
+async def _active_assignment_count(db: AsyncSession, member_id: UUID) -> int:
+    """Count one reviewing member's active, content-holding assignments."""
     count = await db.scalar(
         select(func.count())
         .select_from(Attestation)
         .where(
-            Attestation.attestor_id == attestor_id,
+            Attestation.reviewing_member_id == member_id,
+            Attestation.status.in_(ACTIVE_ASSIGNMENT_STATUSES),
+        )
+    )
+    return int(count or 0)
+
+
+async def _org_active_assignment_count(db: AsyncSession, org_id: UUID) -> int:
+    """Count one attestor org's active, content-holding assignments."""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Attestation)
+        .where(
+            Attestation.attestor_org_id == org_id,
             Attestation.status.in_(ACTIVE_ASSIGNMENT_STATUSES),
         )
     )
@@ -842,31 +1257,49 @@ async def _rank_eligible_attestors(
     limit: int,
     now: datetime,
 ) -> list[ScoredCandidate]:
-    """Score and rank eligible Attestors for one Attestation request.
+    """Score and rank eligible attestor orgs for one Attestation request.
+
+    Ranks ``OrgAttestorProfile`` rows whose org holds an active ``attestor``
+    capability and whose organization is neither suspended nor deactivated.
+    Orgs are not hard-excluded at the concurrency cap — the cap is enforced per
+    reviewing member at accept time — but the org's active load still feeds the
+    availability score factor.
 
     Args:
         db: Async database session.
         attestation: Request being matched.
-        excluded_ids: Users already excluded from the candidate pool.
+        excluded_ids: Org ids already excluded from the candidate pool.
         limit: Maximum number of candidates to return.
         now: Reference timestamp for CoI-expiry checks.
 
     Returns:
-        Ranked eligible candidates, best first, capped to ``limit``.
+        Ranked eligible org candidates, best first, capped to ``limit``.
     """
-    query = select(AttestorProfile).where(
-        AttestorProfile.active.is_(True),
-        AttestorProfile.specializations.op("&&")(
-            sql_cast(attestation.requested_specializations, ARRAY(Text))
-        ),
-        AttestorProfile.jurisdictions.op("&&")(
-            sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
-        ),
-        AttestorProfile.coi_signed_at.is_not(None),
-        AttestorProfile.coi_expires_at > now,
+    query = (
+        select(OrgAttestorProfile)
+        .join(Organization, Organization.id == OrgAttestorProfile.org_id)
+        .join(
+            OrgCapability,
+            (OrgCapability.org_id == OrgAttestorProfile.org_id)
+            & (OrgCapability.capability == "attestor")
+            & (OrgCapability.status == "active"),
+        )
+        .where(
+            OrgAttestorProfile.active.is_(True),
+            Organization.suspended_at.is_(None),
+            Organization.deactivated_at.is_(None),
+            OrgAttestorProfile.specializations.op("&&")(
+                sql_cast(attestation.requested_specializations, ARRAY(Text))
+            ),
+            OrgAttestorProfile.jurisdictions.op("&&")(
+                sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
+            ),
+            OrgAttestorProfile.coi_signed_at.is_not(None),
+            OrgAttestorProfile.coi_expires_at > now,
+        )
     )
     if excluded_ids:
-        query = query.where(AttestorProfile.user_id.not_in(excluded_ids))
+        query = query.where(OrgAttestorProfile.org_id.not_in(excluded_ids))
     profiles = list((await db.execute(query)).scalars().all())
     if not profiles:
         return []
@@ -880,10 +1313,10 @@ async def _rank_eligible_attestors(
             ReputationScore.is_provisional,
         ).where(
             ReputationScore.subject_type == "attestor",
-            ReputationScore.subject_id.in_([profile.user_id for profile in profiles]),
+            ReputationScore.subject_id.in_([profile.org_id for profile in profiles]),
         )
     )
-    reputation_by_user = {
+    reputation_by_org = {
         subject_id: (score, is_provisional)
         for subject_id, score, is_provisional in reputation_rows.all()
     }
@@ -903,15 +1336,13 @@ async def _rank_eligible_attestors(
         if _is_coi_conflicted(
             profile.coi_declarations,
             conflict_subjects,
-            attestor_id=profile.user_id,
+            attestor_id=profile.org_id,
         ):
             continue
 
-        active_count = await _active_assignment_count(db, profile.user_id)
-        if active_count >= concurrency_cap:
-            continue
+        active_count = await _org_active_assignment_count(db, profile.org_id)
 
-        rep = reputation_by_user.get(profile.user_id)
+        rep = reputation_by_org.get(profile.org_id)
         if rep is not None and rep[1] is False and rep[0] is not None:
             rep_norm = float(rep[0]) / 100.0
         else:
@@ -928,7 +1359,9 @@ async def _rank_eligible_attestors(
                 profile.framework_categories,
             ),
             "credential": scoring.credential_relevance(),
-            "availability": scoring.availability_score(active_count, concurrency_cap),
+            "availability": scoring.availability_score(
+                min(active_count, concurrency_cap), concurrency_cap
+            ),
             "reputation": scoring.reputation_score(rep_norm),
         }
         score, breakdown = scoring.compute_match_score(factors)
@@ -936,9 +1369,9 @@ async def _rank_eligible_attestors(
             (
                 score,
                 profile.approved_at,
-                profile.user_id,
+                profile.org_id,
                 ScoredCandidate(
-                    user_id=profile.user_id,
+                    org_id=profile.org_id,
                     score=score,
                     breakdown=breakdown,
                 ),

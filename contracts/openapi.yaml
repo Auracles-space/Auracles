@@ -7119,6 +7119,192 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestation-offers:
+    get:
+      tags:
+      - Organizations
+      summary: List org attestation offers
+      description: Open and accepted cohort offers made to the org. Owner/admin only.
+      operationId: list_org_attestation_offers_v1_orgs__org_id__attestation_offers_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestationOffersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestation-offers/{offer_id}/accept:
+    post:
+      tags:
+      - Organizations
+      summary: Accept and staff an offer
+      description: Accept a cohort offer and staff it with a reviewing member. Owner/admin
+        only.
+      operationId: accept_org_attestation_offer_v1_orgs__org_id__attestation_offers__offer_id__accept_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: offer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Offer Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAcceptOfferRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestationItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestation-offers/{offer_id}/decline:
+    post:
+      tags:
+      - Organizations
+      summary: Decline an offer
+      description: Decline a cohort offer made to the org. Owner/admin only.
+      operationId: decline_org_attestation_offer_v1_orgs__org_id__attestation_offers__offer_id__decline_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: offer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Offer Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestationItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestations/{attestation_id}/reassign:
+    post:
+      tags:
+      - Organizations
+      summary: Reassign the reviewing member
+      description: Reassign the reviewing member of an accepted attestation before
+        its review starts. Owner/admin only.
+      operationId: reassign_org_reviewing_member_v1_orgs__org_id__attestations__attestation_id__reassign_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgReassignReviewerRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestationItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestations:
+    get:
+      tags:
+      - Organizations
+      summary: List org attestations
+      description: Owner/admin see every org attestation; a plain member sees only
+        the rows they are staffed on.
+      operationId: list_org_attestations_v1_orgs__org_id__attestations_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -17536,6 +17722,147 @@ components:
       - page_size
       title: NotificationsResponse
       description: Paginated notification list plus unread badge count.
+    OrgAcceptOfferRequest:
+      properties:
+        reviewing_member_id:
+          type: string
+          format: uuid
+          title: Reviewing Member Id
+      type: object
+      required:
+      - reviewing_member_id
+      title: OrgAcceptOfferRequest
+      description: Accept-and-staff body naming the reviewing member for the assignment.
+    OrgAttestationItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        target_type:
+          type: string
+          title: Target Type
+        target_id:
+          type: string
+          format: uuid
+          title: Target Id
+        status:
+          type: string
+          title: Status
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        reviewing_member_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Reviewing Member Id
+        accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Accepted At
+        completion_due_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completion Due At
+      type: object
+      required:
+      - id
+      - target_type
+      - target_id
+      - status
+      - outcome
+      - reviewing_member_id
+      - accepted_at
+      - completion_due_at
+      title: OrgAttestationItem
+      description: 'One org attestation with internal staffing (owner/admin/member
+        view).
+
+
+        ``reviewing_member_id`` is org-internal (staffing), never a public or
+
+        requestor-facing field; this schema is only ever returned to org members.'
+    OrgAttestationOfferItem:
+      properties:
+        offer_id:
+          type: string
+          format: uuid
+          title: Offer Id
+        attestation_id:
+          type: string
+          format: uuid
+          title: Attestation Id
+        target_type:
+          type: string
+          title: Target Type
+        target_id:
+          type: string
+          format: uuid
+          title: Target Id
+        status:
+          type: string
+          title: Status
+        cohort_index:
+          type: integer
+          title: Cohort Index
+        match_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Match Score
+        offered_at:
+          type: string
+          format: date-time
+          title: Offered At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - offer_id
+      - attestation_id
+      - target_type
+      - target_id
+      - status
+      - cohort_index
+      - match_score
+      - offered_at
+      - expires_at
+      title: OrgAttestationOfferItem
+      description: One cohort offer made to an attestor org (owner/admin view).
+    OrgAttestationOffersResponse:
+      properties:
+        offers:
+          items:
+            $ref: '#/components/schemas/OrgAttestationOfferItem'
+          type: array
+          title: Offers
+      type: object
+      required:
+      - offers
+      title: OrgAttestationOffersResponse
+      description: Open and accepted cohort offers made to an attestor org.
+    OrgAttestationsResponse:
+      properties:
+        attestations:
+          items:
+            $ref: '#/components/schemas/OrgAttestationItem'
+          type: array
+          title: Attestations
+      type: object
+      required:
+      - attestations
+      title: OrgAttestationsResponse
+      description: An attestor org's attestation queue.
     OrgAttestorAdminListItem:
       properties:
         id:
@@ -18211,6 +18538,17 @@ components:
       - totp_code
       title: OrgOwnershipTransferRequest
       description: TOTP-gated request to transfer organization ownership.
+    OrgReassignReviewerRequest:
+      properties:
+        reviewing_member_id:
+          type: string
+          format: uuid
+          title: Reviewing Member Id
+      type: object
+      required:
+      - reviewing_member_id
+      title: OrgReassignReviewerRequest
+      description: Reassign the reviewing member of an accepted, not-yet-started attestation.
     OrgTeamCreateRequest:
       properties:
         name:

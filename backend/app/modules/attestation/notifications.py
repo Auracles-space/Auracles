@@ -163,6 +163,40 @@ def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> N
         )
 
 
+def notify_org_offer_received(
+    attestation: Attestation,
+    *,
+    offer: AttestationOffer,
+    recipient_id: UUID,
+) -> None:
+    """Notify one org owner/admin of a new cohort offer to their organization."""
+    _dispatch(
+        user_id=recipient_id,
+        notification_type="attestation_offer_received",
+        title="New Attestation offer",
+        body="Your organization has a new Attestation request to review.",
+        attestation=attestation,
+        dedupe_suffix=f"offer:{offer.id}:{recipient_id}",
+        extra_payload={
+            "offer_id": str(offer.id),
+            "cohort_index": offer.cohort_index,
+        },
+    )
+
+
+def notify_org_offer_accepted(attestation: Attestation, *, org_id: UUID) -> None:
+    """Notify the requestor when an attestor org accepts and staffs the request."""
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_accepted",
+        title="Attestation accepted",
+        body="An attestor organization accepted your request and is now reviewing.",
+        attestation=attestation,
+        dedupe_suffix=f"accepted:{org_id}",
+        extra_payload={"attestor_org_id": str(org_id)},
+    )
+
+
 def notify_offer_accepted(attestation: Attestation, attestor_id: UUID) -> None:
     """Notify the requestor when an Attestor accepts the assignment."""
     _dispatch(

@@ -474,3 +474,60 @@ class OrgAttestorFeedbackRequest(BaseModel):
     """Admin feedback body for needs-info and reject actions."""
 
     feedback: str = Field(min_length=1, max_length=5000)
+
+
+class OrgAttestationOfferItem(BaseModel):
+    """One cohort offer made to an attestor org (owner/admin view)."""
+
+    offer_id: UUID
+    attestation_id: UUID
+    target_type: str
+    target_id: UUID
+    status: str
+    cohort_index: int
+    match_score: float | None
+    offered_at: datetime
+    expires_at: datetime
+
+
+class OrgAttestationOffersResponse(BaseModel):
+    """Open and accepted cohort offers made to an attestor org."""
+
+    offers: list[OrgAttestationOfferItem]
+
+
+class OrgAcceptOfferRequest(BaseModel):
+    """Accept-and-staff body naming the reviewing member for the assignment."""
+
+    reviewing_member_id: UUID
+
+
+class OrgReassignReviewerRequest(BaseModel):
+    """Reassign the reviewing member of an accepted, not-yet-started attestation."""
+
+    reviewing_member_id: UUID
+
+
+class OrgAttestationItem(BaseModel):
+    """One org attestation with internal staffing (owner/admin/member view).
+
+    ``reviewing_member_id`` is org-internal (staffing), never a public or
+    requestor-facing field; this schema is only ever returned to org members.
+    """
+
+    id: UUID
+    target_type: str
+    target_id: UUID
+    status: str
+    outcome: str | None
+    reviewing_member_id: UUID | None
+    accepted_at: datetime | None
+    completion_due_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrgAttestationsResponse(BaseModel):
+    """An attestor org's attestation queue."""
+
+    attestations: list[OrgAttestationItem]

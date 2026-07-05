@@ -16,6 +16,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, func, select
 
+from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
@@ -43,6 +44,13 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgCapability,
+    OrgMember,
+    OrgMemberNda,
+)
 from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
@@ -165,6 +173,11 @@ async def reset_matching_state() -> None:
             await session.execute(delete(Attestation))
             await session.execute(delete(AttestorProfile))
             await session.execute(delete(AttestorApplication))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMemberNda))
+            await session.execute(delete(OrgCapability))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Milestone))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
@@ -257,6 +270,64 @@ async def create_attestor_profile(
                     coi_expires_at=now + timedelta(days=365),
                 )
             )
+
+
+async def create_org_attestor(
+    *,
+    specializations: list[str],
+    jurisdictions: list[str],
+    approved_at: datetime | None = None,
+    slug_prefix: str = "org",
+) -> tuple[UUID, UUID, UUID]:
+    """Create an active attestor org with an NDA-signed owner member.
+
+    Returns (org_id, owner_user_id, owner_member_id) for accept-and-staff.
+    """
+    owner_id = await create_user(
+        f"{slug_prefix}-owner-{uuid4().hex[:6]}@auracles.space", []
+    )
+    now = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                slug=f"{slug_prefix}-{uuid4().hex[:6]}",
+                name="Attestor Org",
+                country="US",
+                created_by=owner_id,
+            )
+            session.add(org)
+            await session.flush()
+            member = OrgMember(org_id=org.id, user_id=owner_id, role="owner")
+            session.add(member)
+            await session.flush()
+            session.add(
+                OrgCapability(
+                    org_id=org.id,
+                    capability="attestor",
+                    status="active",
+                    activated_at=now,
+                )
+            )
+            session.add(
+                OrgMemberNda(
+                    member_id=member.id,
+                    nda_version=get_settings().org_member_nda_version,
+                )
+            )
+            session.add(
+                OrgAttestorProfile(
+                    org_id=org.id,
+                    specializations=specializations,
+                    jurisdictions=jurisdictions,
+                    sectors=[],
+                    framework_categories=[],
+                    active=True,
+                    coi_signed_at=now,
+                    coi_expires_at=now + timedelta(days=365),
+                    approved_at=approved_at or now,
+                )
+            )
+            return org.id, owner_id, member.id
 
 
 async def create_pending_attestation_fee(
@@ -381,7 +452,7 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     matching_context: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Funded Attestations offer a cohort and assign only the first acceptor."""
+    """Funded Attestations offer an org cohort; only the first org is assigned."""
     del migrated_database
     notification_calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
@@ -391,39 +462,22 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     )
     requestor_id = await create_user(
         "matching-requestor@auracles.space",
-        ["operator", "attestor"],
+        ["operator"],
     )
-    first_attestor_id = await create_user(
-        "matching-first@auracles.space",
-        ["attestor"],
-    )
-    second_attestor_id = await create_user(
-        "matching-second@auracles.space",
-        ["attestor"],
-    )
-    unmatched_attestor_id = await create_user(
-        "matching-unmatched@auracles.space",
-        ["attestor"],
-    )
-    await create_attestor_profile(
-        requestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-    )
-    await create_attestor_profile(
-        first_attestor_id,
+    first_org, first_owner, first_member = await create_org_attestor(
         specializations=["healthcare", "operations"],
         jurisdictions=["US"],
+        slug_prefix="first",
     )
-    await create_attestor_profile(
-        second_attestor_id,
+    second_org, second_owner, second_member = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US", "CA"],
+        slug_prefix="second",
     )
-    await create_attestor_profile(
-        unmatched_attestor_id,
+    await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["GB"],
+        slug_prefix="unmatched",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
 
@@ -439,19 +493,33 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         headers={"Stripe-Signature": "valid-signature"},
     )
 
-    assignments_response = await client.get(
-        "/v1/attestor/assignments",
-        headers=auth_headers(first_attestor_id, ["attestor"]),
+    async with async_session_factory() as session:
+        offer_by_org = {
+            offer.org_id: offer.id
+            for offer in (
+                await session.execute(
+                    select(AttestationOffer).where(
+                        AttestationOffer.attestation_id == attestation_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+
+    offers_list_response = await client.get(
+        f"/v1/orgs/{first_org}/attestation-offers",
+        headers=auth_headers(first_owner, []),
     )
     accept_response = await client.post(
-        f"/v1/attestations/{attestation_id}/accept",
-        headers=auth_headers(first_attestor_id, ["attestor"]),
-        json={"content_ack": True, "ack_version": "v1"},
+        f"/v1/orgs/{first_org}/attestation-offers/{offer_by_org[first_org]}/accept",
+        headers=auth_headers(first_owner, []),
+        json={"reviewing_member_id": str(first_member)},
     )
     late_accept_response = await client.post(
-        f"/v1/attestations/{attestation_id}/accept",
-        headers=auth_headers(second_attestor_id, ["attestor"]),
-        json={"content_ack": True, "ack_version": "v1"},
+        f"/v1/orgs/{second_org}/attestation-offers/{offer_by_org[second_org]}/accept",
+        headers=auth_headers(second_owner, []),
+        json={"reviewing_member_id": str(second_member)},
     )
 
     async with async_session_factory() as session:
@@ -482,30 +550,25 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         )
 
     assert webhook_response.status_code == 200
-    assert assignments_response.status_code == 200
-    assert assignments_response.json()["assignments"][0]["attestation_id"] == str(
+    assert offers_list_response.status_code == 200
+    assert offers_list_response.json()["offers"][0]["attestation_id"] == str(
         attestation_id
     )
-    assert assignments_response.json()["assignments"][0]["offer_status"] == "offered"
     assert accept_response.status_code == 200
     assert late_accept_response.status_code == 409
     assert attestation is not None
     assert attestation.status == "accepted"
-    assert attestation.attestor_id == first_attestor_id
+    assert attestation.attestor_org_id == first_org
+    assert attestation.reviewing_member_id == first_member
+    assert attestation.attestor_id is None
     assert attestation.accepted_at is not None
-    assert attestation.content_ack_at is not None
-    assert attestation.content_ack_version == "v1"
     assert attestation.completion_due_at is not None
     assert transaction is not None
     assert transaction.status == "completed"
-    assert transaction.payee_id == first_attestor_id
-    assert {offer.attestor_id for offer in offers} == {
-        first_attestor_id,
-        second_attestor_id,
-    }
-    assert {(offer.attestor_id, offer.status) for offer in offers} == {
-        (first_attestor_id, "accepted"),
-        (second_attestor_id, "superseded"),
+    assert {offer.org_id for offer in offers} == {first_org, second_org}
+    assert {(offer.org_id, offer.status) for offer in offers} == {
+        (first_org, "accepted"),
+        (second_org, "superseded"),
     }
     assert "attestation_offered" in audits
     assert "attestation_accepted" in audits
@@ -517,8 +580,8 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     ]
     assert notification_calls[0]["user_id"] == str(requestor_id)
     assert {call["user_id"] for call in notification_calls[1:3]} == {
-        str(first_attestor_id),
-        str(second_attestor_id),
+        str(first_owner),
+        str(second_owner),
     }
     assert notification_calls[3]["user_id"] == str(requestor_id)
 
@@ -578,22 +641,17 @@ async def test_attestation_decline_advances_to_next_cohort(
         "decline-requestor@auracles.space",
         ["operator"],
     )
-    first_attestor_id = await create_user("decline-first@auracles.space", ["attestor"])
-    second_attestor_id = await create_user(
-        "decline-second@auracles.space",
-        ["attestor"],
-    )
-    await create_attestor_profile(
-        first_attestor_id,
+    first_org, first_owner, _ = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
         approved_at=datetime(2026, 1, 1, tzinfo=UTC),
+        slug_prefix="decfirst",
     )
-    await create_attestor_profile(
-        second_attestor_id,
+    second_org, _, _ = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
         approved_at=datetime(2026, 1, 2, tzinfo=UTC),
+        slug_prefix="decsecond",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     matching_context["event"] = payment_intent_event(
@@ -608,9 +666,17 @@ async def test_attestation_decline_advances_to_next_cohort(
         headers={"Stripe-Signature": "valid-signature"},
     )
 
+    async with async_session_factory() as session:
+        first_offer_id = await session.scalar(
+            select(AttestationOffer.id).where(
+                AttestationOffer.attestation_id == attestation_id,
+                AttestationOffer.org_id == first_org,
+            )
+        )
+
     decline_response = await client.post(
-        f"/v1/attestations/{attestation_id}/decline",
-        headers=auth_headers(first_attestor_id, ["attestor"]),
+        f"/v1/orgs/{first_org}/attestation-offers/{first_offer_id}/decline",
+        headers=auth_headers(first_owner, []),
     )
 
     async with async_session_factory() as session:
@@ -632,11 +698,11 @@ async def test_attestation_decline_advances_to_next_cohort(
     assert attestation is not None
     assert attestation.status == "offered"
     offer_states = [
-        (offer.attestor_id, offer.status, offer.cohort_index) for offer in offers
+        (offer.org_id, offer.status, offer.cohort_index) for offer in offers
     ]
     assert offer_states == [
-        (first_attestor_id, "declined", 0),
-        (second_attestor_id, "offered", 1),
+        (first_org, "declined", 0),
+        (second_org, "offered", 1),
     ]
 
 
@@ -712,21 +778,17 @@ async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
     await set_platform_config("attestation_cohort_size", "1")
     requestor_id = await create_user("overdue-requestor@auracles.space", ["operator"])
     first_attestor_id = await create_user("overdue-first@auracles.space", ["attestor"])
-    second_attestor_id = await create_user(
-        "overdue-second@auracles.space",
-        ["attestor"],
-    )
     await create_attestor_profile(
         first_attestor_id,
         specializations=["healthcare"],
         jurisdictions=["US"],
         approved_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
-    await create_attestor_profile(
-        second_attestor_id,
+    second_org, _, _ = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
         approved_at=datetime(2026, 1, 2, tzinfo=UTC),
+        slug_prefix="overdue",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     current_time = datetime.now(UTC)
@@ -793,11 +855,12 @@ async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
     assert transaction is not None
     assert transaction.payee_id is None
     offer_states = [
-        (offer.attestor_id, offer.status, offer.cohort_index) for offer in offers
+        (offer.attestor_id, offer.org_id, offer.status, offer.cohort_index)
+        for offer in offers
     ]
     assert offer_states == [
-        (first_attestor_id, "superseded", 0),
-        (second_attestor_id, "offered", 1),
+        (first_attestor_id, None, "superseded", 0),
+        (None, second_org, "offered", 1),
     ]
     assert reassigned_audit is not None
 

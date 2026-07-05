@@ -13,6 +13,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
+from app.modules.attestation import matching_service
+from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
 )
@@ -28,9 +30,14 @@ from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
+    OrgAcceptOfferRequest,
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    OrgAttestationItem,
+    OrgAttestationOfferItem,
+    OrgAttestationOffersResponse,
+    OrgAttestationsResponse,
     OrgAttestorAdminListItem,
     OrgAttestorAdminListResponse,
     OrgAttestorApplicationCreateRequest,
@@ -49,6 +56,7 @@ from app.modules.organizations.schemas import (
     OrgNdaStatusResponse,
     OrgNominateTrialMemberRequest,
     OrgOwnershipTransferRequest,
+    OrgReassignReviewerRequest,
     OrgTeamCreateRequest,
     OrgTeamRenameRequest,
     OrgTeamResponse,
@@ -703,6 +711,147 @@ async def nominate_attestor_trial_member(
         db, org_id=org_id
     )
     return _application_response(application, checklist)
+
+
+def _offer_item(
+    offer: AttestationOffer,
+    attestation: Attestation,
+) -> OrgAttestationOfferItem:
+    """Build an offer list item from an offer + attestation pair."""
+    return OrgAttestationOfferItem(
+        offer_id=offer.id,
+        attestation_id=attestation.id,
+        target_type=attestation.target_type,
+        target_id=attestation.target_id,
+        status=offer.status,
+        cohort_index=offer.cohort_index,
+        match_score=float(offer.match_score) if offer.match_score is not None else None,
+        offered_at=offer.offered_at,
+        expires_at=offer.expires_at,
+    )
+
+
+@router.get(
+    "/{org_id}/attestation-offers",
+    response_model=OrgAttestationOffersResponse,
+    summary="List org attestation offers",
+    description="Open and accepted cohort offers made to the org. Owner/admin only.",
+)
+async def list_org_attestation_offers(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestationOffersResponse:
+    """List cohort offers made to the attestor org."""
+    del context
+    rows = await matching_service.list_org_offers(db, org_id=org_id)
+    return OrgAttestationOffersResponse(
+        offers=[_offer_item(offer, attestation) for offer, attestation in rows]
+    )
+
+
+@router.post(
+    "/{org_id}/attestation-offers/{offer_id}/accept",
+    response_model=OrgAttestationItem,
+    summary="Accept and staff an offer",
+    description=(
+        "Accept a cohort offer and staff it with a reviewing member. "
+        "Owner/admin only."
+    ),
+)
+async def accept_org_attestation_offer(
+    org_id: UUID,
+    offer_id: UUID,
+    payload: OrgAcceptOfferRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestationItem:
+    """Accept a cohort offer and assign the reviewing member."""
+    attestation = await matching_service.accept_org_offer(
+        db,
+        offer_id=offer_id,
+        org_id=org_id,
+        actor_id=context.user.id,
+        reviewing_member_id=payload.reviewing_member_id,
+    )
+    return OrgAttestationItem.model_validate(attestation)
+
+
+@router.post(
+    "/{org_id}/attestation-offers/{offer_id}/decline",
+    response_model=OrgAttestationItem,
+    summary="Decline an offer",
+    description="Decline a cohort offer made to the org. Owner/admin only.",
+)
+async def decline_org_attestation_offer(
+    org_id: UUID,
+    offer_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestationItem:
+    """Decline a cohort offer made to the org."""
+    attestation = await matching_service.decline_org_offer(
+        db,
+        offer_id=offer_id,
+        org_id=org_id,
+        actor_id=context.user.id,
+    )
+    return OrgAttestationItem.model_validate(attestation)
+
+
+@router.post(
+    "/{org_id}/attestations/{attestation_id}/reassign",
+    response_model=OrgAttestationItem,
+    summary="Reassign the reviewing member",
+    description=(
+        "Reassign the reviewing member of an accepted attestation before its "
+        "review starts. Owner/admin only."
+    ),
+)
+async def reassign_org_reviewing_member(
+    org_id: UUID,
+    attestation_id: UUID,
+    payload: OrgReassignReviewerRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestationItem:
+    """Reassign the reviewing member before review starts."""
+    attestation = await matching_service.reassign_reviewing_member(
+        db,
+        attestation_id=attestation_id,
+        org_id=org_id,
+        actor_id=context.user.id,
+        reviewing_member_id=payload.reviewing_member_id,
+    )
+    return OrgAttestationItem.model_validate(attestation)
+
+
+@router.get(
+    "/{org_id}/attestations",
+    response_model=OrgAttestationsResponse,
+    summary="List org attestations",
+    description=(
+        "Owner/admin see every org attestation; a plain member sees only the "
+        "rows they are staffed on."
+    ),
+)
+async def list_org_attestations(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgAttestationsResponse:
+    """List the org's attestations, scoped by the caller's role."""
+    reviewing_member_id = (
+        None if context.member.role in ("owner", "admin") else context.member.id
+    )
+    rows = await matching_service.list_org_attestations(
+        db,
+        org_id=org_id,
+        reviewing_member_id=reviewing_member_id,
+    )
+    return OrgAttestationsResponse(
+        attestations=[OrgAttestationItem.model_validate(row) for row in rows]
+    )
 
 
 # Invitation response routes — invitee is not yet a member, so no org RBAC.

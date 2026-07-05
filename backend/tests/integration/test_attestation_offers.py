@@ -29,6 +29,12 @@ from app.modules.attestation.models import (
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgCapability,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -42,6 +48,10 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
             await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgCapability))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -180,11 +190,47 @@ async def test_all_screened_out_marks_needs_admin(db_session) -> None:
     assert refreshed.status == "needs_admin"
 
 
+async def _make_org_attestor() -> UUID:
+    """Create an active attestor org with an eligible profile; return org id."""
+    owner_id = (await _make_user("operator", "orgowner")).id
+    now = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                slug=f"org-{uuid4().hex[:6]}",
+                name="Attestor Org",
+                country="US",
+                created_by=owner_id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner_id, role="owner"))
+            session.add(
+                OrgCapability(
+                    org_id=org.id, capability="attestor", status="active"
+                )
+            )
+            session.add(
+                OrgAttestorProfile(
+                    org_id=org.id,
+                    specializations=["tax"],
+                    jurisdictions=["US"],
+                    sectors=["tax"],
+                    framework_categories=[],
+                    coi_declarations=[],
+                    coi_signed_at=now,
+                    coi_expires_at=now + timedelta(days=365),
+                    approved_at=now,
+                    active=True,
+                )
+            )
+            return org.id
+
+
 async def test_offer_persists_match_score(db_session) -> None:
     """offer_next_cohort stores match_score and score_breakdown on each offer."""
     requestor = await _make_user("operator", "req")
-    attestor = await _make_user("attestor", "att")
-    await _make_profile(attestor.id)
+    await _make_org_attestor()
     attestation = await _make_attestation(requestor.id)
 
     offers = await matching_service.offer_next_cohort(

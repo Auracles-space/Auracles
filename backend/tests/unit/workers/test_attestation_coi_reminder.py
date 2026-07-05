@@ -21,17 +21,34 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.modules.attestation import matching_service
-from app.modules.attestation.models import AttestorProfile
 from app.modules.auth.models import User, UserRole
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgCapability,
+    OrgMember,
+)
 
 pytestmark = pytest.mark.asyncio
+
+
+def _reminder_query(owner_user_id: UUID):
+    """Select an org profile's reminder timestamp via its owner member."""
+    return (
+        select(OrgAttestorProfile.coi_reminder_sent_at)
+        .join(OrgMember, OrgMember.org_id == OrgAttestorProfile.org_id)
+        .where(OrgMember.user_id == owner_user_id, OrgMember.role == "owner")
+    )
 
 
 async def _reset_state() -> None:
     """Remove reminder-test rows in FK-safe order."""
     async with async_session_factory() as session:
         async with session.begin():
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgCapability))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
 
@@ -69,35 +86,45 @@ async def db_session(clean_state) -> AsyncIterator:
 
 
 async def _attestor_with_expiry(expires_at: datetime, signed_at: datetime) -> UUID:
-    """Create one active Attestor with a specific CoI expiry cycle."""
+    """Create an attestor org with a specific CoI expiry cycle; return owner id.
+
+    The owner is the reminder recipient (org owner/admin fanout).
+    """
     async with async_session_factory() as session:
-        user = User(
-            email=f"att-{uuid4().hex[:8]}@auracles.space",
-            password_hash=hash_password("CorrectHorse9"),
-            display_name="att",
-            email_verified=True,
-        )
-        session.add(user)
-        await session.flush()
-        session.add(
-            UserRole(
-                user_id=user.id,
-                role="attestor",
-                approved_at=datetime.now(UTC),
+        async with session.begin():
+            user = User(
+                email=f"att-{uuid4().hex[:8]}@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="att",
+                email_verified=True,
             )
-        )
-        session.add(
-            AttestorProfile(
-                user_id=user.id,
-                specializations=["tax"],
-                jurisdictions=["US"],
-                active=True,
-                coi_signed_at=signed_at,
-                coi_expires_at=expires_at,
+            session.add(user)
+            await session.flush()
+            org = Organization(
+                slug=f"org-{uuid4().hex[:6]}",
+                name="Attestor Org",
+                country="US",
+                created_by=user.id,
             )
-        )
-        await session.commit()
-    return user.id
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
+            session.add(
+                OrgCapability(org_id=org.id, capability="attestor", status="active")
+            )
+            session.add(
+                OrgAttestorProfile(
+                    org_id=org.id,
+                    specializations=["tax"],
+                    jurisdictions=["US"],
+                    sectors=[],
+                    framework_categories=[],
+                    active=True,
+                    coi_signed_at=signed_at,
+                    coi_expires_at=expires_at,
+                )
+            )
+            return user.id
 
 
 @pytest.fixture(autouse=True)
@@ -134,11 +161,7 @@ async def test_reminder_within_30_days(db_session, _stub_notifications) -> None:
 
     assert count == 1
     assert ("expiring", user_id) in _stub_notifications
-    reminder_sent_at = await db_session.scalar(
-        select(AttestorProfile.coi_reminder_sent_at).where(
-            AttestorProfile.user_id == user_id
-        )
-    )
+    reminder_sent_at = await db_session.scalar(_reminder_query(user_id))
     assert reminder_sent_at is not None
 
 
@@ -197,11 +220,7 @@ async def test_failed_dispatch_does_not_mark_reminded(
     count = await matching_service.send_coi_resign_reminders(db_session, now=now)
 
     assert count == 0
-    reminder_sent_at = await db_session.scalar(
-        select(AttestorProfile.coi_reminder_sent_at).where(
-            AttestorProfile.user_id == user_id
-        )
-    )
+    reminder_sent_at = await db_session.scalar(_reminder_query(user_id))
     assert reminder_sent_at is None
 
 

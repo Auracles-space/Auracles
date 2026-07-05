@@ -546,9 +546,12 @@ async def _mark_attestation_fee_funded(
         },
     )
     offers = await matching_service.offer_next_cohort(db, attestation_id=attestation.id)
+    offer_recipients = await matching_service.resolve_offer_recipients(db, offers)
     callbacks: list[Callable[[], None]] = [
         lambda: attestation_notifications.notify_fee_funded(attestation),
-        lambda: attestation_notifications.notify_offers(attestation, offers),
+        lambda: matching_service.dispatch_offer_notifications(
+            attestation, offers, offer_recipients
+        ),
         lambda: (
             attestation_notifications.notify_needs_admin(attestation)
             if attestation.status == "needs_admin"
