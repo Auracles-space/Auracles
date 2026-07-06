@@ -28,11 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
-from app.modules.attestation.application_service import (
-    TAX_DOCUMENT_MAX_BYTES,
-    TAX_DOCUMENT_UPLOAD_TTL_SECONDS,
+from app.modules.attestation.credential_service import (
+    CREDENTIAL_EVIDENCE_MAX_BYTES,
+    CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
+    _safe_file_name,
 )
-from app.modules.attestation.credential_service import _safe_file_name
 from app.modules.attestation.models import AttestorTrial
 from app.modules.attestation.schemas import CredentialEvidenceUploadSessionResponse
 from app.modules.auth import service as auth_service
@@ -53,8 +53,12 @@ from app.modules.organizations.schemas import (
     OrgUndertakingsSignRequest,
 )
 
-# CoI/confidentiality validity window; mirrors the individual attestor flow
-# (application_service.sign_coi stamps coi_expires_at one year out).
+# Org tax-document uploads reuse the shared credential-evidence upload limits.
+TAX_DOCUMENT_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
+TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
+
+# CoI/confidentiality validity window: the undertakings gate stamps
+# coi_expires_at one year out.
 COI_VALIDITY = timedelta(days=365)
 
 # Statuses under the org's live-application uniqueness guarantee.
