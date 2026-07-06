@@ -64,8 +64,8 @@ async def list_attestations_for_user(
     if role == "requestor":
         predicate = Attestation.requestor_id == user.id
     elif role == "attestor":
-        # A user sees attestor-side work they perform (legacy assignee or
-        # reviewing member) plus, as an org owner/admin, all of the org's work.
+        # A user sees the org attestations they staff as reviewing member plus,
+        # as an org owner/admin, all of their org's attestor work.
         reviewing_member_ids = select(OrgMember.id).where(
             OrgMember.user_id == user.id
         )
@@ -74,7 +74,6 @@ async def list_attestations_for_user(
             OrgMember.role.in_(("owner", "admin")),
         )
         predicate = or_(
-            Attestation.attestor_id == user.id,
             Attestation.reviewing_member_id.in_(reviewing_member_ids),
             Attestation.attestor_org_id.in_(managed_org_ids),
         )

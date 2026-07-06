@@ -18,13 +18,14 @@ from sqlalchemy.types import Text
 from app.core.audit import write_audit
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation import scoring
+from app.modules.attestation.dependencies import attestor_actor
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import PlatformConfig, Transaction
+from app.modules.financials.models import PlatformConfig
 from app.modules.frameworks.models import Framework
 from app.modules.organizations.models import (
     Organization,
@@ -159,24 +160,6 @@ async def offer_next_cohort(
     return offers
 
 
-async def list_attestor_assignments(
-    db: AsyncSession,
-    *,
-    attestor: User,
-) -> list[tuple[AttestationOffer, Attestation]]:
-    """Return active offered and accepted Attestations for one Attestor."""
-    rows = await db.execute(
-        select(AttestationOffer, Attestation)
-        .join(Attestation, Attestation.id == AttestationOffer.attestation_id)
-        .where(
-            AttestationOffer.attestor_id == attestor.id,
-            AttestationOffer.status.in_(("offered", "accepted")),
-        )
-        .order_by(AttestationOffer.offered_at.desc(), AttestationOffer.id)
-    )
-    return [(offer, attestation) for offer, attestation in rows.all()]
-
-
 async def list_org_offers(
     db: AsyncSession,
     *,
@@ -233,144 +216,6 @@ async def get_attestation_for_user(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Attestation not found.",
     )
-
-
-async def accept_attestation_offer(
-    db: AsyncSession,
-    *,
-    attestation_id: UUID,
-    attestor: User,
-    content_ack: bool,
-    ack_version: str,
-) -> Attestation:
-    """Accept a cohort offer and atomically assign the Attestation.
-
-    Full framework-content access is gated on the content-use acknowledgment,
-    so acceptance requires ``content_ack=True``.
-    """
-    if not content_ack:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Content-use acknowledgment is required to accept.",
-        )
-    attestor_id = attestor.id
-    if db.in_transaction():
-        await db.rollback()
-    async with db.begin():
-        current_time = datetime.now(UTC)
-        attestation = await _load_locked_attestation(db, attestation_id)
-        offer = await _load_locked_offer(
-            db,
-            attestation_id=attestation_id,
-            attestor_id=attestor_id,
-        )
-        if offer is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Attestation offer not found.",
-            )
-        if attestation.status != "offered" or offer.status != "offered":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Attestation offer is no longer available.",
-            )
-        if offer.expires_at <= current_time:
-            offer.status = "expired"
-            offer.responded_at = current_time
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Attestation offer has expired.",
-            )
-
-        completion_days = await _completion_sla_days(db, attestation.target_type)
-        transaction = await _load_funded_fee_transaction(db, attestation.id)
-        transaction.payee_id = attestor_id
-        attestation.status = "accepted"
-        attestation.attestor_id = attestor_id
-        attestation.accepted_at = current_time
-        attestation.content_ack_at = current_time
-        attestation.content_ack_version = ack_version
-        attestation.completion_due_at = current_time + timedelta(days=completion_days)
-        offer.status = "accepted"
-        offer.responded_at = current_time
-        await db.execute(
-            update(AttestationOffer)
-            .where(
-                AttestationOffer.attestation_id == attestation.id,
-                AttestationOffer.id != offer.id,
-                AttestationOffer.status == "offered",
-            )
-            .values(status="superseded", responded_at=current_time)
-        )
-        await write_audit(
-            db=db,
-            actor_id=attestor_id,
-            action="attestation_accepted",
-            target_type="attestation",
-            target_id=attestation.id,
-            metadata={
-                "offer_id": str(offer.id),
-                "transaction_id": str(transaction.id),
-                "completion_due_at": attestation.completion_due_at.isoformat(),
-            },
-        )
-    await db.refresh(attestation)
-    attestation_notifications.notify_offer_accepted(attestation, attestor_id)
-    return attestation
-
-
-async def decline_attestation_offer(
-    db: AsyncSession,
-    *,
-    attestation_id: UUID,
-    attestor: User,
-) -> Attestation:
-    """Decline a cohort offer and advance matching when the cohort is exhausted."""
-    attestor_id = attestor.id
-    if db.in_transaction():
-        await db.rollback()
-    next_offers: list[AttestationOffer] = []
-    async with db.begin():
-        current_time = datetime.now(UTC)
-        attestation = await _load_locked_attestation(db, attestation_id)
-        offer = await _load_locked_offer(
-            db,
-            attestation_id=attestation_id,
-            attestor_id=attestor_id,
-        )
-        if offer is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Attestation offer not found.",
-            )
-        if offer.status != "offered":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Attestation offer is no longer available.",
-            )
-        offer.status = "declined"
-        offer.responded_at = current_time
-        await write_audit(
-            db=db,
-            actor_id=attestor_id,
-            action="attestation_declined",
-            target_type="attestation",
-            target_id=attestation.id,
-            metadata={"offer_id": str(offer.id)},
-        )
-        if await _current_cohort_is_exhausted(db, attestation.id, offer.cohort_index):
-            attestation.status = "matching"
-            next_offers = await offer_next_cohort(
-                db,
-                attestation_id=attestation.id,
-                now=current_time,
-            )
-    await db.refresh(attestation)
-    attestation_notifications.notify_offer_declined(attestation, attestor_id)
-    await notify_new_offers(db, attestation, next_offers)
-    if attestation.status == "needs_admin":
-        attestation_notifications.notify_needs_admin(attestation)
-    return attestation
 
 
 async def accept_org_offer(
@@ -590,7 +435,6 @@ async def expire_stale_offers(
     for attestation_id, cohort_index in stale_cohorts:
         if db.in_transaction():
             await db.rollback()
-        expired_offers: list[AttestationOffer] = []
         next_offers: list[AttestationOffer] = []
         async with db.begin():
             attestation = await _load_locked_attestation(db, attestation_id)
@@ -607,18 +451,6 @@ async def expire_stale_offers(
             )
             expired_ids = [row[0] for row in result.all()]
             expired_count += len(expired_ids)
-            if expired_ids:
-                expired_offers = list(
-                    (
-                        await db.execute(
-                            select(AttestationOffer).where(
-                                AttestationOffer.id.in_(expired_ids)
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
             for offer_id in expired_ids:
                 await write_audit(
                     db=db,
@@ -639,8 +471,6 @@ async def expire_stale_offers(
                     attestation_id=attestation_id,
                     now=current_time,
                 )
-        for expired_offer in expired_offers:
-            attestation_notifications.notify_offer_expired(attestation, expired_offer)
         await notify_new_offers(db, attestation, next_offers)
         if attestation.status == "needs_admin":
             attestation_notifications.notify_needs_admin(attestation)
@@ -678,7 +508,7 @@ async def revoke_overdue_attestations(
     for attestation_id in overdue_ids:
         if db.in_transaction():
             await db.rollback()
-        old_attestor_id: UUID | None = None
+        old_reviewer_user_id: UUID | None = None
         next_offers: list[AttestationOffer] = []
         async with db.begin():
             attestation = await _load_locked_attestation(db, attestation_id)
@@ -686,24 +516,35 @@ async def revoke_overdue_attestations(
                 attestation.status not in {"accepted", "in_review"}
                 or attestation.completion_due_at is None
                 or attestation.completion_due_at > cutoff
-                or attestation.attestor_id is None
+                or attestation.attestor_org_id is None
             ):
                 continue
 
-            old_attestor_id = attestation.attestor_id
-            transaction = await _load_completed_fee_transaction(db, attestation.id)
-            old_offer = await _load_locked_offer(
-                db,
-                attestation_id=attestation.id,
-                attestor_id=old_attestor_id,
+            old_org_id = attestation.attestor_org_id
+            if attestation.reviewing_member_id is not None:
+                old_reviewer_user_id = await db.scalar(
+                    select(OrgMember.user_id).where(
+                        OrgMember.id == attestation.reviewing_member_id
+                    )
+                )
+            old_offer = await db.scalar(
+                select(AttestationOffer)
+                .where(
+                    AttestationOffer.attestation_id == attestation.id,
+                    AttestationOffer.org_id == old_org_id,
+                    AttestationOffer.status == "accepted",
+                )
+                .with_for_update()
             )
-            if old_offer is not None and old_offer.status == "accepted":
+            if old_offer is not None:
                 old_offer.status = "superseded"
                 old_offer.responded_at = current_time
 
-            transaction.payee_id = None
+            # The fee is credited to the org only at escrow release, so an
+            # overdue revoke before release leaves the transaction untouched.
             attestation.status = "matching"
-            attestation.attestor_id = None
+            attestation.attestor_org_id = None
+            attestation.reviewing_member_id = None
             attestation.accepted_at = None
             attestation.completion_due_at = None
             await write_audit(
@@ -714,8 +555,7 @@ async def revoke_overdue_attestations(
                 target_id=attestation.id,
                 metadata={
                     "reason": "completion_sla_missed",
-                    "old_attestor_id": str(old_attestor_id),
-                    "transaction_id": str(transaction.id),
+                    "attestor_org_id": str(old_org_id),
                 },
             )
             revoked_count += 1
@@ -724,10 +564,10 @@ async def revoke_overdue_attestations(
                 attestation_id=attestation.id,
                 now=current_time,
             )
-        if old_attestor_id is not None:
+        if old_reviewer_user_id is not None:
             attestation_notifications.notify_reassigned(
                 attestation,
-                old_attestor_id=old_attestor_id,
+                old_attestor_id=old_reviewer_user_id,
             )
         await notify_new_offers(db, attestation, next_offers)
         if attestation.status == "needs_admin":
@@ -918,26 +758,6 @@ async def _load_locked_attestation(
     return attestation
 
 
-async def _load_locked_offer(
-    db: AsyncSession,
-    *,
-    attestation_id: UUID,
-    attestor_id: UUID,
-) -> AttestationOffer | None:
-    """Load and row-lock one Attestor's offer for an Attestation."""
-    return type_cast(
-        AttestationOffer | None,
-        await db.scalar(
-            select(AttestationOffer)
-            .where(
-                AttestationOffer.attestation_id == attestation_id,
-                AttestationOffer.attestor_id == attestor_id,
-            )
-            .with_for_update()
-        ),
-    )
-
-
 async def _load_locked_org_offer(
     db: AsyncSession,
     *,
@@ -1063,8 +883,6 @@ def dispatch_offer_notifications(
                     offer=offer,
                     recipient_id=recipient_id,
                 )
-        elif offer.attestor_id is not None:
-            attestation_notifications.notify_offers(attestation, [offer])
 
 
 async def notify_new_offers(
@@ -1075,57 +893,6 @@ async def notify_new_offers(
     """Resolve org offer recipients and dispatch offer-received notifications."""
     recipients = await resolve_offer_recipients(db, offers)
     dispatch_offer_notifications(attestation, offers, recipients)
-
-
-async def _load_funded_fee_transaction(
-    db: AsyncSession,
-    attestation_id: UUID,
-) -> Transaction:
-    """Load and lock the completed Attestation fee transaction."""
-    transaction = await db.scalar(
-        select(Transaction)
-        .where(
-            Transaction.ref_type == "attestation",
-            Transaction.ref_id == attestation_id,
-            Transaction.transaction_type == "attestation_fee",
-            Transaction.status == "completed",
-        )
-        .with_for_update()
-    )
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Attestation fee is not funded.",
-        )
-    if transaction.payee_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Attestation fee payee is already assigned.",
-        )
-    return transaction
-
-
-async def _load_completed_fee_transaction(
-    db: AsyncSession,
-    attestation_id: UUID,
-) -> Transaction:
-    """Load and lock a completed Attestation fee transaction."""
-    transaction = await db.scalar(
-        select(Transaction)
-        .where(
-            Transaction.ref_type == "attestation",
-            Transaction.ref_id == attestation_id,
-            Transaction.transaction_type == "attestation_fee",
-            Transaction.status == "completed",
-        )
-        .with_for_update()
-    )
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Attestation fee is not funded.",
-        )
-    return transaction
 
 
 async def _excluded_org_ids(
@@ -1419,7 +1186,7 @@ async def _can_view_attestation(
     user: User,
 ) -> bool:
     """Check whether a user can see an Attestation detail response."""
-    if attestation.requestor_id == user.id or attestation.attestor_id == user.id:
+    if attestation.requestor_id == user.id:
         return True
     role = await db.scalar(
         select(UserRole.role).where(
@@ -1430,12 +1197,18 @@ async def _can_view_attestation(
     )
     if role == "admin":
         return True
-    offer_id = await db.scalar(
-        select(AttestationOffer.id)
+    actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
+    if actor.is_reviewing_member or actor.is_org_manager:
+        return True
+    # Cohort org owner/admin holding an offer to their organization.
+    offer_org_id = await db.scalar(
+        select(AttestationOffer.org_id)
+        .join(OrgMember, OrgMember.org_id == AttestationOffer.org_id)
         .where(
             AttestationOffer.attestation_id == attestation.id,
-            AttestationOffer.attestor_id == user.id,
+            OrgMember.user_id == user.id,
+            OrgMember.role.in_(("owner", "admin")),
         )
         .limit(1)
     )
-    return offer_id is not None
+    return offer_org_id is not None

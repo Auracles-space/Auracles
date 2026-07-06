@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
-from app.modules.attestation.models import Attestation, AttestorProfile
+from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User
 from app.modules.organizations.models import OrgMember
 
@@ -27,13 +27,12 @@ class AttestorActor:
 
     Attributes:
         is_reviewing_member: True when the caller performs the review — the
-            reviewing member staffed on an org attestation or, during
-            individual-attestor coexistence, the legacy assigned attestor.
-            Grants write access to the review surfaces.
+            reviewing member staffed on the org attestation. Grants write access
+            to the review surfaces.
         is_org_manager: True when the caller is an owner/admin of the attestor
             organization. Grants read-only oversight.
-        member_id: The reviewing OrgMember id when staffed through an org, else
-            None (legacy individual assignment).
+        member_id: The reviewing OrgMember id, or None when the attestation has
+            no reviewing member staffed yet.
     """
 
     is_reviewing_member: bool
@@ -53,12 +52,6 @@ async def attestor_actor(
     Takes the caller's id (not the ORM ``User``) so it stays correct after a
     transaction rollback has expired the caller's instance.
     """
-    # Legacy individual assignment (coexistence until individual retirement).
-    if attestation.attestor_id is not None and attestation.attestor_id == user_id:
-        return AttestorActor(
-            is_reviewing_member=True, is_org_manager=False, member_id=None
-        )
-
     org_id = attestation.attestor_org_id
     if org_id is None:
         return AttestorActor(
@@ -100,9 +93,9 @@ async def resolve_attestor_actor(
 ) -> AttestorActor:
     """Authorize an attestor-side actor over an attestation or raise.
 
-    The reviewing member (and, during coexistence, the legacy assigned attestor)
-    may act on write surfaces. Org owners/admins are admitted read-only when
-    ``allow_managers`` is set. A member of the attestor organization who is
+    The reviewing member may act on write surfaces. Org owners/admins are
+    admitted read-only when ``allow_managers`` is set. A member of the attestor
+    organization who is
     neither the reviewing member nor an admitted manager is refused (403); any
     other caller is hidden the attestation's existence (404).
 
@@ -155,16 +148,12 @@ async def require_approved_attestor(
     db: DatabaseSession,
     user: Annotated[User, Depends(require_role("attestor"))],
 ) -> User:
-    """Require an authenticated Attestor with an active approved profile."""
-    profile_id = await db.scalar(
-        select(AttestorProfile.id).where(
-            AttestorProfile.user_id == user.id,
-            AttestorProfile.active.is_(True),
-        )
-    )
-    if profile_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Approved Attestor profile required.",
-        )
+    """Require an authenticated Attestor.
+
+    The ``attestor`` role is a derived role granted only to members of an
+    organization whose ``attestor`` capability is active, so requiring the role
+    is sufficient proof of an approved attestor relationship. Per-attestation
+    authority is resolved separately via :func:`resolve_attestor_actor`.
+    """
+    del db
     return user

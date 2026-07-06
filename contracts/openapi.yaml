@@ -1133,42 +1133,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/{attestation_id}/accept:
-    post:
-      tags:
-      - Attestation
-      summary: Accept Attestation Offer
-      description: Accept an open cohort offer with the content-use acknowledgment.
-      operationId: accept_attestation_offer_v1_attestations__attestation_id__accept_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestationAcceptRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestationRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/start-review:
     post:
       tags:
@@ -1543,36 +1507,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/{attestation_id}/decline:
-    post:
-      tags:
-      - Attestation
-      summary: Decline Attestation Offer
-      description: Decline an open Attestation cohort offer as an approved Attestor.
-      operationId: decline_attestation_offer_v1_attestations__attestation_id__decline_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestationRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/uploads:
     post:
       tags:
@@ -1753,7 +1687,8 @@ paths:
       tags:
       - Attestation
       summary: Admin Assign Attestation
-      description: Manually assign a needs-admin Attestation to an approved Attestor.
+      description: Manually assign a needs-admin Attestation to an attestor org +
+        member.
       operationId: admin_assign_attestation_v1_admin_attestations__attestation_id__assign_post
       security:
       - HTTPBearer: []
@@ -1820,22 +1755,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/assignments:
-    get:
-      tags:
-      - Attestation
-      summary: List Attestor Assignments
-      description: List offered and accepted Attestation assignments for an Attestor.
-      operationId: list_attestor_assignments_v1_attestor_assignments_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorAssignmentsResponse'
-      security:
-      - HTTPBearer: []
   /v1/credentials:
     get:
       tags:
@@ -10074,10 +9993,14 @@ components:
       description: Three standard recency windows used across current-state analytics.
     AdminAttestationAssignRequest:
       properties:
-        attestor_id:
+        attestor_org_id:
           type: string
           format: uuid
-          title: Attestor Id
+          title: Attestor Org Id
+        reviewing_member_id:
+          type: string
+          format: uuid
+          title: Reviewing Member Id
         reason:
           type: string
           maxLength: 4000
@@ -10090,11 +10013,17 @@ components:
           title: Totp Code
       type: object
       required:
-      - attestor_id
+      - attestor_org_id
+      - reviewing_member_id
       - reason
       - totp_code
       title: AdminAttestationAssignRequest
-      description: Admin request body for manually assigning a needs-admin Attestation.
+      description: 'Admin request body for manually assigning a needs-admin Attestation.
+
+
+        The attestation is assigned to an attestor organization and staffed with a
+
+        reviewing member in the same call, mirroring org accept-and-staff.'
     AdminAttestationDisputeResolveRequest:
       properties:
         outcome:
@@ -11063,7 +10992,7 @@ components:
           - framework
           - contributor
           - operator
-          - attestor
+          - attestor_org
           title: Subject Type
         subject_id:
           type: string
@@ -12495,12 +12424,12 @@ components:
           type: string
           format: uuid
           title: Requestor Id
-        attestor_id:
+        attestor_org_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Attestor Id
+          title: Attestor Org Id
         status:
           type: string
           title: Status
@@ -12608,7 +12537,7 @@ components:
       - target_type
       - target_id
       - requestor_id
-      - attestor_id
+      - attestor_org_id
       - status
       - outcome
       - requested_specializations
@@ -12632,90 +12561,6 @@ components:
       - attestations
       title: AttestationsResponse
       description: List response for Attestations visible to the authenticated user.
-    AttestorAssignmentResponse:
-      properties:
-        offer_id:
-          type: string
-          format: uuid
-          title: Offer Id
-        attestation_id:
-          type: string
-          format: uuid
-          title: Attestation Id
-        target_type:
-          type: string
-          title: Target Type
-        target_id:
-          type: string
-          format: uuid
-          title: Target Id
-        attestation_status:
-          type: string
-          title: Attestation Status
-        offer_status:
-          type: string
-          title: Offer Status
-        cohort_index:
-          type: integer
-          title: Cohort Index
-        requestor_flagged:
-          type: boolean
-          title: Requestor Flagged
-        requested_specializations:
-          items:
-            type: string
-          type: array
-          title: Requested Specializations
-        requested_jurisdictions:
-          items:
-            type: string
-          type: array
-          title: Requested Jurisdictions
-        expires_at:
-          type: string
-          format: date-time
-          title: Expires At
-        accepted_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Accepted At
-        completion_due_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Completion Due At
-      type: object
-      required:
-      - offer_id
-      - attestation_id
-      - target_type
-      - target_id
-      - attestation_status
-      - offer_status
-      - cohort_index
-      - requestor_flagged
-      - requested_specializations
-      - requested_jurisdictions
-      - expires_at
-      - accepted_at
-      - completion_due_at
-      title: AttestorAssignmentResponse
-      description: Attestation offer or assignment visible to an approved Attestor.
-    AttestorAssignmentsResponse:
-      properties:
-        assignments:
-          items:
-            $ref: '#/components/schemas/AttestorAssignmentResponse'
-          type: array
-          title: Assignments
-      type: object
-      required:
-      - assignments
-      title: AttestorAssignmentsResponse
-      description: List response for an Attestor's open offers and accepted work.
     AttestorCompletedAttestation:
       properties:
         framework_id:

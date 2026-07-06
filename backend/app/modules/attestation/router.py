@@ -56,8 +56,6 @@ from app.modules.attestation.schemas import (
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     AttestationsResponse,
-    AttestorAssignmentResponse,
-    AttestorAssignmentsResponse,
     AttestorCompletedAttestation,
     AttestorDirectoryEntry,
     AttestorDirectoryResponse,
@@ -274,27 +272,6 @@ async def get_attestation(
         db=db,
         attestation_id=attestation_id,
         user=user,
-    )
-    return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.post(
-    "/attestations/{attestation_id}/accept",
-    response_model=AttestationRequestResponse,
-)
-async def accept_attestation_offer(
-    attestation_id: UUID,
-    payload: AttestationAcceptRequest,
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestationRequestResponse:
-    """Accept an open cohort offer with the content-use acknowledgment."""
-    attestation = await matching_service.accept_attestation_offer(
-        db=db,
-        attestation_id=attestation_id,
-        attestor=attestor,
-        content_ack=payload.content_ack,
-        ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
 
@@ -563,24 +540,6 @@ async def respond_to_attestation_clarification(
 
 
 @router.post(
-    "/attestations/{attestation_id}/decline",
-    response_model=AttestationRequestResponse,
-)
-async def decline_attestation_offer(
-    attestation_id: UUID,
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestationRequestResponse:
-    """Decline an open Attestation cohort offer as an approved Attestor."""
-    attestation = await matching_service.decline_attestation_offer(
-        db=db,
-        attestation_id=attestation_id,
-        attestor=attestor,
-    )
-    return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.post(
     "/attestations/{attestation_id}/uploads",
     response_model=AttestationEvidenceUploadSessionResponse,
     status_code=status.HTTP_201_CREATED,
@@ -695,13 +654,14 @@ async def admin_assign_attestation(
     db: DatabaseSession,
     redis: RedisClient,
 ) -> AttestationRequestResponse:
-    """Manually assign a needs-admin Attestation to an approved Attestor."""
+    """Manually assign a needs-admin Attestation to an attestor org + member."""
     attestation = await dispute_service.assign_needs_admin_attestation(
         db=db,
         redis=redis,
         admin=admin,
         attestation_id=attestation_id,
-        attestor_id=payload.attestor_id,
+        attestor_org_id=payload.attestor_org_id,
+        reviewing_member_id=payload.reviewing_member_id,
         reason=payload.reason,
         totp_code=payload.totp_code,
     )
@@ -729,52 +689,6 @@ async def admin_refund_attestation(
         totp_code=payload.totp_code,
     )
     return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.get(
-    "/attestor/assignments",
-    response_model=AttestorAssignmentsResponse,
-)
-async def list_attestor_assignments(
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestorAssignmentsResponse:
-    """List offered and accepted Attestation assignments for an Attestor."""
-    assignments = await matching_service.list_attestor_assignments(
-        db=db,
-        attestor=attestor,
-    )
-    # Compute requestor abuse flags in batch (one count per distinct requestor).
-    # Only the derived boolean is surfaced to the attestor; the requestor id is
-    # never exposed on this offer/preview payload (design section 4.5).
-    requestor_ids = {attestation.requestor_id for _, attestation in assignments}
-    flags: dict[UUID, bool] = {}
-    for r_id in requestor_ids:
-        count = await dispute_service.requestor_rejected_dispute_count(
-            db=db, requestor_id=r_id
-        )
-        flags[r_id] = count >= dispute_service.REQUESTOR_FLAG_THRESHOLD
-
-    return AttestorAssignmentsResponse(
-        assignments=[
-            AttestorAssignmentResponse(
-                offer_id=offer.id,
-                attestation_id=attestation.id,
-                target_type=attestation.target_type,
-                target_id=attestation.target_id,
-                attestation_status=attestation.status,
-                offer_status=offer.status,
-                cohort_index=offer.cohort_index,
-                requestor_flagged=flags[attestation.requestor_id],
-                requested_specializations=attestation.requested_specializations,
-                requested_jurisdictions=attestation.requested_jurisdictions,
-                expires_at=offer.expires_at,
-                accepted_at=attestation.accepted_at,
-                completion_due_at=attestation.completion_due_at,
-            )
-            for offer, attestation in assignments
-        ]
-    )
 
 
 @router.post(

@@ -16,6 +16,21 @@ from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Transaction
+from app.modules.organizations.models import OrgMember
+
+
+async def _reviewing_member_user_id(
+    db: AsyncSession, attestation: Attestation
+) -> UUID | None:
+    """Resolve the user id of an attestation's reviewing member, if staffed."""
+    if attestation.reviewing_member_id is None:
+        return None
+    member_user_id: UUID | None = await db.scalar(
+        select(OrgMember.user_id).where(
+            OrgMember.id == attestation.reviewing_member_id
+        )
+    )
+    return member_user_id
 
 
 async def accept_report(
@@ -44,10 +59,12 @@ async def accept_report(
             actor_id=requestor_id,
             reason="requestor_accept_report",
         )
+        recipient_id = await _reviewing_member_user_id(db, attestation)
     await db.refresh(attestation)
     attestation_notifications.notify_released(
         attestation,
         reason="requestor_accept_report",
+        recipient_id=recipient_id,
     )
     return attestation
 
@@ -89,10 +106,12 @@ async def auto_release_attestations(
                 actor_id=attestation.requestor_id,
                 reason="auto_release_after_dispute_window",
             )
+            recipient_id = await _reviewing_member_user_id(db, attestation)
             released_count += 1
         attestation_notifications.notify_released(
             attestation,
             reason="auto_release_after_dispute_window",
+            recipient_id=recipient_id,
         )
     return released_count
 

@@ -188,53 +188,38 @@ async def _earnings_buyer_identity(
 ) -> tuple[str, str]:
     """Resolve the earnings-statement buyer name and email for one attestation.
 
-    Org-staffed attestations bill to the organization's legal name (falling back
-    to the org name) and the org owner's email — orgs carry no billing email of
-    their own. Legacy individual attestations bill to the assignee's name and
-    email. The reviewing member's identity is never used as the buyer: earnings
-    settle to the org, not the individual reviewer.
+    Attestations bill to the attestor organization's legal name (falling back to
+    the org name) and the org owner's email — orgs carry no billing email of
+    their own. The reviewing member's identity is never used as the buyer:
+    earnings settle to the org, not the individual reviewer.
 
     Raises:
         HTTPException(404): No attestor identity can be resolved.
     """
-    if attestation.attestor_org_id is not None:
-        org = await db.get(Organization, attestation.attestor_org_id)
-        if org is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Attestor not found.",
-            )
-        legal_name = await db.scalar(
-            select(OrgAttestorApplication.legal_name).where(
-                OrgAttestorApplication.org_id == org.id,
-                OrgAttestorApplication.status == "approved",
-            )
-        )
-        owner_email = await db.scalar(
-            select(User.email)
-            .join(OrgMember, OrgMember.user_id == User.id)
-            .where(OrgMember.org_id == org.id, OrgMember.role == "owner")
-            .limit(1)
-        )
-        if owner_email is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Attestor not found.",
-            )
-        return (legal_name or org.name), owner_email
-
-    if attestation.attestor_id is None:
+    org = await db.get(Organization, attestation.attestor_org_id)
+    if org is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestor not found.",
         )
-    attestor = await db.get(User, attestation.attestor_id)
-    if attestor is None:
+    legal_name = await db.scalar(
+        select(OrgAttestorApplication.legal_name).where(
+            OrgAttestorApplication.org_id == org.id,
+            OrgAttestorApplication.status == "approved",
+        )
+    )
+    owner_email = await db.scalar(
+        select(User.email)
+        .join(OrgMember, OrgMember.user_id == User.id)
+        .where(OrgMember.org_id == org.id, OrgMember.role == "owner")
+        .limit(1)
+    )
+    if owner_email is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestor not found.",
         )
-    return attestor.display_name, attestor.email
+    return (legal_name or org.name), owner_email
 
 
 async def get_earnings_statement(
@@ -294,7 +279,7 @@ async def get_earnings_statement(
         net_amount=net_amount,
     )
 
-    if is_admin and user.id != attestation.attestor_id:
+    if is_admin and not (actor.is_reviewing_member or actor.is_org_manager):
         await write_audit(
             db=db,
             actor_id=user.id,

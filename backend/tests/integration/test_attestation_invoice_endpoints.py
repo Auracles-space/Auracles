@@ -17,11 +17,16 @@ from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.integrations import s3
-from app.modules.attestation.models import Attestation, AttestorProfile
+from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.invoicing.models import Invoice, InvoiceCounter
 from app.modules.notifications.models import Notification, NotificationDeliveryMarker
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import invoicing as invoicing_tasks
 
@@ -67,8 +72,10 @@ async def _reset_state() -> None:
             await session.execute(delete(Notification))
             await session.execute(delete(Invoice))
             await session.execute(delete(InvoiceCounter))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(Attestation))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(UserRole))
@@ -142,11 +149,31 @@ async def _seed_attestation(status: str) -> dict[str, UUID]:
     attestor = await _make_user("attestor", "attestor")
 
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"inv-org-{uuid4().hex[:6]}",
+            name="Invoice Org LLP",
+            country="US",
+            created_by=attestor.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=attestor.id, role="owner")
+        session.add(member)
+        session.add(
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=[],
+                jurisdictions=[],
+                active=True,
+            )
+        )
+        await session.flush()
         attestation = Attestation(
             target_type="framework",
             target_id=uuid4(),
             requestor_id=requestor.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org.id,
+            reviewing_member_id=member.id,
             status=status,
             outcome="approved" if status == "closed" else None,
             review_type="expert",
@@ -195,19 +222,6 @@ async def _seed_attestation(status: str) -> dict[str, UUID]:
         "requestor_id": requestor.id,
         "attestor_id": attestor.id,
     }
-
-
-async def _approve_attestor(user_id: UUID) -> None:
-    """Create one active approved Attestor profile for endpoint gating."""
-    async with async_session_factory() as session:
-        session.add(
-            AttestorProfile(
-                user_id=user_id,
-                specializations=[],
-                jurisdictions=[],
-            )
-        )
-        await session.commit()
 
 
 async def test_requestor_gets_tax_invoice(
@@ -426,7 +440,6 @@ async def test_approved_attestor_gets_annual_summary(
     """An approved attestor can fetch their generated annual summary PDF."""
     del clean_state
     attestor = await _make_user("attestor", "annual-approved")
-    await _approve_attestor(attestor.id)
     key = f"annual-summaries/{attestor.id}/2026.pdf"
     fake_document_storage.existing_keys.add(key)
 
@@ -450,8 +463,6 @@ async def test_other_approved_attestor_gets_404_for_missing_own_annual_summary(
     del clean_state
     owner = await _make_user("attestor", "annual-owner")
     other = await _make_user("attestor", "annual-other")
-    await _approve_attestor(owner.id)
-    await _approve_attestor(other.id)
     fake_document_storage.existing_keys.add(f"annual-summaries/{owner.id}/2026.pdf")
 
     response = await client.get(

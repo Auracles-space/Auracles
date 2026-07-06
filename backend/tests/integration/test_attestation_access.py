@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -23,13 +24,16 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -80,8 +84,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationArtifactAccess))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
-            await session.execute(delete(AttestorApplication))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             from sqlalchemy import update
@@ -232,16 +237,50 @@ async def framework_artifact(
 
 
 @pytest.fixture
+async def attestor_org(attestor: User) -> tuple[UUID, UUID]:
+    """Create an active attestor org owned by ``attestor``.
+
+    Returns ``(org_id, member_id)``.
+    """
+    async with async_session_factory() as session:
+        org = Organization(
+            slug=f"access-org-{uuid4().hex[:6]}",
+            name="Access Org LLP",
+            country="US",
+            created_by=attestor.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=attestor.id, role="owner")
+        session.add(member)
+        session.add(
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=["governance"],
+                jurisdictions=["US"],
+                active=True,
+            )
+        )
+        await session.commit()
+        await session.refresh(member)
+    return org.id, member.id
+
+
+@pytest.fixture
 async def accepted_attestation(
-    framework_with_artifact: tuple[Framework, Artifact], operator: User, attestor: User
+    framework_with_artifact: tuple[Framework, Artifact],
+    operator: User,
+    attestor_org: tuple[UUID, UUID],
 ) -> Attestation:
     framework, _ = framework_with_artifact
+    org_id, member_id = attestor_org
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="framework",
             target_id=framework.id,
             requestor_id=operator.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org_id,
+            reviewing_member_id=member_id,
             status="accepted",
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -257,15 +296,17 @@ async def accepted_attestation(
 
 @pytest.fixture
 async def offered_attestation(
-    framework_with_artifact: tuple[Framework, Artifact], operator: User, attestor: User
+    framework_with_artifact: tuple[Framework, Artifact],
+    operator: User,
+    attestor_org: tuple[UUID, UUID],
 ) -> Attestation:
     framework, _ = framework_with_artifact
+    org_id, _member_id = attestor_org
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="framework",
             target_id=framework.id,
             requestor_id=operator.id,
-            attestor_id=None,
             status="offered",
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -276,7 +317,7 @@ async def offered_attestation(
 
         offer = AttestationOffer(
             attestation_id=attestation.id,
-            attestor_id=attestor.id,
+            org_id=org_id,
             cohort_index=0,
             status="offered",
             expires_at=datetime.now(UTC) + timedelta(hours=24),

@@ -22,13 +22,22 @@ from app.modules.organizations.schemas import OrgAttestationItem
 # reviewing member who staffed an org attestation.
 _FORBIDDEN_FIELD_FRAGMENTS = ("reviewing_member", "reviewer_id")
 
+# Admin-scoped schemas are the sanctioned internal surface: a platform admin
+# manually staffing a needs-admin attestation supplies the reviewing member by
+# id (spec: reviewing member is visible in admin and dispute views). Those
+# request bodies are not public/requestor responses, so they are excluded from
+# the public-leak scan.
+_ADMIN_SCHEMA_PREFIX = "Admin"
+
 
 def _model_classes(module: object) -> list[type[BaseModel]]:
-    """Return every Pydantic model defined for a public attestation surface."""
+    """Return every public Pydantic model defined for an attestation surface."""
     return [
         obj
         for _, obj in inspect.getmembers(module, inspect.isclass)
-        if issubclass(obj, BaseModel) and obj is not BaseModel
+        if issubclass(obj, BaseModel)
+        and obj is not BaseModel
+        and not obj.__name__.startswith(_ADMIN_SCHEMA_PREFIX)
     ]
 
 

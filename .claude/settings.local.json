@@ -19,7 +19,9 @@
       "Bash(python -m pytest tests/integration/test_auth_sessions.py tests/integration/test_auth_roles.py -q)",
       "Bash(npm run *)",
       "Bash(PGPASSWORD=secret psql -h localhost -p 5432 -U auracles -d auracles -c \"SELECT u.email, u.email_verified, array_agg\\(r.role||':'||CASE WHEN r.approved_at IS NULL THEN 'pending' ELSE 'ok' END\\) AS roles FROM users u LEFT JOIN user_roles r ON r.user_id=u.id GROUP BY u.email, u.email_verified ORDER BY u.email LIMIT 20;\")",
-      "Bash(node scripts/repro_hang.mjs)"
+      "Bash(node scripts/repro_hang.mjs)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Purge legacy individual attestor paths from attestation services *)"
     ]
   }
 }

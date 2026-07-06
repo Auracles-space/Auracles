@@ -158,12 +158,7 @@ async def _closed_framework_attestation(
 ) -> Attestation:
     """Create a closed, eligible framework attestation with version capture."""
     contributor = await _make_user(role="contributor", prefix="contributor")
-    attestor = await _make_user(
-        role="attestor",
-        prefix="attestor",
-        display_name="Badge Attestor",
-    )
-    await _make_verified_credential(user_id=attestor.id)
+    org_id = await _make_attestor_org(name="Badge Org LLP", verification_level=4)
     framework, snapshot = await _make_framework(
         contributor_id=contributor.id,
         version=framework_version,
@@ -172,7 +167,7 @@ async def _closed_framework_attestation(
         target_type="framework",
         target_id=framework.id,
         requestor_id=contributor.id,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
         status="closed",
         outcome=outcome,
         review_type="quality",
@@ -197,12 +192,12 @@ async def _closed_operator_attestation(
 ) -> Attestation:
     """Create a closed, eligible non-framework attestation."""
     requestor = await _make_user(role="operator", prefix="requestor")
-    attestor = await _make_user(role="attestor", prefix="attestor")
+    org_id = await _make_attestor_org(name="Badge Op Org LLP", verification_level=3)
     attestation = Attestation(
         target_type="operator",
         target_id=requestor.id,
         requestor_id=requestor.id,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
         status="closed",
         outcome=outcome,
         review_type="expert",
@@ -240,7 +235,8 @@ async def test_publish_writes_snapshot_for_approved_framework(
     assert badge.outcome == "approved"
     assert badge.review_type == attestation.review_type
     assert badge.framework_id == attestation.target_id
-    assert badge.attestor_id == attestation.attestor_id
+    assert badge.attestor_id is None
+    assert badge.attestor_org_id == attestation.attestor_org_id
     assert badge.framework_version == "1.2"
     assert isinstance(badge.credentials_snapshot, list)
 

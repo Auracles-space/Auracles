@@ -64,7 +64,7 @@ async def attestation_access_scope(
         "full" for the reviewing member in a review state with an acknowledgment,
         "preview" for a cohort org's manager holding a live offer, else "none".
     """
-    # Full: reviewing member (or legacy assignee) + review-active + content ack
+    # Full: reviewing member + review-active + content ack
     actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
     if (
         actor.is_reviewing_member
@@ -85,16 +85,6 @@ async def attestation_access_scope(
         )
     )
     if offer_org is not None:
-        return "preview"
-
-    # Legacy individual cohort member with a live "offered" offer (coexistence).
-    legacy_offer_status = await db.scalar(
-        select(AttestationOffer.status).where(
-            AttestationOffer.attestation_id == attestation.id,
-            AttestationOffer.attestor_id == user.id,
-        )
-    )
-    if legacy_offer_status == "offered":
         return "preview"
 
     return "none"

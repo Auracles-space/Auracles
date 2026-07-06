@@ -287,9 +287,14 @@ class AdminAttestationDisputeResolveRequest(BaseModel):
 
 
 class AdminAttestationAssignRequest(BaseModel):
-    """Admin request body for manually assigning a needs-admin Attestation."""
+    """Admin request body for manually assigning a needs-admin Attestation.
 
-    attestor_id: UUID
+    The attestation is assigned to an attestor organization and staffed with a
+    reviewing member in the same call, mirroring org accept-and-staff.
+    """
+
+    attestor_org_id: UUID
+    reviewing_member_id: UUID
     reason: str = Field(min_length=5, max_length=4000)
     totp_code: str = Field(min_length=6, max_length=16)
 
@@ -329,7 +334,7 @@ class AttestationRequestResponse(BaseModel):
     target_type: str
     target_id: UUID
     requestor_id: UUID
-    attestor_id: UUID | None
+    attestor_org_id: UUID | None
     status: str
     outcome: str | None
     review_type: str | None = None

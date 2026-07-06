@@ -29,10 +29,14 @@ from app.modules.attestation.models import (
     AttestationRubricMethodology,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -51,7 +55,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -114,39 +120,54 @@ def _auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _make_attestor(prefix: str) -> User:
-    """Create one approved attestor with a valid current CoI."""
+async def _make_attestor_org(prefix: str) -> tuple[User, UUID, UUID]:
+    """Create an approved attestor org with an owner member holding a valid CoI.
+
+    Returns the owner ``User`` (who is the reviewing member), the org id, and the
+    owner's ``OrgMember`` id.
+    """
     user = await _make_user("attestor", prefix)
     now = datetime.now(UTC)
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"ws-org-{uuid4().hex[:6]}",
+            name="Workspace Org LLP",
+            country="US",
+            created_by=user.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=user.id, role="owner")
+        session.add(member)
         session.add(
-            AttestorProfile(
-                user_id=user.id,
+            OrgAttestorProfile(
+                org_id=org.id,
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
                 framework_categories=[],
                 active=True,
                 approved_at=now,
-                coi_declarations=[],
                 coi_signed_at=now,
                 coi_expires_at=now + timedelta(days=365),
             )
         )
         await session.commit()
-    return user
+        await session.refresh(member)
+    return user, org.id, member.id
 
 
 async def _accepted_attestation() -> tuple[User, Attestation]:
-    """Create one accepted attestation assigned to an approved attestor."""
-    attestor = await _make_attestor("attestor")
+    """Create one accepted attestation staffed to an org reviewing member."""
+    attestor, org_id, member_id = await _make_attestor_org("attestor")
     requestor = await _make_user("operator", "requestor")
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="contributor",
             target_id=uuid4(),
             requestor_id=requestor.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org_id,
+            reviewing_member_id=member_id,
             status="accepted",
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -233,7 +254,7 @@ async def test_start_review_is_idempotent(db_session) -> None:
 async def test_start_review_404_for_non_assigned(db_session) -> None:
     """A non-assigned Attestor cannot discover the workspace by ID."""
     _assigned, attestation = await _accepted_attestation()
-    intruder = await _make_attestor("intruder")
+    intruder = await _make_user("attestor", "intruder")
 
     with pytest.raises(HTTPException) as exc:
         await workspace_service.start_review(
@@ -386,7 +407,7 @@ async def test_workspace_endpoints_hide_non_assigned_attestations(
     """A non-assigned Attestor receives 404 from workspace endpoints."""
     del clean_state
     _attestor, attestation = await _accepted_attestation()
-    intruder = await _make_attestor("intruder-endpoint")
+    intruder = await _make_user("attestor", "intruder-endpoint")
 
     response = await client.post(
         f"/v1/attestations/{attestation.id}/start-review",

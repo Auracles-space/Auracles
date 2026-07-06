@@ -24,7 +24,6 @@ from app.modules.attestation.models import (
     AttestationAnnotation,
     AttestationRubricDimension,
     AttestationRubricScore,
-    AttestorProfile,
 )
 from app.modules.auth.models import User
 from app.modules.organizations.models import OrgAttestorProfile
@@ -93,39 +92,24 @@ async def _has_valid_coi(
     db: AsyncSession,
     *,
     attestation: Attestation,
-    attestor_id: UUID,
     now: datetime,
 ) -> bool:
-    """Return whether the acting attestor holds a current signed CoI.
+    """Return whether the staffed attestor org holds a current signed CoI.
 
-    For org attestations the CoI lives on the staffed org's
-    :class:`OrgAttestorProfile`; during individual-attestor coexistence the
-    legacy assignee's :class:`AttestorProfile` is consulted instead.
+    The CoI lives on the staffed org's :class:`OrgAttestorProfile`.
     """
-    if attestation.attestor_org_id is not None:
-        signed_at = await db.scalar(
-            select(OrgAttestorProfile.coi_signed_at).where(
-                OrgAttestorProfile.org_id == attestation.attestor_org_id,
-                OrgAttestorProfile.active.is_(True),
-            )
+    signed_at = await db.scalar(
+        select(OrgAttestorProfile.coi_signed_at).where(
+            OrgAttestorProfile.org_id == attestation.attestor_org_id,
+            OrgAttestorProfile.active.is_(True),
         )
-        expires_at = await db.scalar(
-            select(OrgAttestorProfile.coi_expires_at).where(
-                OrgAttestorProfile.org_id == attestation.attestor_org_id,
-                OrgAttestorProfile.active.is_(True),
-            )
+    )
+    expires_at = await db.scalar(
+        select(OrgAttestorProfile.coi_expires_at).where(
+            OrgAttestorProfile.org_id == attestation.attestor_org_id,
+            OrgAttestorProfile.active.is_(True),
         )
-    else:
-        profile = await db.scalar(
-            select(AttestorProfile).where(
-                AttestorProfile.user_id == attestor_id,
-                AttestorProfile.active.is_(True),
-            )
-        )
-        if profile is None:
-            return False
-        signed_at = profile.coi_signed_at
-        expires_at = profile.coi_expires_at
+    )
     return signed_at is not None and expires_at is not None and expires_at > now
 
 
@@ -170,7 +154,7 @@ async def start_review(
             )
 
         if not await _has_valid_coi(
-            db, attestation=attestation, attestor_id=attestor_id, now=current_time
+            db, attestation=attestation, now=current_time
         ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -143,26 +143,6 @@ def notify_consent_declined(attestation: Attestation) -> None:
     )
 
 
-def notify_offers(attestation: Attestation, offers: list[AttestationOffer]) -> None:
-    """Notify each Attestor in a newly offered cohort."""
-    for offer in offers:
-        if offer.attestor_id is None:
-            # Org offers notify org owner/admins instead (Task 6 re-point).
-            continue
-        _dispatch(
-            user_id=offer.attestor_id,
-            notification_type="attestation_offer_received",
-            title="New Attestation offer",
-            body="You have a new Attestation request to review.",
-            attestation=attestation,
-            dedupe_suffix=f"offer:{offer.id}",
-            extra_payload={
-                "offer_id": str(offer.id),
-                "cohort_index": offer.cohort_index,
-            },
-        )
-
-
 def notify_org_offer_received(
     attestation: Attestation,
     *,
@@ -194,51 +174,6 @@ def notify_org_offer_accepted(attestation: Attestation, *, org_id: UUID) -> None
         attestation=attestation,
         dedupe_suffix=f"accepted:{org_id}",
         extra_payload={"attestor_org_id": str(org_id)},
-    )
-
-
-def notify_offer_accepted(attestation: Attestation, attestor_id: UUID) -> None:
-    """Notify the requestor when an Attestor accepts the assignment."""
-    _dispatch(
-        user_id=attestation.requestor_id,
-        notification_type="attestation_accepted",
-        title="Attestation accepted",
-        body="An Attestor accepted your request and is now reviewing the target.",
-        attestation=attestation,
-        dedupe_suffix=f"accepted:{attestor_id}",
-        extra_payload={"attestor_id": str(attestor_id)},
-    )
-
-
-def notify_offer_declined(attestation: Attestation, attestor_id: UUID) -> None:
-    """Notify the requestor when an Attestor declines an offered assignment."""
-    _dispatch(
-        user_id=attestation.requestor_id,
-        notification_type="attestation_declined",
-        title="Attestation offer declined",
-        body="An Attestor declined your Attestation request.",
-        attestation=attestation,
-        dedupe_suffix=f"declined:{attestor_id}",
-        extra_payload={"attestor_id": str(attestor_id)},
-    )
-
-
-def notify_offer_expired(attestation: Attestation, offer: AttestationOffer) -> None:
-    """Notify an Attestor when their pending offer expires."""
-    if offer.attestor_id is None:
-        # Org offers notify org owner/admins instead (Task 6 re-point).
-        return
-    _dispatch(
-        user_id=offer.attestor_id,
-        notification_type="attestation_offer_expired",
-        title="Attestation offer expired",
-        body="An Attestation offer expired before it was accepted.",
-        attestation=attestation,
-        dedupe_suffix=f"offer:{offer.id}",
-        extra_payload={
-            "offer_id": str(offer.id),
-            "cohort_index": offer.cohort_index,
-        },
     )
 
 
@@ -326,27 +261,41 @@ def notify_clarification_answered(
     )
 
 
-def notify_released(attestation: Attestation, *, reason: str) -> None:
-    """Notify the assigned Attestor that escrow has been released."""
-    if attestation.attestor_id is None:
+def notify_released(
+    attestation: Attestation, *, reason: str, recipient_id: UUID | None
+) -> None:
+    """Notify the reviewing member that the org's attestation fee was released.
+
+    ``recipient_id`` is the user id of the reviewing member who performed the
+    review, resolved by the caller while the DB session is live. When no
+    reviewing member is recorded, no notification is dispatched.
+    """
+    if recipient_id is None:
         return
     _dispatch(
-        user_id=attestation.attestor_id,
+        user_id=recipient_id,
         notification_type="attestation_released",
         title="Attestation fee released",
-        body="The Attestation fee has been released to your earnings balance.",
+        body="The Attestation fee has been released to the organization's "
+        "earnings balance.",
         attestation=attestation,
         dedupe_suffix=f"attestor:{reason}",
         extra_payload={"reason": reason},
     )
 
 
-def notify_dispute_raised(attestation: Attestation) -> None:
-    """Notify the assigned Attestor that the requestor raised a dispute."""
-    if attestation.attestor_id is None:
+def notify_dispute_raised(
+    attestation: Attestation, *, recipient_id: UUID | None
+) -> None:
+    """Notify the reviewing member that the requestor raised a dispute.
+
+    ``recipient_id`` is the reviewing member's user id, resolved by the caller
+    while the DB session is live. None when no reviewing member is staffed.
+    """
+    if recipient_id is None:
         return
     _dispatch(
-        user_id=attestation.attestor_id,
+        user_id=recipient_id,
         notification_type="attestation_disputed",
         title="Attestation dispute raised",
         body="The requestor disputed your submitted Attestation report.",
@@ -355,17 +304,21 @@ def notify_dispute_raised(attestation: Attestation) -> None:
     )
 
 
-def notify_dispute_resolved(attestation: Attestation, *, outcome: str) -> None:
+def notify_dispute_resolved(
+    attestation: Attestation, *, outcome: str, recipient_id: UUID | None
+) -> None:
     """Notify both parties when an Attestation dispute is resolved.
 
     Args:
         attestation: The disputed attestation.
         outcome: The resolution verdict — ``rejected``, ``upheld_refund``, or
             ``upheld_revise``.
+        recipient_id: The reviewing member's user id (attestor side), resolved
+            by the caller while the DB session is live; None when unstaffed.
     """
     recipients = [attestation.requestor_id]
-    if attestation.attestor_id is not None:
-        recipients.append(attestation.attestor_id)
+    if recipient_id is not None:
+        recipients.append(recipient_id)
     for user_id in recipients:
         _dispatch(
             user_id=user_id,
@@ -376,39 +329,6 @@ def notify_dispute_resolved(attestation: Attestation, *, outcome: str) -> None:
             dedupe_suffix=f"{outcome}:{user_id}",
             extra_payload={"outcome": outcome},
         )
-
-
-def notify_attestor_warning(user_id: UUID, *, reason: str) -> bool:
-    """Notify an attestor that an upheld dispute recorded a formal warning.
-
-    Args:
-        user_id: The warned attestor.
-        reason: Short human-readable warning reason (no PII).
-
-    Returns:
-        True if the reminder was enqueued; False if dispatch failed.
-    """
-    try:
-        dispatch_project_notification.delay(
-            user_id=str(user_id),
-            notification_type="attestor_warning_issued",
-            title="A dispute was upheld against your attestation",
-            body=(
-                "An admin upheld a dispute on one of your attestations and "
-                "recorded a formal warning. Repeated warnings trigger a review."
-            ),
-            payload={"reason": reason},
-            link=_attestor_onboarding_link(),
-            dedupe_key=f"attestor_warning_issued:{user_id}:{reason}",
-        )
-    except Exception as exc:
-        logger.bind(
-            module="attestation",
-            action="queue_attestor_warning_notification",
-            user_id=user_id,
-        ).error("notification_dispatch_failed", error=str(exc))
-        return False
-    return True
 
 
 def notify_org_attestor_warning(
@@ -461,20 +381,6 @@ def notify_refunded(attestation: Attestation, *, reason: str) -> None:
         attestation=attestation,
         dedupe_suffix=f"requestor:{reason}",
         extra_payload={"reason": reason},
-    )
-
-
-def notify_manual_assignment(attestation: Attestation, attestor_id: UUID) -> None:
-    """Notify both parties after Admin manually assigns an Attestor."""
-    notify_offer_accepted(attestation, attestor_id)
-    _dispatch(
-        user_id=attestor_id,
-        notification_type="attestation_assigned",
-        title="Attestation assigned",
-        body="Admin assigned you to an Attestation request.",
-        attestation=attestation,
-        dedupe_suffix=f"manual:{attestor_id}",
-        extra_payload={"attestor_id": str(attestor_id)},
     )
 
 
