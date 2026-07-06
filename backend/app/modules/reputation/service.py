@@ -26,7 +26,6 @@ VALID_SUBJECT_TYPES = (
     "framework",
     "contributor",
     "operator",
-    "attestor",
     "attestor_org",
 )
 
@@ -168,7 +167,6 @@ async def subject_exists(
     subject's type contract (framework vs contributor vs operator) without
     applying marketplace-public filters such as published status or suspension.
     """
-    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import UserRole
     from app.modules.frameworks.models import Framework
     from app.modules.organizations.models import OrgAttestorProfile
@@ -176,13 +174,6 @@ async def subject_exists(
     if subject_type == "framework":
         return (
             await db.scalar(select(Framework.id).where(Framework.id == subject_id))
-            is not None
-        )
-    if subject_type == "attestor":
-        return (
-            await db.scalar(
-                select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
-            )
             is not None
         )
     if subject_type == "attestor_org":
@@ -210,7 +201,6 @@ async def _public_subject_exists(
     db: AsyncSession, *, subject_type: str, subject_id: UUID
 ) -> bool:
     """Return whether a reputation subject is visible on public read routes."""
-    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import User, UserRole
     from app.modules.frameworks.models import Framework
     from app.modules.organizations.models import Organization, OrgAttestorProfile
@@ -246,17 +236,6 @@ async def _public_subject_exists(
                 select(Framework.id).where(
                     Framework.contributor_id == subject_id,
                     Framework.status == "published",
-                )
-            )
-            is not None
-        )
-
-    if subject_type == "attestor":
-        return (
-            await db.scalar(
-                select(AttestorProfile.id).where(
-                    AttestorProfile.user_id == subject_id,
-                    AttestorProfile.active.is_(True),
                 )
             )
             is not None

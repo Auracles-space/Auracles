@@ -28,7 +28,6 @@ _FACTOR_FN = {
     "framework": factors.framework_factors,
     "contributor": factors.contributor_factors,
     "operator": factors.operator_factors,
-    "attestor": factors.attestor_factors,
     "attestor_org": factors.org_attestor_factors,
 }
 
@@ -38,7 +37,7 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
 
     Args:
         subject_type: One of ``framework``, ``contributor``, ``operator``,
-            ``attestor``.
+            ``attestor_org``.
         subject_id: UUID of the subject to score.
     """
     async with async_session_factory() as db:
@@ -52,17 +51,7 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
                 subject_id=subject_id,
                 result=result,
             )
-            if subject_type == "attestor":
-                from app.modules.attestation.certification_service import (
-                    evaluate_attestor_certification,
-                )
-
-                await evaluate_attestor_certification(
-                    db,
-                    attestor_id=subject_id,
-                    cfg=cfg,
-                )
-            elif subject_type == "attestor_org":
+            if subject_type == "attestor_org":
                 from app.modules.attestation.certification_service import (
                     evaluate_org_attestor_certification,
                 )
@@ -76,7 +65,6 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
 
 async def _recompute_all_impl() -> dict[str, int]:
     """Recompute every scorable subject; frameworks first for contributor rollups."""
-    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import UserRole
     from app.modules.organizations.models import OrgAttestorProfile
 
@@ -84,7 +72,6 @@ async def _recompute_all_impl() -> dict[str, int]:
         "framework": 0,
         "contributor": 0,
         "operator": 0,
-        "attestor": 0,
         "attestor_org": 0,
     }
     async with async_session_factory() as db:
@@ -117,17 +104,6 @@ async def _recompute_all_impl() -> dict[str, int]:
             .scalars()
             .all()
         )
-        attestor_ids = (
-            (
-                await db.execute(
-                    select(AttestorProfile.user_id).where(
-                        AttestorProfile.active.is_(True)
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
         attestor_org_ids = (
             (
                 await db.execute(
@@ -151,9 +127,6 @@ async def _recompute_all_impl() -> dict[str, int]:
     for oid in set(operator_ids):
         await recompute_subject(subject_type="operator", subject_id=oid)
         counts["operator"] += 1
-    for aid in set(attestor_ids):
-        await recompute_subject(subject_type="attestor", subject_id=aid)
-        counts["attestor"] += 1
     for org_id in set(attestor_org_ids):
         await recompute_subject(subject_type="attestor_org", subject_id=org_id)
         counts["attestor_org"] += 1

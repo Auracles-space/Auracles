@@ -119,10 +119,6 @@ async def submit_rating(
         recompute_subject_task.delay(
             "attestor_org", str(attestation.attestor_org_id)
         )
-    elif attestation.attestor_id is not None:
-        from app.workers.tasks.reputation import recompute_subject_task
-
-        recompute_subject_task.delay("attestor", str(attestation.attestor_id))
     return rating
 
 
