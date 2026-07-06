@@ -1200,6 +1200,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/content-ack:
+    post:
+      tags:
+      - Attestation
+      summary: Acknowledge content use before review
+      description: Record the staffed reviewing member's binding content-use acknowledgment,
+        unlocking full framework-content access and the review workspace.
+      operationId: acknowledge_attestation_content_v1_attestations__attestation_id__content_ack_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationAcceptRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/rubric/{dimension_key}:
     put:
       tags:

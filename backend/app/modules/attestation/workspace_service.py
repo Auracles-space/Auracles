@@ -192,6 +192,71 @@ async def start_review(
     return attestation
 
 
+async def acknowledge_content(
+    db: AsyncSession,
+    *,
+    attestor: User,
+    attestation_id: UUID,
+    content_ack: bool,
+    ack_version: str,
+) -> Attestation:
+    """Record the staffed reviewing member's content-use acknowledgment.
+
+    Org attestations are staffed through accept-and-staff, which assigns the
+    reviewing member but does not acknowledge content use on their behalf. The
+    reviewing member records that binding acknowledgment here, unlocking full
+    framework-content access and, in turn, ``start_review``. Idempotent: once
+    acknowledged, re-acknowledging returns the row unchanged.
+
+    Args:
+        db: Async database session.
+        attestor: Authenticated caller (must be the reviewing member).
+        attestation_id: Accepted attestation to acknowledge.
+        content_ack: The caller's affirmative content-use acknowledgment.
+        ack_version: Version string of the acknowledged content-use terms.
+
+    Returns:
+        The attestation row carrying the recorded acknowledgment.
+
+    Raises:
+        HTTPException: 404 when the attestation is hidden from the caller, 403
+            when an org owner/admin (read-only) attempts the write, 409 outside
+            the ``accepted`` state, or 422 when ``content_ack`` is not affirmed.
+    """
+    if not content_ack:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Content-use acknowledgment is required.",
+        )
+    attestor_id = attestor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    current_time = datetime.now(UTC)
+    async with db.begin():
+        attestation = await load_workspace_attestation(
+            db,
+            attestation_id=attestation_id,
+            user_id=attestor_id,
+            allowed_statuses={"accepted"},
+        )
+        if attestation.content_ack_at is not None:
+            return attestation
+        attestation.content_ack_at = current_time
+        attestation.content_ack_version = ack_version
+        await write_audit(
+            db=db,
+            actor_id=attestor_id,
+            action="attestation_content_acknowledged",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"ack_version": ack_version},
+        )
+
+    await db.refresh(attestation)
+    return attestation
+
+
 async def upsert_rubric_score(
     db: AsyncSession,
     *,

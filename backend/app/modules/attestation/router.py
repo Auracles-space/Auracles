@@ -338,6 +338,33 @@ async def start_attestation_review(
     return AttestationRequestResponse.model_validate(attestation)
 
 
+@router.post(
+    "/attestations/{attestation_id}/content-ack",
+    response_model=AttestationRequestResponse,
+    summary="Acknowledge content use before review",
+    description=(
+        "Record the staffed reviewing member's binding content-use "
+        "acknowledgment, unlocking full framework-content access and the "
+        "review workspace."
+    ),
+)
+async def acknowledge_attestation_content(
+    attestation_id: UUID,
+    payload: AttestationAcceptRequest,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Record the reviewing member's content-use acknowledgment."""
+    attestation = await workspace_service.acknowledge_content(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        content_ack=payload.content_ack,
+        ack_version=payload.ack_version,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
 @router.put(
     "/attestations/{attestation_id}/rubric/{dimension_key}",
     response_model=RubricScoreResponse,
