@@ -120,9 +120,13 @@ export type AdminAnalyticsWindowCounts = {
 
 /**
  * Admin request body for manually assigning a needs-admin Attestation.
+ *
+ * The attestation is assigned to an attestor organization and staffed with a
+ * reviewing member in the same call, mirroring org accept-and-staff.
  */
 export type AdminAttestationAssignRequest = {
-    attestor_id: string;
+    attestor_org_id: string;
+    reviewing_member_id: string;
     reason: string;
     totp_code: string;
 };
@@ -465,13 +469,13 @@ export type AdminRarityBlockOverrideRequest = {
  * Request body for an audited single-subject reputation recompute.
  */
 export type AdminReputationRecomputeRequest = {
-    subject_type: 'framework' | 'contributor' | 'operator' | 'attestor';
+    subject_type: 'framework' | 'contributor' | 'operator' | 'attestor_org';
     subject_id: string;
     reason: string;
     totp_code: string;
 };
 
-export type subject_type = 'framework' | 'contributor' | 'operator' | 'attestor';
+export type subject_type = 'framework' | 'contributor' | 'operator' | 'attestor_org';
 
 /**
  * Acknowledgement that a recompute was queued.
@@ -789,13 +793,21 @@ export type AttestationArtifactAccessResponse = {
 
 /**
  * Full version-locked attestation badge for the framework page.
+ *
+ * Presents attestor-org identity for org-attested badges (``attestor_org_id`` /
+ * ``attestor_org_slug`` set, ``attestor_id`` null) and legacy individual
+ * identity for pre-org badges (``attestor_id`` set, org fields null). Never
+ * exposes the reviewing member who performed an org attestation.
  */
 export type AttestationBadgeDetail = {
     id: string;
     review_type: string;
     outcome: 'approved' | 'conditional' | 'rejected';
-    attestor_id: string;
+    attestor_id?: (string | null);
+    attestor_org_id?: (string | null);
+    attestor_org_slug?: (string | null);
     attestor_display_name: string;
+    verification_level?: (number | null);
     credentials?: Array<PublicCredentialResponse>;
     issued_at: string;
     framework_version: (string | null);
@@ -980,7 +992,7 @@ export type AttestationRequestResponse = {
     target_type: string;
     target_id: string;
     requestor_id: string;
-    attestor_id: (string | null);
+    attestor_org_id: (string | null);
     status: string;
     outcome: (string | null);
     review_type?: (string | null);
@@ -1015,126 +1027,6 @@ export type AttestationsResponse = {
 };
 
 /**
- * Admin request body for activating a fully verified Attestor.
- */
-export type AttestorActivateRequest = {
-    totp_code: string;
-};
-
-/**
- * Request body for submitting an Attestor role application.
- */
-export type AttestorApplicationCreateRequest = {
-    legal_name: string;
-    linkedin_url?: (string | null);
-    professional_body_numbers?: {
-        [key: string]: (string);
-    };
-    sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
-    jurisdictions: Array<(string)>;
-    credentials_summary: string;
-    sample_work?: {
-        [key: string]: unknown;
-    };
-    professional_references: string;
-};
-
-/**
- * Admin request body for rejecting an Attestor application.
- */
-export type AttestorApplicationRejectRequest = {
-    feedback: string;
-    totp_code: string;
-};
-
-/**
- * Attestor application details visible to its owner and admins.
- */
-export type AttestorApplicationResponse = {
-    id: string;
-    user_id: string;
-    status: string;
-    legal_name: (string | null);
-    linkedin_url: (string | null);
-    professional_body_numbers: {
-        [key: string]: (string);
-    };
-    sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
-    needs_retag: boolean;
-    jurisdictions: Array<(string)>;
-    credentials_summary: string;
-    sample_work: {
-        [key: string]: unknown;
-    };
-    professional_references: string;
-    coi_declarations: Array<CoiEntry>;
-    coi_signed_at: (string | null);
-    confidentiality_signed_at: (string | null);
-    coi_expires_at: (string | null);
-    payout_account_id: (string | null);
-    tax_document_type: (string | null);
-    tax_document_key: (string | null);
-    admin_feedback: (string | null);
-    reviewed_by: (string | null);
-    reviewed_at: (string | null);
-    created_at: string;
-};
-
-/**
- * List response for Attestor applications.
- */
-export type AttestorApplicationsResponse = {
-    applications: Array<AttestorApplicationResponse>;
-};
-
-/**
- * Request body for editing a pending Attestor application in place.
- */
-export type AttestorApplicationUpdateRequest = {
-    legal_name: string;
-    linkedin_url?: (string | null);
-    professional_body_numbers?: {
-        [key: string]: (string);
-    };
-    sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
-    jurisdictions: Array<(string)>;
-    credentials_summary: string;
-    sample_work?: {
-        [key: string]: unknown;
-    };
-    professional_references: string;
-};
-
-/**
- * Attestation offer or assignment visible to an approved Attestor.
- */
-export type AttestorAssignmentResponse = {
-    offer_id: string;
-    attestation_id: string;
-    target_type: string;
-    target_id: string;
-    attestation_status: string;
-    offer_status: string;
-    cohort_index: number;
-    requestor_flagged: boolean;
-    requested_specializations: Array<(string)>;
-    requested_jurisdictions: Array<(string)>;
-    expires_at: string;
-    accepted_at: (string | null);
-    completion_due_at: (string | null);
-};
-
-/**
- * List response for an Attestor's open offers and accepted work.
- */
-export type AttestorAssignmentsResponse = {
-    assignments: Array<AttestorAssignmentResponse>;
-};
-
-/**
  * One public entry in an Attestor's Completed Attestations list.
  */
 export type AttestorCompletedAttestation = {
@@ -1149,28 +1041,22 @@ export type AttestorCompletedAttestation = {
 export type outcome3 = 'approved' | 'conditional';
 
 /**
- * Admin request body for the credential registry cross-check gate.
- */
-export type AttestorCredentialCheckRequest = {
-    credential_id: string;
-    issuing_body: string;
-    good_standing: boolean;
-    registry_reference: string;
-    totp_code: string;
-};
-
-/**
- * Public Attestor directory row safe for anonymous browsing.
+ * Public attestor-organization directory row safe for anonymous browsing.
+ *
+ * Lists the organization's public matching profile, completed-attestation
+ * count, member count, and certification mark. Never exposes individual member
+ * identities — attestation is credited to the organization, not its reviewers.
  */
 export type AttestorDirectoryEntry = {
-    user_id: string;
-    display_name: string;
+    org_id: string;
+    name: string;
+    slug: string;
     sectors: Array<(string)>;
     framework_categories: Array<(string)>;
     jurisdictions: Array<(string)>;
     verification_level: number;
-    credentials: Array<PublicCredentialResponse>;
     completed_attestations: number;
+    member_count: number;
     reputation: (number | null);
     certified?: boolean;
 };
@@ -1180,61 +1066,6 @@ export type AttestorDirectoryEntry = {
  */
 export type AttestorDirectoryResponse = {
     attestors: Array<AttestorDirectoryEntry>;
-};
-
-/**
- * Admin request body for the KYC verification onboarding gate.
- */
-export type AttestorKycVerifyRequest = {
-    name_match: boolean;
-    totp_code: string;
-};
-
-/**
- * Request body for attaching an owned payout account to the application.
- */
-export type AttestorPayoutAttachRequest = {
-    payout_account_id: string;
-};
-
-/**
- * Request body for creating an Attestor tax-document upload session.
- */
-export type AttestorTaxDocumentRequest = {
-    tax_document_type: 'w9' | 'w8ben' | 'other';
-    file_name: string;
-    content_type: string;
-    size_bytes: number;
-};
-
-export type tax_document_type = 'w9' | 'w8ben' | 'other';
-
-/**
- * Admin request body for assigning a stubbed calibration trial.
- */
-export type AttestorTrialAssignRequest = {
-    seeded_framework_id?: (string | null);
-    totp_code: string;
-};
-
-/**
- * Admin request body for deciding a stubbed calibration trial.
- */
-export type AttestorTrialDecideRequest = {
-    passed: boolean;
-    feedback?: (string | null);
-    totp_code: string;
-};
-
-/**
- * Calibration trial details returned to admins.
- */
-export type AttestorTrialResponse = {
-    id: string;
-    application_id: string;
-    seeded_framework_id: (string | null);
-    status: string;
-    attempt: number;
 };
 
 /**
@@ -1361,14 +1192,6 @@ export type ClarificationResponse = {
 };
 
 /**
- * Request body for signing the Attestor conflict-of-interest declaration.
- */
-export type CoiDeclarationRequest = {
-    declarations: Array<CoiEntry>;
-    accept_policy: boolean;
-};
-
-/**
  * One declared conflict-of-interest relationship disclosed by an applicant.
  *
  * ``subject_id`` optionally links the declaration to a known platform entity
@@ -1457,13 +1280,6 @@ export type CollectionUpdateRequest = {
 export type ComponentHealth = {
     status: string;
     detail?: (string | null);
-};
-
-/**
- * Attestor acceptance of the one-time confidentiality / non-use agreement.
- */
-export type ConfidentialityAgreementRequest = {
-    accept: boolean;
 };
 
 /**
@@ -2500,6 +2316,7 @@ export type MyOrganizationResponse = {
     capabilities: {
         [key: string]: (string);
     };
+    nda_required?: boolean;
 };
 
 /**
@@ -2588,6 +2405,13 @@ export type NotificationsResponse = {
 };
 
 /**
+ * Accept-and-staff body naming the reviewing member for the assignment.
+ */
+export type OrgAcceptOfferRequest = {
+    reviewing_member_id: string;
+};
+
+/**
  * Request body to create an organization.
  */
 export type OrganizationCreateRequest = {
@@ -2621,6 +2445,192 @@ export type OrganizationUpdateRequest = {
     description?: (string | null);
     logo_key?: (string | null);
 };
+
+/**
+ * One org attestation with internal staffing (owner/admin/member view).
+ *
+ * ``reviewing_member_id`` is org-internal (staffing), never a public or
+ * requestor-facing field; this schema is only ever returned to org members.
+ */
+export type OrgAttestationItem = {
+    id: string;
+    target_type: string;
+    target_id: string;
+    status: string;
+    outcome: (string | null);
+    reviewing_member_id: (string | null);
+    accepted_at: (string | null);
+    completion_due_at: (string | null);
+};
+
+/**
+ * One cohort offer made to an attestor org (owner/admin view).
+ */
+export type OrgAttestationOfferItem = {
+    offer_id: string;
+    attestation_id: string;
+    target_type: string;
+    target_id: string;
+    status: string;
+    cohort_index: number;
+    match_score: (number | null);
+    offered_at: string;
+    expires_at: string;
+};
+
+/**
+ * Open and accepted cohort offers made to an attestor org.
+ */
+export type OrgAttestationOffersResponse = {
+    offers: Array<OrgAttestationOfferItem>;
+};
+
+/**
+ * An attestor org's attestation queue.
+ */
+export type OrgAttestationsResponse = {
+    attestations: Array<OrgAttestationItem>;
+};
+
+/**
+ * Slim admin-queue row for one org attestor application.
+ *
+ * Omits the heavy content and gate checklist so the queue stays cheap to
+ * render; admins open the full application for detail.
+ */
+export type OrgAttestorAdminListItem = {
+    id: string;
+    org_id: string;
+    status: string;
+    legal_name: (string | null);
+    kyb_verified_at: (string | null);
+    reviewed_at: (string | null);
+    created_at: string;
+};
+
+/**
+ * Paginated admin queue of org attestor applications.
+ */
+export type OrgAttestorAdminListResponse = {
+    applications: Array<OrgAttestorAdminListItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * Request body to open (or reapply for) an org attestor application.
+ *
+ * KYB fields (legal name, registration number, incorporation documents)
+ * are optional at draft time and gated for completeness at submit; the
+ * matching and credentials fields are required so the draft row satisfies
+ * its NOT NULL columns.
+ */
+export type OrgAttestorApplicationCreateRequest = {
+    legal_name?: (string | null);
+    registration_number?: (string | null);
+    incorporation_doc_keys?: Array<(string)>;
+    sectors: Array<(string)>;
+    framework_categories: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    credentials_summary: string;
+    sample_work?: {
+        [key: string]: unknown;
+    };
+    professional_references: string;
+};
+
+/**
+ * Org attestor application visible to org owner/admins and platform admins.
+ *
+ * Excludes no confidential reviewing-member identity (there is none on the
+ * application); the tax document key is an S3 key, not a secret.
+ */
+export type OrgAttestorApplicationResponse = {
+    id: string;
+    org_id: string;
+    status: string;
+    legal_name: (string | null);
+    registration_number: (string | null);
+    incorporation_doc_keys: Array<(string)>;
+    sectors: Array<(string)>;
+    framework_categories: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    credentials_summary: string;
+    sample_work: {
+        [key: string]: unknown;
+    };
+    professional_references: string;
+    coi_declarations: Array<CoiEntry>;
+    coi_signed_at: (string | null);
+    coi_expires_at: (string | null);
+    confidentiality_signed_at: (string | null);
+    payout_account_id: (string | null);
+    tax_document_type: (string | null);
+    tax_document_key: (string | null);
+    trial_member_id: (string | null);
+    trial_attestation_id: (string | null);
+    kyb_verified_at: (string | null);
+    admin_feedback: (string | null);
+    reviewed_at: (string | null);
+    created_at: string;
+    gate_checklist: OrgAttestorGateChecklist;
+};
+
+/**
+ * Partial edit of a draft or needs-info org attestor application.
+ *
+ * Every field is optional: only supplied fields are applied. Setting
+ * ``payout_account_id`` links an org-owned payout account to the gate.
+ */
+export type OrgAttestorApplicationUpdateRequest = {
+    legal_name?: (string | null);
+    registration_number?: (string | null);
+    incorporation_doc_keys?: (Array<(string)> | null);
+    sectors?: (Array<(string)> | null);
+    framework_categories?: (Array<(string)> | null);
+    jurisdictions?: (Array<(string)> | null);
+    credentials_summary?: (string | null);
+    sample_work?: ({
+    [key: string]: unknown;
+} | null);
+    professional_references?: (string | null);
+    payout_account_id?: (string | null);
+};
+
+/**
+ * Admin feedback body for needs-info and reject actions.
+ */
+export type OrgAttestorFeedbackRequest = {
+    feedback: string;
+};
+
+/**
+ * Per-gate readiness flags for an org attestor application.
+ *
+ * Mirrors the admin activation gates so the org can see what remains
+ * before its application can be approved.
+ */
+export type OrgAttestorGateChecklist = {
+    kyb_verified: boolean;
+    credentials_reviewed: boolean;
+    undertakings_signed: boolean;
+    payout_account_linked: boolean;
+    tax_document_uploaded: boolean;
+    trial_passed: boolean;
+};
+
+/**
+ * Request body to create a presigned tax-document upload session.
+ */
+export type OrgAttestorTaxDocumentRequest = {
+    tax_document_type: 'w9' | 'w8ben' | 'other';
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+};
+
+export type tax_document_type = 'w9' | 'w8ben' | 'other';
 
 /**
  * Admin-scoped request to invite one email address into an organization.
@@ -2662,6 +2672,27 @@ export type OrgInvitationsResponse = {
 };
 
 /**
+ * One org-attested invoice's non-sensitive metadata for list views.
+ */
+export type OrgInvoiceListItem = {
+    id: string;
+    invoice_number: string;
+    doc_type: string;
+    issue_date: string;
+    currency: string;
+    total: string;
+    source_ref_type: string;
+    source_ref_id: string;
+};
+
+/**
+ * Response body for an organization's issued invoice list.
+ */
+export type OrgInvoicesResponse = {
+    invoices: Array<OrgInvoiceListItem>;
+};
+
+/**
  * One organization member, with email hidden from plain members.
  */
 export type OrgMemberResponse = {
@@ -2688,11 +2719,47 @@ export type OrgMembersResponse = {
 };
 
 /**
+ * A member's NDA status for one organization.
+ */
+export type OrgNdaStatusResponse = {
+    required: boolean;
+    current_version: string;
+    signed_version?: (string | null);
+    signed_at?: (string | null);
+};
+
+/**
+ * Request body to nominate the member who performs the calibration trial.
+ */
+export type OrgNominateTrialMemberRequest = {
+    member_id: string;
+};
+
+/**
  * TOTP-gated request to transfer organization ownership.
  */
 export type OrgOwnershipTransferRequest = {
     new_owner_member_id: string;
     totp_code: string;
+};
+
+/**
+ * Request body for onboarding an organization payout destination.
+ *
+ * The organization's registered ``country`` is authoritative for provider
+ * routing, so — unlike the individual request — no country is accepted here.
+ */
+export type OrgPayoutAccountOnboardRequest = {
+    provider: "stripe";
+    refresh_url: string;
+    return_url: string;
+};
+
+/**
+ * Reassign the reviewing member of an accepted, not-yet-started attestation.
+ */
+export type OrgReassignReviewerRequest = {
+    reviewing_member_id: string;
 };
 
 /**
@@ -2724,6 +2791,19 @@ export type OrgTeamResponse = {
  */
 export type OrgTeamsResponse = {
     teams: Array<OrgTeamResponse>;
+};
+
+/**
+ * Owner-signed conflict-of-interest and confidentiality undertakings.
+ *
+ * TOTP-gated: signing stamps the CoI and confidentiality timestamps and
+ * sets the CoI expiry one validity period out.
+ */
+export type OrgUndertakingsSignRequest = {
+    declarations: Array<CoiEntry>;
+    accept_policy: boolean;
+    accept_confidentiality: boolean;
+    totp_code: string;
 };
 
 /**
@@ -3188,20 +3268,19 @@ export type ProfileLink = {
  * Aggregated marketplace analytics shown on the profile.
  *
  * All values are derived from public records (published Frameworks, public
- * reviews, completed attestations), not self-reported.
+ * reviews), not self-reported. Attestation is an organizational activity
+ * credited to the attestor org, so it is not advertised on individual user
+ * profiles.
  *
  * Attributes:
  * frameworks_published: Count of the user's published Frameworks.
  * reviews_received: Count of reviews across the user's Frameworks.
  * average_rating: Mean review score (1 decimal), or None if no reviews.
- * attestations_performed: Count of attestations the user completed as an
- * Attestor.
  */
 export type ProfileStats = {
     frameworks_published?: number;
     reviews_received?: number;
     average_rating?: (number | null);
-    attestations_performed?: number;
 };
 
 /**
@@ -4082,7 +4161,7 @@ export type FundAttestationV1AttestationsAttestationIdFundPostResponse = (Attest
 
 export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValidationError);
 
-export type ListPublicAttestorDirectoryV1AttestorsGetData = {
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {
         framework_category?: (string | null);
         jurisdiction?: (string | null);
@@ -4091,29 +4170,29 @@ export type ListPublicAttestorDirectoryV1AttestorsGetData = {
     };
 };
 
-export type ListPublicAttestorDirectoryV1AttestorsGetResponse = (AttestorDirectoryResponse);
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetResponse = (AttestorDirectoryResponse);
 
-export type ListPublicAttestorDirectoryV1AttestorsGetError = (HTTPValidationError);
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetError = (HTTPValidationError);
 
-export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetData = {
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetData = {
     path: {
-        user_id: string;
+        org_id: string;
     };
 };
 
-export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
 
-export type ListAttestorCompletedAttestationsV1AttestorsUserIdCompletedGetError = (HTTPValidationError);
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetError = (HTTPValidationError);
 
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetData = {
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetData = {
     path: {
-        user_id: string;
+        org_id: string;
     };
 };
 
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetResponse = (AttestorDirectoryEntry);
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetResponse = (AttestorDirectoryEntry);
 
-export type GetPublicAttestorDirectoryProfileV1AttestorsUserIdGetError = (HTTPValidationError);
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetError = (HTTPValidationError);
 
 export type GetAttestationV1AttestationsAttestationIdGetData = {
     path: {
@@ -4125,17 +4204,6 @@ export type GetAttestationV1AttestationsAttestationIdGetResponse = (AttestationR
 
 export type GetAttestationV1AttestationsAttestationIdGetError = (HTTPValidationError);
 
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostData = {
-    body: AttestationAcceptRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostResponse = (AttestationRequestResponse);
-
-export type AcceptAttestationOfferV1AttestationsAttestationIdAcceptPostError = (HTTPValidationError);
-
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData = {
     path: {
         attestation_id: string;
@@ -4145,6 +4213,17 @@ export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResponse = (AttestationRequestResponse);
 
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostData = {
+    body: AttestationAcceptRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostResponse = (AttestationRequestResponse);
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostError = (HTTPValidationError);
 
 export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutData = {
     body: RubricScoreUpsertRequest;
@@ -4235,16 +4314,6 @@ export type RespondToAttestationClarificationV1AttestationsAttestationIdClarific
 
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
 
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostResponse = (AttestationRequestResponse);
-
-export type DeclineAttestationOfferV1AttestationsAttestationIdDeclinePostError = (HTTPValidationError);
-
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
     body: AttestationEvidenceUploadCreateRequest;
     path: {
@@ -4320,164 +4389,6 @@ export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostData
 export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostResponse = (AttestationRequestResponse);
 
 export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostError = (HTTPValidationError);
-
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetResponse = (AttestorAssignmentsResponse);
-
-export type ListAttestorAssignmentsV1AttestorAssignmentsGetError = unknown;
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostData = {
-    body: AttestorApplicationCreateRequest;
-};
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostResponse = (AttestorApplicationResponse);
-
-export type SubmitAttestorApplicationV1AttestorApplicationsPostError = (HTTPValidationError);
-
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetResponse = (AttestorApplicationsResponse);
-
-export type ListMyAttestorApplicationsV1AttestorApplicationsMineGetError = unknown;
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchData = {
-    body: AttestorApplicationUpdateRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchResponse = (AttestorApplicationResponse);
-
-export type UpdateAttestorApplicationV1AttestorApplicationsApplicationIdPatchError = (HTTPValidationError);
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostData = {
-    body: CoiDeclarationRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostResponse = (AttestorApplicationResponse);
-
-export type SignAttestorApplicationCoiV1AttestorApplicationsApplicationIdCoiPostError = (HTTPValidationError);
-
-export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostData = {
-    body: ConfidentialityAgreementRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostResponse = (AttestorApplicationResponse);
-
-export type SignAttestorApplicationConfidentialityV1AttestorApplicationsApplicationIdConfidentialityPostError = (HTTPValidationError);
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostData = {
-    body: AttestorPayoutAttachRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostResponse = (AttestorApplicationResponse);
-
-export type AttachAttestorApplicationPayoutV1AttestorApplicationsApplicationIdPayoutPostError = (HTTPValidationError);
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostData = {
-    body: AttestorTaxDocumentRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type CreateAttestorTaxDocumentUploadSessionV1AttestorApplicationsApplicationIdTaxDocumentPostError = (HTTPValidationError);
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchData = {
-    path: {
-        application_id: string;
-    };
-};
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchResponse = (AttestorApplicationResponse);
-
-export type WithdrawAttestorApplicationV1AttestorApplicationsApplicationIdWithdrawPatchError = (HTTPValidationError);
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetData = {
-    query?: {
-        status?: ('submitted' | 'identity_verified' | 'professional_verified' | 'expert_verified' | 'active' | 'rejected' | 'withdrawn' | 'held' | null);
-    };
-};
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetResponse = (AttestorApplicationsResponse);
-
-export type ListAttestorApplicationsForAdminV1AdminAttestorApplicationsGetError = (HTTPValidationError);
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostData = {
-    body: AttestorApplicationRejectRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostResponse = (AttestorApplicationResponse);
-
-export type RejectAttestorApplicationV1AdminAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostData = {
-    body: AttestorKycVerifyRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostResponse = (AttestorApplicationResponse);
-
-export type VerifyAttestorApplicationKycV1AdminAttestorApplicationsApplicationIdVerifyKycPostError = (HTTPValidationError);
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostData = {
-    body: AttestorCredentialCheckRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostResponse = (AttestorApplicationResponse);
-
-export type VerifyAttestorApplicationCredentialV1AdminAttestorApplicationsApplicationIdVerifyCredentialPostError = (HTTPValidationError);
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostData = {
-    body: AttestorTrialAssignRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostResponse = (AttestorTrialResponse);
-
-export type AssignAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialPostError = (HTTPValidationError);
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostData = {
-    body: AttestorTrialDecideRequest;
-    path: {
-        application_id: string;
-        trial_id: string;
-    };
-};
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostResponse = (AttestorApplicationResponse);
-
-export type DecideAttestorApplicationTrialV1AdminAttestorApplicationsApplicationIdTrialTrialIdDecidePostError = (HTTPValidationError);
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostData = {
-    body: AttestorActivateRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostResponse = (AttestorApplicationResponse);
-
-export type ActivateAttestorApplicationV1AdminAttestorApplicationsApplicationIdActivatePostError = (HTTPValidationError);
 
 export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
 
@@ -5775,6 +5686,198 @@ export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse 
 
 export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
 
+export type GetNdaStatusV1OrgsOrgIdNdaGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetNdaStatusV1OrgsOrgIdNdaGetResponse = (OrgNdaStatusResponse);
+
+export type GetNdaStatusV1OrgsOrgIdNdaGetError = (HTTPValidationError);
+
+export type SignNdaV1OrgsOrgIdNdaSignPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type SignNdaV1OrgsOrgIdNdaSignPostResponse = (OrgNdaStatusResponse);
+
+export type SignNdaV1OrgsOrgIdNdaSignPostError = (HTTPValidationError);
+
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostData = {
+    body: OrgAttestorApplicationCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostResponse = (OrgAttestorApplicationResponse);
+
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostError = (HTTPValidationError);
+
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetResponse = (OrgAttestorApplicationResponse);
+
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetError = (HTTPValidationError);
+
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchData = {
+    body: OrgAttestorApplicationUpdateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchResponse = (OrgAttestorApplicationResponse);
+
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchError = (HTTPValidationError);
+
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostResponse = (OrgAttestorApplicationResponse);
+
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostError = (HTTPValidationError);
+
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostData = {
+    body: OrgUndertakingsSignRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostResponse = (OrgAttestorApplicationResponse);
+
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostError = (HTTPValidationError);
+
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostData = {
+    body: OrgAttestorTaxDocumentRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostError = (HTTPValidationError);
+
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostData = {
+    body: OrgNominateTrialMemberRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostResponse = (OrgAttestorApplicationResponse);
+
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostError = (HTTPValidationError);
+
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetResponse = (OrgAttestationOffersResponse);
+
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetError = (HTTPValidationError);
+
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostData = {
+    body: OrgAcceptOfferRequest;
+    path: {
+        offer_id: string;
+        org_id: string;
+    };
+};
+
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostResponse = (OrgAttestationItem);
+
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostError = (HTTPValidationError);
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostData = {
+    path: {
+        offer_id: string;
+        org_id: string;
+    };
+};
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostResponse = (OrgAttestationItem);
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostError = (HTTPValidationError);
+
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostData = {
+    body: OrgReassignReviewerRequest;
+    path: {
+        attestation_id: string;
+        org_id: string;
+    };
+};
+
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostResponse = (OrgAttestationItem);
+
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostError = (HTTPValidationError);
+
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetResponse = (OrgAttestationsResponse);
+
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetError = (HTTPValidationError);
+
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (EarningsResponse);
+
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetError = (HTTPValidationError);
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
+    body: OrgPayoutAccountOnboardRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse = (PayoutAccountOnboardResponse);
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
+    body: PayoutRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse = (PayoutResponse);
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (HTTPValidationError);
+
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetResponse = (OrgInvoicesResponse);
+
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetError = (HTTPValidationError);
+
 export type PreviewInvitationV1OrgInvitationsTokenGetData = {
     path: {
         token: string;
@@ -5826,6 +5929,100 @@ export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
 
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: (string | null);
+    };
+};
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetResponse = (OrgAttestorAdminListResponse);
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetError = (HTTPValidationError);
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostError = (HTTPValidationError);
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostData = {
+    body: OrgAttestorFeedbackRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostError = (HTTPValidationError);
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostError = (HTTPValidationError);
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostError = (HTTPValidationError);
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostData = {
+    body: OrgAttestorFeedbackRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
 
 export type GetMyProfileV1ProfilesMeGetResponse = (PublicProfileResponse);
 
