@@ -23,9 +23,9 @@ import {
   ErrorMessage,
   HeaderCard,
   splitCsv,
-} from "@/components/modules/attestation/attestation-workspaces";
+} from "@/components/modules/attestation/attestation-status";
 
-export function AttestationRequestorPanel() {
+export function RequestorPanel() {
   const [attestations, setAttestations] = useState<AttestationRequestResponse[]>([]);
   const [disputeReason, setDisputeReason] = useState("");
   const [error, setError] = useState<string | null>(null);
