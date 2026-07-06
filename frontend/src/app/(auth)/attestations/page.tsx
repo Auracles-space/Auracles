@@ -1,7 +1,7 @@
 /**
  * Authenticated requestor Attestation workspace.
  */
-import { AttestationRequestorPanel } from "@/components/modules/attestation/attestation-workspaces";
+import { AttestationRequestorPanel } from "@/components/modules/attestation/requestor-attestation-panel";
 
 /**
  * Render requestor-side Attestation request and report controls.
