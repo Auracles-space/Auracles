@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminConfigPanel } from "@/components/modules/admin/admin-config-panel";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
-import { listPlatformConfigV1AdminConfigGet } from "@/lib/generated/sdk.gen";
+import { readPlatformConfig } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -22,8 +22,8 @@ vi.mock("@/lib/auth/current-user-session", () => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  listPlatformConfigV1AdminConfigGet: vi.fn(),
-  updatePlatformConfigV1AdminConfigPatch: vi.fn(),
+  readPlatformConfig: vi.fn(),
+  updatePlatformConfig: vi.fn(),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -52,9 +52,9 @@ const configItems = [
 
 describe("AdminConfigPanel", () => {
   beforeEach(() => {
-    vi.mocked(listPlatformConfigV1AdminConfigGet).mockReset();
+    vi.mocked(readPlatformConfig).mockReset();
     vi.mocked(loadCurrentUserSession).mockReset();
-    vi.mocked(listPlatformConfigV1AdminConfigGet).mockResolvedValue(
+    vi.mocked(readPlatformConfig).mockResolvedValue(
       ok({ items: configItems }),
     );
     vi.mocked(loadCurrentUserSession).mockResolvedValue({
