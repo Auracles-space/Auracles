@@ -1,4 +1,4 @@
-"""Unit tests for annual attestor earnings summaries (Module 6d)."""
+"""Unit tests for annual org attestor earnings summaries (Module 6d)."""
 
 from __future__ import annotations
 
@@ -23,6 +23,11 @@ from app.modules.invoicing.models import Invoice, InvoiceCounter
 from app.modules.notifications.models import (
     Notification,
     NotificationDeliveryMarker,
+)
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
 )
 from app.workers.tasks import invoicing_beat, project_notifications
 
@@ -106,6 +111,9 @@ def annual_summary_context(
             session.execute(delete(Attestation))
             session.execute(delete(Escrow))
             session.execute(delete(Transaction))
+            session.execute(delete(OrgAttestorProfile))
+            session.execute(delete(OrgMember))
+            session.execute(delete(Organization))
             session.execute(delete(UserRole))
             session.execute(delete(User))
             session.commit()
@@ -117,10 +125,10 @@ def annual_summary_context(
         lambda **kwargs: b"%PDF-ANNUAL-SUMMARY%",
     )
     monkeypatch.setattr(
-        invoicing_beat.generate_annual_earnings_summary,
+        invoicing_beat.generate_annual_org_earnings_summary,
         "delay",
-        lambda attestor_id, year: invoicing_beat.generate_annual_earnings_summary.apply(
-            args=[attestor_id, year]
+        lambda org_id, year: invoicing_beat.generate_annual_org_earnings_summary.apply(
+            args=[org_id, year]
         ).get(),
     )
     monkeypatch.setattr(
@@ -189,20 +197,53 @@ def _create_user(
         return user.id
 
 
+def _create_attestor_org(
+    session_factory: sessionmaker,
+    *,
+    owner_id: UUID,
+    name: str,
+) -> UUID:
+    """Create one active attestor org with an owner member."""
+    with session_factory() as session:
+        org = Organization(
+            slug=f"annual-org-{uuid4().hex[:6]}",
+            name=name,
+            country="US",
+            created_by=owner_id,
+        )
+        session.add(org)
+        session.flush()
+        session.add(OrgMember(org_id=org.id, user_id=owner_id, role="owner"))
+        session.add(
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=["tax"],
+                jurisdictions=["US"],
+                sectors=["tax"],
+                framework_categories=[],
+                active=True,
+                approved_at=datetime.now(UTC),
+                verification_level=4,
+            )
+        )
+        session.commit()
+        return org.id
+
+
 def _seed_closed_attestation_fee(
     session_factory: sessionmaker,
     *,
-    attestor_id: UUID,
+    org_id: UUID,
     requestor_id: UUID,
     closed_at: datetime,
 ) -> None:
-    """Seed one closed attestation with a released fee escrow."""
+    """Seed one closed org attestation with a released fee escrow."""
     with session_factory() as session:
         attestation = Attestation(
             target_type="framework",
             target_id=uuid4(),
             requestor_id=requestor_id,
-            attestor_id=attestor_id,
+            attestor_org_id=org_id,
             status="closed",
             outcome="approved",
             review_type="expert",
@@ -217,7 +258,7 @@ def _seed_closed_attestation_fee(
         session.flush()
         transaction = Transaction(
             payer_id=requestor_id,
-            payee_id=None,
+            payee_org_id=org_id,
             amount=Decimal("500.00"),
             currency="USD",
             platform_commission=Decimal("0.00"),
@@ -252,22 +293,22 @@ def _seed_closed_attestation_fee(
 def test_generates_summary_per_earner_not_for_zero(
     annual_summary_context: dict[str, object],
 ) -> None:
-    """Beat run renders one PDF per prior-year earner and skips zero earners."""
+    """Beat run renders one PDF per prior-year org earner and skips zero earners."""
     session_factory = annual_summary_context["session_factory"]
     assert isinstance(session_factory, sessionmaker)
-    attestor_a = _create_user(
+    owner_a = _create_user(
         session_factory,
-        email="annual-attestor-a@auracles.space",
+        email="annual-owner-a@auracles.space",
         roles=["attestor"],
     )
-    attestor_b = _create_user(
+    owner_b = _create_user(
         session_factory,
-        email="annual-attestor-b@auracles.space",
+        email="annual-owner-b@auracles.space",
         roles=["attestor"],
     )
-    zero_earner = _create_user(
+    owner_zero = _create_user(
         session_factory,
-        email="annual-zero@auracles.space",
+        email="annual-owner-zero@auracles.space",
         roles=["attestor"],
     )
     requestor = _create_user(
@@ -275,15 +316,18 @@ def test_generates_summary_per_earner_not_for_zero(
         email="annual-requestor@auracles.space",
         roles=["operator"],
     )
+    org_a = _create_attestor_org(session_factory, owner_id=owner_a, name="Org A LLP")
+    org_b = _create_attestor_org(session_factory, owner_id=owner_b, name="Org B LLP")
+    _create_attestor_org(session_factory, owner_id=owner_zero, name="Org Zero LLP")
     _seed_closed_attestation_fee(
         session_factory,
-        attestor_id=attestor_a,
+        org_id=org_a,
         requestor_id=requestor,
         closed_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
     _seed_closed_attestation_fee(
         session_factory,
-        attestor_id=attestor_b,
+        org_id=org_b,
         requestor_id=requestor,
         closed_at=datetime(2026, 9, 15, tzinfo=UTC),
     )
@@ -294,21 +338,22 @@ def test_generates_summary_per_earner_not_for_zero(
     assert isinstance(storage, FakeSummaryStorage)
     keys = {key for (_bucket, key, _body, _mime) in storage.uploads}
     assert result["year"] == 2026
-    assert f"annual-summaries/{attestor_a}/2026.pdf" in keys
-    assert f"annual-summaries/{attestor_b}/2026.pdf" in keys
-    assert not any(str(zero_earner) in key for key in keys)
+    assert f"annual-summaries/org/{org_a}/2026.pdf" in keys
+    assert f"annual-summaries/org/{org_b}/2026.pdf" in keys
+    assert not any("zero" in key.lower() for key in keys)
+    assert result["earner_count"] == 2
 
 
 @freeze_time("2027-01-02")
 def test_summary_generation_is_idempotent_for_key_and_notification(
     annual_summary_context: dict[str, object],
 ) -> None:
-    """Re-running one annual summary overwrites the key and dedupes fanout."""
+    """Re-running one annual org summary overwrites the key and dedupes fanout."""
     session_factory = annual_summary_context["session_factory"]
     assert isinstance(session_factory, sessionmaker)
-    attestor = _create_user(
+    owner = _create_user(
         session_factory,
-        email="annual-repeat@auracles.space",
+        email="annual-repeat-owner@auracles.space",
         roles=["attestor"],
     )
     requestor = _create_user(
@@ -316,18 +361,19 @@ def test_summary_generation_is_idempotent_for_key_and_notification(
         email="annual-repeat-requestor@auracles.space",
         roles=["operator"],
     )
+    org = _create_attestor_org(session_factory, owner_id=owner, name="Repeat LLP")
     _seed_closed_attestation_fee(
         session_factory,
-        attestor_id=attestor,
+        org_id=org,
         requestor_id=requestor,
         closed_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
 
-    first = invoicing_beat.generate_annual_earnings_summary.apply(
-        args=[str(attestor), 2026]
+    first = invoicing_beat.generate_annual_org_earnings_summary.apply(
+        args=[str(org), 2026]
     ).get()
-    second = invoicing_beat.generate_annual_earnings_summary.apply(
-        args=[str(attestor), 2026]
+    second = invoicing_beat.generate_annual_org_earnings_summary.apply(
+        args=[str(org), 2026]
     ).get()
 
     assert first["status"] == "generated"
@@ -337,18 +383,18 @@ def test_summary_generation_is_idempotent_for_key_and_notification(
     assert isinstance(storage, FakeSummaryStorage)
     uploaded_keys = [key for (_bucket, key, _body, _mime) in storage.uploads]
     assert uploaded_keys == [
-        f"annual-summaries/{attestor}/2026.pdf",
-        f"annual-summaries/{attestor}/2026.pdf",
+        f"annual-summaries/org/{org}/2026.pdf",
+        f"annual-summaries/org/{org}/2026.pdf",
     ]
 
     email_task = annual_summary_context["email_task"]
     assert isinstance(email_task, FakeNotificationEmailTask)
     assert len(email_task.calls) == 1
-    assert email_task.calls[0]["link"] == "/attestations"
+    assert email_task.calls[0]["link"] == "/orgs"
 
     with session_factory() as session:
         notifications = session.query(Notification).filter(
-            Notification.user_id == attestor,
-            Notification.dedupe_key == f"attestation_annual_summary:{attestor}:2026",
+            Notification.user_id == owner,
+            Notification.dedupe_key == f"attestation_annual_summary:org:{org}:2026",
         )
         assert notifications.count() == 1

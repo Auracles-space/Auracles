@@ -22,7 +22,6 @@ from weasyprint import HTML  # type: ignore[import-untyped]
 
 from app.core.database import async_session_factory
 from app.modules.attestation.models import Attestation
-from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.organizations.models import (
     Organization,
@@ -121,68 +120,6 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     return Decimal(value)
 
 
-async def annual_earner_ids(db: AsyncSession, year: int) -> list[UUID]:
-    """Return attestors with at least one closed attestation fee in the year."""
-    year_start = datetime(year, 1, 1, tzinfo=UTC)
-    year_end = datetime(year + 1, 1, 1, tzinfo=UTC)
-    rows = await db.scalars(
-        select(Attestation.attestor_id)
-        .join(
-            Transaction,
-            (Transaction.ref_id == Attestation.id)
-            & (Transaction.ref_type == "attestation")
-            & (Transaction.transaction_type == "attestation_fee"),
-        )
-        .where(
-            Attestation.attestor_id.is_not(None),
-            Attestation.status == "closed",
-            Attestation.closed_at.is_not(None),
-            Attestation.closed_at >= year_start,
-            Attestation.closed_at < year_end,
-        )
-        .distinct()
-    )
-    return [attestor_id for attestor_id in rows if attestor_id is not None]
-
-
-async def _annual_earner_ids(year: int) -> list[UUID]:
-    """Open a session and return annual earner ids for the year."""
-    async with async_session_factory() as db:
-        return await annual_earner_ids(db, year)
-
-
-async def annual_line_items(
-    db: AsyncSession,
-    *,
-    attestor_id: UUID,
-    year: int,
-) -> tuple[list[dict[str, str]], dict[str, str | int]]:
-    """Return annual summary line items and total rows for one attestor."""
-    year_start = datetime(year, 1, 1, tzinfo=UTC)
-    year_end = datetime(year + 1, 1, 1, tzinfo=UTC)
-    commission_rate = await _attestation_commission_rate(db)
-    rows = (
-        await db.execute(
-            select(Attestation, Transaction)
-            .join(
-                Transaction,
-                (Transaction.ref_id == Attestation.id)
-                & (Transaction.ref_type == "attestation")
-                & (Transaction.transaction_type == "attestation_fee"),
-            )
-            .where(
-                Attestation.attestor_id == attestor_id,
-                Attestation.status == "closed",
-                Attestation.closed_at.is_not(None),
-                Attestation.closed_at >= year_start,
-                Attestation.closed_at < year_end,
-            )
-            .order_by(Attestation.closed_at, Attestation.id)
-        )
-    ).all()
-    return _summarise_rows(rows, commission_rate)
-
-
 def _summarise_rows(
     rows: Sequence[Row[tuple[Attestation, Transaction]]],
     commission_rate: Decimal,
@@ -218,14 +155,6 @@ def _summarise_rows(
         "net_amount": f"{net_total.quantize(_CENTS)} USD",
     }
     return line_items, totals
-
-
-async def attestor_name(db: AsyncSession, attestor_id: UUID) -> str:
-    """Return the display name for one attestor."""
-    name = await db.scalar(select(User.display_name).where(User.id == attestor_id))
-    if name is None:
-        raise ValueError("Attestor not found.")
-    return name
 
 
 def annual_org_summary_key(org_id: UUID, year: int) -> str:

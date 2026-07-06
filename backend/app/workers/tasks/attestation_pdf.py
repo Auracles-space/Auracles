@@ -22,8 +22,6 @@ from app.modules.attestation.models import (
     AttestationRubricDimension,
     AttestationRubricMethodology,
     AttestationRubricScore,
-    AttestorProfile,
-    Credential,
 )
 from app.modules.auth.models import User
 from app.modules.organizations.models import Organization, OrgAttestorProfile
@@ -169,56 +167,27 @@ async def _report_attestor_identity(
     db: Any,
     *,
     attestation: Attestation,
-    attestor_user: User | None,
-    profile: AttestorProfile | None,
 ) -> dict[str, Any]:
     """Resolve the attestor-identity block for the report PDF.
 
-    Org attestations present the organization's name and snapshotted verification
-    level with no email (organizations carry no billing email, and the report is
-    a shared document) and no individual credentials — the report never names the
-    reviewing member. Legacy individual attestations present the assignee's name,
-    email, verification level, and verified credentials.
-
-    Raises:
-        ValueError: A legacy individual attestation has no resolvable attestor.
+    Reports present the organization's name and snapshotted verification level
+    with no email (organizations carry no billing email, and the report is a
+    shared document) and no individual credentials — the report never names the
+    reviewing member.
     """
-    if attestation.attestor_org_id is not None:
-        org = await db.scalar(
-            select(Organization).where(Organization.id == attestation.attestor_org_id)
+    org = await db.scalar(
+        select(Organization).where(Organization.id == attestation.attestor_org_id)
+    )
+    level = await db.scalar(
+        select(OrgAttestorProfile.verification_level).where(
+            OrgAttestorProfile.org_id == attestation.attestor_org_id
         )
-        level = await db.scalar(
-            select(OrgAttestorProfile.verification_level).where(
-                OrgAttestorProfile.org_id == attestation.attestor_org_id
-            )
-        )
-        return {
-            "name": org.name if org is not None else "Attestor",
-            "email": None,
-            "verification_level": level if level is not None else 1,
-            "credentials": [],
-        }
-
-    if attestor_user is None:
-        raise ValueError("Attestation report attestor not found.")
-    credentials = (
-        (
-            await db.execute(
-                select(Credential)
-                .where(Credential.user_id == attestor_user.id)
-                .order_by(Credential.issued_date.desc(), Credential.id)
-            )
-        )
-        .scalars()
-        .all()
     )
     return {
-        "name": attestor_user.display_name,
-        "email": attestor_user.email,
-        "verification_level": profile.verification_level if profile is not None else 1,
-        "credentials": [
-            f"{credential.title} ({credential.issuer})" for credential in credentials
-        ],
+        "name": org.name if org is not None else "Attestor",
+        "email": None,
+        "verification_level": level if level is not None else 1,
+        "credentials": [],
     }
 
 
@@ -226,14 +195,11 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
     """Load one submitted attestation and assemble the report-render context."""
     parsed_attestation_id = UUID(attestation_id)
     requestor = aliased(User)
-    attestor = aliased(User)
 
     async with async_session_factory() as db:
         row = await db.execute(
-            select(Attestation, requestor, attestor, AttestorProfile)
+            select(Attestation, requestor)
             .join(requestor, requestor.id == Attestation.requestor_id)
-            .outerjoin(attestor, attestor.id == Attestation.attestor_id)
-            .outerjoin(AttestorProfile, AttestorProfile.user_id == attestor.id)
             .where(
                 Attestation.id == parsed_attestation_id,
                 Attestation.status.in_(("report_submitted", "released", "closed")),
@@ -242,7 +208,7 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         report_row = row.one_or_none()
         if report_row is None:
             raise ValueError("Attestation report not found.")
-        attestation, requestor_user, attestor_user, profile = report_row
+        attestation, requestor_user = report_row
         if (
             attestation.summary is None
             or attestation.scope is None
@@ -254,8 +220,6 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         attestor_identity = await _report_attestor_identity(
             db,
             attestation=attestation,
-            attestor_user=attestor_user,
-            profile=profile,
         )
 
         rubric_version = attestation.rubric_version or rubrics.RUBRIC_VERSION
