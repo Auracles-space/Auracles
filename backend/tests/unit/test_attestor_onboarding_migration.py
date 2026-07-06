@@ -19,30 +19,9 @@ def test_onboarding_migration_upgrades_and_downgrades() -> None:
     try:
         command.upgrade(cfg, "head")
         insp = inspect(engine)
-        app_cols = {c["name"] for c in insp.get_columns("attestor_applications")}
-        assert {
-            "legal_name",
-            "linkedin_url",
-            "professional_body_numbers",
-            "cv_file_key",
-            "coi_declarations",
-            "coi_signed_at",
-            "coi_expires_at",
-            "sectors",
-            "framework_categories",
-            "needs_retag",
-            "kyc_verified_at",
-            "kyc_name_match",
-        } <= app_cols
-        prof_cols = {c["name"] for c in insp.get_columns("attestor_profiles")}
-        assert {
-            "verification_level",
-            "sectors",
-            "framework_categories",
-            "coi_declarations",
-            "coi_signed_at",
-            "coi_expires_at",
-        } <= prof_cols
+        # The individual attestor_applications / attestor_profiles tables the
+        # onboarding migration created were retired in the org-attestor drop
+        # migration; only the retained onboarding effects are asserted here.
         cred_cols = {c["name"] for c in insp.get_columns("credentials")}
         assert {
             "issuing_body",

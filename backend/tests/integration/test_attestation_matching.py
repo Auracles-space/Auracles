@@ -36,8 +36,6 @@ from app.modules.attestation.models import (
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
     AttestorWarning,
     Credential,
 )
@@ -171,8 +169,6 @@ async def reset_matching_state() -> None:
             await session.execute(delete(AttestorWarning))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
-            await session.execute(delete(AttestorApplication))
             await session.execute(delete(Milestone))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
@@ -246,30 +242,6 @@ async def create_admin_user() -> tuple[UUID, str]:
                 )
             )
         return user.id, secret
-
-
-async def create_attestor_profile(
-    user_id: UUID,
-    *,
-    specializations: list[str],
-    jurisdictions: list[str],
-    approved_at: datetime | None = None,
-) -> None:
-    """Create one active approved matching profile with a valid signed CoI."""
-    now = datetime.now(UTC)
-    async with async_session_factory() as session:
-        async with session.begin():
-            session.add(
-                AttestorProfile(
-                    user_id=user_id,
-                    specializations=specializations,
-                    jurisdictions=jurisdictions,
-                    active=True,
-                    approved_at=approved_at or now,
-                    coi_signed_at=now,
-                    coi_expires_at=now + timedelta(days=365),
-                )
-            )
 
 
 async def create_org_attestor(
@@ -560,7 +532,6 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     assert attestation.status == "accepted"
     assert attestation.attestor_org_id == first_org
     assert attestation.reviewing_member_id == first_member
-    assert attestation.attestor_id is None
     assert attestation.accepted_at is not None
     assert attestation.completion_due_at is not None
     assert transaction is not None
@@ -670,11 +641,10 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
     """Offer expiry closes stale offers and escalates when no cohort remains."""
     del migrated_database, matching_context
     requestor_id = await create_user("expiry-requestor@auracles.space", ["operator"])
-    attestor_id = await create_user("expiry-attestor@auracles.space", ["attestor"])
-    await create_attestor_profile(
-        attestor_id,
+    org_id, _attestor_id, _member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
+        slug_prefix="expiry",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     current_time = datetime.now(UTC)
@@ -690,7 +660,7 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
             session.add(
                 AttestationOffer(
                     attestation_id=attestation_id,
-                    attestor_id=attestor_id,
+                    org_id=org_id,
                     cohort_index=0,
                     status="offered",
                     offered_at=current_time - timedelta(hours=49),
@@ -928,23 +898,15 @@ async def test_unassigned_attestor_cannot_submit_report(
         "report-denied-requestor@auracles.space",
         ["operator"],
     )
-    assigned_attestor_id = await create_user(
-        "report-denied-assigned@auracles.space",
-        ["attestor"],
+    org_id, _assigned_attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="report-denied",
     )
+    # A verified attestor who is not a member of the staffed org.
     unassigned_attestor_id = await create_user(
         "report-denied-unassigned@auracles.space",
         ["attestor"],
-    )
-    await create_attestor_profile(
-        assigned_attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-    )
-    await create_attestor_profile(
-        unassigned_attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     current_time = datetime.now(UTC)
@@ -956,11 +918,12 @@ async def test_unassigned_attestor_cannot_submit_report(
             assert attestation is not None
             assert transaction is not None
             attestation.status = "accepted"
-            attestation.attestor_id = assigned_attestor_id
+            attestation.attestor_org_id = org_id
+            attestation.reviewing_member_id = member_id
             attestation.accepted_at = current_time
             attestation.completion_due_at = current_time + timedelta(days=7)
             transaction.status = "completed"
-            transaction.payee_id = assigned_attestor_id
+            transaction.payee_id = None
 
     upload_response = await client.post(
         f"/v1/attestations/{attestation_id}/uploads",

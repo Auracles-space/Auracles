@@ -39,23 +39,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 from app.shared.models.base import CreatedAtMixin, UpdatedAtMixin
 
-ATTESTOR_APPLICATION_STATUS_ENUM = ENUM(
-    "pending",
-    "approved",
-    "rejected",
-    "withdrawn",
-    # Module 1 onboarding gate states, added via ALTER TYPE ... ADD VALUE in
-    # migration 2026_06_29_0041. "pending"/"approved" are kept for any rows
-    # not touched by that migration's backfill (none expected going forward).
-    "submitted",
-    "identity_verified",
-    "professional_verified",
-    "expert_verified",
-    "active",
-    "held",
-    name="attestor_application_status_enum",
-    create_type=False,
-)
 ATTESTATION_TARGET_ENUM = ENUM(
     "framework",
     "contributor",
@@ -195,206 +178,6 @@ ATTESTOR_CREDENTIAL_BODY_ENUM = ENUM(
     name="attestor_credential_body_enum",
     create_type=False,
 )
-TAX_DOCUMENT_TYPE_ENUM = ENUM(
-    "w9",
-    "w8ben",
-    "other",
-    name="tax_document_type_enum",
-    create_type=False,
-)
-
-
-class AttestorApplication(CreatedAtMixin, Base):
-    """Submitted Attestor role application awaiting admin review."""
-
-    __tablename__ = "attestor_applications"
-    __table_args__ = (
-        Index("idx_attestor_applications_user_status", "user_id", "status"),
-        Index(
-            "uq_attestor_applications_user_submitted",
-            "user_id",
-            unique=True,
-            postgresql_where=text("status = 'submitted'"),
-        ),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        server_default=text("gen_random_uuid()"),
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    status: Mapped[str] = mapped_column(
-        ATTESTOR_APPLICATION_STATUS_ENUM,
-        nullable=False,
-        server_default="pending",
-    )
-    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
-    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
-    credentials_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    sample_work: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    professional_references: Mapped[str] = mapped_column(Text, nullable=False)
-    admin_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reviewed_by: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=True,
-    )
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    legal_name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    linkedin_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    professional_body_numbers: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default=text("'{}'::jsonb"),
-    )
-    cv_file_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default=text("'[]'::jsonb"),
-    )
-    coi_signed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    coi_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    sectors: Mapped[list[str]] = mapped_column(
-        ARRAY(Text),
-        nullable=False,
-        server_default=text("'{}'::text[]"),
-    )
-    framework_categories: Mapped[list[str]] = mapped_column(
-        ARRAY(Text),
-        nullable=False,
-        server_default=text("'{}'::text[]"),
-    )
-    needs_retag: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        server_default=text("false"),
-    )
-    kyc_verified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    kyc_name_match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    tax_document_type: Mapped[str | None] = mapped_column(
-        TAX_DOCUMENT_TYPE_ENUM, nullable=True
-    )
-    tax_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    payout_account_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("payout_accounts.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-
-class AttestorProfile(UpdatedAtMixin, Base):
-    """Approved Attestor matching profile copied from an accepted application."""
-
-    __tablename__ = "attestor_profiles"
-    __table_args__ = (
-        Index(
-            "idx_attestor_profiles_specializations_gin",
-            "specializations",
-            postgresql_using="gin",
-        ),
-        Index(
-            "idx_attestor_profiles_jurisdictions_gin",
-            "jurisdictions",
-            postgresql_using="gin",
-        ),
-    )
-
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        server_default=text("gen_random_uuid()"),
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-    )
-    specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
-    jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
-    active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        server_default=text("true"),
-    )
-    approved_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("now()"),
-    )
-    verification_level: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        server_default=text("1"),
-    )
-    sectors: Mapped[list[str]] = mapped_column(
-        ARRAY(Text),
-        nullable=False,
-        server_default=text("'{}'::text[]"),
-    )
-    framework_categories: Mapped[list[str]] = mapped_column(
-        ARRAY(Text),
-        nullable=False,
-        server_default=text("'{}'::text[]"),
-    )
-    coi_declarations: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default=text("'[]'::jsonb"),
-    )
-    coi_signed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    confidentiality_signed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    coi_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    coi_reminder_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    late_submission_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        server_default=text("0"),
-    )
-    suspension_review_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    certified_attestor_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-
 class Credential(UpdatedAtMixin, Base):
     """User-owned professional credential that can be attested."""
 
@@ -467,7 +250,6 @@ class Attestation(UpdatedAtMixin, Base):
         CheckConstraint("currency = 'USD'", name="ck_attestations_currency_usd"),
         CheckConstraint("fee_amount > 0", name="ck_attestations_fee_amount_positive"),
         Index("idx_attestations_target", "target_type", "target_id"),
-        Index("idx_attestations_attestor_status", "attestor_id", "status"),
         Index(
             "idx_attestations_attestor_org_status",
             "attestor_org_id",
@@ -492,11 +274,6 @@ class Attestation(UpdatedAtMixin, Base):
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False,
-    )
-    attestor_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=True,
     )
     attestor_org_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -608,11 +385,6 @@ class AttestationOffer(Base):
     __table_args__ = (
         UniqueConstraint(
             "attestation_id",
-            "attestor_id",
-            name="uq_attestation_offers_attestation_attestor",
-        ),
-        UniqueConstraint(
-            "attestation_id",
             "org_id",
             name="uq_attestation_offers_attestation_org",
         ),
@@ -628,13 +400,6 @@ class AttestationOffer(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("attestations.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    # Legacy individual-attestor key; NULL for org offers, dropped in the
-    # final retirement migration.
-    attestor_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=True,
     )
     org_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -1066,12 +831,8 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     __tablename__ = "attestation_upload_sessions"
     __table_args__ = (
         CheckConstraint(
-            "(attestation_id IS NOT NULL AND credential_id IS NULL "
-            "AND application_id IS NULL) "
-            "OR (attestation_id IS NULL AND credential_id IS NOT NULL "
-            "AND application_id IS NULL) "
-            "OR (attestation_id IS NULL AND credential_id IS NULL "
-            "AND application_id IS NOT NULL)",
+            "(attestation_id IS NOT NULL AND credential_id IS NULL) "
+            "OR (attestation_id IS NULL AND credential_id IS NOT NULL)",
             name="ck_attestation_upload_sessions_single_parent",
         ),
         UniqueConstraint("s3_key", name="uq_attestation_upload_sessions_s3_key"),
@@ -1084,12 +845,6 @@ class AttestationUploadSession(CreatedAtMixin, Base):
         Index(
             "idx_attestation_upload_sessions_credential_user_consumed",
             "credential_id",
-            "user_id",
-            "consumed_at",
-        ),
-        Index(
-            "idx_attestation_upload_sessions_application_user_consumed",
-            "application_id",
             "user_id",
             "consumed_at",
         ),
@@ -1110,11 +865,6 @@ class AttestationUploadSession(CreatedAtMixin, Base):
     credential_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("credentials.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    application_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("attestor_applications.id", ondelete="CASCADE"),
         nullable=True,
     )
     user_id: Mapped[UUID] = mapped_column(
@@ -1156,20 +906,12 @@ class AttestorTrial(CreatedAtMixin, Base):
         CheckConstraint(
             "attempt >= 1 AND attempt <= 2", name="ck_attestor_trials_attempt_range"
         ),
-        Index("idx_attestor_trials_application", "application_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
-    )
-    # Legacy individual-application key; NULL for org trials, dropped in the
-    # final retirement migration.
-    application_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("attestor_applications.id", ondelete="CASCADE"),
-        nullable=True,
     )
     org_application_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

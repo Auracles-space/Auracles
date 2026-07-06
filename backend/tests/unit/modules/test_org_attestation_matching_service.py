@@ -27,7 +27,6 @@ from app.modules.attestation import matching_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -67,7 +66,6 @@ async def _reset() -> None:
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
             await session.execute(delete(OrgAttestorProfile))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
@@ -542,7 +540,6 @@ async def test_accept_sets_org_and_member_never_attestor_id(db_session) -> None:
     assert attestation.status == "accepted"
     assert attestation.attestor_org_id == org_id
     assert attestation.reviewing_member_id == member_id
-    assert attestation.attestor_id is None
     assert attestation.completion_due_at is not None
 
 

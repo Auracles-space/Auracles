@@ -21,7 +21,11 @@
       "Bash(PGPASSWORD=secret psql -h localhost -p 5432 -U auracles -d auracles -c \"SELECT u.email, u.email_verified, array_agg\\(r.role||':'||CASE WHEN r.approved_at IS NULL THEN 'pending' ELSE 'ok' END\\) AS roles FROM users u LEFT JOIN user_roles r ON r.user_id=u.id GROUP BY u.email, u.email_verified ORDER BY u.email LIMIT 20;\")",
       "Bash(node scripts/repro_hang.mjs)",
       "Bash(git add *)",
-      "Bash(git commit -q -m 'Purge legacy individual attestor paths from attestation services *)"
+      "Bash(git commit -q -m 'Purge legacy individual attestor paths from attestation services *)",
+      "Bash(python3 -)",
+      "Bash(perl -0pi -e 's/^ *AttestorProfile,\\\\n//mg; s/^ *await session\\\\.execute\\\\\\(delete\\\\\\(AttestorProfile\\\\\\)\\\\\\)\\\\n//mg' tests/integration/test_attestation_offers.py)",
+      "Bash(perl -0pi -e 's/^ *AttestorApplication,\\\\n//mg; s/^ *AttestorProfile,\\\\n//mg' tests/unit/test_attestation_schema_foundation.py)",
+      "Bash(git rm *)"
     ]
   }
 }

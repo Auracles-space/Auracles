@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, or_, select
+from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -499,7 +499,6 @@ async def seed_blocking_state(user_id: UUID) -> None:
                 target_type="operator",
                 target_id=user_id,
                 requestor_id=user_id,
-                attestor_id=counterpart_id,
                 status="accepted",
                 fee_amount=Decimal("300.00"),
                 currency="USD",
@@ -615,10 +614,7 @@ async def clear_blocking_state(user_id: UUID) -> None:
                 (
                     await session.execute(
                         select(Attestation).where(
-                            or_(
-                                Attestation.requestor_id == user_id,
-                                Attestation.attestor_id == user_id,
-                            )
+                            Attestation.requestor_id == user_id
                         )
                     )
                 ).scalars()

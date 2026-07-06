@@ -13,11 +13,10 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.core.config import get_settings
-from app.modules.attestation.models import AttestorProfile
 
 PRE_6B_HEAD = "2026_07_01_0053"
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -39,17 +38,6 @@ def migrated_engine() -> Iterator[Engine]:
         command.downgrade(alembic_config, PRE_6B_HEAD)
         command.upgrade(alembic_config, "head")
         engine.dispose()
-
-
-def test_certified_attestor_at_column_exists(migrated_engine: Engine) -> None:
-    """Upgrade adds a nullable certified_attestor_at column."""
-    columns = {
-        column["name"]: column
-        for column in inspect(migrated_engine).get_columns("attestor_profiles")
-    }
-
-    assert "certified_attestor_at" in columns
-    assert columns["certified_attestor_at"]["nullable"] is True
 
 
 def test_reputation_scores_accepts_attestor_subject(
@@ -74,6 +62,3 @@ def test_reputation_scores_accepts_attestor_subject(
         )
 
 
-def test_model_exposes_certified_attestor_at() -> None:
-    """The AttestorProfile ORM model maps certified_attestor_at."""
-    assert "certified_attestor_at" in AttestorProfile.__table__.columns.keys()

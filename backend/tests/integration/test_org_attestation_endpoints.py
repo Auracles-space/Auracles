@@ -210,7 +210,6 @@ async def test_accept_and_staff_happy_path(
         attestation = await session.get(Attestation, attestation_id)
         assert attestation is not None
         assert attestation.attestor_org_id == org_id
-        assert attestation.attestor_id is None
 
 
 async def test_accept_rejects_plain_member(

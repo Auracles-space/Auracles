@@ -32,7 +32,6 @@ from app.modules.attestation.models import (
     AttestationOffer,
     AttestationRubricDimension,
     AttestationRubricScore,
-    AttestorProfile,
 )
 from app.modules.attestation.schemas import AttestationReportSubmitRequest
 from app.modules.auth.models import User, UserRole
@@ -61,7 +60,6 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationRubricScore))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))

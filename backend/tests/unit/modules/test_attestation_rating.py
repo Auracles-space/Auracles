@@ -28,7 +28,6 @@ from app.modules.attestation.models import (
     AttestationRating,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -51,7 +50,6 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -109,13 +107,11 @@ async def _make_user(role: str, prefix: str) -> User:
 
 
 async def _closed_after_accept(db_session) -> Attestation:
-    attestor = await _make_user("attestor", "attestor")
     requestor = await _make_user("operator", "requestor")
     attestation = Attestation(
         target_type="contributor",
         target_id=uuid4(),
         requestor_id=requestor.id,
-        attestor_id=attestor.id,
         status="closed",
         outcome="approved",
         report_published_eligible=True,
@@ -132,13 +128,11 @@ async def _closed_after_accept(db_session) -> Attestation:
 
 async def _closed_conditional(db_session) -> Attestation:
     """Create a closed attestation whose determination was conditional."""
-    attestor = await _make_user("attestor", "attestor")
     requestor = await _make_user("operator", "requestor")
     attestation = Attestation(
         target_type="contributor",
         target_id=uuid4(),
         requestor_id=requestor.id,
-        attestor_id=attestor.id,
         status="closed",
         outcome="conditional",
         report_published_eligible=True,

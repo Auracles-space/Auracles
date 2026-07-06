@@ -21,7 +21,6 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationRating,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -39,7 +38,6 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -96,13 +94,11 @@ async def _make_user(role: str, prefix: str) -> User:
 
 async def _stood_attestation(requestor_id: UUID) -> UUID:
     """Create one closed/approved attestation owned by the requestor."""
-    attestor = await _make_user("attestor", "attestor")
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="contributor",
             target_id=uuid4(),
             requestor_id=requestor_id,
-            attestor_id=attestor.id,
             status="closed",
             outcome="approved",
             report_published_eligible=True,
