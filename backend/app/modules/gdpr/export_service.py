@@ -24,8 +24,6 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.integrations import s3
 from app.modules.attestation.models import (
     Attestation,
-    AttestorApplication,
-    AttestorProfile,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
@@ -541,21 +539,13 @@ async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
 
 
 async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
-    """Collect attestation records tied to the user."""
-    applications = (
-        (
-            await db.execute(
-                select(AttestorApplication)
-                .where(AttestorApplication.user_id == user_id)
-                .order_by(AttestorApplication.created_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    profile = await db.scalar(
-        select(AttestorProfile).where(AttestorProfile.user_id == user_id)
-    )
+    """Collect attestation records tied to the user.
+
+    Covers the user's own requested attestations, their user-owned credentials,
+    NDA signatures, and the ids/dates of attestations they personally staffed as
+    an org reviewing member. Org attestor application/profile data is org-owned
+    and is not part of a user export.
+    """
     credentials = (
         (
             await db.execute(
@@ -571,12 +561,7 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
         (
             await db.execute(
                 select(Attestation)
-                .where(
-                    or_(
-                        Attestation.requestor_id == user_id,
-                        Attestation.attestor_id == user_id,
-                    )
-                )
+                .where(Attestation.requestor_id == user_id)
                 .order_by(Attestation.updated_at)
             )
         )
@@ -607,30 +592,6 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
         )
     ).all()
     return {
-        "applications": [
-            {
-                "id": str(row.id),
-                "status": row.status,
-                "specializations": row.specializations,
-                "jurisdictions": row.jurisdictions,
-                "credentials_summary": row.credentials_summary,
-                "admin_feedback": row.admin_feedback,
-                "created_at": _json_value(row.created_at),
-            }
-            for row in applications
-        ],
-        "profile": (
-            {
-                "id": str(profile.id),
-                "specializations": profile.specializations,
-                "jurisdictions": profile.jurisdictions,
-                "active": profile.active,
-                "approved_at": _json_value(profile.approved_at),
-                "updated_at": _json_value(profile.updated_at),
-            }
-            if profile is not None
-            else None
-        ),
         "credentials": [
             {
                 "id": str(row.id),
@@ -648,7 +609,6 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
                 "target_type": row.target_type,
                 "target_id": str(row.target_id),
                 "requestor_id": str(row.requestor_id),
-                "attestor_id": str(row.attestor_id) if row.attestor_id else None,
                 "status": row.status,
                 "outcome": row.outcome,
                 "summary": row.summary,

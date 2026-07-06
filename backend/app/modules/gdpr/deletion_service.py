@@ -168,10 +168,7 @@ async def _count_held_escrows(db: AsyncSession, user_id: UUID) -> int:
             .where(
                 Escrow.ref_type == "attestation",
                 Escrow.status == "held",
-                or_(
-                    Attestation.requestor_id == user_id,
-                    Attestation.attestor_id == user_id,
-                ),
+                Attestation.requestor_id == user_id,
             )
         )
         or 0
@@ -233,10 +230,7 @@ async def _count_open_disputes(db: AsyncSession, user_id: UUID) -> int:
             .join(Attestation, Attestation.id == AttestationDispute.attestation_id)
             .where(
                 AttestationDispute.status.in_(ACTIVE_DISPUTE_STATUSES),
-                or_(
-                    Attestation.requestor_id == user_id,
-                    Attestation.attestor_id == user_id,
-                ),
+                Attestation.requestor_id == user_id,
             )
         )
         or 0
@@ -269,10 +263,7 @@ async def _count_active_attestations(db: AsyncSession, user_id: UUID) -> int:
         await db.scalar(
             select(func.count(func.distinct(Attestation.id))).where(
                 Attestation.status.in_(ACTIVE_ATTESTATION_STATUSES),
-                or_(
-                    Attestation.requestor_id == user_id,
-                    Attestation.attestor_id == user_id,
-                ),
+                Attestation.requestor_id == user_id,
             )
         )
         or 0
