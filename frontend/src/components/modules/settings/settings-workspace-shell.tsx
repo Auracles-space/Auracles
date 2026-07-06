@@ -9,8 +9,7 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
+import { useMemo, type ReactNode } from "react";
 
 type SettingsWorkspaceShellProps = {
   children: ReactNode;
@@ -19,7 +18,7 @@ type SettingsWorkspaceShellProps = {
 type SettingsLink = {
   href: string;
   label: string;
-  getSummary: (isAttestor: boolean) => string;
+  getSummary: () => string;
 };
 
 const settingsLinks: SettingsLink[] = [
@@ -42,14 +41,6 @@ const settingsLinks: SettingsLink[] = [
     href: "/settings/credentials",
     label: "Professional Credentials",
     getSummary: () => "Verify professional credentials for reviews.",
-  },
-  {
-    href: "/settings/attestor",
-    label: "Attestor Application",
-    getSummary: (isAttestor) =>
-      isAttestor
-        ? "Review your approved Attestor application details."
-        : "Apply to become a verified platform Attestor.",
   },
   {
     href: "/settings/sessions",
@@ -75,33 +66,10 @@ const settingsLinks: SettingsLink[] = [
 
 export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
-  const [isAttestor, setIsAttestor] = useState(false);
-  const [isPendingAttestor, setIsPendingAttestor] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    async function fetchUserRole() {
-      const user = await loadCurrentUserSession();
-      if (!mounted) return;
-      setIsAttestor(user?.roles?.includes("attestor") ?? false);
-      // A pending attestor has no active role yet; it sits in pending_roles.
-      // They still need the Attestor link to complete/track their application.
-      setIsPendingAttestor(user?.pending_roles?.includes("attestor") ?? false);
-    }
-    void fetchUserRole();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const visibleLinks = useMemo(() => {
-    return settingsLinks.filter((link) => {
-      if (link.href === "/settings/attestor") {
-        return isAttestor || isPendingAttestor;
-      }
-      return true;
-    });
-  }, [isAttestor, isPendingAttestor]);
+    return settingsLinks;
+  }, []);
 
   return (
     <section className="px-4 py-6 text-foreground md:px-8 md:py-8">
@@ -139,7 +107,7 @@ export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps
                 >
                   <p className="text-sm font-semibold">{link.label}</p>
                   <p className="mt-1 text-xs leading-5 text-foreground-muted">
-                    {link.getSummary(isAttestor)}
+                    {link.getSummary()}
                   </p>
                 </Link>
               );

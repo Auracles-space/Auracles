@@ -47,9 +47,6 @@ export function getRoleLandingPath(roles: string[]): string {
   if (roles.includes("admin")) {
     return "/admin";
   }
-  if (roles.includes("attestor")) {
-    return "/attestor/assignments";
-  }
   // Operator takes precedence: anyone who can license lands on Explore (the
   // marketplace), with the creator dashboard reachable from the authed nav. A
   // pure contributor still lands on their dashboard.

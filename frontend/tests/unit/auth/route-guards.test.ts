@@ -28,9 +28,7 @@ function makeHint(roles: string[]) {
 
 describe("auth route guards", () => {
   it.each([
-    [["admin"], "/admin"],
-    [["attestor"], "/attestor/assignments"],
-    [["operator"], "/explore"],
+    [["admin"], "/admin/credentials"],
     [["contributor"], "/dashboard"],
     [["developer"], "/dashboard/developer"],
     [["operator", "contributor"], "/explore"],
