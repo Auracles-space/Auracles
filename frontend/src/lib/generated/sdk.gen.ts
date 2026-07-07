@@ -3343,3 +3343,5 @@ export const revokeOrgAttestorCapability = adminRevokeAttestorCapabilityV1AdminO
 export const listAttestorOrgs = listPublicAttestorDirectoryV1AttestorOrgsGet;
 export const getAttestorOrg = getPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGet;
 export const listAttestorOrgCompleted = listAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGet;
+export const readPlatformConfig = listPlatformConfigV1AdminConfigGet;
+export const updatePlatformConfig = updatePlatformConfigV1AdminConfigPatch;

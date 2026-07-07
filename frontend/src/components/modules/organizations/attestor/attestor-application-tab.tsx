@@ -5,6 +5,7 @@ import { CheckCircledIcon, ExclamationTriangleIcon, BorderDashedIcon } from "@ra
 
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { Spinner } from "@/components/ui/spinner";
+import { ApplyGate } from "./apply-gate";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -51,6 +52,7 @@ function GateCard({
   statusLabel,
   feedback,
   actionText,
+  children,
 }: {
   title: string;
   description: string;
@@ -58,31 +60,35 @@ function GateCard({
   statusLabel?: string;
   feedback?: string | null;
   actionText?: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border-default bg-surface-2 p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <h3 className="font-heading text-base font-bold text-foreground">{title}</h3>
-          <StatusTag status={status} label={statusLabel} />
-        </div>
-        <p className="text-sm text-foreground-muted max-w-2xl">{description}</p>
-        {status === "needs_info" && feedback ? (
-          <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-            <span className="font-semibold block mb-1">Feedback from Admin:</span>
-            {feedback}
+    <div className="flex flex-col gap-4 rounded-xl border border-border-default bg-surface-2 p-5 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <h3 className="font-heading text-base font-bold text-foreground">{title}</h3>
+            <StatusTag status={status} label={statusLabel} />
           </div>
+          <p className="text-sm text-foreground-muted max-w-2xl">{description}</p>
+          {status === "needs_info" && feedback ? (
+            <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              <span className="font-semibold block mb-1">Feedback from Admin:</span>
+              {feedback}
+            </div>
+          ) : null}
+        </div>
+        {actionText && status !== "complete" ? (
+          <button
+            className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-background transition hover:bg-foreground/90 disabled:opacity-50"
+            disabled
+            type="button"
+          >
+            {actionText}
+          </button>
         ) : null}
       </div>
-      {actionText && status !== "complete" ? (
-        <button
-          className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-background transition hover:bg-foreground/90 disabled:opacity-50"
-          disabled
-          type="button"
-        >
-          {actionText}
-        </button>
-      ) : null}
+      {children && <div className="mt-4 border-t border-border-default pt-4">{children}</div>}
     </div>
   );
 }
@@ -92,6 +98,9 @@ export function AttestorApplicationTab() {
   const [app, setApp] = useState<OrgAttestorApplicationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const reload = () => setRefreshKey((k) => k + 1);
 
   useEffect(() => {
     let mounted = true;
@@ -120,12 +129,12 @@ export function AttestorApplicationTab() {
     return () => {
       mounted = false;
     };
-  }, [orgId]);
+  }, [orgId, refreshKey]);
 
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <Spinner size="lg" />
+        <Spinner className="h-8 w-8" />
       </div>
     );
   }
@@ -175,8 +184,9 @@ export function AttestorApplicationTab() {
           status={applyStatus}
           statusLabel={applyStatus === "complete" ? "Submitted" : undefined}
           feedback={applyStatus === "needs_info" ? app?.admin_feedback : undefined}
-          actionText="Edit Application"
-        />
+        >
+          <ApplyGate application={app} orgId={orgId} onChange={reload} />
+        </GateCard>
         <GateCard
           title="KYB verification"
           description="Verify your organization's legal entity and beneficial owners via Stripe."

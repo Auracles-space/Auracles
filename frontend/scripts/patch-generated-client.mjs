@@ -150,6 +150,8 @@ const compatibilityAliases = {
   listAttestorOrgs: "listPublicAttestorDirectoryV1AttestorOrgsGet",
   getAttestorOrg: "getPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGet",
   listAttestorOrgCompleted: "listAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGet",
+  readPlatformConfig: "listPlatformConfigV1AdminConfigGet",
+  updatePlatformConfig: "updatePlatformConfigV1AdminConfigPatch",
 };
 
 const aliasBlock = [
