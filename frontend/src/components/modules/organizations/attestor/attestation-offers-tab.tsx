@@ -5,28 +5,29 @@ import { useOrganization } from "@/components/modules/organizations/organization
 import { listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { OrgAttestationOfferItem } from "@/lib/generated/types.gen";
+import { declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost } from "@/lib/generated/sdk.gen";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
+import { AcceptAndStaffDialog } from "./accept-and-staff-dialog";
 
 export function AttestationOffersTab() {
   const { orgId, role } = useOrganization();
   const [offers, setOffers] = useState<OrgAttestationOfferItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const [acceptingOfferId, setAcceptingOfferId] = useState<string | null>(null);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    if (!orgId) return;
-
-    async function load() {
+  async function load(isMounted: () => boolean) {
       setLoading(true);
       setError(null);
       const res = await listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet({
         path: { org_id: orgId! },
         headers: getAccessTokenHeaders(),
       });
-      if (!mounted) return;
+      if (!isMounted()) return;
       setLoading(false);
       if (res.error) {
         setError(describeGeneratedError(res.error));
@@ -34,9 +35,37 @@ export function AttestationOffersTab() {
         setOffers(res.data.offers);
       }
     }
-    load();
+
+  useEffect(() => {
+    let mounted = true;
+    if (!orgId) return;
+
+    const doLoad = async () => {
+      setLoading(true);
+      await load(() => mounted);
+      if (mounted) setLoading(false);
+    };
+    doLoad();
     return () => { mounted = false; };
   }, [orgId]);
+
+  async function handleDecline(offerId: string) {
+    if (!orgId) return;
+    if (!window.confirm("Are you sure you want to decline this offer?")) return;
+    
+    setDecliningId(offerId);
+    setError(null);
+    const res = await declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost({
+      path: { org_id: orgId, offer_id: offerId },
+      headers: getAccessTokenHeaders(),
+    });
+    setDecliningId(null);
+    if (res.error) {
+      setError(describeGeneratedError(res.error));
+    } else {
+      await load(() => true);
+    }
+  }
 
   if (loading) {
     return <div className="p-4 flex items-center gap-2 text-sm text-foreground-muted"><Spinner className="w-4 h-4" /> Loading offers...</div>;
@@ -91,11 +120,17 @@ export function AttestationOffersTab() {
               </div>
               
               <div className="flex gap-2">
-                {/* Stubs for Accept and Decline functionality to be wired in Task 11 */}
-                <Button variant="secondary" disabled={isExpired || !isAdmin}>
-                  Decline
+                <Button 
+                  variant="secondary" 
+                  disabled={isExpired || !isAdmin || decliningId === offer.offer_id}
+                  onClick={() => handleDecline(offer.offer_id)}
+                >
+                  {decliningId === offer.offer_id ? "Declining..." : "Decline"}
                 </Button>
-                <Button disabled={isExpired || !isAdmin}>
+                <Button 
+                  disabled={isExpired || !isAdmin}
+                  onClick={() => setAcceptingOfferId(offer.offer_id)}
+                >
                   Accept
                 </Button>
               </div>
@@ -103,6 +138,18 @@ export function AttestationOffersTab() {
           );
         })}
       </div>
+
+      {acceptingOfferId && orgId && (
+        <AcceptAndStaffDialog
+          orgId={orgId}
+          offerId={acceptingOfferId}
+          onClose={() => setAcceptingOfferId(null)}
+          onDone={() => {
+            setAcceptingOfferId(null);
+            load(() => true);
+          }}
+        />
+      )}
     </div>
   );
 }
