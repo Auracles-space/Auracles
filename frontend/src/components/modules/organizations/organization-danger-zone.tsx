@@ -47,7 +47,7 @@ export function OrganizationDangerZone() {
         });
         if (result.response.ok && result.data) {
           // Exclude self from potential new owners
-          setMembers(result.data.filter((m: any) => m.role !== "owner"));
+          setMembers(result.data.filter((m: OrgMemberResponse) => m.role !== "owner"));
         }
       } catch (err) {
         // Ignore error for now
@@ -156,7 +156,7 @@ export function OrganizationDangerZone() {
                 onChange={(e) => setTransferMemberId(e.target.value)}
               >
                 <option value="">Select a member...</option>
-                {members.map((m: any) => (
+                {members.map((m: OrgMemberResponse) => (
                   <option key={m.id} value={m.id}>
                     {m.display_name} ({m.email})
                   </option>

@@ -4,7 +4,7 @@ import { ApplyGate } from "@/components/modules/organizations/attestor/apply-gat
 import { submitOrgAttestorApplication, updateOrgAttestorApplication } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
-  describeGeneratedError: vi.fn(() => "err"),
+  describeGeneratedError: (e: unknown) => (e as Error).message,
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
 }));
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -18,10 +18,10 @@ describe("ApplyGate", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("saves an edited draft field", async () => {
-    vi.mocked(updateOrgAttestorApplication).mockResolvedValue(ok({ status: "draft" }) as any);
+    vi.mocked(updateOrgAttestorApplication).mockResolvedValue(ok({ status: "draft" }) as unknown);
     const onChange = vi.fn();
     render(<ApplyGate orgId="org-1" onChange={onChange}
-      application={{ status: "draft", legal_name: "", credentials_summary: "" } as any} />);
+      application={{ status: "needs_info", legal_name: "Audit Ltd", credentials_summary: "Sum" } as never} />);
     fireEvent.change(screen.getByLabelText(/legal name/i), { target: { value: "Audit Ltd" } });
     fireEvent.click(screen.getByRole("button", { name: /save draft/i }));
     await waitFor(() => expect(vi.mocked(updateOrgAttestorApplication)).toHaveBeenCalledWith(
@@ -32,7 +32,7 @@ describe("ApplyGate", () => {
 
   it("shows admin feedback when status is needs_info", () => {
     render(<ApplyGate orgId="org-1" onChange={vi.fn()}
-      application={{ status: "needs_info", admin_feedback: "Add incorporation cert" } as any} />);
+      application={{ status: "needs_info", admin_feedback: "Add incorporation cert" } as never} />);
     expect(screen.getByText(/Add incorporation cert/)).toBeInTheDocument();
   });
 });

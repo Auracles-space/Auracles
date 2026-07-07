@@ -6,6 +6,9 @@ import { CheckCircledIcon, ExclamationTriangleIcon, BorderDashedIcon } from "@ra
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { Spinner } from "@/components/ui/spinner";
 import { ApplyGate } from "./apply-gate";
+import { UndertakingsGate } from "./undertakings-gate";
+import { TaxDocumentGate } from "./tax-document-gate";
+import { TrialMemberGate } from "./trial-member-gate";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -114,7 +117,7 @@ export function AttestorApplicationTab() {
       if (!mounted) return;
       setLoading(false);
       if (res.error) {
-        if ((res.error as any)?.status === 404) {
+        if ((res.error as { status?: number })?.status === 404) {
           // No application exists yet; we render the default unstarted gates.
           setApp(null);
         } else {
@@ -148,7 +151,7 @@ export function AttestorApplicationTab() {
     );
   }
 
-  const checklist = app?.gate_checklist;
+  const checklist = (app as { gate_checklist?: Record<string, boolean> })?.gate_checklist || {};
   
   // Compute statuses for each gate
   const applyStatus =
@@ -199,29 +202,36 @@ export function AttestorApplicationTab() {
           statusLabel={credentialsStatus === "complete" ? "Approved" : "Pending review"}
         />
         <GateCard
-          title="COI + confidentiality undertaking"
-          description="Sign the Conflict of Interest and Confidentiality agreements."
-          status={coiStatus}
-          actionText="Sign Undertakings"
-        />
+          title="Sign Undertakings"
+          description="Agree to the Attestor terms of service and confidentiality obligations."
+          status={app?.confidentiality_signed_at ? "complete" : "not_started"}
+          statusLabel={app?.confidentiality_signed_at ? "Signed" : undefined}
+        >
+          <UndertakingsGate application={app} onChange={reload} />
+        </GateCard>
         <GateCard
-          title="Payout account"
-          description="Link a bank account to receive attestation fees."
-          status={payoutStatus}
-          actionText="Setup Account"
-        />
+          title="Tax Documents"
+          description="Provide tax documents required for payouts."
+          status={app?.tax_document_key ? "complete" : "not_started"}
+          statusLabel={app?.tax_document_key ? "Uploaded" : undefined}
+        >
+          <TaxDocumentGate application={app} onChange={reload} />
+        </GateCard>
         <GateCard
-          title="Tax document"
-          description="Upload your W-8BEN-E or W-9 tax document."
-          status={taxStatus}
-          actionText="Upload Document"
-        />
-        <GateCard
-          title="Trial attestation"
-          description="Complete a supervised trial attestation to prove methodology alignment."
-          status={trialStatus}
-          actionText="Nominate Member"
-        />
+          title="Trial Attestation"
+          description="Complete a trial attestation to demonstrate your organization's capability."
+          status={app?.gate_checklist?.trial_passed ? "complete" : app?.trial_member_id ? "needs_info" : "not_started"}
+          statusLabel={
+            app?.gate_checklist?.trial_passed
+              ? "Passed"
+              : app?.trial_member_id
+                ? "Pending"
+                : undefined
+          }
+          feedback={app?.trial_member_id ? "Trial member nominated, waiting for them to complete the trial." : undefined}
+        >
+          <TrialMemberGate application={app} onChange={reload} />
+        </GateCard>
         <GateCard
           title="Activation"
           description="Final approval and activation of your Org Attestor status."

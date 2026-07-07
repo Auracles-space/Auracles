@@ -24,9 +24,9 @@ describe("AdminAttestationPanel", () => {
 
   it("posts attestor_org_id and reviewing_member_id when assigning", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(
-      ok({ applications: [] }) as any,
+      ok({ applications: [] }) as never,
     );
-    vi.mocked(adminAssignAttestation).mockResolvedValue(ok({ id: "att-1" }) as any);
+    vi.mocked(adminAssignAttestation).mockResolvedValue(ok({ id: "att-1" }) as never);
     render(<AdminAttestationPanel />);
     await waitFor(() => screen.getByText(/Admin attestation/));
     

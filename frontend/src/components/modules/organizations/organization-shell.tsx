@@ -9,6 +9,7 @@ import { OrganizationProvider } from "./organization-context";
 import { Tabs } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
+import { useOrganization } from "./organization-context";
 
 type OrganizationShellProps = {
   orgId: string;
@@ -30,7 +31,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
           headers: getAccessTokenHeaders(),
         });
         if (result.response.ok && result.data) {
-          const found = result.data.organizations.find((o: any) => o.org.id === orgId);
+          const found = result.data.organizations.find((o: { org: { id: string } }) => o.org.id === orgId);
           if (found) {
             setMyOrg(found);
           } else {
@@ -68,10 +69,16 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const isOwner = role === "owner";
   const isAdmin = role === "admin" || isOwner;
 
+  const attestorCap = myOrg.capabilities?.["attestor"];
+  const needsNda = attestorCap === "active" || attestorCap === "pending";
+
   const tabs = [
     { id: "", label: "Profile" },
     { id: "members", label: "Members" },
   ];
+  if (needsNda) {
+    tabs.push({ id: "nda", label: "NDA" });
+  }
   if (isAdmin) {
     tabs.push({ id: "invitations", label: "Invitations" });
     tabs.push({ id: "teams", label: "Teams" });
@@ -124,7 +131,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 }
 
 function OrganizationSuspendedBanner() {
-  const { isSuspended } = require("./organization-context").useOrganization();
+  const { isSuspended } = useOrganization();
 
   if (!isSuspended) return null;
 

@@ -205,7 +205,7 @@ export function OrganizationTeams() {
             Teams
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Manage your organization's teams.
+            Teams are subgroups within your organization. They don&apos;t have any teams yet.
           </p>
         </div>
 

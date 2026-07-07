@@ -32,7 +32,7 @@ export function ApplyGate({
     legal_name: application?.legal_name || "",
     credentials_summary: application?.credentials_summary || "",
     professional_references: application?.professional_references || "",
-    sample_work_url: (application?.sample_work as any)?.url || "",
+    sample_work_url: (application?.sample_work as { url: string })?.url || "",
     incorporation_doc_keys: application?.incorporation_doc_keys || [],
     sectors: application?.sectors || [],
     framework_categories: application?.framework_categories || [],
