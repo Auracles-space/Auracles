@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { listOrgAttestationsV1OrgsOrgIdAttestationsGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
@@ -92,13 +93,19 @@ export function AttestationQueueTab() {
               </div>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button 
                 variant="secondary"
                 disabled={!isAdmin}
                 onClick={() => setReassigningId(att.id)}
               >
                 Reassign
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => window.location.href = `/dashboard/organizations/${orgId}/attestations/${att.id}`}
+              >
+                Workspace
               </Button>
             </div>
           </div>
