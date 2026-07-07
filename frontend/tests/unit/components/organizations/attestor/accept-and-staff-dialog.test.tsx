@@ -1,13 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AcceptAndStaffDialog } from "@/components/modules/organizations/attestor/accept-and-staff-dialog";
-import { acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost, listMembersV1OrgsOrgIdMembersGet } from "@/lib/generated/sdk.gen";
+import { AcceptAndStaffDialog } from "../../../../../src/components/modules/organizations/attestor/accept-and-staff-dialog";
+import { acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost, listMembersV1OrgsOrgIdMembersGet } from "../../../../../src/lib/generated/sdk.gen";
 
-vi.mock("@/lib/auth/form-client", () => ({
+vi.mock("../../../../../src/lib/auth/form-client", () => ({
   describeGeneratedError: vi.fn((r) => (r?.response?.status === 409 ? "Member at capacity" : "err")),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
 }));
-vi.mock("@/lib/generated/sdk.gen", () => ({ 
+vi.mock("../../../../../src/lib/generated/sdk.gen", () => ({ 
   acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost: vi.fn(), 
   listMembersV1OrgsOrgIdMembersGet: vi.fn() 
 }));

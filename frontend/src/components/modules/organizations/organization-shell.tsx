@@ -84,6 +84,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     tabs.push({ id: "teams", label: "Teams" });
     tabs.push({ id: "attestor", label: "Attestor" });
     tabs.push({ id: "offers", label: "Offers" });
+    tabs.push({ id: "queue", label: "Queue" });
   }
   if (isOwner) {
     tabs.push({ id: "danger-zone", label: "Danger Zone" });

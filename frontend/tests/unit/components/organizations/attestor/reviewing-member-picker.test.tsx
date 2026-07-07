@@ -1,13 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ReviewingMemberPicker } from "@/components/modules/organizations/attestor/reviewing-member-picker";
-import { listMembersV1OrgsOrgIdMembersGet } from "@/lib/generated/sdk.gen";
+import { ReviewingMemberPicker } from "../../../../../src/components/modules/organizations/attestor/reviewing-member-picker";
+import { listMembersV1OrgsOrgIdMembersGet } from "../../../../../src/lib/generated/sdk.gen";
 
-vi.mock("@/lib/auth/form-client", () => ({
+vi.mock("../../../../../src/lib/auth/form-client", () => ({
   describeGeneratedError: vi.fn(() => "err"),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
 }));
-vi.mock("@/lib/generated/sdk.gen", () => ({ 
+vi.mock("../../../../../src/lib/generated/sdk.gen", () => ({ 
   listMembersV1OrgsOrgIdMembersGet: vi.fn() 
 }));
 const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
