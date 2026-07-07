@@ -1086,57 +1086,327 @@ git commit -m "Add org attestation queue with role-gated reviewing member + reas
 
 ---
 
-## Task 13: Reviewing-member workspace (reuse + repoint)
+## Task 13: Reviewing-member workspace (BUILD FROM SCRATCH)
 
-**Files:**
-- Locate the existing attestor workspace component (Step 1 finds the exact file).
-- Create: `frontend/src/app/(auth)/dashboard/organizations/[orgId]/attestations/[attestationId]/page.tsx`
-- Modify: the existing workspace component (repoint any individual-attestor assumptions to org context)
-- Create/modify test: workspace repoint test
+> **Plan correction (2026-07-07):** design spec locked-decision 6 assumed an existing
+> attestor workspace to reuse. Verified false — the rich reviewing-member workspace (rubric
+> scoring, annotations, clarifications, evidence upload, report submission) never existed in
+> the frontend; the deleted "assignments panel" was only a thin assignment list. This task is
+> therefore a **from-scratch build**, split into 13a–13e. All workspace endpoints already
+> exist in the frozen contract. Mirror the existing `project-workspace.tsx` shell-plus-panels
+> pattern (`frontend/src/components/modules/projects/project-workspace.tsx` composes
+> sub-panels like `workspace-message-panel.tsx`, `milestone-funding-panel.tsx`). Before
+> building, load the `frontend-design` skill (per CLAUDE.md — building something visual) to
+> lay out the workspace shell; match existing tokens/cards.
 
-**Interfaces:**
-- Consumes: existing attestor workspace endpoints (rubric scores, annotations, clarifications, document uploads, report submission) — these are re-pointed backend-side to guard on `reviewing_member_id`.
-- Produces: a workspace route reachable from the queue; write access for the assigned reviewing member, read-only for owner/admin.
+**Shared setup for 13a–13e — SDK aliases.** Task 1's alias map only added
+`submitAttestationReport`. Add the rest of the workspace aliases to
+`frontend/scripts/patch-generated-client.mjs` (verify each long name via
+`grep -oE "export const [a-zA-Z0-9]+ =" src/lib/generated/sdk.gen.ts` after regen), then
+re-run `npm run generate:api`:
 
-- [ ] **Step 1: Find the workspace component + its endpoints**
-
-```bash
-grep -rln "rubric\|submitAttestationReport\|acceptAttestationReport\|clarification\|annotation" src/components src/app | grep -iv test
+```js
+  getAttestation: "getAttestationV1AttestationsAttestationIdGet",
+  startAttestationReview: "startReviewV1AttestationsAttestationIdStartReviewPost",
+  giveAttestationConsent: "consentV1AttestationsAttestationIdConsentPost",
+  ackAttestationContent: "contentAckV1AttestationsAttestationIdContentAckPost",
+  getAttestationArtifactAccess: "artifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessGet",
+  upsertRubricScore: "upsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPut",
+  listAttestationAnnotations: "listAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGet",
+  createAttestationAnnotation: "createAttestationAnnotationV1AttestationsAttestationIdAnnotationsPost",
+  updateAttestationAnnotation: "updateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatch",
+  deleteAttestationAnnotation: "deleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDelete",
+  listAttestationClarifications: "listAttestationClarificationsV1AttestationsAttestationIdClarificationsGet",
+  createAttestationClarification: "createAttestationClarificationV1AttestationsAttestationIdClarificationsPost",
+  respondAttestationClarification: "respondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPost",
+  createAttestationEvidenceUpload: "createAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPost",
 ```
 
-Read the primary match. Identify any assumption that the current user *is* the attestor (e.g. "your assignment", a `listAttestorAssignments` call — now removed) and the report-submit call site.
+Commit this alias addition on its own: `git commit -m "Add attestation workspace SDK aliases"`.
 
-- [ ] **Step 2: Write the failing repoint test**
+**Write vs read gating (applies to every 13x panel):** the workspace loads the attestation via
+`getAttestation`. The current member has **write** access iff they are the attestation's
+`reviewing_member_id`; org owner/admin get **read-only**; anyone else is 403/redirected. Each
+panel receives a `canWrite: boolean` prop and disables its mutating controls when false.
+`reviewing_member_id` is internal — the workspace is an org owner/admin/member surface, so it may
+render member identity here, but this component must never be reachable by a requestor.
 
-Write a test that renders the workspace for an attestation whose `reviewing_member_id` matches the current member (write mode: report-submit control present) and one where it does not but the viewer is owner/admin (read-only: no submit control). Assert on presence/absence of the submit control. Mock the workspace fetch + `submitAttestationReport`.
+---
+
+### Task 13a: Workspace shell + start-review/consent/content-ack + route
+
+**Files:**
+- Create: `frontend/src/components/modules/organizations/attestor/workspace/attestation-workspace.tsx`
+- Create: `frontend/src/app/(auth)/dashboard/organizations/[orgId]/attestations/[attestationId]/page.tsx`
+- Create test: `frontend/tests/unit/components/organizations/attestor/workspace/attestation-workspace.test.tsx`
+- Modify: `org-attestations-tab.tsx` (link rows to the workspace route)
+
+**Interfaces:**
+- Consumes: `getAttestation`, `startAttestationReview`, `giveAttestationConsent`, `ackAttestationContent`, org context.
+- Produces: `export function AttestationWorkspace({ orgId, attestationId }: { orgId: string; attestationId: string })`; computes `canWrite` and passes it to the panels built in 13b–13e (mounted as stubs here).
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// tests/unit/components/organizations/attestor/workspace/attestation-workspace.test.tsx
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AttestationWorkspace } from "@/components/modules/organizations/attestor/workspace/attestation-workspace";
+import { getAttestation, startAttestationReview } from "@/lib/generated/sdk.gen";
+
+vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
+  describeGeneratedError: vi.fn(() => "err"),
+  getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
+}));
+vi.mock("@/components/modules/organizations/organization-context", () => ({
+  useOrganization: () => ({ orgId: "org-1", role: "member", memberId: "mem-1" }),
+}));
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  getAttestation: vi.fn(), startAttestationReview: vi.fn(),
+  giveAttestationConsent: vi.fn(), ackAttestationContent: vi.fn(),
+}));
+const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
+
+describe("AttestationWorkspace", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("offers Start review to the assigned reviewing member before review starts", async () => {
+    vi.mocked(getAttestation).mockResolvedValue(
+      ok({ id: "att-1", status: "assigned", reviewing_member_id: "mem-1", review_started_at: null }) as any,
+    );
+    render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /start review/i })).toBeEnabled());
+  });
+
+  it("is read-only for an owner who is not the reviewing member", async () => {
+    vi.mocked(getAttestation).mockResolvedValue(
+      ok({ id: "att-1", status: "in_review", reviewing_member_id: "mem-9", review_started_at: "2026-07-05T00:00:00Z" }) as any,
+    );
+    render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
+    await waitFor(() => screen.getByText(/att-1/));
+    expect(screen.queryByRole("button", { name: /start review/i })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run it — fails**
 
 ```bash
-npx vitest run <workspace-test-path>
+npx vitest run tests/unit/components/organizations/attestor/workspace/attestation-workspace.test.tsx
 ```
 
 Expected: FAIL.
 
-- [ ] **Step 3: Repoint the component**
+- [ ] **Step 3: Implement the shell**
 
-Replace removed `listAttestorAssignments`-style data with the org attestation context: the workspace loads the attestation by id and determines write vs read from whether the current member is the `reviewing_member_id` (write) or an owner/admin (read-only). Keep rubric/annotation/clarification/upload/report-submit calls (their endpoints are unchanged in path; the guard moved server-side). Remove any "my assignments" navigation that referenced deleted routes.
+Fetch `getAttestation`. Compute `canWrite = data.reviewing_member_id === memberId`. Render a header (target, status, review_type) + a consent/content-ack gate (call `giveAttestationConsent`/`ackAttestationContent` where the attestation flags require them) + a "Start review" action (`startAttestationReview`, enabled only for the assigned member before `review_started_at`). Below, mount stub placeholders for the Rubric / Annotations / Clarifications / Report panels (filled in 13b–13e). Read-only viewers see status + panels without mutating controls. Loading/error patterns as elsewhere. Get `memberId` from org context (if `useOrganization` doesn't expose it, add it there from the loaded membership — small context extension).
 
-- [ ] **Step 4: Add the org-scoped workspace route**
+- [ ] **Step 4: Add the route + queue link**
 
-Create `.../[orgId]/attestations/[attestationId]/page.tsx` rendering the workspace for that attestation, inside `OrganizationProvider`. Link the queue rows (Task 12) here.
+Create `.../[orgId]/attestations/[attestationId]/page.tsx` rendering `<AttestationWorkspace orgId={orgId} attestationId={attestationId} />` inside `OrganizationProvider`. In `org-attestations-tab.tsx`, link each row to this route.
 
-- [ ] **Step 5: Run tests — pass**
+- [ ] **Step 5: Run the test — passes; commit**
 
 ```bash
-npx vitest run <workspace-test-path>
+npx vitest run tests/unit/components/organizations/attestor/workspace/attestation-workspace.test.tsx
+git add -A && git commit -m "Add attestation workspace shell + start-review/consent gate"
 ```
 
-Expected: PASS. If reuse fights the component (assumptions too deep to repoint cleanly), STOP and escalate rather than force it (design spec risk note).
+---
 
-- [ ] **Step 6: Commit**
+### Task 13b: Rubric scoring panel
+
+**Files:**
+- Create: `frontend/src/components/modules/organizations/attestor/workspace/rubric-panel.tsx`
+- Create test: `.../workspace/rubric-panel.test.tsx`
+- Modify: `attestation-workspace.tsx` (mount `RubricPanel`)
+
+**Interfaces:**
+- Consumes: `upsertRubricScore` (PUT `rubric/{dimension_key}`, body `RubricScoreUpsertRequest = { score: 1-5 | null, comment: string | null }`), the rubric dimensions from the attestation detail (`getAttestation` response — verify the field, e.g. `rubric_dimensions: [{ key, label, description }]`; if dimensions live on a separate field/endpoint, use that).
+- Produces: `export function RubricPanel({ attestationId, dimensions, canWrite }: { attestationId: string; dimensions: RubricDimension[]; canWrite: boolean })`.
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// tests/unit/components/organizations/attestor/workspace/rubric-panel.test.tsx
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RubricPanel } from "@/components/modules/organizations/attestor/workspace/rubric-panel";
+import { upsertRubricScore } from "@/lib/generated/sdk.gen";
+
+vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
+  describeGeneratedError: vi.fn(() => "err"),
+  getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
+}));
+vi.mock("@/lib/generated/sdk.gen", () => ({ upsertRubricScore: vi.fn() }));
+const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
+
+const dims = [{ key: "rigor", label: "Methodological rigor", description: "" }];
+
+describe("RubricPanel", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("upserts a score for a dimension", async () => {
+    vi.mocked(upsertRubricScore).mockResolvedValue(ok({ dimension_id: "rigor", score: 4, comment: null }) as any);
+    render(<RubricPanel attestationId="att-1" dimensions={dims as any} canWrite />);
+    fireEvent.change(screen.getByLabelText(/Methodological rigor/i), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(vi.mocked(upsertRubricScore)).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { attestation_id: "att-1", dimension_key: "rigor" }, body: { score: 4, comment: null } }),
+    ));
+  });
+
+  it("renders read-only when canWrite is false", () => {
+    render(<RubricPanel attestationId="att-1" dimensions={dims as any} canWrite={false} />);
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run it — fails**
+
+```bash
+npx vitest run tests/unit/components/organizations/attestor/workspace/rubric-panel.test.tsx
+```
+
+Expected: FAIL.
+
+- [ ] **Step 3: Implement `RubricPanel`**
+
+One card per dimension: a 1–5 score control (labelled by dimension label) + a comment textarea (≤5000 chars). "Save" calls `upsertRubricScore({ path: { attestation_id, dimension_key }, body: { score, comment } })`. Hide all mutating controls when `!canWrite`. Prefill existing scores if the attestation detail carries them.
+
+- [ ] **Step 4: Mount + test + commit**
+
+```bash
+npx vitest run tests/unit/components/organizations/attestor/workspace/rubric-panel.test.tsx
+git add -A && git commit -m "Add attestation rubric scoring panel"
+```
+
+---
+
+### Task 13c: Annotations panel
+
+**Files:**
+- Create: `frontend/src/components/modules/organizations/attestor/workspace/annotations-panel.tsx`
+- Create test: `.../workspace/annotations-panel.test.tsx`
+- Modify: `attestation-workspace.tsx` (mount)
+
+**Interfaces:**
+- Consumes: `listAttestationAnnotations`, `createAttestationAnnotation`, `updateAttestationAnnotation`, `deleteAttestationAnnotation`.
+- Produces: `export function AnnotationsPanel({ attestationId, canWrite })`.
+
+- [ ] **Step 1: Failing test** — assert that `createAttestationAnnotation` is called with the typed note body on submit, and that `canWrite={false}` hides the add/edit/delete controls (mirror the 13b test structure; mock the four annotation fns).
+
+- [ ] **Step 2: Run — FAIL.**
+
+- [ ] **Step 3: Implement** — list annotations on mount; add-note form (`createAttestationAnnotation`); per-annotation edit (`updateAttestationAnnotation`) and delete (`deleteAttestationAnnotation`), all gated on `canWrite`. Verify the annotation body/response fields (e.g. `body`/`text`, `id`, `created_at`) against `types.gen.ts`.
+
+- [ ] **Step 4: Mount + test + commit** — `git commit -m "Add attestation annotations panel"`.
+
+---
+
+### Task 13d: Clarifications panel
+
+**Files:**
+- Create: `frontend/src/components/modules/organizations/attestor/workspace/clarifications-panel.tsx`
+- Create test: `.../workspace/clarifications-panel.test.tsx`
+- Modify: `attestation-workspace.tsx` (mount)
+
+**Interfaces:**
+- Consumes: `listAttestationClarifications`, `createAttestationClarification`, `respondAttestationClarification`.
+- Produces: `export function ClarificationsPanel({ attestationId, canWrite })`.
+
+- [ ] **Step 1: Failing test** — assert `createAttestationClarification` is called with the question body when the reviewing member raises a clarification; assert a threaded response renders. `canWrite={false}` hides the raise-clarification form.
+
+- [ ] **Step 2: Run — FAIL.**
+
+- [ ] **Step 3: Implement** — list clarifications (question + response thread); raise-clarification form (`createAttestationClarification`); the respond action (`respondAttestationClarification`, `path: { attestation_id, clarification_id }`) is available to whichever side the backend permits — surface a 403 as an inline message rather than crashing. Verify field names against `types.gen.ts`.
+
+- [ ] **Step 4: Mount + test + commit** — `git commit -m "Add attestation clarifications panel"`.
+
+---
+
+### Task 13e: Evidence upload + report submission
+
+**Files:**
+- Create: `frontend/src/components/modules/organizations/attestor/workspace/report-panel.tsx`
+- Create test: `.../workspace/report-panel.test.tsx`
+- Modify: `attestation-workspace.tsx` (mount)
+
+**Interfaces:**
+- Consumes: `createAttestationEvidenceUpload` (presigned upload session), `submitAttestationReport` (existing alias).
+- Produces: `export function ReportPanel({ attestationId, canWrite, onSubmitted })`.
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// tests/unit/components/organizations/attestor/workspace/report-panel.test.tsx
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ReportPanel } from "@/components/modules/organizations/attestor/workspace/report-panel";
+import { submitAttestationReport } from "@/lib/generated/sdk.gen";
+
+vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
+  describeGeneratedError: vi.fn(() => "err"),
+  getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
+}));
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  submitAttestationReport: vi.fn(), createAttestationEvidenceUpload: vi.fn(),
+}));
+const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
+
+describe("ReportPanel", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("submits the report with outcome + summary", async () => {
+    vi.mocked(submitAttestationReport).mockResolvedValue(ok({ id: "att-1", status: "report_submitted" }) as any);
+    const onSubmitted = vi.fn();
+    render(<ReportPanel attestationId="att-1" canWrite onSubmitted={onSubmitted} />);
+    fireEvent.change(screen.getByLabelText(/outcome/i), { target: { value: "approved" } });
+    fireEvent.change(screen.getByLabelText(/summary/i), { target: { value: "Meets bar." } });
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+    await waitFor(() => expect(vi.mocked(submitAttestationReport)).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { attestation_id: "att-1" }, body: expect.objectContaining({ outcome: "approved" }) }),
+    ));
+    expect(onSubmitted).toHaveBeenCalled();
+  });
+
+  it("hides submit for read-only viewers", () => {
+    render(<ReportPanel attestationId="att-1" canWrite={false} onSubmitted={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /submit report/i })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run it — fails**
+
+```bash
+npx vitest run tests/unit/components/organizations/attestor/workspace/report-panel.test.tsx
+```
+
+Expected: FAIL.
+
+- [ ] **Step 3: Implement `ReportPanel`**
+
+Evidence upload: request a session via `createAttestationEvidenceUpload`, PUT the file to the returned presigned URL, record the returned id — never log the URL. Report form: outcome select + summary/body fields (verify the exact `submit_attestation_report` request schema in `types.gen.ts` — outcome enum, rubric-completeness preconditions). "Submit report" calls `submitAttestationReport`; on success `onSubmitted()` (parent refetches the attestation). All controls hidden/disabled when `!canWrite`. Surface a precondition 422 (e.g. incomplete rubric) as an inline message.
+
+- [ ] **Step 4: Run the full workspace suite + gates**
+
+```bash
+npx vitest run tests/unit/components/organizations/attestor/workspace
+npm run typecheck && npm run lint
+```
+
+Expected: all green.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "Repoint attestor workspace to org reviewing-member context"
+git commit -m "Add attestation evidence upload + report submission panel"
 ```
 
 ---

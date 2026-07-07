@@ -37,7 +37,7 @@ are the source of truth for endpoints, gates, and confidentiality rules).
 | 3 | Dead individual UI | Delete routes + components + tests. Individual pipeline is retired backend-side; nothing to repoint to. |
 | 4 | Two drift files | Fix in place (repoint to regenerated client types), not rebuild. |
 | 5 | Application UX | Gate-checklist page: each of the 8 activation gates is a status card + inline action. Not a forced linear wizard — gates bounce on `needs_info` and must be revisitable. |
-| 6 | Reviewing-member workspace | Reuse the existing attestor workspace component, repointed to the re-pointed workspace endpoints. Wiring, not rebuild. |
+| 6 | Reviewing-member workspace | **Build from scratch** (corrected 2026-07-07 — no reusable workspace existed; the retired "assignments panel" was only a thin list). Mirror the `project-workspace.tsx` shell-plus-panels pattern. All workspace endpoints already exist in the contract. |
 | 7 | God-component split | `attestation-workspaces.tsx` (1173 lines, 4 panels) splits along its own seam: the 2 surviving panels move to focused files while repointed; the 2 dead panels are deleted. |
 
 ## Scope
@@ -168,10 +168,11 @@ Org tab "Offers":
 Org tab "Attestations":
 - **Queue** (`GET /orgs/{id}/attestations`) — owner/admin see all org attestations; a plain member
   sees only their own. Columns: target, status, reviewing member (owner/admin view only), dates.
-- **Reviewing-member workspace:** reuse the existing attestor workspace component (rubric scores,
-  annotations, clarifications, document uploads, report submission), repointed to the re-pointed
-  workspace endpoints (guards now key on `reviewing_member_id`). Owner/admin get read-only workspace
-  access; the assigned reviewing member gets write.
+- **Reviewing-member workspace:** built from scratch (no prior UI existed) as a shell-plus-panels
+  surface mirroring `project-workspace.tsx`: start-review/consent/content-ack gate, rubric scoring
+  (`rubric/{dimension_key}`), annotations, clarifications, evidence upload, report submission — all
+  against endpoints already in the contract, which guard on `reviewing_member_id`. The assigned
+  reviewing member gets write; owner/admin get read-only. Never reachable by a requestor.
 
 ### H. Org attestor financials (owner/admin)
 
