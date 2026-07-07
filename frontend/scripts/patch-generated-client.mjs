@@ -152,6 +152,21 @@ const compatibilityAliases = {
   listAttestorOrgCompleted: "listAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGet",
   readPlatformConfig: "listPlatformConfigV1AdminConfigGet",
   updatePlatformConfig: "updatePlatformConfigV1AdminConfigPatch",
+  getAttestation: "getAttestationV1AttestationsAttestationIdGet",
+  startAttestationReview: "startAttestationReviewV1AttestationsAttestationIdStartReviewPost",
+  giveAttestationConsent: "decideOwnerConsentV1AttestationsAttestationIdConsentPost",
+  ackAttestationContent: "acknowledgeAttestationContentV1AttestationsAttestationIdContentAckPost",
+  getAttestationArtifactAccess: "requestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPost",
+  upsertRubricScore: "upsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPut",
+  listAttestationAnnotations: "listAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGet",
+  createAttestationAnnotation: "createAttestationAnnotationV1AttestationsAttestationIdAnnotationsPost",
+  updateAttestationAnnotation: "updateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatch",
+  deleteAttestationAnnotation: "deleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDelete",
+  listAttestationClarifications: "listAttestationClarificationsV1AttestationsAttestationIdClarificationsGet",
+  createAttestationClarification: "createAttestationClarificationV1AttestationsAttestationIdClarificationsPost",
+  respondAttestationClarification: "respondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPost",
+  createAttestationEvidenceUpload: "createAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPost",
+
 };
 
 const aliasBlock = [
