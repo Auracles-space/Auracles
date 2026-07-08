@@ -1920,6 +1920,16 @@ async def publish_framework(
             framework.status = "published"
             framework.published_at = datetime.now(UTC)
             framework.tags_text = tags_to_search_text(framework.tags)
+            settings = get_settings()
+            for artifact in current_artifacts:
+                if artifact.source_kind == "google_drive":
+                    s3.storage.delete_prefix(
+                        settings.s3_artifacts_bucket,
+                        (
+                            f"frameworks/{framework.id}/artifacts/{artifact.id}/"
+                            "source-preview/"
+                        ),
+                    )
             await write_audit(
                 db=db,
                 actor_id=contributor_id,

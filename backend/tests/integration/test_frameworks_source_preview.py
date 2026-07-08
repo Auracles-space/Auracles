@@ -19,6 +19,7 @@ from tests.integration.test_frameworks_crud import (
     create_draft_framework,
     create_user_with_roles,
     framework_test_context,  # noqa: F401
+    mark_artifact_pipeline_state,
     migrated_database,  # noqa: F401
 )
 
@@ -190,3 +191,70 @@ async def test_source_preview_published_framework_conflicts(
     )
 
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_publish_deletes_source_preview_objects(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publishing removes draft-only source-preview cache objects."""
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        type("FakeTask", (), {"delay": staticmethod(lambda _: None)}),
+    )
+    deleted_prefixes: list[str] = []
+
+    class FakeNotifyTask:
+        """Notification task double for publish tests."""
+
+        def delay(self, framework_id: str, new_version: str) -> None:
+            """Do nothing for publish notifications in tests."""
+
+    async def _index_framework_artifacts(framework_id: UUID) -> None:
+        """Skip external index writes in the publish test."""
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.index_framework_artifacts",
+        _index_framework_artifacts,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.notify_licensees_of_new_version",
+        FakeNotifyTask(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        s3.storage,
+        "delete_prefix",
+        lambda bucket, prefix: deleted_prefixes.append(prefix),
+        raising=False,
+    )
+
+    contributor_id, framework_id, artifact_id = await _create_drive_bound_artifact(
+        client,
+        contributor_email="preview-publish-cleanup@auracles.space",
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    published = await client.post(
+        f"/v1/frameworks/{framework_id}/publish",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert submitted.status_code == 200
+    assert published.status_code == 200
+    assert (
+        f"frameworks/{framework_id}/artifacts/{artifact_id}/source-preview/"
+        in deleted_prefixes
+    )
+
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+    assert artifact is not None
+    assert artifact.source_kind == "google_drive"
+    assert artifact.source_external_id == "file-1"

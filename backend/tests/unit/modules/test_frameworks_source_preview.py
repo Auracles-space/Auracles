@@ -218,3 +218,17 @@ async def test_source_preview_refuses_upload_artifact(
         await service.get_source_preview(db, contributor, framework.id, artifact.id)
 
     assert exc_info.value.status_code == 404
+
+
+def test_artifact_response_has_no_source_preview_fields() -> None:
+    """ArtifactResponse must stay free of preview-only and secret source fields."""
+    from app.modules.frameworks.schemas import ArtifactResponse
+
+    forbidden = {
+        "preview_url",
+        "source_updated",
+        "source_external_id",
+        "source_connection_id",
+        "source_synced_revision",
+    }
+    assert forbidden.isdisjoint(ArtifactResponse.model_fields.keys())
