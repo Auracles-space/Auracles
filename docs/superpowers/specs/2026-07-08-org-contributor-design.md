@@ -102,9 +102,14 @@ org_legal_profiles                       -- shared legal identity, all capabilit
   created_at / updated_at
 
 user_roles
-  + source text NULL                     -- 'self' (self-selected) vs 'derived' (org)
-                                         -- distinguishes a self-selected contributor role
-                                         -- from an org-derived one; sync only manages 'derived'
+  + source text NOT NULL                 -- 'self' (self-selected) vs 'derived' (org)
+  uniqueness: (user_id, role)  →  (user_id, role, source)
+                                         -- a user may hold the same role BOTH self-selected
+                                         -- and org-derived, as two independent rows. sync
+                                         -- manages only the 'derived' row and never selects,
+                                         -- grants, or deletes a 'self' row. RBAC passes on any
+                                         -- row. All UserRole role-existence queries must be
+                                         -- multi-row-tolerant (contributor can have 2 rows).
 ```
 
 - **No AMM / matching profile** for contributors (unlike attestor). Contributors are found
@@ -309,7 +314,9 @@ All additive — no drops, so no architect-gated drop migration in this cut. Eac
    `(project_id, contributor_org_id)`).
 3. `org_contributor_profiles` table; `contributor` added to the derived-role map.
 4. `org_legal_profiles` table (1:1 org); invoicing re-point (attestor + contributor).
-5. `user_roles.source` marker column; backfill existing rows to `'self'`.
+5. `user_roles.source` marker column (add nullable → backfill: `attestor`→`'derived'`,
+   else→`'self'` → `SET NOT NULL`); swap uniqueness `(user_id, role)` →
+   `(user_id, role, source)` so self + derived rows coexist.
 
 ## Error handling
 
