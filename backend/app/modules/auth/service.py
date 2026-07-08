@@ -246,11 +246,12 @@ async def _load_active_roles(db: AsyncSession, user_id: UUID) -> list[str]:
             )
         )
     ).all()
-    return [
+    roles = [
         role
         for role, approved_at in rows
         if role != "attestor" or approved_at is not None
     ]
+    return list(dict.fromkeys(roles))
 
 
 async def _store_refresh_token(
@@ -1094,7 +1095,13 @@ async def add_self_role(
         )
 
     existing = await db.scalar(
-        select(UserRole).where(UserRole.user_id == user.id, UserRole.role == role)
+        select(UserRole)
+        .where(
+            UserRole.user_id == user.id,
+            UserRole.role == role,
+            UserRole.source == "self",
+        )
+        .limit(1)
     )
     if existing is not None:
         raise HTTPException(
@@ -1105,6 +1112,7 @@ async def add_self_role(
     assigned_role = UserRole(
         user_id=user.id,
         role=role,
+        source="self",
         approved_at=datetime.now(UTC),
     )
     db.add(assigned_role)

@@ -179,7 +179,12 @@ class UserRole(CreatedAtMixin, Base):
 
     __tablename__ = "user_roles"
     __table_args__ = (
-        UniqueConstraint("user_id", "role", name="uq_user_roles_user_role"),
+        UniqueConstraint(
+            "user_id",
+            "role",
+            "source",
+            name="uq_user_roles_user_role_source",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -193,6 +198,11 @@ class UserRole(CreatedAtMixin, Base):
         nullable=False,
     )
     role: Mapped[str] = mapped_column(ROLE_ENUM, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="self",
+    )
     approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

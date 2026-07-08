@@ -1234,6 +1234,7 @@ async def get_contributor_profile(
             UserRole.role == "contributor",
             User.suspended_at.is_(None),
         )
+        .limit(1)
     )
     if contributor is None:
         raise HTTPException(

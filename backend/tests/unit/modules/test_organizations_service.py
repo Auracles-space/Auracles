@@ -230,6 +230,7 @@ async def test_sync_revokes_when_no_qualifying_org(
                 UserRole(
                     user_id=user.id,
                     role="attestor",
+                    source="derived",
                     approved_at=datetime.now(UTC),
                 )
             )

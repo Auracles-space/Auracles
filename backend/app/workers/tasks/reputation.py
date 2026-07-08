@@ -89,7 +89,9 @@ async def _recompute_all_impl() -> dict[str, int]:
         contributor_ids = (
             (
                 await db.execute(
-                    select(UserRole.user_id).where(UserRole.role == "contributor")
+                    select(UserRole.user_id)
+                    .where(UserRole.role == "contributor")
+                    .distinct()
                 )
             )
             .scalars()

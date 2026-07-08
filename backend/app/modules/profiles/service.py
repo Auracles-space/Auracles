@@ -183,7 +183,7 @@ async def _resolve_featured(
 
 async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
     """Return a user's role names, alphabetically ordered for stable output."""
-    return list(
+    roles = list(
         (
             await db.execute(
                 select(UserRole.role)
@@ -194,6 +194,7 @@ async def _roles_for(db: AsyncSession, user_id: UUID) -> list[str]:
         .scalars()
         .all()
     )
+    return list(dict.fromkeys(roles))
 
 
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")

@@ -582,9 +582,14 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         for role, approved_at in role_rows
         if role != "attestor" or approved_at is not None
     ]
+    roles = list(dict.fromkeys(roles))
     # Roles held but not yet usable (attestor awaiting admin approval). Surfaced
     # so the UI can prompt the user to complete or track their application.
-    pending_roles = [role for role, approved_at in role_rows if approved_at is None]
+    pending_roles = list(
+        dict.fromkeys(
+            [role for role, approved_at in role_rows if approved_at is None]
+        )
+    )
     return CurrentUserResponse(
         id=current_user.id,
         email=current_user.email,

@@ -59,6 +59,7 @@ from app.workers.tasks.org_notifications import send_org_invitation
 
 INVITATION_TTL_DAYS = 7
 INVITE_RATE_LIMITER = RateLimiter(namespace="org_invite", limit=20, window=3600)
+_DERIVED_ROLE_MAP = {"attestor": "attestor", "contributor": "contributor"}
 
 
 async def create_organization(
@@ -513,71 +514,77 @@ async def _guard_and_release_member_reviews(
 
 
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
-    """Grant/revoke the derived user-level attestor role for this user.
+    """Grant or revoke org-derived user roles for one user's live memberships.
 
-    The attestor role is org-derived (spec decision 9): held while the
-    user belongs to at least one live org whose attestor capability is
-    active. Grants carry approved_at because the attestation module only
-    honors roles where approved_at is not null. Idempotent; safe on every
-    membership or capability change.
+    Derived roles are controlled solely by organization capability state, so
+    this sync selects and mutates only ``source="derived"`` rows. Self-selected
+    roles are intentionally left untouched.
     """
     from app.modules.auth.models import UserRole
 
-    stmt = (
-        select(1)
-        .select_from(OrgMember)
-        .join(Organization, Organization.id == OrgMember.org_id)
-        .join(
-            OrgCapability,
-            (OrgCapability.org_id == Organization.id)
-            & (OrgCapability.capability == "attestor")
-            & (OrgCapability.status == "active"),
+    should_have_role_by_name: dict[str, bool] = {}
+    for capability, role in _DERIVED_ROLE_MAP.items():
+        stmt = (
+            select(1)
+            .select_from(OrgMember)
+            .join(Organization, Organization.id == OrgMember.org_id)
+            .join(
+                OrgCapability,
+                (OrgCapability.org_id == Organization.id)
+                & (OrgCapability.capability == capability)
+                & (OrgCapability.status == "active"),
+            )
+            .where(
+                OrgMember.user_id == user_id,
+                Organization.suspended_at.is_(None),
+                Organization.deactivated_at.is_(None),
+            )
+            .limit(1)
         )
-        .where(
-            OrgMember.user_id == user_id,
-            Organization.suspended_at.is_(None),
-            Organization.deactivated_at.is_(None),
-        )
-        .limit(1)
-    )
-    should_have_role = (await db.scalar(stmt)) is not None
+        should_have_role_by_name[role] = (await db.scalar(stmt)) is not None
 
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
-        current_role = await db.scalar(
-            select(UserRole)
-            .where(UserRole.user_id == user_id, UserRole.role == "attestor")
-            .with_for_update()
-        )
-
-        if should_have_role and not current_role:
-            db.add(
-                UserRole(
-                    user_id=user_id,
-                    role="attestor",
-                    approved_at=datetime.now(UTC),
+        for role, should_have_role in should_have_role_by_name.items():
+            current_role = await db.scalar(
+                select(UserRole)
+                .where(
+                    UserRole.user_id == user_id,
+                    UserRole.role == role,
+                    UserRole.source == "derived",
                 )
+                .with_for_update()
             )
-            await write_audit(
-                db=db,
-                actor_id=None,
-                action="org_derived_role_synced",
-                target_type="user",
-                target_id=user_id,
-                metadata={"role": "attestor", "granted": True},
-            )
-        elif not should_have_role and current_role:
-            await db.delete(current_role)
-            await write_audit(
-                db=db,
-                actor_id=None,
-                action="org_derived_role_synced",
-                target_type="user",
-                target_id=user_id,
-                metadata={"role": "attestor", "granted": False},
-            )
+
+            if should_have_role and current_role is None:
+                db.add(
+                    UserRole(
+                        user_id=user_id,
+                        role=role,
+                        source="derived",
+                        approved_at=datetime.now(UTC),
+                    )
+                )
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="org_derived_role_synced",
+                    target_type="user",
+                    target_id=user_id,
+                    metadata={"role": role, "granted": True},
+                )
+            elif not should_have_role and current_role is not None:
+                await db.delete(current_role)
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="org_derived_role_synced",
+                    target_type="user",
+                    target_id=user_id,
+                    metadata={"role": role, "granted": False},
+                )
 
 
 async def change_member_role(

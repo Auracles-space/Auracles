@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -490,3 +491,69 @@ class OrgMemberNda(CreatedAtMixin, Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class OrgContributorProfile(UpdatedAtMixin, Base):
+    """Directory and reputation profile for an org-backed Contributor."""
+
+    __tablename__ = "org_contributor_profiles"
+    __table_args__ = (
+        UniqueConstraint("org_id", name="uq_org_contributor_profiles_org"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+    verification_level: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reputation_score: Mapped[float | None] = mapped_column(
+        Numeric,
+        nullable=True,
+    )
+
+
+class OrgLegalProfile(UpdatedAtMixin, Base):
+    """Shared legal identity row for organization commercial capabilities."""
+
+    __tablename__ = "org_legal_profiles"
+    __table_args__ = (
+        UniqueConstraint("org_id", name="uq_org_legal_profiles_org"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    legal_name: Mapped[str] = mapped_column(Text, nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    tax_document_type: Mapped[str | None] = mapped_column(
+        ORG_TAX_DOCUMENT_TYPE_ENUM,
+        nullable=True,
+    )
+    tax_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)

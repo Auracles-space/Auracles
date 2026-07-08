@@ -1187,10 +1187,15 @@ async def assign_user_role(
         select(UserRole).where(
             UserRole.user_id == target_user_id,
             UserRole.role == role,
+            UserRole.source == ("derived" if role == "attestor" else "self"),
         )
     )
     if existing is None:
-        existing = UserRole(user_id=target_user_id, role=role)
+        existing = UserRole(
+            user_id=target_user_id,
+            role=role,
+            source="derived" if role == "attestor" else "self",
+        )
         db.add(existing)
 
     existing.approved_at = datetime.now(UTC)
