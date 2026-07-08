@@ -95,6 +95,24 @@ class Artifact(CreatedAtMixin, Base):
     clean_file_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Records where the current artifact bytes came from so draft previews and
+    # later re-sync can reason about an external source without altering the
+    # owned artifact bytes. Legacy rows default to direct uploads.
+    source_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'upload'")
+    )
+    source_external_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    source_connection_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("oauth_connections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_synced_revision: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     scan_status: Mapped[str] = mapped_column(
         SCAN_STATUS_ENUM,
         nullable=False,

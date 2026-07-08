@@ -361,7 +361,7 @@ async def get_drive_file_metadata(
         async with httpx.AsyncClient(timeout=_DRIVE_TIMEOUT_SECONDS) as client:
             response = await client.get(
                 f"{DRIVE_API_BASE}/files/{file_id}",
-                params={"fields": "id,name,mimeType,size"},
+                params={"fields": "id,name,mimeType,size,modifiedTime"},
                 headers={"Authorization": f"Bearer {access_token}"},
             )
     except httpx.HTTPError as exc:

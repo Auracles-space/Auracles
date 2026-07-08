@@ -3083,6 +3083,63 @@ async def test_import_from_connector_exports_google_native_docs(
     assert key.endswith(".docx")
 
 
+async def test_import_from_connector_stamps_source_binding(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connector import records the Drive binding and drift baseline on the row."""
+    import httpx
+    import respx
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        type("FakeTask", (), {"delay": staticmethod(lambda _: None)}),
+    )
+    contributor_id = await create_user_with_roles(
+        "connector-binding@auracles.space", ["contributor"]
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    connection_id = await _seed_drive_connection(contributor_id)
+
+    with respx.mock as respx_mock:
+        respx_mock.get("https://www.googleapis.com/drive/v3/files/f1").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": "f1",
+                    "name": "brief.pdf",
+                    "mimeType": "application/pdf",
+                    "size": "13",
+                    "modifiedTime": "2026-07-08T00:00:00Z",
+                },
+            )
+        )
+        respx_mock.get(
+            "https://www.googleapis.com/drive/v3/files/f1",
+            params__contains={"alt": "media"},
+        ).mock(return_value=httpx.Response(200, content=b"dummy content"))
+        response = await client.post(
+            f"/v1/frameworks/{framework_id}/artifacts/from-connector",
+            headers=auth_headers(contributor_id, ["contributor"]),
+            json={"connection_id": str(connection_id), "file_id": "f1"},
+        )
+
+    assert response.status_code == 200
+    artifact_id = UUID(response.json()["id"])
+
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, artifact_id)
+
+    assert artifact is not None
+    assert artifact.source_kind == "google_drive"
+    assert artifact.source_external_id == "f1"
+    assert str(artifact.source_connection_id) == str(connection_id)
+    assert artifact.source_synced_revision == "2026-07-08T00:00:00Z"
+    assert artifact.source_last_synced_at is not None
+
+
 async def test_import_from_connector_rejects_unsupported_mime(
     client: AsyncClient,
     migrated_database: None,

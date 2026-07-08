@@ -1124,6 +1124,15 @@ async def import_artifact_from_connector(
         file_size=len(body),
         mime_type=effective_mime,
         processing_status="processing",
+        source_kind="google_drive",
+        source_external_id=payload.file_id,
+        source_connection_id=connection.id,
+        source_last_synced_at=datetime.now(UTC),
+        source_synced_revision=(
+            str(metadata.get("modifiedTime"))
+            if metadata.get("modifiedTime")
+            else None
+        ),
     )
     db.add(artifact)
     settings = get_settings()

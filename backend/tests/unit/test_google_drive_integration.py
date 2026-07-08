@@ -18,6 +18,7 @@ from app.integrations.google_drive import (
     download_drive_file,
     exchange_drive_code,
     fetch_drive_account_email,
+    get_drive_file_metadata,
     list_drive_files,
     refresh_drive_tokens,
 )
@@ -139,6 +140,50 @@ async def test_list_drive_files_scopes_to_folder() -> None:
     )
     q = parse_qs(urlsplit(str(route.calls.last.request.url)).query)["q"][0]
     assert "'fold\\'er-1' in parents" in q
+
+
+async def test_get_drive_file_metadata_requests_modified_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Metadata fetches must request modifiedTime for the drift baseline."""
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {
+                "id": "f1",
+                "name": "n",
+                "mimeType": "application/pdf",
+                "size": "10",
+                "modifiedTime": "2026-07-08T00:00:00Z",
+            }
+
+    class _Client:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            """Match httpx.AsyncClient construction for the monkeypatch."""
+
+        async def __aenter__(self) -> _Client:
+            """Enter the async client context manager."""
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            """Exit the async client context manager."""
+
+        async def get(
+            self, url: str, params: dict[str, str], headers: dict[str, str]
+        ) -> _Resp:
+            """Capture the requested fields and return a stub payload."""
+            captured["fields"] = params["fields"]
+            return _Resp()
+
+    monkeypatch.setattr("app.integrations.google_drive.httpx.AsyncClient", _Client)
+
+    result = await get_drive_file_metadata(access_token="t", file_id="f1")
+
+    assert "modifiedTime" in str(captured["fields"])
+    assert result["modifiedTime"] == "2026-07-08T00:00:00Z"
 
 
 @respx.mock
