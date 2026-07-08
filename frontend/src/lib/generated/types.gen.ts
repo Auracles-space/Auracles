@@ -735,6 +735,7 @@ export type ArtifactResponse = {
     file_key: string;
     file_size: number;
     mime_type: string;
+    source_kind: string;
     scan_status: string;
     processing_status: string;
     pii_detected: boolean;
@@ -3727,6 +3728,15 @@ export type SocialLink = {
 export type platform = 'x' | 'linkedin' | 'github' | 'youtube' | 'instagram' | 'facebook' | 'tiktok';
 
 /**
+ * Owner-only, draft-only source preview response for a bound artifact.
+ */
+export type SourcePreviewResponse = {
+    preview_url: (string | null);
+    source_updated: boolean;
+    source_last_synced_at: (string | null);
+};
+
+/**
  * One-time response carrying a freshly generated set of backup codes.
  */
 export type TotpBackupCodesResponse = {
@@ -5283,6 +5293,17 @@ export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConne
 export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostResponse = (ArtifactResponse);
 
 export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostError = (HTTPValidationError);
+
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetResponse = (SourcePreviewResponse);
+
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetError = (HTTPValidationError);
 
 export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;

@@ -4887,6 +4887,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/source-preview:
+    get:
+      tags:
+      - Frameworks
+      summary: Draft live-mirror preview for a connector-bound artifact
+      description: Owner-only, pre-publish-only. Returns a presigned thumbnail of
+        the current source file and whether the source changed since import. Never
+        exposed on public, catalog, or buyer surfaces.
+      operationId: get_artifact_source_preview_v1_frameworks__framework_id__artifacts__artifact_id__source_preview_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcePreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:
@@ -11707,6 +11746,9 @@ components:
         mime_type:
           type: string
           title: Mime Type
+        source_kind:
+          type: string
+          title: Source Kind
         scan_status:
           type: string
           title: Scan Status
@@ -11762,6 +11804,7 @@ components:
       - file_key
       - file_size
       - mime_type
+      - source_kind
       - scan_status
       - processing_status
       - pii_detected
@@ -12656,15 +12699,10 @@ components:
       - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: 'Public attestor-organization directory row safe for anonymous
-        browsing.
-
-
-        Lists the organization''s public matching profile, completed-attestation
-
-        count, member count, and certification mark. Never exposes individual member
-
-        identities — attestation is credited to the organization, not its reviewers.'
+      description: "Public attestor-organization directory row safe for anonymous\
+        \ browsing.\n\nLists the organization's public matching profile, completed-attestation\n\
+        count, member count, and certification mark. Never exposes individual member\n\
+        identities \u2014 attestation is credited to the organization, not its reviewers."
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -17649,12 +17687,10 @@ components:
       - refresh_url
       - return_url
       title: OrgPayoutAccountOnboardRequest
-      description: 'Request body for onboarding an organization payout destination.
-
-
-        The organization''s registered ``country`` is authoritative for provider
-
-        routing, so — unlike the individual request — no country is accepted here.'
+      description: "Request body for onboarding an organization payout destination.\n\
+        \nThe organization's registered ``country`` is authoritative for provider\n\
+        routing, so \u2014 unlike the individual request \u2014 no country is accepted\
+        \ here."
     OrgReassignReviewerRequest:
       properties:
         reviewing_member_id:
@@ -19587,12 +19623,9 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: 'Verified Credential fields safe for public profile display.
-
-
-        Never exposes evidence keys, verification URL, reference number, or review
-
-        metadata — anti-gaming and PII protection.'
+      description: "Verified Credential fields safe for public profile display.\n\n\
+        Never exposes evidence keys, verification URL, reference number, or review\n\
+        metadata \u2014 anti-gaming and PII protection."
     PublicOrganizationResponse:
       properties:
         slug:
@@ -20348,6 +20381,29 @@ components:
       description: "A single typed social profile link.\n\nAttributes:\n    platform:\
         \ One of the allow-listed social platforms.\n    url: Destination URL on that\
         \ platform; must use http or https."
+    SourcePreviewResponse:
+      properties:
+        preview_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Preview Url
+        source_updated:
+          type: boolean
+          title: Source Updated
+        source_last_synced_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Source Last Synced At
+      type: object
+      required:
+      - preview_url
+      - source_updated
+      - source_last_synced_at
+      title: SourcePreviewResponse
+      description: Owner-only, draft-only source preview response for a bound artifact.
     TotpBackupCodesResponse:
       properties:
         backup_codes:

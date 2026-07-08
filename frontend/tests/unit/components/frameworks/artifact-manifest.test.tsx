@@ -29,6 +29,7 @@ function artifact(overrides: Partial<ArtifactResponse> = {}): ArtifactResponse {
     file_size: 1024,
     mime_type:
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    source_kind: "upload",
     scan_status: "clean",
     processing_status: "processed",
     pii_detected: false,

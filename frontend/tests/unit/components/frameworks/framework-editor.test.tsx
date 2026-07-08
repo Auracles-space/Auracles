@@ -74,6 +74,7 @@ function makeArtifact(
     id: "art_1",
     mime_type: "application/pdf",
     name: "Operating Model.pdf",
+    source_kind: "upload",
     pii_detected: false,
     pii_review_needed: false,
     processing_status: "processed",

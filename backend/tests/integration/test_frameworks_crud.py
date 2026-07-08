@@ -2946,6 +2946,7 @@ def _mock_drive_file(
     size: str | None,
     content: bytes,
     export: bool = False,
+    modified_time: str = "2026-07-08T00:00:00Z",
 ) -> None:
     """Mock the Drive metadata + download (or export) endpoints."""
     import httpx
@@ -2953,10 +2954,11 @@ def _mock_drive_file(
     metadata: dict[str, Any] = {"id": file_id, "name": name, "mimeType": mime_type}
     if size is not None:
         metadata["size"] = size
+    metadata["modifiedTime"] = modified_time
     base = f"https://www.googleapis.com/drive/v3/files/{file_id}"
-    respx_mock.get(base, params__contains={"fields": "id,name,mimeType,size"}).mock(
-        return_value=httpx.Response(200, json=metadata)
-    )
+    respx_mock.get(
+        base, params__contains={"fields": "id,name,mimeType,size,modifiedTime"}
+    ).mock(return_value=httpx.Response(200, json=metadata))
     if export:
         respx_mock.get(f"{base}/export").mock(
             return_value=httpx.Response(200, content=content)
@@ -3007,6 +3009,7 @@ async def test_import_from_connector_creates_processing_artifact(
     assert data["name"] == "playbook.pdf"
     assert data["processing_status"] == "processing"
     assert data["file_size"] == len(b"dummy content")
+    assert data["source_kind"] == "google_drive"
     assert scanned == [data["id"]]
 
     storage = framework_test_context["storage"]

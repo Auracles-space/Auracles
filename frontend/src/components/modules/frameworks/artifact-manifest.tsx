@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 
+import { SourcePreviewBadge } from "@/components/modules/frameworks/source-preview-badge";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -132,6 +133,12 @@ export function ArtifactManifest({
                     {formatFileSize(artifact.file_size)} · {artifact.scan_status}{" "}
                     · {artifact.processing_status}
                   </p>
+                  {canSetPreview && artifact.source_kind === "google_drive" ? (
+                    <SourcePreviewBadge
+                      artifactId={artifact.id}
+                      frameworkId={frameworkId}
+                    />
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {isPreview ? (

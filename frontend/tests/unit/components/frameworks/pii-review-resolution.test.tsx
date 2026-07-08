@@ -37,6 +37,7 @@ const baseArtifact: ArtifactResponse = {
   id: "art_123",
   mime_type: "application/pdf",
   name: "Operating Model.pdf",
+  source_kind: "upload",
   near_duplicate_blocked: false,
   pii_detected: true,
   pii_review_needed: true,

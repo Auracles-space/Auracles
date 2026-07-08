@@ -97,6 +97,7 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
         file_key=artifact.file_key,
         file_size=artifact.file_size,
         mime_type=artifact.mime_type,
+        source_kind=artifact.source_kind,
         scan_status=artifact.scan_status,
         processing_status=artifact.processing_status,
         pii_detected=artifact.pii_detected,

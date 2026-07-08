@@ -243,6 +243,7 @@ class ArtifactResponse(BaseModel):
     file_key: str
     file_size: int
     mime_type: str
+    source_kind: str
     scan_status: str
     processing_status: str
     pii_detected: bool
