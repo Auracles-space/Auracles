@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import delete
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, engine
@@ -18,6 +18,7 @@ from app.modules.auth.models import User
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
 from app.modules.integrations.models import OAuthConnection
+from app.shared.models.audit_log import AuditLog
 
 
 def _fake_connection(
@@ -44,12 +45,22 @@ def _fake_connection(
 
 
 async def _cleanup_preview_rows() -> None:
-    """Remove preview-test rows in FK-safe order."""
+    """Truncate the tables this suite touches, order-independently.
+
+    delete_artifact writes an audit row that references the contributor, and
+    other suites may leave user-referencing rows behind under a shuffled test
+    order. TRUNCATE ... CASCADE clears the fixture's tables and their children
+    without depending on delete ordering.
+    """
     async with async_session_factory() as session:
-        await session.execute(delete(Artifact))
-        await session.execute(delete(Framework))
-        await session.execute(delete(OAuthConnection))
-        await session.execute(delete(User))
+        await session.execute(
+            text(
+                "TRUNCATE TABLE "
+                f"{AuditLog.__tablename__}, {Artifact.__tablename__}, "
+                f"{Framework.__tablename__}, {OAuthConnection.__tablename__}, "
+                f"{User.__tablename__} RESTART IDENTITY CASCADE"
+            )
+        )
         await session.commit()
 
 
@@ -218,6 +229,70 @@ async def test_source_preview_refuses_upload_artifact(
         await service.get_source_preview(db, contributor, framework.id, artifact.id)
 
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_artifact_purges_source_preview_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    source_preview_ctx: tuple[AsyncSession, User, Framework, Artifact],
+) -> None:
+    """Removing a google_drive draft artifact must purge its preview objects."""
+    from app.modules.frameworks import service
+
+    db, contributor, framework, artifact = source_preview_ctx
+    artifact.processing_status = "processed"
+    await db.commit()
+
+    deleted_prefixes: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(s3_artifacts_bucket="artifacts-bucket"),
+    )
+    monkeypatch.setattr(
+        service.s3.storage,
+        "delete_prefix",
+        lambda bucket, prefix: deleted_prefixes.append(prefix),
+    )
+
+    await service.delete_artifact(db, contributor, framework.id, artifact.id)
+
+    assert (
+        f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
+        in deleted_prefixes
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_artifact_skips_purge_for_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    source_preview_ctx: tuple[AsyncSession, User, Framework, Artifact],
+) -> None:
+    """An upload-kind artifact has no preview cache, so no purge is attempted."""
+    from app.modules.frameworks import service
+
+    db, contributor, framework, artifact = source_preview_ctx
+    artifact.processing_status = "processed"
+    artifact.source_kind = "upload"
+    artifact.source_connection_id = None
+    artifact.source_external_id = None
+    await db.commit()
+
+    deleted_prefixes: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(s3_artifacts_bucket="artifacts-bucket"),
+    )
+    monkeypatch.setattr(
+        service.s3.storage,
+        "delete_prefix",
+        lambda bucket, prefix: deleted_prefixes.append(prefix),
+    )
+
+    await service.delete_artifact(db, contributor, framework.id, artifact.id)
+
+    assert deleted_prefixes == []
 
 
 def test_artifact_response_has_no_source_preview_fields() -> None:

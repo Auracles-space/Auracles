@@ -1478,6 +1478,14 @@ async def delete_artifact(
         framework.status = "draft"
         framework.pipeline_failure_reasons = {}
     artifact = await _load_owned_artifact(db, framework, artifact_id)
+    # Capture the connector-preview cache prefix before the row is mutated: a
+    # removed connector artifact must not leave orphaned source-preview
+    # thumbnails behind in private storage.
+    source_preview_prefix = (
+        f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
+        if artifact.source_kind == "google_drive"
+        else None
+    )
     # Block deletion while the processing pipeline is actively running on this
     # artifact: a concurrent worker write would otherwise race a removed row and
     # could orphan the S3 object. "pending" (not yet dispatched) stays deletable.
@@ -1528,6 +1536,10 @@ async def delete_artifact(
         framework.pipeline_failure_reasons = {}
 
     await db.commit()
+    if source_preview_prefix is not None:
+        s3.storage.delete_prefix(
+            get_settings().s3_artifacts_bucket, source_preview_prefix
+        )
     logger.bind(
         module="frameworks",
         action="delete_artifact",
