@@ -5853,6 +5853,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/contributor-capability/activate:
+    post:
+      tags:
+      - Organizations
+      summary: Activate contributor capability
+      description: Self-activate the organization's contributor capability as an org
+        admin or owner. Creates the org contributor profile if missing and grants
+        members the derived contributor role.
+      operationId: activate_contributor_capability_v1_orgs__org_id__contributor_capability_activate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgCapabilityResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/members/{member_id}:
     delete:
       tags:
@@ -7138,6 +7170,87 @@ paths:
       description: Revoke an org's attestor capability and deactivate its profile;
         members' derived roles are re-evaluated.
       operationId: admin_revoke_attestor_capability_v1_admin_orgs__org_id__attestor_capability_revoke_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/contributor-capability/suspend:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Suspend an org's contributor capability (platform admin)
+      description: Suspend an org's contributor capability; member derived contributor
+        roles are re-evaluated.
+      operationId: admin_suspend_contributor_capability_v1_admin_orgs__org_id__contributor_capability_suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/contributor-capability/reinstate:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Reinstate an org's contributor capability (platform admin)
+      description: Reactivate a suspended org contributor capability and re-grant
+        any derived contributor roles.
+      operationId: admin_reinstate_contributor_capability_v1_admin_orgs__org_id__contributor_capability_reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/contributor-capability/revoke:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Revoke an org's contributor capability (platform admin)
+      description: Revoke an org's contributor capability, deactivate its profile,
+        and remove derived contributor roles from its members.
+      operationId: admin_revoke_contributor_capability_v1_admin_orgs__org_id__contributor_capability_revoke_post
       security:
       - HTTPBearer: []
       parameters:
@@ -17412,6 +17525,47 @@ components:
       - size_bytes
       title: OrgAttestorTaxDocumentRequest
       description: Request body to create a presigned tax-document upload session.
+    OrgCapabilityResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        org_id:
+          type: string
+          format: uuid
+          title: Org Id
+        capability:
+          type: string
+          title: Capability
+        status:
+          type: string
+          title: Status
+        activated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Activated At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - org_id
+      - capability
+      - status
+      - activated_at
+      - created_at
+      - updated_at
+      title: OrgCapabilityResponse
+      description: One organization capability row.
     OrgInvitationCreateRequest:
       properties:
         email:

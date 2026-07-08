@@ -15,7 +15,11 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token
 from app.main import app
 from app.modules.auth.models import UserRole
-from app.modules.organizations.models import OrgCapability, OrgContributorProfile, Organization
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgContributorProfile,
+)
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_admin_endpoints import create_platform_admin
 from tests.integration.test_organizations_endpoints import (
@@ -28,6 +32,7 @@ from tests.integration.test_organizations_endpoints import (
 )
 
 pytestmark = pytest.mark.asyncio
+__all__ = ["clean_orgs", "migrated_database"]
 
 
 @pytest.fixture

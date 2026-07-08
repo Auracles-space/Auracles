@@ -88,6 +88,20 @@ class OrganizationResponse(BaseModel):
     created_at: datetime
 
 
+class OrgCapabilityResponse(BaseModel):
+    """One organization capability row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    capability: str
+    status: str
+    activated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class MyOrganizationResponse(BaseModel):
     """An organization membership visible to the current user."""
 

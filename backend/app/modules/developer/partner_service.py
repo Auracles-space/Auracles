@@ -546,6 +546,7 @@ async def initiate_purchase(
         )
     framework_uuid = framework.id
     contributor_id = framework.contributor_id
+    assert contributor_id is not None
     framework_license_types = list(framework.license_types)
     framework_price = framework.price
     framework_currency = framework.currency.upper()
@@ -620,8 +621,6 @@ async def initiate_purchase(
             detail="Payment provider is unavailable.",
         ) from exc
 
-    contributor_id = framework.contributor_id
-    assert contributor_id is not None
     transaction_id = await _create_pending_partner_purchase(
         db,
         api_key_id=api_key_id,

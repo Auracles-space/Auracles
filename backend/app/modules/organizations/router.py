@@ -30,6 +30,7 @@ from app.modules.financials.schemas import (
 )
 from app.modules.organizations import (
     attestor_application_service,
+    contributor_service,
     nda_service,
     service,
 )
@@ -55,6 +56,7 @@ from app.modules.organizations.schemas import (
     OrgAttestorFeedbackRequest,
     OrgAttestorGateChecklist,
     OrgAttestorTaxDocumentRequest,
+    OrgCapabilityResponse,
     OrgInvitationCreateRequest,
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
@@ -85,6 +87,9 @@ OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
 ORG_ATTESTOR_APPLY_RATE_LIMITER = RateLimiter(
     namespace="org_attestor_apply", limit=3, window=86400
+)
+ORG_CONTRIBUTOR_ACTIVATE_RATE_LIMITER = RateLimiter(
+    namespace="org_contributor_activate", limit=5, window=3600
 )
 
 
@@ -239,6 +244,35 @@ async def list_members(
     """List members of one organization."""
     del org_id
     return await service.list_members(db=db, context=context)
+
+
+@router.post(
+    "/{org_id}/contributor-capability/activate",
+    response_model=OrgCapabilityResponse,
+    summary="Activate contributor capability",
+    description=(
+        "Self-activate the organization's contributor capability as an org "
+        "admin or owner. Creates the org contributor profile if missing and "
+        "grants members the derived contributor role."
+    ),
+)
+async def activate_contributor_capability(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgCapabilityResponse:
+    """Activate the org Contributor capability."""
+    del org_id
+    await ORG_CONTRIBUTOR_ACTIVATE_RATE_LIMITER.check(
+        cast(RedisCounter, redis), str(context.org.id)
+    )
+    capability = await contributor_service.activate_contributor_capability(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+    )
+    return OrgCapabilityResponse.model_validate(capability)
 
 
 @router.delete(
@@ -1107,6 +1141,60 @@ async def admin_revoke_attestor_capability(
 ) -> None:
     """Revoke an org's attestor capability."""
     await attestor_application_service.admin_set_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/contributor-capability/suspend",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Suspend an org's contributor capability (platform admin)",
+    description=(
+        "Suspend an org's contributor capability; member derived contributor "
+        "roles are re-evaluated."
+    ),
+)
+async def admin_suspend_contributor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Suspend an org's contributor capability."""
+    await contributor_service.admin_set_contributor_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/contributor-capability/reinstate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reinstate an org's contributor capability (platform admin)",
+    description=(
+        "Reactivate a suspended org contributor capability and re-grant any "
+        "derived contributor roles."
+    ),
+)
+async def admin_reinstate_contributor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Reinstate an org's contributor capability."""
+    await contributor_service.admin_set_contributor_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="active"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/contributor-capability/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke an org's contributor capability (platform admin)",
+    description=(
+        "Revoke an org's contributor capability, deactivate its profile, and "
+        "remove derived contributor roles from its members."
+    ),
+)
+async def admin_revoke_contributor_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Revoke an org's contributor capability."""
+    await contributor_service.admin_set_contributor_capability_status(
         db, org_id=org_id, admin_id=admin.id, status_value="revoked"
     )
 
