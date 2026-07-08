@@ -101,9 +101,18 @@ class Framework(UpdatedAtMixin, Base):
             "complexity IS NULL OR complexity BETWEEN 1 AND 5",
             name="ck_frameworks_complexity_range",
         ),
+        CheckConstraint(
+            "(contributor_id IS NULL) != (contributor_org_id IS NULL)",
+            name="ck_frameworks_seller_xor",
+        ),
         Index("idx_frameworks_status", "status"),
         Index("idx_frameworks_status_published_at", "status", "published_at"),
         Index("idx_frameworks_contributor", "contributor_id"),
+        Index(
+            "idx_frameworks_contributor_org_status",
+            "contributor_org_id",
+            "status",
+        ),
         Index("idx_frameworks_category", "category"),
         Index("idx_frameworks_sector", "sector"),
         Index("idx_frameworks_price", "price"),
@@ -116,10 +125,20 @@ class Framework(UpdatedAtMixin, Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    contributor_id: Mapped[UUID] = mapped_column(
+    contributor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    contributor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    authoring_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
     )
     source_project_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

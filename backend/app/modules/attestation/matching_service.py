@@ -941,7 +941,7 @@ async def _target_owner_id(
                 Framework.id == attestation.target_id
             )
         )
-        return type_cast(UUID | None, owner_id)
+        return owner_id
     return None
 
 

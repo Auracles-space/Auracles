@@ -392,14 +392,16 @@ async def get_detail(
     )
     contributor_names = await explore_service._user_display_names(  # noqa: SLF001
         db,
-        [framework.contributor_id],
+        [framework.contributor_id] if framework.contributor_id is not None else [],
     )
     card = explore_service._card_from_framework(  # noqa: SLF001
         framework,
         rarity_scores.get(framework.id),
         attestation_badges.get(framework.id),
         review_aggregates.get(framework.id),
-        contributor_names.get(framework.contributor_id, "Contributor"),
+        contributor_names.get(framework.contributor_id, "Contributor")
+        if framework.contributor_id is not None
+        else "Contributor",
     )
     return PartnerFrameworkDetailResponse(
         **card.model_dump(),
@@ -618,6 +620,8 @@ async def initiate_purchase(
             detail="Payment provider is unavailable.",
         ) from exc
 
+    contributor_id = framework.contributor_id
+    assert contributor_id is not None
     transaction_id = await _create_pending_partner_purchase(
         db,
         api_key_id=api_key_id,

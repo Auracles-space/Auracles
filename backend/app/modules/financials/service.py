@@ -883,6 +883,8 @@ async def create_framework_purchase(
 
     amount = _normalise_money(framework.price)
     currency = framework.currency.upper()
+    contributor_id = framework.contributor_id
+    assert contributor_id is not None
     if currency != "USD":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
