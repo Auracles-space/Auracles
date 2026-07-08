@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -26,11 +26,14 @@ from app.modules.attestation.models import (
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorProfile,
-    Credential,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import attestation_pdf
 
@@ -50,8 +53,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(Credential))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -101,15 +105,25 @@ async def _make_user(role: str, prefix: str) -> User:
 
 
 async def _seed_submitted_attestation() -> UUID:
-    """Create one submitted attestation with full rubric and identity data."""
-    attestor = await _make_user("attestor", "attestor")
+    """Create one submitted org attestation with full rubric and identity data."""
+    owner = await _make_user("attestor", "org-owner")
     requestor = await _make_user("operator", "requestor")
     now = datetime.now(UTC)
 
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"pdf-org-{uuid4().hex[:6]}",
+            name="Meridian Trust LLP",
+            country="US",
+            created_by=owner.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=owner.id, role="owner")
+        session.add(member)
         session.add(
-            AttestorProfile(
-                user_id=attestor.id,
+            OrgAttestorProfile(
+                org_id=org.id,
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
@@ -117,25 +131,15 @@ async def _seed_submitted_attestation() -> UUID:
                 active=True,
                 approved_at=now,
                 verification_level=4,
-                coi_declarations=[],
-                coi_signed_at=now,
-                coi_expires_at=now + timedelta(days=365),
             )
         )
-        session.add(
-            Credential(
-                user_id=attestor.id,
-                title="CPA",
-                issuer="AICPA",
-                issued_date=date(2021, 1, 1),
-                evidence_file_keys=["credentials/cpa.pdf"],
-            )
-        )
+        await session.flush()
         attestation = Attestation(
             target_type="contributor",
             target_id=uuid4(),
             requestor_id=requestor.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org.id,
+            reviewing_member_id=member.id,
             status="report_submitted",
             review_type="quality",
             outcome="conditional",
@@ -190,6 +194,81 @@ async def _seed_submitted_attestation() -> UUID:
         return attestation.id
 
 
+async def _seed_org_submitted_attestation() -> UUID:
+    """Create one submitted org-attested attestation with rubric data."""
+    owner = await _make_user("attestor", "org-owner")
+    requestor = await _make_user("operator", "requestor")
+    now = datetime.now(UTC)
+
+    async with async_session_factory() as session:
+        org = Organization(
+            slug=f"pdf-org-{uuid4().hex[:6]}",
+            name="Meridian Trust LLP",
+            country="US",
+            created_by=owner.id,
+        )
+        session.add(org)
+        await session.flush()
+        session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+        session.add(
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=["tax"],
+                jurisdictions=["US"],
+                sectors=["tax"],
+                framework_categories=[],
+                active=True,
+                approved_at=now,
+                verification_level=5,
+            )
+        )
+        attestation = Attestation(
+            target_type="contributor",
+            target_id=uuid4(),
+            requestor_id=requestor.id,
+            attestor_org_id=org.id,
+            status="report_submitted",
+            review_type="quality",
+            outcome="approved",
+            summary=" ".join(["summary"] * 50),
+            scope="Review covered the submitted framework materials and evidence.",
+            rubric_version=rubrics.RUBRIC_VERSION,
+            report_key=f"attestation-reports/{uuid4()}/report.pdf",
+            fee_amount=Decimal("500.00"),
+            currency="USD",
+            requested_specializations=["tax"],
+            requested_jurisdictions=["US"],
+            issued_at=now,
+            dispute_window_ends_at=now + timedelta(days=14),
+        )
+        session.add(attestation)
+        await session.flush()
+
+        dimensions = (
+            (
+                await session.execute(
+                    select(AttestationRubricDimension).where(
+                        AttestationRubricDimension.review_type == "quality",
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for dimension in dimensions:
+            session.add(
+                AttestationRubricScore(
+                    attestation_id=attestation.id,
+                    dimension_id=dimension.id,
+                    score=5,
+                    comment=f"{dimension.label} is fully addressed in the review.",
+                )
+            )
+        await session.commit()
+        return attestation.id
+
+
 async def test_report_html_contains_workspace_sections(clean_state) -> None:
     """Rendered report HTML includes the eight workspace sections and rubric output."""
     del clean_state
@@ -208,3 +287,20 @@ async def test_report_html_contains_workspace_sections(clean_state) -> None:
     assert "Attestor Identity" in html
     assert "Completeness" in html
     assert "5.00" in html
+
+
+async def test_report_html_shows_org_identity_without_member(clean_state) -> None:
+    """An org-attested report renders org identity and no member email."""
+    del clean_state
+    attestation_id = await _seed_org_submitted_attestation()
+
+    context = await attestation_pdf._build_report_context(str(attestation_id))
+    html = attestation_pdf._build_report_html(context)
+
+    assert context["attestor_name"] == "Meridian Trust LLP"
+    assert context["attestor_email"] is None
+    assert context["verification_level"] == 5
+    assert context["credentials"] == []
+    assert "Meridian Trust LLP" in html
+    # No reviewing-member email angle-bracket line is rendered for an org.
+    assert "&lt;" not in html

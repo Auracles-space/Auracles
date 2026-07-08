@@ -29,23 +29,56 @@ function base64Url(value: string): string {
 /**
  * Create a signed session hint accepted by middleware.
  */
+function sessionHintCookie(roles: string[]): string {
+  const payload = base64Url(
+    JSON.stringify(
+      {
+        exp: Math.floor(Date.now() / 1000) + 900,
+        roles,
+        totp_verified: true,
+        user_id: "00000000-0000-4000-8000-000000000001",
+      },
+      ["exp", "roles", "totp_verified", "user_id"],
+    ),
+  );
+  const signature = createHmac("sha256", sessionHintSecret)
+    .update(payload)
+    .digest("base64url");
+  return `session_hint=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax`;
+}
+
 function sessionHintValue(): string {
+  return sessionHintCookie([
+    "contributor",
+    "operator",
+    "attestor",
+    "admin",
+    "platform_admin",
+  ])
+    .replace("session_hint=", "")
+    .split(";")[0] ?? "";
+}
+
+/**
+ * Create an unsigned JWT-shaped token for frontend role-routing tests.
+ *
+ * @param roles - Roles to encode in the public JWT payload.
+ */
+function fakeAccessToken(roles: string[]): string {
+  const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify(
       {
         exp: Math.floor(Date.now() / 1000) + 900,
         iat: Math.floor(Date.now() / 1000),
-        roles: ["contributor", "operator", "attestor", "admin"],
+        roles,
         totp_verified: true,
         user_id: "00000000-0000-4000-8000-000000000001",
       },
       ["exp", "iat", "roles", "totp_verified", "user_id"],
     ),
   );
-  const signature = createHmac("sha256", sessionHintSecret)
-    .update(payload)
-    .digest("base64url");
-  return `${payload}.${signature}`;
+  return `${header}.${payload}.`;
 }
 
 /**
@@ -88,125 +121,129 @@ async function mockAttestationApi(page: Page): Promise<void> {
       return;
     }
 
-    if (path === "/v1/credentials" && request.method() === "GET") {
+    if (path === "/v1/auth/refresh") {
       await fulfillJson(route, {
-        credentials: [
+        access_token: fakeAccessToken([
+          "contributor",
+          "operator",
+          "attestor",
+          "admin",
+          "platform_admin",
+        ]),
+        expires_in: 900,
+        token_type: "bearer",
+      });
+      return;
+    }
+
+    if (path === "/v1/users/me") {
+      await fulfillJson(route, {
+        id: "00000000-0000-4000-8000-000000000001",
+        email: "test@example.com",
+        display_name: "Test User",
+        email_verified: true,
+        kyc_status: "verified",
+        roles: ["contributor", "operator", "attestor", "admin", "platform_admin"],
+      });
+      return;
+    }
+
+    if (path === "/v1/orgs/mine") {
+      await fulfillJson(route, {
+        organizations: [
           {
-            created_at: "2026-06-10T00:00:00Z",
-            evidence_file_keys: [],
-            expires_date: null,
-            id: "00000000-0000-4000-8000-000000000041",
-            issued_date: "2025-01-01",
-            issuer: "Global Institute",
-            title: "Certified Operating Model Lead",
-            updated_at: "2026-06-10T00:00:00Z",
-            user_id: "00000000-0000-4000-8000-000000000001",
+            org: {
+              id: "org-1",
+              name: "Audit Ltd",
+              slug: "audit-ltd",
+              created_at: "2026-06-20T12:00:00Z",
+              logo_url: null,
+              description: "Audit Ltd"
+            },
+            role: "owner",
+            capabilities: { "attestor": "active" }
+          }
+        ]
+      });
+      return;
+    }
+
+
+    if (path === "/v1/orgs/org-1") {
+      await fulfillJson(route, {
+        id: "org-1",
+        name: "Audit Ltd",
+        slug: "audit-ltd",
+        role: "owner"
+      });
+      return;
+    }
+
+    if (path === "/v1/orgs/org-1/attestor-application") {
+      await fulfillJson(route, {
+        id: "app-1",
+        org_id: "org-1",
+        status: "pending",
+        nda_signed_at: null,
+        kyb_verified_at: null,
+        tax_document_verified_at: null,
+        financial_onboarding_completed_at: null,
+        trial_member_id: null,
+        trial_attestation_id: null,
+        trial_completed_at: null,
+        created_at: "2026-06-20T12:00:00Z",
+      });
+      return;
+    }
+
+    if (path === "/v1/admin/org-attestor-applications") {
+      await fulfillJson(route, {
+        applications: [
+          {
+            id: "app-1",
+            org_id: "org-1",
+            legal_name: "Audit Ltd",
+            status: "pending",
+            nda_signed_at: "2026-06-20T12:00:00Z",
+            kyb_verified_at: null,
+            tax_document_verified_at: null,
+            financial_onboarding_completed_at: null,
+            created_at: "2026-06-20T12:00:00Z",
           },
         ],
       });
       return;
     }
 
-    if (path === "/v1/credentials" && request.method() === "POST") {
-      const body = JSON.parse(request.postData() ?? "{}") as Record<string, string>;
+    if (path === "/v1/orgs/org-1/attestation-offers") {
       await fulfillJson(route, {
-        ...body,
-        created_at: "2026-06-10T00:00:00Z",
-        evidence_file_keys: [],
-        expires_date: null,
-        id: "00000000-0000-4000-8000-000000000042",
-        updated_at: "2026-06-10T00:00:00Z",
-        user_id: "00000000-0000-4000-8000-000000000001",
-      }, 201);
-      return;
-    }
-
-    if (path === "/v1/attestations" && request.method() === "GET") {
-      await fulfillJson(route, {
-        attestations: [
+        offers: [
           {
-            attestor_id: null,
-            created_at: "2026-06-10T00:00:00Z",
-            currency: "USD",
-            escrow_id: null,
-            fee_amount: "250.00",
-            id: "00000000-0000-4000-8000-000000000050",
-            outcome: null,
-            requested_jurisdictions: ["US"],
-            requested_specializations: ["governance"],
-            requestor_id: "00000000-0000-4000-8000-000000000001",
-            status: "matching",
-            target_id: "00000000-0000-4000-8000-000000000060",
+            offer_id: "offer-1",
+            attestation_id: "att-1",
             target_type: "framework",
-            updated_at: "2026-06-10T00:00:00Z",
-          },
-        ],
-      });
-      return;
-    }
-
-    if (path === "/v1/attestor/assignments") {
-      await fulfillJson(route, {
-        assignments: [
-          {
-            accepted_at: null,
-            attestation_id: "00000000-0000-4000-8000-000000000050",
-            attestation_status: "offered",
+            target_id: "fw-1",
+            status: "offered",
             cohort_index: 0,
-            completion_due_at: null,
-            expires_at: "2026-06-12T00:00:00Z",
-            offer_id: "00000000-0000-4000-8000-000000000070",
-            offer_status: "offered",
-            requested_jurisdictions: ["US"],
-            requested_specializations: ["governance"],
-            target_id: "00000000-0000-4000-8000-000000000060",
-            target_type: "framework",
+            match_score: 95,
+            offered_at: "2026-06-20T12:00:00Z",
+            expires_at: "2026-06-22T12:00:00Z",
           },
         ],
       });
       return;
     }
 
-    if (path === "/v1/attestor/applications/mine") {
-      await fulfillJson(route, {
-        applications: [
-          {
-            id: "00000000-0000-4000-8000-000000000099",
-            user_id: "00000000-0000-4000-8000-000000000001",
-            status: "pending",
-            specializations: ["isso"],
-            jurisdictions: ["us"],
-            credentials_summary: "huininkomo",
-            sample_work: {},
-            professional_references: "",
-            admin_feedback: null,
-            reviewed_by: null,
-            reviewed_at: null,
-            created_at: "2026-06-20T12:00:00Z",
-          },
-        ],
-      });
+    if (path === "/v1/orgs/org-1/attestations") {
+      await fulfillJson(route, { attestations: [], total: 0, page: 1, page_size: 50 });
       return;
     }
 
-    if (path === "/v1/admin/attestor/applications") {
+    if (path === "/v1/orgs/org-1/members") {
       await fulfillJson(route, {
-        applications: [
-          {
-            id: "00000000-0000-4000-8000-000000000099",
-            user_id: "00000000-0000-4000-8000-000000000001",
-            status: "pending",
-            specializations: ["isso"],
-            jurisdictions: ["us"],
-            credentials_summary: "huininkomo",
-            sample_work: {},
-            professional_references: "",
-            admin_feedback: null,
-            reviewed_by: null,
-            reviewed_at: null,
-            created_at: "2026-06-20T12:00:00Z",
-          },
-        ],
+        members: [
+          { id: "mem-1", user_id: "user-1", role: "owner", name: "Alice Owner" }
+        ]
       });
       return;
     }
@@ -215,13 +252,16 @@ async function mockAttestationApi(page: Page): Promise<void> {
   });
 }
 
-test("authenticated user can open Attestation workspaces", async ({
+test("authenticated user can open Org Attestation workspaces", async ({
   context,
   page,
 }) => {
   await context.addCookies([
     {
       domain: "127.0.0.1",
+      httpOnly: false,
+      sameSite: "Lax",
+      secure: false,
       name: "session_hint",
       path: "/",
       value: sessionHintValue(),
@@ -229,21 +269,17 @@ test("authenticated user can open Attestation workspaces", async ({
   ]);
   await mockAttestationApi(page);
 
-  await page.goto("/settings/credentials");
-  await expect(page.getByRole("heading", { name: "Professional credentials" })).toBeVisible();
-  await expect(page.getByText("Certified Operating Model Lead")).toBeVisible();
+  await page.goto("/dashboard/organizations");
+  await expect(page.getByRole("heading", { name: "Organizations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Audit Ltd" })).toBeVisible();
 
-  await page.goto("/attestations");
-  await expect(page.getByRole("heading", { name: "Attestation requests" })).toBeVisible();
-  await expect(page.getByText("$250")).toBeVisible();
+  await page.goto("/dashboard/organizations/org-1/attestor");
+  await expect(page.getByRole("heading", { name: "Attestor Application" })).toBeVisible();
 
-  await page.goto("/attestor/assignments");
-  await expect(page.getByRole("heading", { name: "Assignments" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Accept" })).toBeVisible();
+  await page.goto("/admin/org-attestors");
+  await expect(page.getByRole("heading", { name: "Attestor Review Queue" })).toBeVisible();
+  await expect(page.getByText("Audit Ltd")).toBeVisible();
 
-  await page.goto("/attestor/applications");
-  await expect(page.getByRole("heading", { name: "Attestor application" })).toBeVisible();
-
-  await page.goto("/admin/attestations");
-  await expect(page.getByRole("heading", { name: "Review and resolution" })).toBeVisible();
+  await page.goto("/dashboard/organizations/org-1/queue");
+  await expect(page.getByText("Offers")).toBeVisible();
 });

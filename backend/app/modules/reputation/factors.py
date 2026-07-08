@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.attestation.models import (
     Attestation,
     AttestationRating,
-    AttestorProfile,
     AttestorWarning,
 )
 from app.modules.financials.models import Transaction
@@ -290,22 +289,32 @@ async def operator_factors(
     }
 
 
-async def attestor_factors(
+async def org_attestor_factors(
     db: AsyncSession,
-    user_id: UUID,
+    org_id: UUID,
     cfg: ReputationConfig,
 ) -> dict[str, FactorResult]:
-    """Aggregate reputation factors for one attestor.
+    """Aggregate reputation factors for one attestor organization.
 
-    The rating factor is the normalized average of requestor star ratings on
-    stood attestations. The reliability factor penalizes upheld warnings and
-    late submissions, floored at zero, with evidence equal to the count of
-    stood attestations.
+    The org-level mirror of :func:`attestor_factors`: signals key on the
+    organization's stood attestations (``attestor_org_id``), its requestor
+    ratings, its upheld warnings, and its profile late-submission count. The
+    reviewing member who staffed each review never enters the score.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: Organization id of the attestor being scored.
+        cfg: Loaded ``attestor_org`` reputation config.
+
+    Returns:
+        Mapping of ``rating`` and ``reliability`` factor results.
     """
+    from app.modules.organizations.models import OrgAttestorProfile
+
     stood_attestation_ids = (
         select(Attestation.id)
         .where(
-            Attestation.attestor_id == user_id,
+            Attestation.attestor_org_id == org_id,
             Attestation.status == "closed",
             Attestation.report_published_eligible.is_(True),
         )
@@ -330,7 +339,7 @@ async def attestor_factors(
             select(func.count()).select_from(
                 select(Attestation.id)
                 .where(
-                    Attestation.attestor_id == user_id,
+                    Attestation.attestor_org_id == org_id,
                     Attestation.status == "closed",
                     Attestation.report_published_eligible.is_(True),
                 )
@@ -342,15 +351,15 @@ async def attestor_factors(
     warning_count = int(
         await db.scalar(
             select(func.count(AttestorWarning.id)).where(
-                AttestorWarning.attestor_id == user_id
+                AttestorWarning.attestor_org_id == org_id
             )
         )
         or 0
     )
     late_count = int(
         await db.scalar(
-            select(AttestorProfile.late_submission_count).where(
-                AttestorProfile.user_id == user_id
+            select(OrgAttestorProfile.late_submission_count).where(
+                OrgAttestorProfile.org_id == org_id
             )
         )
         or 0

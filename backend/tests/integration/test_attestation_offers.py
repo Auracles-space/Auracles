@@ -25,7 +25,6 @@ from app.modules.attestation import matching_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -47,7 +46,6 @@ async def _reset_state() -> None:
             await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
@@ -108,27 +106,6 @@ async def _make_user(role: str, prefix: str) -> User:
     return user
 
 
-async def _make_profile(user_id: UUID) -> None:
-    """Create one eligible attestor profile for offer tests."""
-    now = datetime.now(UTC)
-    async with async_session_factory() as session:
-        session.add(
-            AttestorProfile(
-                user_id=user_id,
-                specializations=["tax"],
-                jurisdictions=["US"],
-                sectors=["tax"],
-                framework_categories=[],
-                coi_declarations=[],
-                coi_signed_at=now,
-                coi_expires_at=now + timedelta(days=365),
-                approved_at=now,
-                active=True,
-            )
-        )
-        await session.commit()
-
-
 async def _make_attestation(requestor_id: UUID) -> Attestation:
     """Create one matching attestation ready for cohort dispatch."""
     async with async_session_factory() as session:
@@ -150,32 +127,12 @@ async def _make_attestation(requestor_id: UUID) -> Attestation:
 
 
 async def test_all_screened_out_marks_needs_admin(db_session) -> None:
-    """When every eligible Attestor is screened out, the request needs admin.
+    """When no eligible attestor org can be matched, the request needs admin.
 
-    Exercises the offer_next_cohort empty-candidate branch via the new
-    availability gate: the only matching Attestor is already at the cap.
+    Exercises the offer_next_cohort empty-candidate branch: with no active
+    attestor-org profiles seeded, ranking yields no candidates.
     """
     requestor = await _make_user("operator", "req")
-    busy = await _make_user("attestor", "busy")
-    await _make_profile(busy.id)
-
-    async with async_session_factory() as session:
-        async with session.begin():
-            session.add(PlatformConfig(key="attestation_concurrency_cap", value="1"))
-            session.add(
-                Attestation(
-                    target_type="contributor",
-                    target_id=uuid4(),
-                    requestor_id=requestor.id,
-                    attestor_id=busy.id,
-                    status="accepted",
-                    review_type="quality",
-                    fee_amount=Decimal("500.00"),
-                    currency="USD",
-                    requested_specializations=["tax"],
-                    requested_jurisdictions=["US"],
-                )
-            )
 
     attestation = await _make_attestation(requestor.id)
 

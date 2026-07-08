@@ -1,8 +1,6 @@
 import Link from "next/link";
 import {
   CheckCircledIcon,
-  DotFilledIcon,
-  ArrowDownIcon,
 } from "@radix-ui/react-icons";
 
 const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";

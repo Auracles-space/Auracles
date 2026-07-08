@@ -21,34 +21,38 @@ from app.core.audit import write_audit
 from app.modules.attestation.models import (
     Attestation,
     AttestationRating,
-    AttestorProfile,
 )
 from app.modules.reputation.weights import ReputationConfig
 
 
-async def evaluate_attestor_certification(
+async def evaluate_org_attestor_certification(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    org_id: UUID,
     cfg: ReputationConfig,
 ) -> bool:
-    """Award Certified Attestor status when merit thresholds are first met.
+    """Award Certified Attestor status to an organization on first merit.
 
-    Runs inside the caller's transaction. The attestor profile is locked so the
-    sticky certification timestamp and audit write stay idempotent across
-    concurrent or retried recomputes.
+    The org-level mirror of :func:`evaluate_attestor_certification`: merit is
+    measured over the organization's own stood attestations
+    (``attestor_org_id``) and their requestor ratings, and the sticky flag is
+    stamped on ``OrgAttestorProfile.certified_attestor_at``. Runs inside the
+    caller's transaction; the profile is locked so the timestamp and audit
+    write stay idempotent across concurrent or retried recomputes.
 
     Args:
         db: Async SQLAlchemy session with an open transaction.
-        attestor_id: User id of the attestor being evaluated.
-        cfg: Loaded attestor reputation config supplying certification thresholds.
+        org_id: Organization id of the attestor being evaluated.
+        cfg: Loaded ``attestor_org`` reputation config with cert thresholds.
 
     Returns:
-        ``True`` when this call newly certifies the attestor, else ``False``.
+        ``True`` when this call newly certifies the organization, else ``False``.
     """
+    from app.modules.organizations.models import OrgAttestorProfile
+
     profile = await db.scalar(
-        select(AttestorProfile)
-        .where(AttestorProfile.user_id == attestor_id)
+        select(OrgAttestorProfile)
+        .where(OrgAttestorProfile.org_id == org_id)
         .with_for_update()
     )
     if profile is None or profile.certified_attestor_at is not None:
@@ -57,7 +61,7 @@ async def evaluate_attestor_certification(
     stood_attestations = (
         select(Attestation.id)
         .where(
-            Attestation.attestor_id == attestor_id,
+            Attestation.attestor_org_id == org_id,
             Attestation.status == "closed",
             Attestation.report_published_eligible.is_(True),
         )
@@ -81,9 +85,9 @@ async def evaluate_attestor_certification(
     await write_audit(
         db=db,
         actor_id=None,
-        action="attestor_certified",
-        target_type="attestor",
-        target_id=attestor_id,
+        action="org_attestor_certified",
+        target_type="attestor_org",
+        target_id=org_id,
         metadata={
             "stood_count": stood_count,
             "avg_rating": str(avg_stars),
@@ -91,7 +95,7 @@ async def evaluate_attestor_certification(
     )
     logger.bind(
         module="attestation",
-        action="attestor_certified",
-        user_id=attestor_id,
-    ).info("attestor_certified", stood_count=stood_count)
+        action="org_attestor_certified",
+        org_id=org_id,
+    ).info("org_attestor_certified", stood_count=stood_count)
     return True

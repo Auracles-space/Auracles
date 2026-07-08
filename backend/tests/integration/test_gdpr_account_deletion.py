@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, or_, select
+from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -45,6 +45,7 @@ from app.modules.financials.models import (
     PlatformConfig,
     Transaction,
 )
+from app.modules.gdpr import deletion_service
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
@@ -498,7 +499,6 @@ async def seed_blocking_state(user_id: UUID) -> None:
                 target_type="operator",
                 target_id=user_id,
                 requestor_id=user_id,
-                attestor_id=counterpart_id,
                 status="accepted",
                 fee_amount=Decimal("300.00"),
                 currency="USD",
@@ -614,10 +614,7 @@ async def clear_blocking_state(user_id: UUID) -> None:
                 (
                     await session.execute(
                         select(Attestation).where(
-                            or_(
-                                Attestation.requestor_id == user_id,
-                                Attestation.attestor_id == user_id,
-                            )
+                            Attestation.requestor_id == user_id
                         )
                     )
                 ).scalars()
@@ -777,6 +774,67 @@ async def test_request_account_deletion_blocks_when_unsettled_obligations_exist(
     assert request is not None
     assert request.status == "blocked"
     assert audit is not None
+
+
+async def test_active_reviewing_member_blocks_deletion_until_resolved(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """A member staffing an in-flight org review cannot delete until it closes."""
+    del client, migrated_database, account_deletion_test_context
+    member_user_id, _secret = await create_verified_user(
+        "reviewing-member-delete@auracles.space",
+    )
+    requestor_id, _r = await create_verified_user(
+        "reviewing-req@auracles.space",
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                slug=f"rev-org-{uuid4().hex[:6]}",
+                name="Reviewing Org",
+                country="US",
+                created_by=member_user_id,
+            )
+            session.add(org)
+            await session.flush()
+            member = OrgMember(
+                org_id=org.id, user_id=member_user_id, role="member"
+            )
+            session.add(member)
+            await session.flush()
+            attestation = Attestation(
+                target_type="contributor",
+                target_id=requestor_id,
+                requestor_id=requestor_id,
+                attestor_org_id=org.id,
+                reviewing_member_id=member.id,
+                status="accepted",
+                review_type="quality",
+                fee_amount=Decimal("10.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            attestation_id = attestation.id
+
+    async with async_session_factory() as session:
+        blocked = await deletion_service.collect_blocked_reasons(
+            db=session, user_id=member_user_id
+        )
+    assert "active_reviewing_assignment" in {reason.code for reason in blocked}
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            attestation.status = "closed"
+
+    async with async_session_factory() as session:
+        cleared = await deletion_service.collect_blocked_reasons(
+            db=session, user_id=member_user_id
+        )
+    assert "active_reviewing_assignment" not in {reason.code for reason in cleared}
 
 
 async def test_request_account_deletion_requires_totp_when_enabled(

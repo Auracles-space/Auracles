@@ -269,7 +269,7 @@ class AdminConfigPatchRequest(BaseModel):
 class AdminReputationRecomputeRequest(BaseModel):
     """Request body for an audited single-subject reputation recompute."""
 
-    subject_type: Literal["framework", "contributor", "operator", "attestor"]
+    subject_type: Literal["framework", "contributor", "operator", "attestor_org"]
     subject_id: UUID
     reason: str = Field(min_length=1, max_length=500)
     totp_code: str = Field(min_length=6, max_length=16)

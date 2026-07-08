@@ -99,7 +99,6 @@ const fullProfile: PublicProfileResponse = {
     frameworks_published: 3,
     reviews_received: 2,
     average_rating: 4.5,
-    attestations_performed: 1,
   },
   roles: ["contributor", "attestor"],
   kyc_verified: true,

@@ -56,15 +56,16 @@ export function OrganizationTeams() {
       } else {
         setError("Failed to load teams.");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred loading teams.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     loadTeams();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
   async function handleCreate(e: React.FormEvent) {
@@ -87,7 +88,7 @@ export function OrganizationTeams() {
         setNewTeamName("");
         await loadTeams();
       }
-    } catch (err) {
+    } catch {
       setCreateError("Unexpected error occurred while creating team.");
     } finally {
       setCreateLoading(false);
@@ -116,7 +117,7 @@ export function OrganizationTeams() {
         setEditLoading(false);
         await loadTeams();
       }
-    } catch (err) {
+    } catch {
       setEditError("Unexpected error occurred.");
       setEditLoading(false);
     }
@@ -143,7 +144,7 @@ export function OrganizationTeams() {
         setDeleteLoading(false);
         await loadTeams();
       }
-    } catch (err) {
+    } catch {
       setDeleteError("Unexpected error occurred while deleting team.");
       setDeleteLoading(false);
       setTeamToDelete(null);
@@ -205,7 +206,7 @@ export function OrganizationTeams() {
             Teams
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Manage your organization's teams.
+            Teams are subgroups within your organization. They don&apos;t have any teams yet.
           </p>
         </div>
 

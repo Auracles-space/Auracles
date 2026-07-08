@@ -34,11 +34,9 @@ async def _attestor_recipient_id(
 ) -> UUID | None:
     """Resolve the attestor-side notification recipient for an attestation.
 
-    Returns the legacy assignee's user id when set, else the staffed reviewing
-    member's user id, else None (no attestor assigned yet).
+    Returns the staffed reviewing member's user id, else None (no reviewing
+    member staffed yet).
     """
-    if attestation.attestor_id is not None:
-        return attestation.attestor_id
     if attestation.reviewing_member_id is not None:
         recipient_id: UUID | None = await db.scalar(
             select(OrgMember.user_id).where(

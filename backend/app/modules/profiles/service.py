@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.integrations import s3
-from app.modules.attestation.models import Attestation, Credential
+from app.modules.attestation.models import Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
 from app.modules.explore import service as explore_service
@@ -36,9 +36,6 @@ from app.modules.profiles.schemas import (
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
-
-# Attestation statuses that count as a completed attestation for analytics.
-COMPLETED_ATTESTATION_STATUSES = ("report_submitted", "closed")
 
 # Avatars are public images served on every profile view. Keep the type set
 # small (raster web image formats) and the size cap modest.
@@ -112,8 +109,9 @@ async def _verified_credentials(
 async def _profile_stats(db: AsyncSession, user_id: UUID) -> ProfileStats:
     """Compute the public marketplace analytics shown on a profile.
 
-    All values come from public records: published Frameworks, public reviews on
-    those Frameworks, and completed attestations performed as an Attestor.
+    All values come from public records: published Frameworks and public reviews
+    on those Frameworks. Attestation is credited to the attestor organization, so
+    it is not advertised on individual user profiles.
 
     Args:
         db: Async session for the aggregate queries.
@@ -138,20 +136,10 @@ async def _profile_stats(db: AsyncSession, user_id: UUID) -> ProfileStats:
             .where(Framework.contributor_id == user_id)
         )
     ).one()
-    attestations_performed = int(
-        await db.scalar(
-            select(func.count(Attestation.id)).where(
-                Attestation.attestor_id == user_id,
-                Attestation.status.in_(COMPLETED_ATTESTATION_STATUSES),
-            )
-        )
-        or 0
-    )
     return ProfileStats(
         frameworks_published=frameworks_published,
         reviews_received=int(review_count or 0),
         average_rating=round(float(review_avg), 1) if review_avg is not None else None,
-        attestations_performed=attestations_performed,
     )
 
 

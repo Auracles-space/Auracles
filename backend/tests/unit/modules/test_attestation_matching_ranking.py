@@ -26,11 +26,15 @@ from app.modules.attestation import matching_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -43,7 +47,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -101,83 +107,51 @@ async def _make_user(role: str, prefix: str) -> User:
     return user
 
 
-async def _make_profile(
-    user_id: UUID,
-    *,
-    specializations: list[str],
-    jurisdictions: list[str],
-    sectors: list[str] | None = None,
-    framework_categories: list[str] | None = None,
-    coi_declarations: list[dict[str, object]] | None = None,
-    coi_valid: bool = True,
-    approved_at: datetime | None = None,
-) -> None:
-    """Create one active attestor profile for ranking tests."""
-    now = datetime.now(UTC)
+async def _make_attestor_org(owner_id: UUID) -> tuple[UUID, UUID]:
+    """Create an active attestor org owned by ``owner_id``.
+
+    Returns ``(org_id, member_id)``.
+    """
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"revoke-org-{uuid4().hex[:6]}",
+            name="Revoke Org LLP",
+            country="US",
+            created_by=owner_id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=owner_id, role="owner")
+        session.add(member)
         session.add(
-            AttestorProfile(
-                user_id=user_id,
-                specializations=specializations,
-                jurisdictions=jurisdictions,
-                sectors=sectors or [],
-                framework_categories=framework_categories or [],
-                coi_declarations=coi_declarations or [],
-                coi_signed_at=now if coi_valid else now - timedelta(days=400),
-                coi_expires_at=(
-                    now + timedelta(days=365) if coi_valid else now - timedelta(days=1)
-                ),
-                approved_at=approved_at or now,
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=["tax"],
+                jurisdictions=["US"],
                 active=True,
             )
         )
         await session.commit()
-
-
-async def _make_attestation(
-    requestor_id: UUID,
-    *,
-    target_id: UUID,
-    target_type: str = "framework",
-    specializations: list[str],
-    jurisdictions: list[str],
-    attestor_id: UUID | None = None,
-    status_value: str = "matching",
-) -> Attestation:
-    """Create one attestation request for ranking tests."""
-    async with async_session_factory() as session:
-        attestation = Attestation(
-            target_type=target_type,
-            target_id=target_id,
-            requestor_id=requestor_id,
-            attestor_id=attestor_id,
-            status=status_value,
-            review_type="quality",
-            fee_amount=Decimal("500.00"),
-            currency="USD",
-            requested_specializations=specializations,
-            requested_jurisdictions=jurisdictions,
-        )
-        session.add(attestation)
-        await session.commit()
-        await session.refresh(attestation)
-    return attestation
+        await session.refresh(member)
+    return org.id, member.id
 
 
 async def _make_assigned_attestation_with_funding(
     requestor_id: UUID,
-    attestor_id: UUID,
+    org_id: UUID,
+    member_id: UUID,
     *,
     status_value: str,
     completion_due_at: datetime,
 ) -> Attestation:
-    """Create one funded assigned attestation for revoke-beat tests."""
+    """Create one funded org-staffed attestation for revoke-beat tests."""
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="contributor",
             target_id=requestor_id,
             requestor_id=requestor_id,
-            attestor_id=attestor_id,
+            attestor_org_id=org_id,
+            reviewing_member_id=member_id,
             status=status_value,
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -191,7 +165,7 @@ async def _make_assigned_attestation_with_funding(
         await session.flush()
         offer = AttestationOffer(
             attestation_id=attestation.id,
-            attestor_id=attestor_id,
+            org_id=org_id,
             cohort_index=1,
             status="accepted",
             offered_at=datetime.now(UTC) - timedelta(days=2),
@@ -203,7 +177,7 @@ async def _make_assigned_attestation_with_funding(
         session.add(offer)
         transaction = Transaction(
             payer_id=requestor_id,
-            payee_id=attestor_id,
+            payee_id=None,
             amount=Decimal("500.00"),
             currency="USD",
             platform_commission=Decimal("0.00"),
@@ -227,10 +201,11 @@ async def test_revoke_overdue_attestations_includes_in_review_past_grace(
     """An in-review assignment past the grace window is revoked."""
     requestor = await _make_user("operator", "req")
     attestor = await _make_user("attestor", "att")
-    await _make_profile(attestor.id, specializations=["tax"], jurisdictions=["US"])
+    org_id, member_id = await _make_attestor_org(attestor.id)
     attestation = await _make_assigned_attestation_with_funding(
         requestor.id,
-        attestor.id,
+        org_id,
+        member_id,
         status_value="in_review",
         completion_due_at=datetime.now(UTC) - timedelta(hours=25),
     )
@@ -250,7 +225,8 @@ async def test_revoke_overdue_attestations_includes_in_review_past_grace(
     assert offer is not None
 
     assert count == 1
-    assert refreshed.attestor_id is None
+    assert refreshed.attestor_org_id is None
+    assert refreshed.reviewing_member_id is None
     assert refreshed.completion_due_at is None
     assert refreshed.status == "needs_admin"
     assert transaction.payee_id is None
@@ -263,10 +239,11 @@ async def test_revoke_overdue_attestations_respects_completion_grace(
     """An in-review assignment inside the grace window is left untouched."""
     requestor = await _make_user("operator", "req")
     attestor = await _make_user("attestor", "att")
-    await _make_profile(attestor.id, specializations=["tax"], jurisdictions=["US"])
+    org_id, member_id = await _make_attestor_org(attestor.id)
     attestation = await _make_assigned_attestation_with_funding(
         requestor.id,
-        attestor.id,
+        org_id,
+        member_id,
         status_value="in_review",
         completion_due_at=datetime.now(UTC) - timedelta(hours=23),
     )
@@ -286,7 +263,8 @@ async def test_revoke_overdue_attestations_respects_completion_grace(
     assert offer is not None
 
     assert count == 0
-    assert refreshed.attestor_id == attestor.id
+    assert refreshed.attestor_org_id == org_id
+    assert refreshed.reviewing_member_id == member_id
     assert refreshed.status == "in_review"
-    assert transaction.payee_id == attestor.id
+    assert transaction.payee_id is None
     assert offer.status == "accepted"

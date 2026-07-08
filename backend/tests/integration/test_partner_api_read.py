@@ -391,7 +391,6 @@ async def create_framework_attestation(
                 target_type="framework",
                 target_id=framework_id,
                 requestor_id=requestor_id,
-                attestor_id=attestor_id,
                 status="closed",
                 outcome="approved",
                 requested_specializations=["governance"],

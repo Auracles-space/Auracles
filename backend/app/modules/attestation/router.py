@@ -16,7 +16,6 @@ from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.modules.attestation import (
     access_service,
-    application_service,
     badge_service,
     clarification_service,
     credential_service,
@@ -57,29 +56,12 @@ from app.modules.attestation.schemas import (
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     AttestationsResponse,
-    AttestorActivateRequest,
-    AttestorApplicationCreateRequest,
-    AttestorApplicationRejectRequest,
-    AttestorApplicationResponse,
-    AttestorApplicationsResponse,
-    AttestorApplicationUpdateRequest,
-    AttestorAssignmentResponse,
-    AttestorAssignmentsResponse,
     AttestorCompletedAttestation,
-    AttestorCredentialCheckRequest,
     AttestorDirectoryEntry,
     AttestorDirectoryResponse,
-    AttestorKycVerifyRequest,
-    AttestorPayoutAttachRequest,
-    AttestorTaxDocumentRequest,
-    AttestorTrialAssignRequest,
-    AttestorTrialDecideRequest,
-    AttestorTrialResponse,
     ClarificationCreateRequest,
     ClarificationRespondRequest,
     ClarificationResponse,
-    CoiDeclarationRequest,
-    ConfidentialityAgreementRequest,
     CredentialCreateRequest,
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
@@ -220,12 +202,12 @@ async def list_attestations(
 
 
 @router.get(
-    "/attestors",
+    "/attestor-orgs",
     response_model=AttestorDirectoryResponse,
-    summary="List public Attestor directory",
+    summary="List public attestor-organization directory",
     description=(
-        "Return active Attestors for public directory browsing, with optional "
-        "taxonomy and verification-level filters."
+        "Return active attestor organizations for public directory browsing, "
+        "with optional taxonomy and verification-level filters."
     ),
 )
 async def list_public_attestor_directory(
@@ -235,7 +217,7 @@ async def list_public_attestor_directory(
     jurisdiction: str | None = Query(default=None),
     level: int | None = Query(default=None),
 ) -> AttestorDirectoryResponse:
-    """Return active public Attestor directory entries."""
+    """Return active public attestor-organization directory entries."""
     attestors = await directory_service.list_directory(
         db=db,
         sector=sector,
@@ -247,33 +229,33 @@ async def list_public_attestor_directory(
 
 
 @router.get(
-    "/attestors/{user_id}/completed",
+    "/attestor-orgs/{org_id}/completed",
     response_model=list[AttestorCompletedAttestation],
-    summary="List an attestor's public completed attestations",
+    summary="List an attestor organization's public completed attestations",
 )
 async def list_attestor_completed_attestations(
-    user_id: UUID,
+    org_id: UUID,
     db: DatabaseSession,
 ) -> list[AttestorCompletedAttestation]:
-    """Return the attestor's public positive completed attestations."""
-    return await badge_service.list_attestor_completed(db, attestor_id=user_id)
+    """Return the org's public positive completed attestations."""
+    return await badge_service.list_attestor_completed(db, org_id=org_id)
 
 
 @router.get(
-    "/attestors/{user_id}",
+    "/attestor-orgs/{org_id}",
     response_model=AttestorDirectoryEntry,
-    summary="Get public Attestor directory profile",
+    summary="Get public attestor-organization directory profile",
     description=(
-        "Return one active Attestor's public directory profile, including "
-        "safe verified credentials and completed-attestation count."
+        "Return one active attestor organization's public directory profile, "
+        "including its matching taxonomy, member count, and completed count."
     ),
 )
 async def get_public_attestor_directory_profile(
-    user_id: UUID,
+    org_id: UUID,
     db: DatabaseSession,
 ) -> AttestorDirectoryEntry:
-    """Return one active public Attestor directory entry."""
-    return await directory_service.get_directory_profile(db=db, user_id=user_id)
+    """Return one active public attestor-organization directory entry."""
+    return await directory_service.get_directory_profile(db=db, org_id=org_id)
 
 
 @router.get(
@@ -290,27 +272,6 @@ async def get_attestation(
         db=db,
         attestation_id=attestation_id,
         user=user,
-    )
-    return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.post(
-    "/attestations/{attestation_id}/accept",
-    response_model=AttestationRequestResponse,
-)
-async def accept_attestation_offer(
-    attestation_id: UUID,
-    payload: AttestationAcceptRequest,
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestationRequestResponse:
-    """Accept an open cohort offer with the content-use acknowledgment."""
-    attestation = await matching_service.accept_attestation_offer(
-        db=db,
-        attestation_id=attestation_id,
-        attestor=attestor,
-        content_ack=payload.content_ack,
-        ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
 
@@ -334,6 +295,33 @@ async def start_attestation_review(
         db=db,
         attestor=attestor,
         attestation_id=attestation_id,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
+    "/attestations/{attestation_id}/content-ack",
+    response_model=AttestationRequestResponse,
+    summary="Acknowledge content use before review",
+    description=(
+        "Record the staffed reviewing member's binding content-use "
+        "acknowledgment, unlocking full framework-content access and the "
+        "review workspace."
+    ),
+)
+async def acknowledge_attestation_content(
+    attestation_id: UUID,
+    payload: AttestationAcceptRequest,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Record the reviewing member's content-use acknowledgment."""
+    attestation = await workspace_service.acknowledge_content(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        content_ack=payload.content_ack,
+        ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
 
@@ -552,24 +540,6 @@ async def respond_to_attestation_clarification(
 
 
 @router.post(
-    "/attestations/{attestation_id}/decline",
-    response_model=AttestationRequestResponse,
-)
-async def decline_attestation_offer(
-    attestation_id: UUID,
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestationRequestResponse:
-    """Decline an open Attestation cohort offer as an approved Attestor."""
-    attestation = await matching_service.decline_attestation_offer(
-        db=db,
-        attestation_id=attestation_id,
-        attestor=attestor,
-    )
-    return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.post(
     "/attestations/{attestation_id}/uploads",
     response_model=AttestationEvidenceUploadSessionResponse,
     status_code=status.HTTP_201_CREATED,
@@ -684,13 +654,14 @@ async def admin_assign_attestation(
     db: DatabaseSession,
     redis: RedisClient,
 ) -> AttestationRequestResponse:
-    """Manually assign a needs-admin Attestation to an approved Attestor."""
+    """Manually assign a needs-admin Attestation to an attestor org + member."""
     attestation = await dispute_service.assign_needs_admin_attestation(
         db=db,
         redis=redis,
         admin=admin,
         attestation_id=attestation_id,
-        attestor_id=payload.attestor_id,
+        attestor_org_id=payload.attestor_org_id,
+        reviewing_member_id=payload.reviewing_member_id,
         reason=payload.reason,
         totp_code=payload.totp_code,
     )
@@ -718,414 +689,6 @@ async def admin_refund_attestation(
         totp_code=payload.totp_code,
     )
     return AttestationRequestResponse.model_validate(attestation)
-
-
-@router.get(
-    "/attestor/assignments",
-    response_model=AttestorAssignmentsResponse,
-)
-async def list_attestor_assignments(
-    attestor: ApprovedAttestorUser,
-    db: DatabaseSession,
-) -> AttestorAssignmentsResponse:
-    """List offered and accepted Attestation assignments for an Attestor."""
-    assignments = await matching_service.list_attestor_assignments(
-        db=db,
-        attestor=attestor,
-    )
-    # Compute requestor abuse flags in batch (one count per distinct requestor).
-    # Only the derived boolean is surfaced to the attestor; the requestor id is
-    # never exposed on this offer/preview payload (design section 4.5).
-    requestor_ids = {attestation.requestor_id for _, attestation in assignments}
-    flags: dict[UUID, bool] = {}
-    for r_id in requestor_ids:
-        count = await dispute_service.requestor_rejected_dispute_count(
-            db=db, requestor_id=r_id
-        )
-        flags[r_id] = count >= dispute_service.REQUESTOR_FLAG_THRESHOLD
-
-    return AttestorAssignmentsResponse(
-        assignments=[
-            AttestorAssignmentResponse(
-                offer_id=offer.id,
-                attestation_id=attestation.id,
-                target_type=attestation.target_type,
-                target_id=attestation.target_id,
-                attestation_status=attestation.status,
-                offer_status=offer.status,
-                cohort_index=offer.cohort_index,
-                requestor_flagged=flags[attestation.requestor_id],
-                requested_specializations=attestation.requested_specializations,
-                requested_jurisdictions=attestation.requested_jurisdictions,
-                expires_at=offer.expires_at,
-                accepted_at=attestation.accepted_at,
-                completion_due_at=attestation.completion_due_at,
-            )
-            for offer, attestation in assignments
-        ]
-    )
-
-
-@router.post(
-    "/attestor/applications",
-    response_model=AttestorApplicationResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def submit_attestor_application(
-    payload: AttestorApplicationCreateRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Submit an Attestor application as any authenticated user."""
-    application = await application_service.submit_application(
-        db=db,
-        user=user,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.get(
-    "/attestor/applications/mine",
-    response_model=AttestorApplicationsResponse,
-)
-async def list_my_attestor_applications(
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationsResponse:
-    """List the authenticated user's Attestor application history."""
-    applications = await application_service.list_my_applications(db=db, user=user)
-    return AttestorApplicationsResponse(
-        applications=[
-            AttestorApplicationResponse.model_validate(application)
-            for application in applications
-        ]
-    )
-
-
-@router.patch(
-    "/attestor/applications/{application_id}",
-    response_model=AttestorApplicationResponse,
-)
-async def update_attestor_application(
-    application_id: UUID,
-    payload: AttestorApplicationUpdateRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Edit a pending Attestor application owned by the current user."""
-    application = await application_service.update_application(
-        db=db,
-        user=user,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/attestor/applications/{application_id}/coi",
-    response_model=AttestorApplicationResponse,
-    summary="Sign conflict-of-interest declaration",
-    description=(
-        "Record or refresh the applicant's conflict-of-interest declaration "
-        "before activation. This does not change onboarding status."
-    ),
-)
-async def sign_attestor_application_coi(
-    application_id: UUID,
-    payload: CoiDeclarationRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Sign the owner's conflict-of-interest declaration for one application."""
-    application = await application_service.sign_coi(
-        db=db,
-        user=user,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/attestor/applications/{application_id}/confidentiality",
-    response_model=AttestorApplicationResponse,
-    summary="Sign confidentiality / non-use agreement",
-    description=(
-        "Record the applicant's acceptance of the one-time confidentiality and "
-        "non-use agreement. This is required before activation but does not "
-        "change the application status."
-    ),
-)
-async def sign_attestor_application_confidentiality(
-    application_id: UUID,
-    payload: ConfidentialityAgreementRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Sign the one-time confidentiality agreement for an application."""
-    application = await application_service.sign_confidentiality(
-        db=db,
-        user=user,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/attestor/applications/{application_id}/payout",
-    response_model=AttestorApplicationResponse,
-    summary="Attach payout account",
-    description=(
-        "Attach one of the applicant's existing payout accounts before "
-        "activation. This does not change onboarding status."
-    ),
-)
-async def attach_attestor_application_payout(
-    application_id: UUID,
-    payload: AttestorPayoutAttachRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Attach an owned payout account to one Attestor application."""
-    application = await application_service.attach_payout(
-        db=db,
-        user=user,
-        application_id=application_id,
-        payout_account_id=payload.payout_account_id,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/attestor/applications/{application_id}/tax-document",
-    response_model=CredentialEvidenceUploadSessionResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create tax-document upload session",
-    description=(
-        "Create a presigned POST upload session for the applicant's tax "
-        "document and record the selected tax document type."
-    ),
-)
-async def create_attestor_tax_document_upload_session(
-    application_id: UUID,
-    payload: AttestorTaxDocumentRequest,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> CredentialEvidenceUploadSessionResponse:
-    """Create a presigned POST upload session for an Attestor tax document."""
-    return await application_service.set_tax_document(
-        db=db,
-        user=user,
-        application_id=application_id,
-        payload=payload,
-    )
-
-
-@router.patch(
-    "/attestor/applications/{application_id}/withdraw",
-    response_model=AttestorApplicationResponse,
-)
-async def withdraw_attestor_application(
-    application_id: UUID,
-    user: CurrentUser,
-    db: DatabaseSession,
-) -> AttestorApplicationResponse:
-    """Withdraw a pending Attestor application owned by the current user."""
-    application = await application_service.withdraw_application(
-        db=db,
-        user=user,
-        application_id=application_id,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.get(
-    "/admin/attestor/applications",
-    response_model=AttestorApplicationsResponse,
-)
-async def list_attestor_applications_for_admin(
-    admin: AdminUser,
-    db: DatabaseSession,
-    status_filter: Literal[
-        "submitted",
-        "identity_verified",
-        "professional_verified",
-        "expert_verified",
-        "active",
-        "rejected",
-        "withdrawn",
-        "held",
-    ]
-    | None = Query(default=None, alias="status"),
-) -> AttestorApplicationsResponse:
-    """List Attestor applications for admin review."""
-    del admin
-    applications = await application_service.list_applications_for_admin(
-        db=db,
-        status_filter=status_filter,
-    )
-    return AttestorApplicationsResponse(
-        applications=[
-            AttestorApplicationResponse.model_validate(application)
-            for application in applications
-        ]
-    )
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/reject",
-    response_model=AttestorApplicationResponse,
-)
-async def reject_attestor_application(
-    application_id: UUID,
-    payload: AttestorApplicationRejectRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorApplicationResponse:
-    """Reject a non-active Attestor application as a 2FA-confirmed admin."""
-    application = await application_service.reject_application(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/verify-kyc",
-    response_model=AttestorApplicationResponse,
-)
-async def verify_attestor_application_kyc(
-    application_id: UUID,
-    payload: AttestorKycVerifyRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorApplicationResponse:
-    """Advance a submitted application through the KYC verification gate."""
-    application = await application_service.verify_kyc(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        name_match=payload.name_match,
-        totp_code=payload.totp_code,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/verify-credential",
-    response_model=AttestorApplicationResponse,
-)
-async def verify_attestor_application_credential(
-    application_id: UUID,
-    payload: AttestorCredentialCheckRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorApplicationResponse:
-    """Advance an identity-verified application through credential review."""
-    application = await application_service.verify_credential(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/trial",
-    response_model=AttestorTrialResponse,
-    summary="Assign calibration trial",
-    description=(
-        "Assign a stubbed calibration trial to a professional-verified "
-        "Attestor application after admin TOTP verification."
-    ),
-)
-async def assign_attestor_application_trial(
-    application_id: UUID,
-    payload: AttestorTrialAssignRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorTrialResponse:
-    """Assign a calibration trial to an eligible Attestor application."""
-    trial = await application_service.assign_trial(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        seeded_framework_id=payload.seeded_framework_id,
-        totp_code=payload.totp_code,
-    )
-    return AttestorTrialResponse.model_validate(trial)
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/trial/{trial_id}/decide",
-    response_model=AttestorApplicationResponse,
-    summary="Decide calibration trial",
-    description=(
-        "Record a pass or fail decision for a stubbed calibration trial after "
-        "admin TOTP verification."
-    ),
-)
-async def decide_attestor_application_trial(
-    application_id: UUID,
-    trial_id: UUID,
-    payload: AttestorTrialDecideRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorApplicationResponse:
-    """Decide an assigned calibration trial for an Attestor application."""
-    application = await application_service.decide_trial(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        trial_id=trial_id,
-        passed=payload.passed,
-        feedback=payload.feedback,
-        totp_code=payload.totp_code,
-    )
-    return AttestorApplicationResponse.model_validate(application)
-
-
-@router.post(
-    "/admin/attestor/applications/{application_id}/activate",
-    response_model=AttestorApplicationResponse,
-    summary="Activate Attestor application",
-    description=(
-        "Activate an expert-verified Attestor application after confirming "
-        "all onboarding prerequisites and admin TOTP verification."
-    ),
-)
-async def activate_attestor_application(
-    application_id: UUID,
-    payload: AttestorActivateRequest,
-    admin: AdminUser,
-    db: DatabaseSession,
-    redis: RedisClient,
-) -> AttestorApplicationResponse:
-    """Activate a fully verified Attestor application."""
-    application = await application_service.activate_attestor(
-        db=db,
-        redis=redis,
-        admin=admin,
-        application_id=application_id,
-        payload=payload,
-    )
-    return AttestorApplicationResponse.model_validate(application)
 
 
 @router.post(

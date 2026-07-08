@@ -25,10 +25,14 @@ from app.modules.attestation.models import (
     AttestationOffer,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -47,7 +51,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -102,39 +108,54 @@ def _auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _make_attestor(prefix: str) -> User:
-    """Create one approved attestor with a valid CoI declaration."""
+async def _make_attestor_org(prefix: str) -> tuple[User, UUID, UUID]:
+    """Create an approved attestor org with an owner member holding a valid CoI.
+
+    Returns the owner ``User`` (the reviewing member), the org id, and the
+    owner's ``OrgMember`` id.
+    """
     user = await _make_user("attestor", prefix)
     now = datetime.now(UTC)
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"clar-org-{uuid4().hex[:6]}",
+            name="Clarification Org LLP",
+            country="US",
+            created_by=user.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=user.id, role="owner")
+        session.add(member)
         session.add(
-            AttestorProfile(
-                user_id=user.id,
+            OrgAttestorProfile(
+                org_id=org.id,
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
                 framework_categories=[],
                 active=True,
                 approved_at=now,
-                coi_declarations=[],
                 coi_signed_at=now,
                 coi_expires_at=now + timedelta(days=365),
             )
         )
         await session.commit()
-    return user
+        await session.refresh(member)
+    return user, org.id, member.id
 
 
 async def _in_review_attestation() -> tuple[User, User, Attestation]:
     """Create one attestation already in the in-review workspace state."""
-    attestor = await _make_attestor("attestor")
+    attestor, org_id, member_id = await _make_attestor_org("attestor")
     requestor = await _make_user("operator", "requestor")
     async with async_session_factory() as session:
         attestation = Attestation(
             target_type="contributor",
             target_id=uuid4(),
             requestor_id=requestor.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org_id,
+            reviewing_member_id=member_id,
             status="in_review",
             review_type="quality",
             fee_amount=Decimal("500.00"),

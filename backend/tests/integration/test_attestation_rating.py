@@ -18,9 +18,13 @@ from app.modules.attestation import rating_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationRating,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -48,7 +52,9 @@ async def clean(migrated_database: None) -> AsyncIterator[None]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationRating))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
             await session.commit()
@@ -62,13 +68,13 @@ async def clean(migrated_database: None) -> AsyncIterator[None]:
 
 
 async def _seed_rateable_attestation() -> tuple[UUID, User, UUID]:
-    """Create a stood attestation with an attestor and return rateable ids."""
+    """Create a stood org attestation and return (org_id, requestor, attestation_id)."""
     async with async_session_factory() as session:
         async with session.begin():
-            attestor = User(
+            owner = User(
                 email=f"a-{uuid4().hex[:8]}@auracles.space",
                 password_hash=hash_password("CorrectHorse9"),
-                display_name="Attestor",
+                display_name="Owner",
                 email_verified=True,
             )
             requestor = User(
@@ -77,18 +83,31 @@ async def _seed_rateable_attestation() -> tuple[UUID, User, UUID]:
                 display_name="Requestor",
                 email_verified=True,
             )
-            session.add_all([attestor, requestor])
+            session.add_all([owner, requestor])
             await session.flush()
+            org = Organization(
+                slug=f"rating-org-{uuid4().hex[:6]}",
+                name="Rating Org LLP",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            member = OrgMember(org_id=org.id, user_id=owner.id, role="owner")
+            session.add(member)
             session.add(
-                AttestorProfile(
-                    user_id=attestor.id,
+                OrgAttestorProfile(
+                    org_id=org.id,
                     specializations=["ml"],
                     jurisdictions=["us"],
+                    active=True,
                 )
             )
+            await session.flush()
             attestation = Attestation(
                 requestor_id=requestor.id,
-                attestor_id=attestor.id,
+                attestor_org_id=org.id,
+                reviewing_member_id=member.id,
                 target_type="contributor",
                 target_id=requestor.id,
                 review_type="quality",
@@ -101,14 +120,14 @@ async def _seed_rateable_attestation() -> tuple[UUID, User, UUID]:
             await session.flush()
 
         await session.refresh(requestor)
-        return attestor.id, requestor, attestation.id
+        return org.id, requestor, attestation.id
 
 
 async def test_submit_rating_enqueues_attestor_recompute(
     clean: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Submitting a rating enqueues a targeted attestor reputation recompute."""
+    """Submitting a rating enqueues a targeted attestor-org reputation recompute."""
     del clean
     calls: list[tuple[object, ...]] = []
 
@@ -120,7 +139,7 @@ async def test_submit_rating_enqueues_attestor_recompute(
 
     monkeypatch.setattr(reputation_tasks.recompute_subject_task, "delay", capture)
 
-    attestor_id, requestor, attestation_id = await _seed_rateable_attestation()
+    org_id, requestor, attestation_id = await _seed_rateable_attestation()
     async with async_session_factory() as session:
         await rating_service.submit_rating(
             db=session,
@@ -130,4 +149,4 @@ async def test_submit_rating_enqueues_attestor_recompute(
             comment=None,
         )
 
-    assert ("attestor", str(attestor_id)) in calls
+    assert ("attestor_org", str(org_id)) in calls

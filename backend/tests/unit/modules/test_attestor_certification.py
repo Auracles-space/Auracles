@@ -1,4 +1,4 @@
-"""Unit tests for sticky Certified Attestor evaluation."""
+"""Unit tests for sticky Certified Attestor evaluation (org attestors)."""
 
 from __future__ import annotations
 
@@ -16,14 +16,18 @@ from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.main import app
 from app.modules.attestation.certification_service import (
-    evaluate_attestor_certification,
+    evaluate_org_attestor_certification,
 )
 from app.modules.attestation.models import (
     Attestation,
     AttestationRating,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.modules.reputation.weights import load_config
 from app.shared.models.audit_log import AuditLog
 
@@ -52,7 +56,9 @@ async def clean(migrated_database: None) -> AsyncIterator[None]:
             await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationRating))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
             await session.commit()
@@ -66,10 +72,10 @@ async def clean(migrated_database: None) -> AsyncIterator[None]:
 
 
 async def _seed(*, stood: int, stars: int) -> UUID:
-    """Create an attestor with stood attestations each rated at one score."""
+    """Create an attestor org with stood attestations each rated at one score."""
     async with async_session_factory() as session:
         async with session.begin():
-            attestor = User(
+            owner = User(
                 email=f"a-{uuid4().hex[:8]}@auracles.space",
                 password_hash=hash_password("CorrectHorse9"),
                 display_name="A",
@@ -81,19 +87,29 @@ async def _seed(*, stood: int, stars: int) -> UUID:
                 display_name="R",
                 email_verified=True,
             )
-            session.add_all([attestor, requestor])
+            session.add_all([owner, requestor])
             await session.flush()
+            org = Organization(
+                slug=f"cert-org-{uuid4().hex[:6]}",
+                name="Cert Org LLP",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
             session.add(
-                AttestorProfile(
-                    user_id=attestor.id,
+                OrgAttestorProfile(
+                    org_id=org.id,
                     specializations=["ml"],
                     jurisdictions=["us"],
+                    active=True,
                 )
             )
             for _ in range(stood):
                 attestation = Attestation(
                     requestor_id=requestor.id,
-                    attestor_id=attestor.id,
+                    attestor_org_id=org.id,
                     target_type="contributor",
                     target_id=requestor.id,
                     review_type="quality",
@@ -111,45 +127,47 @@ async def _seed(*, stood: int, stars: int) -> UUID:
                         stars=stars,
                     )
                 )
-            return attestor.id
+            return org.id
 
 
-async def _run(attestor_id: UUID) -> bool:
-    """Evaluate certification for one attestor inside its own transaction."""
+async def _run(org_id: UUID) -> bool:
+    """Evaluate certification for one attestor org inside its own transaction."""
     async with async_session_factory() as session:
         async with session.begin():
-            cfg = await load_config(session, subject_type="attestor")
-            result = await evaluate_attestor_certification(
+            cfg = await load_config(session, subject_type="attestor_org")
+            result = await evaluate_org_attestor_certification(
                 session,
-                attestor_id=attestor_id,
+                org_id=org_id,
                 cfg=cfg,
             )
     return result
 
 
-async def _certified_at(attestor_id: UUID) -> datetime | None:
-    """Return the profile certification timestamp for one attestor."""
+async def _certified_at(org_id: UUID) -> datetime | None:
+    """Return the org profile certification timestamp for one attestor org."""
     async with async_session_factory() as session:
         return await session.scalar(
-            select(AttestorProfile.certified_attestor_at).where(
-                AttestorProfile.user_id == attestor_id
+            select(OrgAttestorProfile.certified_attestor_at).where(
+                OrgAttestorProfile.org_id == org_id
             )
         )
 
 
 async def test_certifies_when_thresholds_met(clean: None) -> None:
-    """Ten stood attestations averaging at least 4.5 certifies the attestor."""
+    """Ten stood attestations averaging at least 4.5 certifies the org."""
     del clean
-    attestor_id = await _seed(stood=10, stars=5)
+    org_id = await _seed(stood=10, stars=5)
 
-    assert await _run(attestor_id) is True
-    assert await _certified_at(attestor_id) is not None
+    assert await _run(org_id) is True
+    assert await _certified_at(org_id) is not None
 
     async with async_session_factory() as session:
         audits = (
             (
                 await session.execute(
-                    select(AuditLog).where(AuditLog.action == "attestor_certified")
+                    select(AuditLog).where(
+                        AuditLog.action == "org_attestor_certified"
+                    )
                 )
             )
             .scalars()
@@ -162,28 +180,30 @@ async def test_certifies_when_thresholds_met(clean: None) -> None:
 async def test_below_count_threshold_does_not_certify(clean: None) -> None:
     """Nine stood attestations is below the default threshold of ten."""
     del clean
-    attestor_id = await _seed(stood=9, stars=5)
+    org_id = await _seed(stood=9, stars=5)
 
-    assert await _run(attestor_id) is False
-    assert await _certified_at(attestor_id) is None
+    assert await _run(org_id) is False
+    assert await _certified_at(org_id) is None
 
 
 async def test_already_certified_is_sticky_and_not_reaudited(clean: None) -> None:
-    """A certified attestor stays certified and is not re-stamped or re-audited."""
+    """A certified org stays certified and is not re-stamped or re-audited."""
     del clean
-    attestor_id = await _seed(stood=10, stars=5)
+    org_id = await _seed(stood=10, stars=5)
 
-    assert await _run(attestor_id) is True
-    first = await _certified_at(attestor_id)
+    assert await _run(org_id) is True
+    first = await _certified_at(org_id)
 
-    assert await _run(attestor_id) is False
-    assert await _certified_at(attestor_id) == first
+    assert await _run(org_id) is False
+    assert await _certified_at(org_id) == first
 
     async with async_session_factory() as session:
         audits = (
             (
                 await session.execute(
-                    select(AuditLog).where(AuditLog.action == "attestor_certified")
+                    select(AuditLog).where(
+                        AuditLog.action == "org_attestor_certified"
+                    )
                 )
             )
             .scalars()

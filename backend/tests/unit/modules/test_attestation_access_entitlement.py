@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -26,12 +26,15 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -50,8 +53,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
-            await session.execute(delete(AttestorApplication))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(Framework))
@@ -141,6 +145,36 @@ async def attestor(clean_state) -> User:
 
 
 @pytest.fixture
+async def attestor_org(attestor) -> tuple[UUID, UUID]:
+    """Create an active attestor org owned by ``attestor``.
+
+    Returns ``(org_id, member_id)``.
+    """
+    async with async_session_factory() as session:
+        org = Organization(
+            slug=f"ent-org-{uuid4().hex[:6]}",
+            name="Entitlement Org LLP",
+            country="US",
+            created_by=attestor.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=attestor.id, role="owner")
+        session.add(member)
+        session.add(
+            OrgAttestorProfile(
+                org_id=org.id,
+                specializations=["governance"],
+                jurisdictions=["US"],
+                active=True,
+            )
+        )
+        await session.commit()
+        await session.refresh(member)
+    return org.id, member.id
+
+
+@pytest.fixture
 async def published_framework(operator) -> Framework:
     """Seed a published framework as the entitlement target placeholder."""
     async with async_session_factory() as session:
@@ -178,7 +212,8 @@ async def _make_attestation(
     *,
     requestor: User,
     framework: Framework,
-    attestor_id: UUID | None,
+    attestor_org_id: UUID | None = None,
+    reviewing_member_id: UUID | None = None,
     status_value: str,
     ack: bool = True,
 ) -> Attestation:
@@ -188,7 +223,8 @@ async def _make_attestation(
             target_type="framework",
             target_id=framework.id,
             requestor_id=requestor.id,
-            attestor_id=attestor_id,
+            attestor_org_id=attestor_org_id,
+            reviewing_member_id=reviewing_member_id,
             status=status_value,
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -208,13 +244,15 @@ async def _make_attestation(
 
 
 async def test_assigned_accepted_with_ack_is_full(
-    db_session, operator, attestor, published_framework
+    db_session, operator, attestor, attestor_org, published_framework
 ):
-    """The assigned attestor with an acknowledgment and accepted status gets full."""
+    """The reviewing member with an acknowledgment and accepted status gets full."""
+    org_id, member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
+        reviewing_member_id=member_id,
         status_value="accepted",
     )
     scope = await access_service.attestation_access_scope(
@@ -225,13 +263,15 @@ async def test_assigned_accepted_with_ack_is_full(
 
 @pytest.mark.parametrize("status_value", ["report_submitted", "disputed"])
 async def test_review_states_are_full(
-    db_session, operator, attestor, published_framework, status_value
+    db_session, operator, attestor, attestor_org, published_framework, status_value
 ):
-    """Report-submitted and disputed keep full access for the assigned attestor."""
+    """Report-submitted and disputed keep full access for the reviewing member."""
+    org_id, member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
+        reviewing_member_id=member_id,
         status_value=status_value,
     )
     scope = await access_service.attestation_access_scope(
@@ -246,13 +286,15 @@ async def test_review_states_are_full(
 
 
 async def test_accepted_without_ack_is_none(
-    db_session, operator, attestor, published_framework
+    db_session, operator, attestor, attestor_org, published_framework
 ):
     """Accepted but missing the acknowledgment yields no access."""
+    org_id, member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
+        reviewing_member_id=member_id,
         status_value="accepted",
         ack=False,
     )
@@ -271,13 +313,15 @@ async def test_accepted_without_ack_is_none(
     "status_value", ["released", "resolved", "refunded", "closed", "cancelled"]
 )
 async def test_terminal_states_revoke_full(
-    db_session, operator, attestor, published_framework, status_value
+    db_session, operator, attestor, attestor_org, published_framework, status_value
 ):
-    """Terminal statuses (including resolved) drop the assigned attestor to none."""
+    """Terminal statuses (including resolved) drop the reviewing member to none."""
+    org_id, member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=attestor.id,
+        attestor_org_id=org_id,
+        reviewing_member_id=member_id,
         status_value=status_value,
     )
     scope = await access_service.attestation_access_scope(
@@ -292,20 +336,20 @@ async def test_terminal_states_revoke_full(
 
 
 async def test_cohort_offer_is_preview(
-    db_session, operator, attestor, published_framework
+    db_session, operator, attestor, attestor_org, published_framework
 ):
-    """A cohort member with a live offer gets preview, not full."""
+    """A cohort org owner with a live offer gets preview, not full."""
+    org_id, _member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=None,
         status_value="offered",
     )
     async with async_session_factory() as seed_session:
         seed_session.add(
             AttestationOffer(
                 attestation_id=att.id,
-                attestor_id=attestor.id,
+                org_id=org_id,
                 cohort_index=0,
                 status="offered",
                 expires_at=datetime.now(UTC) + timedelta(hours=24),
@@ -329,7 +373,6 @@ async def test_outsider_is_none(db_session, operator, attestor, published_framew
     att = await _make_attestation(
         requestor=operator,
         framework=published_framework,
-        attestor_id=None,
         status_value="offered",
     )
     scope = await access_service.attestation_access_scope(

@@ -20,6 +20,11 @@ from app.modules.attestation.models import Attestation, AttestationBadge
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -35,6 +40,9 @@ async def _reset_state() -> None:
             await session.execute(delete(Transaction))
             await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Framework))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(AuditLog))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
@@ -90,10 +98,30 @@ async def _make_user(*, role: str, prefix: str) -> User:
 async def _seed_report_submitted_framework_attestation() -> tuple[UUID, UUID]:
     """Create a report-submitted framework attestation ready for acceptance."""
     contributor = await _make_user(role="contributor", prefix="requestor")
-    attestor = await _make_user(role="attestor", prefix="attestor")
+    owner = await _make_user(role="attestor", prefix="attestor")
     current_time = datetime.now(UTC)
     async with async_session_factory() as session:
         async with session.begin():
+            org = Organization(
+                slug=f"badge-wire-org-{uuid4().hex[:6]}",
+                name="Badge Wiring Org LLP",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            member = OrgMember(org_id=org.id, user_id=owner.id, role="owner")
+            session.add(member)
+            session.add(
+                OrgAttestorProfile(
+                    org_id=org.id,
+                    specializations=["governance"],
+                    jurisdictions=["US"],
+                    active=True,
+                    verification_level=4,
+                )
+            )
+            await session.flush()
             framework = Framework(
                 contributor_id=contributor.id,
                 title="Close-Path Badge Framework",
@@ -121,7 +149,8 @@ async def _seed_report_submitted_framework_attestation() -> tuple[UUID, UUID]:
                 target_type="framework",
                 target_id=framework.id,
                 requestor_id=contributor.id,
-                attestor_id=attestor.id,
+                attestor_org_id=org.id,
+                reviewing_member_id=member.id,
                 status="report_submitted",
                 outcome="approved",
                 review_type="quality",
@@ -143,7 +172,7 @@ async def _seed_report_submitted_framework_attestation() -> tuple[UUID, UUID]:
             await session.flush()
             transaction = Transaction(
                 payer_id=contributor.id,
-                payee_id=attestor.id,
+                payee_id=None,
                 amount=Decimal("500.00"),
                 currency="USD",
                 platform_commission=Decimal("0.00"),

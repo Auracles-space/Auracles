@@ -4,10 +4,9 @@ test.describe("Organization Lifecycle E2E", () => {
   // Use a unique slug to avoid conflicts if run against a persistent DB
   const orgSlug = `acme-corp-${Date.now()}`;
   const orgName = "Acme Corp";
-  const user1Email = "owner@example.com";
-  const user2Email = "invitee@example.com";
+    const user2Email = "invitee@example.com";
 
-  test("full organization lifecycle: create -> invite -> team -> suspend -> delete", async ({ page, request, context }) => {
+  test("full organization lifecycle: create -> invite -> team -> suspend -> delete", async ({ page }) => {
     // ----------------------------------------------------
     // 1. Organization Creation (Owner)
     // ----------------------------------------------------

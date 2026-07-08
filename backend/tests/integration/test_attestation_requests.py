@@ -25,8 +25,6 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
@@ -109,8 +107,6 @@ async def reset_attestation_state() -> None:
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
-            await session.execute(delete(AttestorApplication))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(Credential))

@@ -23,8 +23,8 @@ import {
 } from "@/lib/auth/form-client";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 import {
-  listPlatformConfigV1AdminConfigGet,
-  updatePlatformConfigV1AdminConfigPatch,
+  readPlatformConfig,
+  updatePlatformConfig,
 } from "@/lib/generated/sdk.gen";
 import type {
   AdminConfigItem,
@@ -132,7 +132,7 @@ export function AdminConfigPanel() {
       configureBrowserClient();
       const [session, config] = await Promise.all([
         loadCurrentUserSession(),
-        listPlatformConfigV1AdminConfigGet({ headers: getAccessTokenHeaders() }),
+        readPlatformConfig({ headers: getAccessTokenHeaders() }),
       ]);
       if (!mounted) {
         return;
@@ -219,7 +219,7 @@ export function AdminConfigPanel() {
       key: key as ConfigKey,
       value: drafts[key],
     }));
-    const result = await updatePlatformConfigV1AdminConfigPatch({
+    const result = await updatePlatformConfig({
       body: { reason: reason.trim(), totp_code: totpCode.trim(), updates },
       headers: getAccessTokenHeaders(),
     });

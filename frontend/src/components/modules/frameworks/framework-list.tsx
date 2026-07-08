@@ -85,8 +85,9 @@ export function FrameworkList() {
           return;
         }
         setFrameworks(result.data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Network error or API unavailable.");
+
+      } catch {
+        setError("Network error or API unavailable.");
       } finally {
         setLoading(false);
       }

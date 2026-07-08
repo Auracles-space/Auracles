@@ -30,16 +30,20 @@ class RegisterRequest(BaseModel):
     @field_validator("roles")
     @classmethod
     def roles_are_valid(cls, value: list[AssignableRole]) -> list[AssignableRole]:
-        """Reject duplicate roles and disallow combining Attestor with others.
+        """Reject duplicate roles and self-selected Attestor.
 
-        Operator and Contributor may coexist, but Attestor is a standalone role
-        (it requires separate admin approval) and cannot be combined with any
-        other role at registration.
+        Operator and Contributor may coexist and are the only self-selectable
+        roles. Attestor is granted solely as a derived role through an
+        organization's active attestor capability, so it cannot be selected at
+        registration.
         """
         if len(set(value)) != len(value):
             raise ValueError("Roles must be unique.")
-        if "attestor" in value and len(value) > 1:
-            raise ValueError("Attestor cannot be combined with other roles.")
+        if "attestor" in value:
+            raise ValueError(
+                "Attestor access is granted through an organization; "
+                "it cannot be self-selected."
+            )
         return value
 
 

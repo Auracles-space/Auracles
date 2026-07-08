@@ -22,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.reputation.models import ReputationScore
 from app.modules.reputation.weights import ReputationConfig, load_config
 
-VALID_SUBJECT_TYPES = ("framework", "contributor", "operator", "attestor")
+VALID_SUBJECT_TYPES = (
+    "framework",
+    "contributor",
+    "operator",
+    "attestor_org",
+)
 
 _TWO = Decimal("0.01")
 _FOUR = Decimal("0.0001")
@@ -162,19 +167,21 @@ async def subject_exists(
     subject's type contract (framework vs contributor vs operator) without
     applying marketplace-public filters such as published status or suspension.
     """
-    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import UserRole
     from app.modules.frameworks.models import Framework
+    from app.modules.organizations.models import OrgAttestorProfile
 
     if subject_type == "framework":
         return (
             await db.scalar(select(Framework.id).where(Framework.id == subject_id))
             is not None
         )
-    if subject_type == "attestor":
+    if subject_type == "attestor_org":
         return (
             await db.scalar(
-                select(AttestorProfile.id).where(AttestorProfile.user_id == subject_id)
+                select(OrgAttestorProfile.id).where(
+                    OrgAttestorProfile.org_id == subject_id
+                )
             )
             is not None
         )
@@ -194,9 +201,9 @@ async def _public_subject_exists(
     db: AsyncSession, *, subject_type: str, subject_id: UUID
 ) -> bool:
     """Return whether a reputation subject is visible on public read routes."""
-    from app.modules.attestation.models import AttestorProfile
     from app.modules.auth.models import User, UserRole
     from app.modules.frameworks.models import Framework
+    from app.modules.organizations.models import Organization, OrgAttestorProfile
 
     if subject_type == "framework":
         return (
@@ -234,12 +241,16 @@ async def _public_subject_exists(
             is not None
         )
 
-    if subject_type == "attestor":
+    if subject_type == "attestor_org":
         return (
             await db.scalar(
-                select(AttestorProfile.id).where(
-                    AttestorProfile.user_id == subject_id,
-                    AttestorProfile.active.is_(True),
+                select(OrgAttestorProfile.id)
+                .join(Organization, Organization.id == OrgAttestorProfile.org_id)
+                .where(
+                    OrgAttestorProfile.org_id == subject_id,
+                    OrgAttestorProfile.active.is_(True),
+                    Organization.suspended_at.is_(None),
+                    Organization.deactivated_at.is_(None),
                 )
             )
             is not None

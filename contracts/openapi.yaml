@@ -988,14 +988,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors:
+  /v1/attestor-orgs:
     get:
       tags:
       - Attestation
-      summary: List public Attestor directory
-      description: Return active Attestors for public directory browsing, with optional
-        taxonomy and verification-level filters.
-      operationId: list_public_attestor_directory_v1_attestors_get
+      summary: List public attestor-organization directory
+      description: Return active attestor organizations for public directory browsing,
+        with optional taxonomy and verification-level filters.
+      operationId: list_public_attestor_directory_v1_attestor_orgs_get
       parameters:
       - name: sector
         in: query
@@ -1042,21 +1042,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors/{user_id}/completed:
+  /v1/attestor-orgs/{org_id}/completed:
     get:
       tags:
       - Attestation
-      summary: List an attestor's public completed attestations
-      description: Return the attestor's public positive completed attestations.
-      operationId: list_attestor_completed_attestations_v1_attestors__user_id__completed_get
+      summary: List an attestor organization's public completed attestations
+      description: Return the org's public positive completed attestations.
+      operationId: list_attestor_completed_attestations_v1_attestor_orgs__org_id__completed_get
       parameters:
-      - name: user_id
+      - name: org_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: User Id
+          title: Org Id
       responses:
         '200':
           description: Successful Response
@@ -1066,7 +1066,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AttestorCompletedAttestation'
-                title: Response List Attestor Completed Attestations V1 Attestors  User
+                title: Response List Attestor Completed Attestations V1 Attestor Orgs  Org
                   Id  Completed Get
         '422':
           description: Validation Error
@@ -1074,22 +1074,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestors/{user_id}:
+  /v1/attestor-orgs/{org_id}:
     get:
       tags:
       - Attestation
-      summary: Get public Attestor directory profile
-      description: Return one active Attestor's public directory profile, including
-        safe verified credentials and completed-attestation count.
-      operationId: get_public_attestor_directory_profile_v1_attestors__user_id__get
+      summary: Get public attestor-organization directory profile
+      description: Return one active attestor organization's public directory profile,
+        including its matching taxonomy, member count, and completed count.
+      operationId: get_public_attestor_directory_profile_v1_attestor_orgs__org_id__get
       parameters:
-      - name: user_id
+      - name: org_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: User Id
+          title: Org Id
       responses:
         '200':
           description: Successful Response
@@ -1133,42 +1133,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/{attestation_id}/accept:
-    post:
-      tags:
-      - Attestation
-      summary: Accept Attestation Offer
-      description: Accept an open cohort offer with the content-use acknowledgment.
-      operationId: accept_attestation_offer_v1_attestations__attestation_id__accept_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestationAcceptRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestationRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/start-review:
     post:
       tags:
@@ -1187,6 +1151,43 @@ paths:
           type: string
           format: uuid
           title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/content-ack:
+    post:
+      tags:
+      - Attestation
+      summary: Acknowledge content use before review
+      description: Record the staffed reviewing member's binding content-use acknowledgment,
+        unlocking full framework-content access and the review workspace.
+      operationId: acknowledge_attestation_content_v1_attestations__attestation_id__content_ack_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationAcceptRequest'
       responses:
         '200':
           description: Successful Response
@@ -1506,36 +1507,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/{attestation_id}/decline:
-    post:
-      tags:
-      - Attestation
-      summary: Decline Attestation Offer
-      description: Decline an open Attestation cohort offer as an approved Attestor.
-      operationId: decline_attestation_offer_v1_attestations__attestation_id__decline_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: attestation_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Attestation Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestationRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/uploads:
     post:
       tags:
@@ -1716,7 +1687,8 @@ paths:
       tags:
       - Attestation
       summary: Admin Assign Attestation
-      description: Manually assign a needs-admin Attestation to an approved Attestor.
+      description: Manually assign a needs-admin Attestation to an attestor org +
+        member.
       operationId: admin_assign_attestation_v1_admin_attestations__attestation_id__assign_post
       security:
       - HTTPBearer: []
@@ -1777,547 +1749,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttestationRequestResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/assignments:
-    get:
-      tags:
-      - Attestation
-      summary: List Attestor Assignments
-      description: List offered and accepted Attestation assignments for an Attestor.
-      operationId: list_attestor_assignments_v1_attestor_assignments_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorAssignmentsResponse'
-      security:
-      - HTTPBearer: []
-  /v1/attestor/applications:
-    post:
-      tags:
-      - Attestation
-      summary: Submit Attestor Application
-      description: Submit an Attestor application as any authenticated user.
-      operationId: submit_attestor_application_v1_attestor_applications_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorApplicationCreateRequest'
-        required: true
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /v1/attestor/applications/mine:
-    get:
-      tags:
-      - Attestation
-      summary: List My Attestor Applications
-      description: List the authenticated user's Attestor application history.
-      operationId: list_my_attestor_applications_v1_attestor_applications_mine_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationsResponse'
-      security:
-      - HTTPBearer: []
-  /v1/attestor/applications/{application_id}:
-    patch:
-      tags:
-      - Attestation
-      summary: Update Attestor Application
-      description: Edit a pending Attestor application owned by the current user.
-      operationId: update_attestor_application_v1_attestor_applications__application_id__patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorApplicationUpdateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/applications/{application_id}/coi:
-    post:
-      tags:
-      - Attestation
-      summary: Sign conflict-of-interest declaration
-      description: Record or refresh the applicant's conflict-of-interest declaration
-        before activation. This does not change onboarding status.
-      operationId: sign_attestor_application_coi_v1_attestor_applications__application_id__coi_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CoiDeclarationRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/applications/{application_id}/confidentiality:
-    post:
-      tags:
-      - Attestation
-      summary: Sign confidentiality / non-use agreement
-      description: Record the applicant's acceptance of the one-time confidentiality
-        and non-use agreement. This is required before activation but does not change
-        the application status.
-      operationId: sign_attestor_application_confidentiality_v1_attestor_applications__application_id__confidentiality_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConfidentialityAgreementRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/applications/{application_id}/payout:
-    post:
-      tags:
-      - Attestation
-      summary: Attach payout account
-      description: Attach one of the applicant's existing payout accounts before activation.
-        This does not change onboarding status.
-      operationId: attach_attestor_application_payout_v1_attestor_applications__application_id__payout_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorPayoutAttachRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/applications/{application_id}/tax-document:
-    post:
-      tags:
-      - Attestation
-      summary: Create tax-document upload session
-      description: Create a presigned POST upload session for the applicant's tax
-        document and record the selected tax document type.
-      operationId: create_attestor_tax_document_upload_session_v1_attestor_applications__application_id__tax_document_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorTaxDocumentRequest'
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestor/applications/{application_id}/withdraw:
-    patch:
-      tags:
-      - Attestation
-      summary: Withdraw Attestor Application
-      description: Withdraw a pending Attestor application owned by the current user.
-      operationId: withdraw_attestor_application_v1_attestor_applications__application_id__withdraw_patch
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications:
-    get:
-      tags:
-      - Attestation
-      summary: List Attestor Applications For Admin
-      description: List Attestor applications for admin review.
-      operationId: list_attestor_applications_for_admin_v1_admin_attestor_applications_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: status
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - enum:
-            - submitted
-            - identity_verified
-            - professional_verified
-            - expert_verified
-            - active
-            - rejected
-            - withdrawn
-            - held
-            type: string
-          - type: 'null'
-          title: Status
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/reject:
-    post:
-      tags:
-      - Attestation
-      summary: Reject Attestor Application
-      description: Reject a non-active Attestor application as a 2FA-confirmed admin.
-      operationId: reject_attestor_application_v1_admin_attestor_applications__application_id__reject_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorApplicationRejectRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/verify-kyc:
-    post:
-      tags:
-      - Attestation
-      summary: Verify Attestor Application Kyc
-      description: Advance a submitted application through the KYC verification gate.
-      operationId: verify_attestor_application_kyc_v1_admin_attestor_applications__application_id__verify_kyc_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorKycVerifyRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/verify-credential:
-    post:
-      tags:
-      - Attestation
-      summary: Verify Attestor Application Credential
-      description: Advance an identity-verified application through credential review.
-      operationId: verify_attestor_application_credential_v1_admin_attestor_applications__application_id__verify_credential_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorCredentialCheckRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/trial:
-    post:
-      tags:
-      - Attestation
-      summary: Assign calibration trial
-      description: Assign a stubbed calibration trial to a professional-verified Attestor
-        application after admin TOTP verification.
-      operationId: assign_attestor_application_trial_v1_admin_attestor_applications__application_id__trial_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorTrialAssignRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorTrialResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/trial/{trial_id}/decide:
-    post:
-      tags:
-      - Attestation
-      summary: Decide calibration trial
-      description: Record a pass or fail decision for a stubbed calibration trial
-        after admin TOTP verification.
-      operationId: decide_attestor_application_trial_v1_admin_attestor_applications__application_id__trial__trial_id__decide_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      - name: trial_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Trial Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorTrialDecideRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /v1/admin/attestor/applications/{application_id}/activate:
-    post:
-      tags:
-      - Attestation
-      summary: Activate Attestor application
-      description: Activate an expert-verified Attestor application after confirming
-        all onboarding prerequisites and admin TOTP verification.
-      operationId: activate_attestor_application_v1_admin_attestor_applications__application_id__activate_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: application_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Application Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AttestorActivateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestorApplicationResponse'
         '422':
           description: Validation Error
           content:
@@ -7305,6 +6736,143 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/earnings:
+    get:
+      tags:
+      - Organizations
+      summary: Organization attestation earnings
+      description: Released attestation earnings and available payout balance for
+        the organization. Owner/admin only.
+      operationId: get_org_earnings_v1_orgs__org_id__financials_earnings_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarningsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payout-accounts:
+    post:
+      tags:
+      - Organizations
+      summary: Onboard an organization payout account
+      description: Create a provider-held payout destination owned by the organization.
+        Provider routing follows the org's registered country. Owner/admin only.
+      operationId: onboard_org_payout_account_v1_orgs__org_id__financials_payout_accounts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPayoutAccountOnboardRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountOnboardResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payouts:
+    post:
+      tags:
+      - Organizations
+      summary: Request an organization payout
+      description: Request a payout of the org's available attestation earnings. TOTP-gated
+        (requester's own TOTP); requires an approved attestor application and a verified
+        org payout account. Owner/admin only.
+      operationId: request_org_payout_v1_orgs__org_id__financials_payouts_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/invoices:
+    get:
+      tags:
+      - Organizations
+      summary: Organization issued invoices
+      description: List invoices issued for the organization's attested work. Non-sensitive
+        metadata only. Owner/admin only.
+      operationId: list_org_invoices_v1_orgs__org_id__financials_invoices_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgInvoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -10425,10 +9993,14 @@ components:
       description: Three standard recency windows used across current-state analytics.
     AdminAttestationAssignRequest:
       properties:
-        attestor_id:
+        attestor_org_id:
           type: string
           format: uuid
-          title: Attestor Id
+          title: Attestor Org Id
+        reviewing_member_id:
+          type: string
+          format: uuid
+          title: Reviewing Member Id
         reason:
           type: string
           maxLength: 4000
@@ -10441,11 +10013,17 @@ components:
           title: Totp Code
       type: object
       required:
-      - attestor_id
+      - attestor_org_id
+      - reviewing_member_id
       - reason
       - totp_code
       title: AdminAttestationAssignRequest
-      description: Admin request body for manually assigning a needs-admin Attestation.
+      description: 'Admin request body for manually assigning a needs-admin Attestation.
+
+
+        The attestation is assigned to an attestor organization and staffed with a
+
+        reviewing member in the same call, mirroring org accept-and-staff.'
     AdminAttestationDisputeResolveRequest:
       properties:
         outcome:
@@ -11414,7 +10992,7 @@ components:
           - framework
           - contributor
           - operator
-          - attestor
+          - attestor_org
           title: Subject Type
         subject_id:
           type: string
@@ -12312,12 +11890,30 @@ components:
           - rejected
           title: Outcome
         attestor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Attestor Id
+        attestor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Attestor Org Id
+        attestor_org_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attestor Org Slug
         attestor_display_name:
           type: string
           title: Attestor Display Name
+        verification_level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Verification Level
         credentials:
           items:
             $ref: '#/components/schemas/PublicCredentialResponse'
@@ -12340,13 +11936,22 @@ components:
       - id
       - review_type
       - outcome
-      - attestor_id
       - attestor_display_name
       - issued_at
       - framework_version
       - newer_version_exists
       title: AttestationBadgeDetail
-      description: Full version-locked attestation badge for the framework page.
+      description: 'Full version-locked attestation badge for the framework page.
+
+
+        Presents attestor-org identity for org-attested badges (``attestor_org_id``
+        /
+
+        ``attestor_org_slug`` set, ``attestor_id`` null) and legacy individual
+
+        identity for pre-org badges (``attestor_id`` set, org fields null). Never
+
+        exposes the reviewing member who performed an org attestation.'
     AttestationBrief:
       properties:
         what_it_does:
@@ -12819,12 +12424,12 @@ components:
           type: string
           format: uuid
           title: Requestor Id
-        attestor_id:
+        attestor_org_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Attestor Id
+          title: Attestor Org Id
         status:
           type: string
           title: Status
@@ -12932,7 +12537,7 @@ components:
       - target_type
       - target_id
       - requestor_id
-      - attestor_id
+      - attestor_org_id
       - status
       - outcome
       - requested_specializations
@@ -12956,402 +12561,6 @@ components:
       - attestations
       title: AttestationsResponse
       description: List response for Attestations visible to the authenticated user.
-    AttestorActivateRequest:
-      properties:
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - totp_code
-      title: AttestorActivateRequest
-      description: Admin request body for activating a fully verified Attestor.
-    AttestorApplicationCreateRequest:
-      properties:
-        legal_name:
-          type: string
-          maxLength: 200
-          minLength: 2
-          title: Legal Name
-        linkedin_url:
-          anyOf:
-          - type: string
-            maxLength: 2048
-          - type: 'null'
-          title: Linkedin Url
-        professional_body_numbers:
-          additionalProperties:
-            type: string
-          type: object
-          title: Professional Body Numbers
-        sectors:
-          items:
-            type: string
-          type: array
-          maxItems: 4
-          minItems: 1
-          title: Sectors
-        framework_categories:
-          items:
-            type: string
-          type: array
-          maxItems: 9
-          minItems: 1
-          title: Framework Categories
-        jurisdictions:
-          items:
-            type: string
-          type: array
-          maxItems: 25
-          minItems: 1
-          title: Jurisdictions
-        credentials_summary:
-          type: string
-          maxLength: 5000
-          minLength: 10
-          title: Credentials Summary
-        sample_work:
-          additionalProperties: true
-          type: object
-          title: Sample Work
-        professional_references:
-          type: string
-          maxLength: 5000
-          minLength: 3
-          title: Professional References
-      type: object
-      required:
-      - legal_name
-      - sectors
-      - framework_categories
-      - jurisdictions
-      - credentials_summary
-      - professional_references
-      title: AttestorApplicationCreateRequest
-      description: Request body for submitting an Attestor role application.
-    AttestorApplicationRejectRequest:
-      properties:
-        feedback:
-          type: string
-          maxLength: 5000
-          minLength: 1
-          title: Feedback
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - feedback
-      - totp_code
-      title: AttestorApplicationRejectRequest
-      description: Admin request body for rejecting an Attestor application.
-    AttestorApplicationResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        user_id:
-          type: string
-          format: uuid
-          title: User Id
-        status:
-          type: string
-          title: Status
-        legal_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Legal Name
-        linkedin_url:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Linkedin Url
-        professional_body_numbers:
-          additionalProperties:
-            type: string
-          type: object
-          title: Professional Body Numbers
-        sectors:
-          items:
-            type: string
-          type: array
-          title: Sectors
-        framework_categories:
-          items:
-            type: string
-          type: array
-          title: Framework Categories
-        needs_retag:
-          type: boolean
-          title: Needs Retag
-        jurisdictions:
-          items:
-            type: string
-          type: array
-          title: Jurisdictions
-        credentials_summary:
-          type: string
-          title: Credentials Summary
-        sample_work:
-          additionalProperties: true
-          type: object
-          title: Sample Work
-        professional_references:
-          type: string
-          title: Professional References
-        coi_declarations:
-          items:
-            $ref: '#/components/schemas/CoiEntry'
-          type: array
-          title: Coi Declarations
-        coi_signed_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Coi Signed At
-        confidentiality_signed_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Confidentiality Signed At
-        coi_expires_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Coi Expires At
-        payout_account_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Payout Account Id
-        tax_document_type:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Tax Document Type
-        tax_document_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Tax Document Key
-        admin_feedback:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Admin Feedback
-        reviewed_by:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Reviewed By
-        reviewed_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Reviewed At
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - id
-      - user_id
-      - status
-      - legal_name
-      - linkedin_url
-      - professional_body_numbers
-      - sectors
-      - framework_categories
-      - needs_retag
-      - jurisdictions
-      - credentials_summary
-      - sample_work
-      - professional_references
-      - coi_declarations
-      - coi_signed_at
-      - confidentiality_signed_at
-      - coi_expires_at
-      - payout_account_id
-      - tax_document_type
-      - tax_document_key
-      - admin_feedback
-      - reviewed_by
-      - reviewed_at
-      - created_at
-      title: AttestorApplicationResponse
-      description: Attestor application details visible to its owner and admins.
-    AttestorApplicationUpdateRequest:
-      properties:
-        legal_name:
-          type: string
-          maxLength: 200
-          minLength: 2
-          title: Legal Name
-        linkedin_url:
-          anyOf:
-          - type: string
-            maxLength: 2048
-          - type: 'null'
-          title: Linkedin Url
-        professional_body_numbers:
-          additionalProperties:
-            type: string
-          type: object
-          title: Professional Body Numbers
-        sectors:
-          items:
-            type: string
-          type: array
-          maxItems: 4
-          minItems: 1
-          title: Sectors
-        framework_categories:
-          items:
-            type: string
-          type: array
-          maxItems: 9
-          minItems: 1
-          title: Framework Categories
-        jurisdictions:
-          items:
-            type: string
-          type: array
-          maxItems: 25
-          minItems: 1
-          title: Jurisdictions
-        credentials_summary:
-          type: string
-          maxLength: 5000
-          minLength: 10
-          title: Credentials Summary
-        sample_work:
-          additionalProperties: true
-          type: object
-          title: Sample Work
-        professional_references:
-          type: string
-          maxLength: 5000
-          minLength: 3
-          title: Professional References
-      type: object
-      required:
-      - legal_name
-      - sectors
-      - framework_categories
-      - jurisdictions
-      - credentials_summary
-      - professional_references
-      title: AttestorApplicationUpdateRequest
-      description: Request body for editing a pending Attestor application in place.
-    AttestorApplicationsResponse:
-      properties:
-        applications:
-          items:
-            $ref: '#/components/schemas/AttestorApplicationResponse'
-          type: array
-          title: Applications
-      type: object
-      required:
-      - applications
-      title: AttestorApplicationsResponse
-      description: List response for Attestor applications.
-    AttestorAssignmentResponse:
-      properties:
-        offer_id:
-          type: string
-          format: uuid
-          title: Offer Id
-        attestation_id:
-          type: string
-          format: uuid
-          title: Attestation Id
-        target_type:
-          type: string
-          title: Target Type
-        target_id:
-          type: string
-          format: uuid
-          title: Target Id
-        attestation_status:
-          type: string
-          title: Attestation Status
-        offer_status:
-          type: string
-          title: Offer Status
-        cohort_index:
-          type: integer
-          title: Cohort Index
-        requestor_flagged:
-          type: boolean
-          title: Requestor Flagged
-        requested_specializations:
-          items:
-            type: string
-          type: array
-          title: Requested Specializations
-        requested_jurisdictions:
-          items:
-            type: string
-          type: array
-          title: Requested Jurisdictions
-        expires_at:
-          type: string
-          format: date-time
-          title: Expires At
-        accepted_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Accepted At
-        completion_due_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Completion Due At
-      type: object
-      required:
-      - offer_id
-      - attestation_id
-      - target_type
-      - target_id
-      - attestation_status
-      - offer_status
-      - cohort_index
-      - requestor_flagged
-      - requested_specializations
-      - requested_jurisdictions
-      - expires_at
-      - accepted_at
-      - completion_due_at
-      title: AttestorAssignmentResponse
-      description: Attestation offer or assignment visible to an approved Attestor.
-    AttestorAssignmentsResponse:
-      properties:
-        assignments:
-          items:
-            $ref: '#/components/schemas/AttestorAssignmentResponse'
-          type: array
-          title: Assignments
-      type: object
-      required:
-      - assignments
-      title: AttestorAssignmentsResponse
-      description: List response for an Attestor's open offers and accepted work.
     AttestorCompletedAttestation:
       properties:
         framework_id:
@@ -13389,44 +12598,18 @@ components:
       - framework_version
       title: AttestorCompletedAttestation
       description: One public entry in an Attestor's Completed Attestations list.
-    AttestorCredentialCheckRequest:
-      properties:
-        credential_id:
-          type: string
-          format: uuid
-          title: Credential Id
-        issuing_body:
-          type: string
-          title: Issuing Body
-        good_standing:
-          type: boolean
-          title: Good Standing
-        registry_reference:
-          type: string
-          title: Registry Reference
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - credential_id
-      - issuing_body
-      - good_standing
-      - registry_reference
-      - totp_code
-      title: AttestorCredentialCheckRequest
-      description: Admin request body for the credential registry cross-check gate.
     AttestorDirectoryEntry:
       properties:
-        user_id:
+        org_id:
           type: string
           format: uuid
-          title: User Id
-        display_name:
+          title: Org Id
+        name:
           type: string
-          title: Display Name
+          title: Name
+        slug:
+          type: string
+          title: Slug
         sectors:
           items:
             type: string
@@ -13445,14 +12628,12 @@ components:
         verification_level:
           type: integer
           title: Verification Level
-        credentials:
-          items:
-            $ref: '#/components/schemas/PublicCredentialResponse'
-          type: array
-          title: Credentials
         completed_attestations:
           type: integer
           title: Completed Attestations
+        member_count:
+          type: integer
+          title: Member Count
         reputation:
           anyOf:
           - type: number
@@ -13464,17 +12645,26 @@ components:
           default: false
       type: object
       required:
-      - user_id
-      - display_name
+      - org_id
+      - name
+      - slug
       - sectors
       - framework_categories
       - jurisdictions
       - verification_level
-      - credentials
       - completed_attestations
+      - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: Public Attestor directory row safe for anonymous browsing.
+      description: 'Public attestor-organization directory row safe for anonymous
+        browsing.
+
+
+        Lists the organization''s public matching profile, completed-attestation
+
+        count, member count, and certification mark. Never exposes individual member
+
+        identities — attestation is credited to the organization, not its reviewers.'
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -13487,134 +12677,6 @@ components:
       - attestors
       title: AttestorDirectoryResponse
       description: Public list response for the Attestor directory.
-    AttestorKycVerifyRequest:
-      properties:
-        name_match:
-          type: boolean
-          title: Name Match
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - name_match
-      - totp_code
-      title: AttestorKycVerifyRequest
-      description: Admin request body for the KYC verification onboarding gate.
-    AttestorPayoutAttachRequest:
-      properties:
-        payout_account_id:
-          type: string
-          format: uuid
-          title: Payout Account Id
-      type: object
-      required:
-      - payout_account_id
-      title: AttestorPayoutAttachRequest
-      description: Request body for attaching an owned payout account to the application.
-    AttestorTaxDocumentRequest:
-      properties:
-        tax_document_type:
-          type: string
-          enum:
-          - w9
-          - w8ben
-          - other
-          title: Tax Document Type
-        file_name:
-          type: string
-          maxLength: 255
-          minLength: 1
-          title: File Name
-        content_type:
-          type: string
-          maxLength: 255
-          minLength: 1
-          title: Content Type
-        size_bytes:
-          type: integer
-          exclusiveMinimum: 0.0
-          title: Size Bytes
-      type: object
-      required:
-      - tax_document_type
-      - file_name
-      - content_type
-      - size_bytes
-      title: AttestorTaxDocumentRequest
-      description: Request body for creating an Attestor tax-document upload session.
-    AttestorTrialAssignRequest:
-      properties:
-        seeded_framework_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Seeded Framework Id
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - totp_code
-      title: AttestorTrialAssignRequest
-      description: Admin request body for assigning a stubbed calibration trial.
-    AttestorTrialDecideRequest:
-      properties:
-        passed:
-          type: boolean
-          title: Passed
-        feedback:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Feedback
-        totp_code:
-          type: string
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-      type: object
-      required:
-      - passed
-      - totp_code
-      title: AttestorTrialDecideRequest
-      description: Admin request body for deciding a stubbed calibration trial.
-    AttestorTrialResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        application_id:
-          type: string
-          format: uuid
-          title: Application Id
-        seeded_framework_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Seeded Framework Id
-        status:
-          type: string
-          title: Status
-        attempt:
-          type: integer
-          title: Attempt
-      type: object
-      required:
-      - id
-      - application_id
-      - seeded_framework_id
-      - status
-      - attempt
-      title: AttestorTrialResponse
-      description: Calibration trial details returned to admins.
     AvatarConfirmRequest:
       properties:
         file_key:
@@ -13842,22 +12904,6 @@ components:
       - status
       title: ClarificationResponse
       description: One persisted attestation clarification row.
-    CoiDeclarationRequest:
-      properties:
-        declarations:
-          items:
-            $ref: '#/components/schemas/CoiEntry'
-          type: array
-          title: Declarations
-        accept_policy:
-          type: boolean
-          title: Accept Policy
-      type: object
-      required:
-      - declarations
-      - accept_policy
-      title: CoiDeclarationRequest
-      description: Request body for signing the Attestor conflict-of-interest declaration.
     CoiEntry:
       properties:
         entity:
@@ -14097,16 +13143,6 @@ components:
       - status
       title: ComponentHealth
       description: Readiness status for a single platform component.
-    ConfidentialityAgreementRequest:
-      properties:
-        accept:
-          type: boolean
-          title: Accept
-      type: object
-      required:
-      - accept
-      title: ConfidentialityAgreementRequest
-      description: Attestor acceptance of the one-time confidentiality / non-use agreement.
     ConnectorConnectResponse:
       properties:
         authorization_url:
@@ -18424,6 +17460,60 @@ components:
       - invitations
       title: OrgInvitationsResponse
       description: List wrapper for pending organization invitations.
+    OrgInvoiceListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        doc_type:
+          type: string
+          title: Doc Type
+        issue_date:
+          type: string
+          format: date-time
+          title: Issue Date
+        currency:
+          type: string
+          title: Currency
+        total:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+        source_ref_type:
+          type: string
+          title: Source Ref Type
+        source_ref_id:
+          type: string
+          format: uuid
+          title: Source Ref Id
+      type: object
+      required:
+      - id
+      - invoice_number
+      - doc_type
+      - issue_date
+      - currency
+      - total
+      - source_ref_type
+      - source_ref_id
+      title: OrgInvoiceListItem
+      description: One org-attested invoice's non-sensitive metadata for list views.
+    OrgInvoicesResponse:
+      properties:
+        invoices:
+          items:
+            $ref: '#/components/schemas/OrgInvoiceListItem'
+          type: array
+          title: Invoices
+      type: object
+      required:
+      - invoices
+      title: OrgInvoicesResponse
+      description: Response body for an organization's issued invoice list.
     OrgMemberResponse:
       properties:
         id:
@@ -18538,6 +17628,33 @@ components:
       - totp_code
       title: OrgOwnershipTransferRequest
       description: TOTP-gated request to transfer organization ownership.
+    OrgPayoutAccountOnboardRequest:
+      properties:
+        provider:
+          type: string
+          const: stripe
+          title: Provider
+        refresh_url:
+          type: string
+          minLength: 1
+          title: Refresh Url
+        return_url:
+          type: string
+          minLength: 1
+          title: Return Url
+      additionalProperties: false
+      type: object
+      required:
+      - provider
+      - refresh_url
+      - return_url
+      title: OrgPayoutAccountOnboardRequest
+      description: 'Request body for onboarding an organization payout destination.
+
+
+        The organization''s registered ``country`` is authoritative for provider
+
+        routing, so — unlike the individual request — no country is accepted here.'
     OrgReassignReviewerRequest:
       properties:
         reviewing_member_id:
@@ -19971,19 +19088,15 @@ components:
           - type: number
           - type: 'null'
           title: Average Rating
-        attestations_performed:
-          type: integer
-          title: Attestations Performed
-          default: 0
       type: object
       title: ProfileStats
       description: "Aggregated marketplace analytics shown on the profile.\n\nAll\
-        \ values are derived from public records (published Frameworks, public\nreviews,\
-        \ completed attestations), not self-reported.\n\nAttributes:\n    frameworks_published:\
-        \ Count of the user's published Frameworks.\n    reviews_received: Count of\
-        \ reviews across the user's Frameworks.\n    average_rating: Mean review score\
-        \ (1 decimal), or None if no reviews.\n    attestations_performed: Count of\
-        \ attestations the user completed as an\n        Attestor."
+        \ values are derived from public records (published Frameworks, public\nreviews),\
+        \ not self-reported. Attestation is an organizational activity\ncredited to\
+        \ the attestor org, so it is not advertised on individual user\nprofiles.\n\
+        \nAttributes:\n    frameworks_published: Count of the user's published Frameworks.\n\
+        \    reviews_received: Count of reviews across the user's Frameworks.\n  \
+        \  average_rating: Mean review score (1 decimal), or None if no reviews."
     ProfileUpdateRequest:
       properties:
         headline:
@@ -20617,7 +19730,6 @@ components:
           default:
             frameworks_published: 0
             reviews_received: 0
-            attestations_performed: 0
         roles:
           items:
             type: string

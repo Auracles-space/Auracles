@@ -50,8 +50,8 @@ export function KycUpload() {
       if (response.response.ok && response.data) {
         setKycStatus(response.data.kyc_status);
       }
-    } catch (err) {
-      console.error("Failed to load verification status:", err);
+    } catch {
+      console.error("Failed to load verification status");
     } finally {
       setIsLoading(false);
     }

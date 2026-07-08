@@ -11,7 +11,7 @@
  *
  * Maps to: FR-SET-001/002.
  */
-import { CheckCircledIcon, GlobeIcon, StarFilledIcon } from "@radix-ui/react-icons";
+import { CheckCircledIcon, GlobeIcon } from "@radix-ui/react-icons";
 import type { ReactNode } from "react";
 
 import {
@@ -84,10 +84,9 @@ export function ProfileView({
   const stats = profile.stats ?? {};
   const frameworksPublished = stats.frameworks_published ?? 0;
   const reviewsReceived = stats.reviews_received ?? 0;
-  const attestationsPerformed = stats.attestations_performed ?? 0;
-  const averageRating = stats.average_rating ?? null;
   const hasStats =
-    frameworksPublished > 0 || reviewsReceived > 0 || attestationsPerformed > 0;
+    frameworksPublished > 0 || reviewsReceived > 0;
+  const averageRating = stats.average_rating ?? null;
   const websiteHref = safeHref(profile.website);
 
   return (
@@ -251,7 +250,6 @@ export function ProfileView({
                 </div>
               ),
             },
-            { label: "Attestations", value: String(attestationsPerformed) },
           ].map((tile) => (
             <div
               className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm"

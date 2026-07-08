@@ -22,6 +22,7 @@ from app.core.security import (
     hash_payout_provider_account_id,
 )
 from app.integrations import s3, stripe
+from app.integrations.payment_router import select_provider
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
@@ -37,6 +38,9 @@ from app.modules.financials.models import (
 from app.modules.financials.schemas import (
     EarningsResponse,
     InvoiceGenerationResponse,
+    OrgInvoiceListItem,
+    OrgInvoicesResponse,
+    OrgPayoutAccountOnboardRequest,
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
     PaymentMethodSetupResponse,
@@ -58,6 +62,11 @@ from app.modules.financials.schemas import (
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.invoicing import service as invoicing_service
+from app.modules.invoicing.models import Invoice
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorApplication,
+)
 from app.workers.tasks.financials import generate_invoice_pdf
 from app.workers.tasks.payouts import process_payout
 
@@ -1362,6 +1371,458 @@ async def get_contributor_earnings(
         commission_rate=commission_rate,
         minimum_payout=await _minimum_payout(db, currency),
     )
+
+
+# ---------------------------------------------------------------------------
+# Organization (org-as-Attestor) settlement, payout, and invoicing
+#
+# An organization earns only from attestations: released attestation fees are
+# credited to ``transactions.payee_org_id`` at settlement (see
+# ``attestation.release_service``). These helpers mirror the individual payout
+# machinery keyed on the org beneficiary. Marketplace earnings do not apply —
+# this sub-project scopes an organization to the Attestor capability.
+# ---------------------------------------------------------------------------
+
+
+async def _sum_org_attestation_transactions(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    currency: str,
+) -> Decimal:
+    """Return gross completed, released attestation earnings for one org."""
+    released_escrow_exists = exists(
+        select(Escrow.id).where(
+            Escrow.ref_id == Transaction.ref_id,
+            Escrow.ref_type == Transaction.ref_type,
+            Escrow.status == "released",
+        )
+    )
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.payee_org_id == org_id,
+            Transaction.transaction_type == "attestation_fee",
+            Transaction.ref_type == "attestation",
+            released_escrow_exists,
+            Transaction.status == "completed",
+            Transaction.currency == currency,
+        )
+    )
+    return _normalise_money(Decimal(value or "0"))
+
+
+async def _claimed_org_payouts(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    currency: str,
+) -> Decimal:
+    """Return net payout amounts an org has already claimed."""
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Payout.net_amount), 0)).where(
+            Payout.org_id == org_id,
+            Payout.currency == currency,
+            Payout.status.in_(PAYOUT_CLAIM_STATUSES),
+        )
+    )
+    return _normalise_money(Decimal(value or "0"))
+
+
+async def _available_org_payout_balance(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    currency: str,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
+    """Return gross, pending, available, claimed, and commission for an org.
+
+    Attestation earnings clear immediately on release at the attestation
+    commission rate, so an org carries no pending-clearance balance.
+    """
+    attestation_rate = await _attestation_commission_rate(db)
+    gross = await _sum_org_attestation_transactions(
+        db, org_id=org_id, currency=currency
+    )
+    claimed = await _claimed_org_payouts(db, org_id=org_id, currency=currency)
+    cleared_net = _normalise_money(gross * (Decimal("1") - attestation_rate))
+    available = max(_normalise_money(cleared_net - claimed), Decimal("0.00"))
+    return gross, Decimal("0.00"), available, claimed, attestation_rate
+
+
+async def _lock_org_financials(db: AsyncSession, *, org_id: UUID) -> None:
+    """Serialize payout balance mutations for one organization."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"payout:org:{org_id}"},
+    )
+
+
+async def _has_active_org_payout_account(db: AsyncSession, org_id: UUID) -> bool:
+    """Return whether the org has any non-deleted payout account."""
+    existing_id = await db.scalar(
+        select(PayoutAccount.id)
+        .where(
+            PayoutAccount.org_id == org_id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    return existing_id is not None
+
+
+async def get_org_earnings(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> EarningsResponse:
+    """Return an organization's released attestation earnings balances."""
+    currency = "USD"
+    (
+        gross_revenue,
+        pending_clearance,
+        available,
+        _,
+        commission_rate,
+    ) = await _available_org_payout_balance(db, org_id=org_id, currency=currency)
+    return EarningsResponse(
+        currency=currency,
+        gross_revenue=gross_revenue,
+        pending_clearance=pending_clearance,
+        available_balance=available,
+        commission_rate=commission_rate,
+        minimum_payout=await _minimum_payout(db, currency),
+    )
+
+
+async def list_org_invoices(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> OrgInvoicesResponse:
+    """List issued invoices for an organization's attested work.
+
+    PII rule: only non-sensitive invoice metadata is returned — no tax data or
+    payout account details.
+    """
+    from app.modules.attestation.models import Attestation
+
+    org_attestation_ids = select(Attestation.id).where(
+        Attestation.attestor_org_id == org_id
+    )
+    rows = (
+        (
+            await db.execute(
+                select(Invoice)
+                .where(
+                    Invoice.source_ref_type == "attestation",
+                    Invoice.source_ref_id.in_(org_attestation_ids),
+                )
+                .order_by(Invoice.issue_date.desc(), Invoice.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return OrgInvoicesResponse(
+        invoices=[
+            OrgInvoiceListItem(
+                id=invoice.id,
+                invoice_number=invoice.invoice_number,
+                doc_type=invoice.doc_type,
+                issue_date=invoice.issue_date,
+                currency=invoice.currency,
+                total=invoice.total,
+                source_ref_type=invoice.source_ref_type,
+                source_ref_id=invoice.source_ref_id,
+            )
+            for invoice in rows
+        ]
+    )
+
+
+async def onboard_org_payout_account(
+    db: AsyncSession,
+    *,
+    org: Organization,
+    actor: User,
+    payload: OrgPayoutAccountOnboardRequest,
+) -> PayoutAccountOnboardResponse:
+    """Create a provider-held payout destination owned by an organization.
+
+    Provider routing follows the org's registered ``country``. Only the Stripe
+    Express rail is implemented today (as for individual accounts); a Paystack
+    (NG) org rail is deferred.
+    """
+    # Capture identity fields up front: the transaction below rolls back the
+    # session, expiring the dependency-loaded ``org``/``actor`` instances and
+    # turning later attribute access into a sync-context lazy refresh.
+    org_id = org.id
+    org_country = org.country
+    actor_id = actor.id
+    actor_email = actor.email
+    provider = select_provider(user_country=org_country, currency="USD")
+    if provider != "stripe":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Payout onboarding for this country is not yet supported.",
+        )
+
+    existing_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.org_id == org_id,
+            PayoutAccount.provider == payload.provider,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if existing_account is not None:
+        try:
+            provider_account_id = _provider_account_id_plaintext(existing_account)
+            account_link = await stripe.create_account_link(
+                account_id=provider_account_id,
+                refresh_url=payload.refresh_url,
+                return_url=payload.return_url,
+            )
+            onboarding_url = account_link.url
+        except StripeProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="onboard_org_payout_account",
+                org_id=org_id,
+            ).error("payout_account_provider_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payout provider is unavailable.",
+            ) from exc
+        return PayoutAccountOnboardResponse(
+            provider=payload.provider,
+            onboarding_url=onboarding_url,
+            payout_account=_payout_account_response(existing_account),
+        )
+
+    try:
+        stripe_account = await stripe.create_express_account(
+            email=actor_email,
+            country=org_country,
+        )
+        account_link = await stripe.create_account_link(
+            account_id=stripe_account.id,
+            refresh_url=payload.refresh_url,
+            return_url=payload.return_url,
+        )
+        provider_account_id = stripe_account.id
+        onboarding_url = account_link.url
+    except StripeProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="onboard_org_payout_account",
+            org_id=org_id,
+        ).error("payout_account_provider_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payout provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    try:
+        async with db.begin():
+            payout_account = PayoutAccount(
+                org_id=org_id,
+                provider=payload.provider,
+                provider_account_id=encrypt_payout_provider_account_id(
+                    provider_account_id
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    provider_account_id
+                ),
+                account_type="express",
+                is_default=not await _has_active_org_payout_account(db, org_id),
+            )
+            db.add(payout_account)
+            await db.flush()
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="payout_account_onboarded",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "org_id": str(org_id),
+                    "provider": payload.provider,
+                    "account_type": "express",
+                    "provider_account_ref": _masked_provider_ref(provider_account_id),
+                },
+            )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account already exists.",
+        ) from exc
+
+    logger.bind(
+        module="financials",
+        action="onboard_org_payout_account",
+        org_id=org_id,
+        user_id=actor_id,
+    ).info("payout_account_onboarded")
+    return PayoutAccountOnboardResponse(
+        provider=payload.provider,
+        onboarding_url=onboarding_url,
+        payout_account=_payout_account_response(payout_account),
+    )
+
+
+async def _org_has_approved_attestor_application(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> bool:
+    """Return whether the org holds an approved attestor application (KYB gate)."""
+    application_id = await db.scalar(
+        select(OrgAttestorApplication.id)
+        .where(
+            OrgAttestorApplication.org_id == org_id,
+            OrgAttestorApplication.status == "approved",
+        )
+        .limit(1)
+    )
+    return application_id is not None
+
+
+async def request_org_payout(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    org_id: UUID,
+    actor: User,
+    payload: PayoutRequest,
+) -> PayoutResponse:
+    """Create a pending org payout and queue provider transfer processing.
+
+    The acting org owner/admin steps up with their own TOTP. Gates: the org
+    owns a verified payout account and holds an ``approved`` attestor
+    application (KYB stands in for the individual KYC gate).
+    """
+    actor_id = actor.id
+    currency = payload.currency.upper()
+    if currency != "USD":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Only USD payouts are supported.",
+        )
+
+    requested_net = _normalise_money(payload.amount)
+    minimum = await _minimum_payout(db, currency)
+    if requested_net < minimum:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Minimum payout is ${minimum}.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await _lock_org_financials(db, org_id=org_id)
+        if not await _org_has_approved_attestor_application(db, org_id=org_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Organization has no approved attestor application.",
+            )
+        payout_account = await db.scalar(
+            select(PayoutAccount)
+            .where(
+                PayoutAccount.id == payload.payout_account_id,
+                PayoutAccount.org_id == org_id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if payout_account is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payout account not found.",
+            )
+        if payout_account.verified_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payout account is not verified.",
+            )
+
+        _, _, available, _, commission_rate = await _available_org_payout_balance(
+            db,
+            org_id=org_id,
+            currency=currency,
+        )
+        if requested_net > available:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Requested payout exceeds available balance.",
+            )
+
+        actor_for_2fa = await db.get(User, actor_id, with_for_update=True)
+        if actor_for_2fa is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token.",
+            )
+        await auth_service.verify_totp_for_sensitive_action(
+            db=db,
+            redis=redis,
+            user=actor_for_2fa,
+            code=payload.totp_code,
+        )
+        gross_drawdown = _normalise_money(
+            requested_net / (Decimal("1") - commission_rate)
+        )
+        commission_deducted = _normalise_money(gross_drawdown - requested_net)
+        payout = Payout(
+            org_id=org_id,
+            contributor_id=None,
+            payout_account_id=payload.payout_account_id,
+            amount=gross_drawdown,
+            currency=currency,
+            commission_deducted=commission_deducted,
+            net_amount=requested_net,
+            status="pending",
+        )
+        db.add(payout)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="payout_requested",
+            target_type="payout",
+            target_id=payout.id,
+            metadata={
+                "org_id": str(org_id),
+                "currency": currency,
+                "net_amount": str(requested_net),
+                "commission_deducted": str(commission_deducted),
+            },
+        )
+        payout_id = payout.id
+
+    try:
+        process_payout.delay(str(payout_id))
+    except Exception as exc:
+        logger.bind(
+            module="financials",
+            action="request_org_payout",
+            org_id=org_id,
+            payout_id=payout_id,
+        ).error("payout_task_dispatch_failed", error=str(exc))
+
+    logger.bind(
+        module="financials",
+        action="request_org_payout",
+        org_id=org_id,
+        user_id=actor_id,
+        payout_id=payout_id,
+    ).info("payout_requested")
+    refreshed = await db.get(Payout, payout_id)
+    assert refreshed is not None
+    return _payout_response(refreshed)
 
 
 async def request_payout(

@@ -261,7 +261,7 @@ export function BannerUploader({
         "image/jpeg",
         0.85
       );
-    } catch (err) {
+    } catch {
       setError("Failed to process image.");
       setBusy(false);
     }
@@ -309,7 +309,7 @@ export function BannerUploader({
       onUploaded(confirmed.data.banner_url ?? target.data.banner_url);
       setTempImageSrc(null);
       setOriginalFile(null);
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred during upload.");
     } finally {
       setBusy(false);

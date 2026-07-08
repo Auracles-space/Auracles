@@ -19,13 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
-from app.modules.attestation import badge_service
+from app.modules.attestation import badge_service, matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
     AttestationDispute,
     AttestationOffer,
-    AttestorProfile,
     AttestorWarning,
 )
 from app.modules.attestation.schemas import AttestationDisputeCreateRequest
@@ -33,7 +32,22 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import OrgMember
 from app.shared.business_days import add_business_days
+
+
+async def _reviewing_member_user_id(
+    db: AsyncSession, attestation: Attestation
+) -> UUID | None:
+    """Resolve the user id of an attestation's reviewing member, if staffed."""
+    if attestation.reviewing_member_id is None:
+        return None
+    member_user_id: UUID | None = await db.scalar(
+        select(OrgMember.user_id).where(
+            OrgMember.id == attestation.reviewing_member_id
+        )
+    )
+    return member_user_id
 
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
@@ -108,8 +122,11 @@ async def create_dispute(
             target_id=attestation.id,
             metadata={"dispute_id": str(dispute.id)},
         )
+        recipient_id = await _reviewing_member_user_id(db, attestation)
         await db.refresh(dispute)
-    attestation_notifications.notify_dispute_raised(attestation)
+    attestation_notifications.notify_dispute_raised(
+        attestation, recipient_id=recipient_id
+    )
     return dispute
 
 
@@ -196,7 +213,8 @@ async def resolve_dispute(
         notes = resolution_notes.strip()
         now = datetime.now(UTC)
         escrow_id_value: str | None = None
-        warned_attestor_id: UUID | None = None
+        warned_org_id: UUID | None = None
+        warned_org_recipients: list[UUID] = []
         if outcome == "rejected":
             escrow = await _load_attestation_escrow(db=db, attestation=attestation)
             escrow_id_value = str(escrow.id)
@@ -244,11 +262,11 @@ async def resolve_dispute(
         dispute.admin_id = admin_id
         dispute.resolution_notes = notes
         dispute.resolved_at = now
-        if outcome in _UPHELD_OUTCOMES and attestation.attestor_id is not None:
-            warned_attestor_id = attestation.attestor_id
-            await _write_warning(
+        if outcome in _UPHELD_OUTCOMES and attestation.attestor_org_id is not None:
+            warned_org_id = attestation.attestor_org_id
+            warned_org_recipients = await _write_org_warning(
                 db,
-                attestor_id=attestation.attestor_id,
+                org_id=attestation.attestor_org_id,
                 dispute_id=dispute.id,
                 reason=f"Dispute upheld ({outcome}): {notes}",
                 now=now,
@@ -279,13 +297,19 @@ async def resolve_dispute(
                 "dispute_id": str(dispute.id),
             },
         )
+        reviewing_recipient_id = await _reviewing_member_user_id(db, attestation)
         await db.flush()
         await db.refresh(dispute)
-    attestation_notifications.notify_dispute_resolved(attestation, outcome=outcome)
-    if warned_attestor_id is not None:
-        attestation_notifications.notify_attestor_warning(
-            warned_attestor_id, reason=f"Dispute upheld ({outcome})."
-        )
+    attestation_notifications.notify_dispute_resolved(
+        attestation, outcome=outcome, recipient_id=reviewing_recipient_id
+    )
+    if warned_org_id is not None:
+        for recipient_id in warned_org_recipients:
+            attestation_notifications.notify_org_attestor_warning(
+                recipient_id,
+                org_id=warned_org_id,
+                reason=f"Dispute upheld ({outcome}).",
+            )
     return dispute
 
 
@@ -295,11 +319,21 @@ async def assign_needs_admin_attestation(
     redis: Redis,
     admin: User,
     attestation_id: UUID,
-    attestor_id: UUID,
+    attestor_org_id: UUID,
+    reviewing_member_id: UUID,
     reason: str,
     totp_code: str,
 ) -> Attestation:
-    """Manually assign a needs-admin Attestation to an approved Attestor."""
+    """Manually assign a needs-admin Attestation to an attestor org + member.
+
+    The org-world admin fallback for a request that matching could not staff.
+    Mirrors accept-and-staff: the org's ``attestor`` capability must be active,
+    the reviewing member must belong to the org, have signed the current NDA,
+    and be under the per-member concurrency cap, and the org must not conflict
+    with the target (self-review guard). Writes ``attestor_org_id`` +
+    ``reviewing_member_id`` — never the legacy ``attestor_id``. The fee is
+    credited to the org at escrow release, not at assignment.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
@@ -316,34 +350,23 @@ async def assign_needs_admin_attestation(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Only needs-admin Attestations can be manually assigned.",
             )
-        profile = await db.scalar(
-            select(AttestorProfile)
-            .where(
-                AttestorProfile.user_id == attestor_id,
-                AttestorProfile.active.is_(True),
-            )
-            .with_for_update()
-        )
-        if profile is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Approved Attestor profile not found.",
-            )
-        if attestor_id in {attestation.requestor_id, attestation.target_id}:
+        await matching_service._require_active_attestor_capability(db, attestor_org_id)
+        if attestor_org_id in await matching_service._excluded_org_ids(db, attestation):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Attestor cannot attest their own target.",
+                detail="Attestor org has a conflict of interest with this target.",
             )
-        transaction = await _load_completed_attestation_transaction(
-            db=db,
-            attestation_id=attestation.id,
+        member = await matching_service._load_assignable_member(
+            db,
+            org_id=attestor_org_id,
+            member_id=reviewing_member_id,
         )
         current_time = datetime.now(UTC)
         completion_days = await _completion_sla_days(db, attestation.target_type)
         cohort_index = await _next_cohort_index(db, attestation.id)
         offer = AttestationOffer(
             attestation_id=attestation.id,
-            attestor_id=attestor_id,
+            org_id=attestor_org_id,
             cohort_index=cohort_index,
             status="accepted",
             offered_at=current_time,
@@ -351,9 +374,9 @@ async def assign_needs_admin_attestation(
             expires_at=current_time,
         )
         db.add(offer)
-        transaction.payee_id = attestor_id
         attestation.status = "accepted"
-        attestation.attestor_id = attestor_id
+        attestation.attestor_org_id = attestor_org_id
+        attestation.reviewing_member_id = member.id
         attestation.accepted_at = current_time
         attestation.completion_due_at = current_time + timedelta(days=completion_days)
         await write_audit(
@@ -365,13 +388,15 @@ async def assign_needs_admin_attestation(
             metadata={
                 "reason": reason.strip(),
                 "admin_assigned": True,
-                "attestor_id": str(attestor_id),
-                "transaction_id": str(transaction.id),
+                "attestor_org_id": str(attestor_org_id),
+                "reviewing_member_id": str(member.id),
             },
         )
         await db.flush()
     await db.refresh(attestation)
-    attestation_notifications.notify_manual_assignment(attestation, attestor_id)
+    attestation_notifications.notify_org_offer_accepted(
+        attestation, org_id=attestor_org_id
+    )
     return attestation
 
 
@@ -559,30 +584,6 @@ async def _reject_duplicate_active_dispute(
         )
 
 
-async def _load_completed_attestation_transaction(
-    *,
-    db: AsyncSession,
-    attestation_id: UUID,
-) -> Transaction:
-    """Load and lock a completed Attestation fee transaction."""
-    transaction = await db.scalar(
-        select(Transaction)
-        .where(
-            Transaction.ref_type == "attestation",
-            Transaction.ref_id == attestation_id,
-            Transaction.transaction_type == "attestation_fee",
-            Transaction.status == "completed",
-        )
-        .with_for_update()
-    )
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Attestation fee is not funded.",
-        )
-    return transaction
-
-
 async def _completion_sla_days(db: AsyncSession, target_type: str) -> int:
     """Return the configured completion SLA in days for an Attestation target."""
     return await _platform_int_config(
@@ -675,16 +676,17 @@ async def _revision_sla_business_days(db: AsyncSession) -> int:
     )
 
 
-async def attestor_upheld_warning_count(
+async def org_attestor_upheld_warning_count(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    org_id: UUID,
     now: datetime | None = None,
 ) -> int:
-    """Count an attestor's formal warnings in the trailing 12 months.
+    """Count an org's formal warnings in the trailing 12 months.
 
-    Warnings accrue on every upheld dispute (refund or revise). The rolling
-    count drives the suspension-review flag. Maps to spec section 4.7.
+    Warnings keyed to ``attestor_org_id`` accrue on every upheld dispute
+    (refund or revise) in the trailing 12 months. The rolling
+    count drives the org's suspension-review flag (spec section 4.7).
     """
     current_time = now or datetime.now(UTC)
     cutoff = current_time - timedelta(days=SUSPENSION_REVIEW_WINDOW_DAYS)
@@ -692,60 +694,69 @@ async def attestor_upheld_warning_count(
         select(func.count())
         .select_from(AttestorWarning)
         .where(
-            AttestorWarning.attestor_id == attestor_id,
+            AttestorWarning.attestor_org_id == org_id,
             AttestorWarning.created_at >= cutoff,
         )
     )
     return int(count or 0)
 
 
-async def _write_warning(
+async def _write_org_warning(
     db: AsyncSession,
     *,
-    attestor_id: UUID,
+    org_id: UUID,
     dispute_id: UUID,
     reason: str,
     now: datetime,
-) -> None:
-    """Record one attestor warning and flag suspension review if due.
+) -> list[UUID]:
+    """Record one org warning and flag suspension review if due.
 
-    Writes the warning, notifies the attestor, and — when the rolling count
-    reaches ``SUSPENSION_REVIEW_THRESHOLD`` — stamps the profile's
-    ``suspension_review_at`` and audits it. Never deactivates an attestor; the
-    flag is a human-review signal only (spec section 4.7).
+    Writes the warning against the organization, and — when the rolling count
+    reaches ``SUSPENSION_REVIEW_THRESHOLD`` — stamps the org attestor profile's
+    ``suspension_review_at`` and audits it. Never deactivates an org; the flag
+    is a human-review signal only. The reviewing member is never named.
+
+    Returns:
+        The owner/admin user ids to notify of the warning (resolved while the
+        session is live, for post-commit dispatch).
     """
+    from app.modules.attestation.matching_service import _org_manager_ids
+    from app.modules.organizations.models import OrgAttestorProfile
+
     db.add(
         AttestorWarning(
-            attestor_id=attestor_id,
+            attestor_org_id=org_id,
             dispute_id=dispute_id,
             reason=reason,
         )
     )
     await db.flush()
-    count = await attestor_upheld_warning_count(db, attestor_id=attestor_id, now=now)
+    recipients = await _org_manager_ids(db, org_id)
+    count = await org_attestor_upheld_warning_count(db, org_id=org_id, now=now)
     if count < SUSPENSION_REVIEW_THRESHOLD:
-        return
+        return recipients
     profile = await db.scalar(
-        select(AttestorProfile)
-        .where(AttestorProfile.user_id == attestor_id)
+        select(OrgAttestorProfile)
+        .where(OrgAttestorProfile.org_id == org_id)
         .with_for_update()
     )
     if profile is None or profile.suspension_review_at is not None:
-        return
+        return recipients
     profile.suspension_review_at = now
     await write_audit(
         db=db,
         actor_id=None,
-        action="attestor_suspension_review_flagged",
-        target_type="attestor_profile",
-        target_id=profile.id,
+        action="org_attestor_suspension_review_flagged",
+        target_type="attestor_org",
+        target_id=org_id,
         metadata={"upheld_warnings": count},
     )
     logger.bind(
         module="attestation",
-        action="attestor_suspension_review_flagged",
-        attestor_id=attestor_id,
-    ).warning("attestor_suspension_review_flagged")
+        action="org_attestor_suspension_review_flagged",
+        org_id=org_id,
+    ).warning("org_attestor_suspension_review_flagged")
+    return recipients
 
 
 async def _load_attestation_escrow(

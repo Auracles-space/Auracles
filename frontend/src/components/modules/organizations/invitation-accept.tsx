@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { 
   previewInvitationV1OrgInvitationsTokenGet, 
-  acceptInvitationV1OrgInvitationsTokenAcceptPost 
+  acceptInvitationV1OrgInvitationsTokenAcceptPost,
+  signOrgNda
 } from "@/lib/generated/sdk.gen";
 import type { OrgInvitationPreviewResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -24,6 +25,9 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [accepting, setAccepting] = useState(false);
+  const [joinedOrg, setJoinedOrg] = useState<{ id: string; name: string } | null>(null);
+  const [signingNda, setSigningNda] = useState(false);
+  const [ndaSigned, setNdaSigned] = useState(false);
 
   useEffect(() => {
     async function loadPreview() {
@@ -50,7 +54,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         } else {
           setError(result.error?.detail?.error_code || "Invalid or expired invitation.");
         }
-      } catch (err) {
+      } catch {
         setError("An error occurred loading the invitation.");
       } finally {
         setLoading(false);
@@ -73,11 +77,38 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         setError(result.error?.detail?.error_code || "Failed to accept invitation");
         setAccepting(false);
       } else {
-        router.push("/dashboard/organizations");
+        if (result.data?.nda_required) {
+          setJoinedOrg({ id: result.data.org.id, name: result.data.org.name });
+          setAccepting(false);
+        } else {
+          router.push("/dashboard/organizations");
+        }
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
       setAccepting(false);
+    }
+  }
+
+  async function handleSignNda() {
+    if (!joinedOrg) return;
+    setSigningNda(true);
+    setError(null);
+    try {
+      const result = await signOrgNda({
+        path: { org_id: joinedOrg.id },
+        headers: getAccessTokenHeaders(),
+      });
+      if (!result.response.ok) {
+        setError(result.error?.detail?.error_code || "Failed to sign NDA");
+        setSigningNda(false);
+      } else {
+        setNdaSigned(true);
+        setTimeout(() => router.push("/dashboard/organizations"), 1500);
+      }
+    } catch {
+      setError("An unexpected error occurred.");
+      setSigningNda(false);
     }
   }
 
@@ -109,13 +140,54 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
               Return home
             </Link>
           </>
+        ) : joinedOrg ? (
+          <>
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-2 text-3xl shadow-sm">
+              📄
+            </div>
+            <h1 className="mb-2 font-heading text-2xl font-bold text-foreground">
+              {ndaSigned ? "NDA Signed!" : "Sign Non-Disclosure Agreement"}
+            </h1>
+            
+            {ndaSigned ? (
+              <p className="mb-6 text-foreground-muted">
+                Thank you. Redirecting to your dashboard...
+              </p>
+            ) : (
+              <>
+                <p className="mb-4 text-sm text-foreground-muted">
+                  You have successfully joined <span className="font-semibold text-foreground">{joinedOrg.name}</span>! 
+                  However, you must sign the organization&apos;s NDA before you can participate in any attestations or view confidential materials.
+                </p>
+                <div className="border border-border-default rounded-md p-4 bg-surface-2 text-xs h-32 overflow-y-auto whitespace-pre-wrap font-mono text-foreground-muted mb-6 text-left">
+                  [Confidentiality Agreement Text Placeholder]
+                  
+                  The Recipient agrees not to disclose any Confidential Information to third parties...
+                  (Full legal text would be fetched and displayed here)
+                </div>
+                
+                <div className="flex flex-col gap-3">
+                  <Button onClick={handleSignNda} loading={signingNda} className="w-full min-h-12 text-base">
+                    Sign NDA & Continue
+                  </Button>
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => router.push("/dashboard/organizations")} 
+                    className="w-full min-h-12 text-base text-foreground-muted"
+                  >
+                    Skip for now (Limited access)
+                  </Button>
+                </div>
+              </>
+            )}
+          </>
         ) : preview ? (
           <>
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-2 text-3xl shadow-sm">
               🏢
             </div>
             <h1 className="mb-2 font-heading text-2xl font-bold text-foreground">
-              You've been invited!
+              You&apos;ve been invited!
             </h1>
             <p className="mb-6 text-foreground-muted">
               You have been invited to join <span className="font-semibold text-foreground">{preview.org_name}</span> as a <span className="font-semibold text-foreground capitalize">{preview.role}</span>.

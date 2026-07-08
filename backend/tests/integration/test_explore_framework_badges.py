@@ -192,7 +192,6 @@ async def _create_badge(
                 target_type="framework",
                 target_id=framework.id,
                 requestor_id=framework.contributor_id,
-                attestor_id=attestor_id,
                 status="closed",
                 outcome=outcome,
                 review_type="quality",

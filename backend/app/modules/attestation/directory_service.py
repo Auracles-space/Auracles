@@ -1,25 +1,27 @@
-"""Public Attestor directory read models and query helpers.
+"""Public attestor-organization directory read models and query helpers.
 
-Returns public-facing Attestor directory entries from active profiles only,
-combining user display name, safe verified credential summaries, and a count
-of completed Attestations.
+Returns public-facing directory entries for active attestor organizations only,
+combining the organization's public matching profile, a count of completed
+Attestations credited to the organization, its member count, and its
+certification mark. Individual member identities are never exposed — attestation
+is an organizational activity, not an individual advertisement.
 """
 
 from __future__ import annotations
 
-from datetime import date
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.attestation.models import Attestation, AttestorProfile, Credential
-from app.modules.attestation.schemas import (
-    AttestorDirectoryEntry,
-    PublicCredentialResponse,
+from app.modules.attestation.models import Attestation
+from app.modules.attestation.schemas import AttestorDirectoryEntry
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
 )
-from app.modules.auth.models import User
 from app.modules.reputation import service as reputation_service
 
 _COMPLETED_ATTESTATION_STATUSES = ("released", "resolved", "closed")
@@ -33,137 +35,120 @@ async def list_directory(
     jurisdiction: str | None,
     level: int | None,
 ) -> list[AttestorDirectoryEntry]:
-    """Return public directory entries for active Attestors matching filters."""
+    """Return public directory entries for active attestor orgs matching filters."""
     query = (
-        select(AttestorProfile, User.display_name)
-        .join(User, User.id == AttestorProfile.user_id)
-        .where(AttestorProfile.active.is_(True))
-        .order_by(User.display_name, AttestorProfile.user_id)
+        select(OrgAttestorProfile, Organization)
+        .join(Organization, Organization.id == OrgAttestorProfile.org_id)
+        .where(
+            OrgAttestorProfile.active.is_(True),
+            Organization.suspended_at.is_(None),
+            Organization.deactivated_at.is_(None),
+        )
+        .order_by(Organization.name, OrgAttestorProfile.org_id)
     )
     if sector is not None:
-        query = query.where(AttestorProfile.sectors.op("&&")([sector]))
+        query = query.where(OrgAttestorProfile.sectors.op("&&")([sector]))
     if framework_category is not None:
         query = query.where(
-            AttestorProfile.framework_categories.op("&&")([framework_category])
+            OrgAttestorProfile.framework_categories.op("&&")([framework_category])
         )
     if jurisdiction is not None:
-        query = query.where(AttestorProfile.jurisdictions.op("&&")([jurisdiction]))
+        query = query.where(OrgAttestorProfile.jurisdictions.op("&&")([jurisdiction]))
     if level is not None:
-        query = query.where(AttestorProfile.verification_level == level)
+        query = query.where(OrgAttestorProfile.verification_level == level)
 
     rows = (await db.execute(query)).all()
     return [
-        await _directory_entry(
-            db=db,
-            user_id=profile.user_id,
-            display_name=display_name,
-            profile=profile,
-        )
-        for profile, display_name in rows
+        await _directory_entry(db=db, profile=profile, organization=organization)
+        for profile, organization in rows
     ]
 
 
 async def get_directory_profile(
     db: AsyncSession,
-    user_id: UUID,
+    org_id: UUID,
 ) -> AttestorDirectoryEntry:
-    """Return one active Attestor directory entry or raise 404."""
+    """Return one active attestor-org directory entry or raise 404."""
     row = (
         await db.execute(
-            select(AttestorProfile, User.display_name)
-            .join(User, User.id == AttestorProfile.user_id)
+            select(OrgAttestorProfile, Organization)
+            .join(Organization, Organization.id == OrgAttestorProfile.org_id)
             .where(
-                AttestorProfile.user_id == user_id,
-                AttestorProfile.active.is_(True),
+                OrgAttestorProfile.org_id == org_id,
+                OrgAttestorProfile.active.is_(True),
+                Organization.suspended_at.is_(None),
+                Organization.deactivated_at.is_(None),
             )
         )
     ).one_or_none()
     if row is None:
-        raise HTTPException(status_code=404, detail="Attestor not found.")
+        raise HTTPException(status_code=404, detail="Attestor organization not found.")
 
-    profile, display_name = row
-    return await _directory_entry(
-        db=db,
-        user_id=profile.user_id,
-        display_name=display_name,
-        profile=profile,
-    )
+    profile, organization = row
+    return await _directory_entry(db=db, profile=profile, organization=organization)
 
 
 async def _directory_entry(
     *,
     db: AsyncSession,
-    user_id: UUID,
-    display_name: str,
-    profile: AttestorProfile,
+    profile: OrgAttestorProfile,
+    organization: Organization,
 ) -> AttestorDirectoryEntry:
-    """Build one public Attestor directory entry."""
-    score = await reputation_service.get_score(
-        db,
-        subject_type="attestor",
-        subject_id=user_id,
-    )
-    reputation = (
-        float(score.score)
-        if score is not None
-        and score.is_provisional is False
-        and score.score is not None
-        else None
-    )
+    """Build one public attestor-org directory entry."""
     return AttestorDirectoryEntry(
-        user_id=user_id,
-        display_name=display_name,
+        org_id=organization.id,
+        name=organization.name,
+        slug=organization.slug,
         sectors=profile.sectors,
         framework_categories=profile.framework_categories,
         jurisdictions=profile.jurisdictions,
         verification_level=profile.verification_level,
-        credentials=await _verified_credentials(db=db, user_id=user_id),
-        completed_attestations=await _completed_attestations(db=db, user_id=user_id),
-        reputation=reputation,
+        completed_attestations=await _completed_attestations(
+            db=db, org_id=organization.id
+        ),
+        member_count=await _member_count(db=db, org_id=organization.id),
+        reputation=await _org_reputation(db=db, org_id=organization.id),
         certified=profile.certified_attestor_at is not None,
     )
 
 
-async def _verified_credentials(
-    *,
-    db: AsyncSession,
-    user_id: UUID,
-) -> list[PublicCredentialResponse]:
-    """Return verified credentials safe for public display."""
-    rows = await db.execute(
-        select(Credential)
-        .where(
-            Credential.user_id == user_id,
-            Credential.verification_status == "verified",
-        )
-        .order_by(Credential.issued_date.desc())
+async def _org_reputation(*, db: AsyncSession, org_id: UUID) -> float | None:
+    """Return the org's published reputation number, or None while provisional.
+
+    Mirrors the public-surface visibility rule: a cold-start (provisional) or
+    never-scored organization reads as None so the directory shows the "New"
+    badge rather than an unearned number.
+    """
+    score = await reputation_service.get_score(
+        db, subject_type="attestor_org", subject_id=org_id
     )
-    today = date.today()
-    return [
-        PublicCredentialResponse(
-            title=credential.title,
-            issuer=credential.issuer,
-            credential_type=credential.credential_type,
-            issued_date=credential.issued_date,
-            expires_date=credential.expires_date,
-            expired=(
-                credential.expires_date is not None and credential.expires_date < today
-            ),
-        )
-        for credential in rows.scalars().all()
-    ]
+    if score is None or score.is_provisional or score.score is None:
+        return None
+    return float(score.score)
 
 
-async def _completed_attestations(*, db: AsyncSession, user_id: UUID) -> int:
-    """Count completed Attestations issued by one Attestor."""
+async def _completed_attestations(*, db: AsyncSession, org_id: UUID) -> int:
+    """Count completed Attestations credited to one attestor organization."""
     return int(
         await db.scalar(
             select(func.count())
             .select_from(Attestation)
             .where(
-                Attestation.attestor_id == user_id,
+                Attestation.attestor_org_id == org_id,
                 Attestation.status.in_(_COMPLETED_ATTESTATION_STATUSES),
             )
+        )
+        or 0
+    )
+
+
+async def _member_count(*, db: AsyncSession, org_id: UUID) -> int:
+    """Count members of one organization for the public directory entry."""
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(OrgMember)
+            .where(OrgMember.org_id == org_id)
         )
         or 0
     )

@@ -19,6 +19,15 @@ from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
 )
 from app.modules.auth.models import User
+from app.modules.financials import service as financials_service
+from app.modules.financials.schemas import (
+    EarningsResponse,
+    OrgInvoicesResponse,
+    OrgPayoutAccountOnboardRequest,
+    PayoutAccountOnboardResponse,
+    PayoutRequest,
+    PayoutResponse,
+)
 from app.modules.organizations import (
     attestor_application_service,
     nda_service,
@@ -916,6 +925,89 @@ async def decline_invitation(
 ) -> None:
     """Decline an invitation."""
     await service.decline_invitation(db=db, user=user, token=token)
+
+
+@router.get(
+    "/{org_id}/financials/earnings",
+    response_model=EarningsResponse,
+    summary="Organization attestation earnings",
+    description=(
+        "Released attestation earnings and available payout balance for the "
+        "organization. Owner/admin only."
+    ),
+)
+async def get_org_earnings(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> EarningsResponse:
+    """Return the org's released attestation earnings balances."""
+    del context
+    return await financials_service.get_org_earnings(db, org_id=org_id)
+
+
+@router.post(
+    "/{org_id}/financials/payout-accounts",
+    response_model=PayoutAccountOnboardResponse,
+    summary="Onboard an organization payout account",
+    description=(
+        "Create a provider-held payout destination owned by the organization. "
+        "Provider routing follows the org's registered country. Owner/admin only."
+    ),
+)
+async def onboard_org_payout_account(
+    org_id: UUID,
+    payload: OrgPayoutAccountOnboardRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> PayoutAccountOnboardResponse:
+    """Onboard an org-owned payout destination."""
+    del org_id
+    return await financials_service.onboard_org_payout_account(
+        db, org=context.org, actor=context.user, payload=payload
+    )
+
+
+@router.post(
+    "/{org_id}/financials/payouts",
+    response_model=PayoutResponse,
+    summary="Request an organization payout",
+    description=(
+        "Request a payout of the org's available attestation earnings. "
+        "TOTP-gated (requester's own TOTP); requires an approved attestor "
+        "application and a verified org payout account. Owner/admin only."
+    ),
+)
+async def request_org_payout(
+    org_id: UUID,
+    payload: PayoutRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> PayoutResponse:
+    """Request an org payout after TOTP step-up."""
+    return await financials_service.request_org_payout(
+        db, redis, org_id=org_id, actor=context.user, payload=payload
+    )
+
+
+@router.get(
+    "/{org_id}/financials/invoices",
+    response_model=OrgInvoicesResponse,
+    summary="Organization issued invoices",
+    description=(
+        "List invoices issued for the organization's attested work. "
+        "Non-sensitive metadata only. Owner/admin only."
+    ),
+)
+async def list_org_invoices(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgInvoicesResponse:
+    """List issued invoices for the org's attested work."""
+    del context
+    return await financials_service.list_org_invoices(db, org_id=org_id)
 
 
 admin_orgs_router = APIRouter(

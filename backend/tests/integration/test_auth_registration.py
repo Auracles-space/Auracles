@@ -160,15 +160,16 @@ async def test_register_creates_user_roles_verification_token_and_audit(
     assert audit_log is not None
 
 
-async def test_register_attestor_alone_creates_unapproved_role(
+async def test_register_rejects_attestor_role(
     client: AsyncClient,
     migrated_database: None,
     auth_test_context: dict[str, Any],
 ) -> None:
-    """Attestor registers standalone and the role persists pending admin approval.
+    """Attestor can no longer be self-selected at registration (422).
 
-    Attestor cannot be combined with other roles at registration, and the role
-    is created unapproved (approved_at is None) until an admin grants it.
+    The attestor role is granted only as a derived role through an
+    organization's active attestor capability, so registration rejects it and
+    creates no user.
     """
     response = await client.post(
         "/v1/auth/register",
@@ -180,22 +181,13 @@ async def test_register_attestor_alone_creates_unapproved_role(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 422
 
     async with async_session_factory() as session:
         user = await session.scalar(
             select(User).where(User.email == "attestor@auracles.space")
         )
-        roles = (
-            await session.execute(
-                select(UserRole.role, UserRole.approved_at).where(
-                    UserRole.user_id == user.id
-                )
-            )
-        ).all()
-
-    assert {role for role, _approved_at in roles} == {"attestor"}
-    assert all(approved_at is None for _role, approved_at in roles)
+    assert user is None
 
 
 async def test_register_rejects_attestor_combined_with_other_roles(

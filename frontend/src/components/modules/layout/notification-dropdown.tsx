@@ -73,8 +73,8 @@ export function NotificationDropdown() {
       if (result.response.ok && result.data) {
         setNotifications(result.data.notifications);
       }
-    } catch (err) {
-      console.error("Failed to load notifications", err);
+    } catch {
+      console.error("Failed to load notifications");
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -160,8 +160,8 @@ export function NotificationDropdown() {
         // Re-fetch on failure to sync
         void fetchNotifications(true);
       }
-    } catch (err) {
-      console.error("Failed to mark all notifications as read", err);
+    } catch {
+      console.error("Failed to mark all notifications as read");
       void fetchNotifications(true);
     } finally {
       setMarkingAllRead(false);

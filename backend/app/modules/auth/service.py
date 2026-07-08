@@ -1081,8 +1081,11 @@ async def add_self_role(
     """Let a user add Contributor or Operator role to their account."""
     if role == "attestor":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Attestor role requires admin approval.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Attestor access is granted through an organization; "
+                "it cannot be self-selected."
+            ),
         )
     if role not in {"contributor", "operator"}:
         raise HTTPException(

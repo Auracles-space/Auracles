@@ -23,7 +23,7 @@ def test_new_workspace_tables_declared() -> None:
 
 
 def test_attestation_gains_workspace_columns() -> None:
-    """Attestation and AttestorProfile carry the new workspace columns."""
+    """Attestation carries the review-workspace columns."""
     attestation_columns = models.Attestation.__table__.columns
     for name in (
         "review_started_at",
@@ -32,5 +32,3 @@ def test_attestation_gains_workspace_columns() -> None:
         "submitted_late",
     ):
         assert name in attestation_columns
-
-    assert "late_submission_count" in models.AttestorProfile.__table__.columns

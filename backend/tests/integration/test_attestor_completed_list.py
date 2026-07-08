@@ -1,4 +1,4 @@
-"""Attestor public Completed Attestations list (Module 6c, positive-only)."""
+"""Attestor-org public Completed Attestations list (Module 6c, positive-only)."""
 
 from __future__ import annotations
 
@@ -18,18 +18,21 @@ from app.core.security import hash_password
 from app.modules.attestation.models import Attestation, AttestationBadge
 from app.modules.auth.models import User, UserRole
 from app.modules.frameworks.models import Framework
+from app.modules.organizations.models import Organization, OrgMember
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
 
 
 async def _reset_state() -> None:
-    """Delete rows used by attestor completed-list tests."""
+    """Delete rows used by attestor-org completed-list tests, FK-safe."""
     async with async_session_factory() as session:
         async with session.begin():
             await session.execute(delete(AttestationBadge))
             await session.execute(delete(Attestation))
             await session.execute(delete(Framework))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(AuditLog))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
@@ -82,6 +85,22 @@ async def _create_user(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
+async def _create_attestor_org(owner_id: UUID) -> UUID:
+    """Create one organization owned by ``owner_id``; return the org id."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                slug=f"completed-org-{uuid4().hex[:6]}",
+                name="Completed Attestor Org",
+                country="US",
+                created_by=owner_id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner_id, role="owner"))
+            return org.id
+
+
 async def _create_framework(contributor_id: UUID, *, title: str) -> Framework:
     """Create one published framework whose title can be joined into the list."""
     async with async_session_factory() as session:
@@ -107,18 +126,18 @@ async def _create_framework(contributor_id: UUID, *, title: str) -> Framework:
 async def _create_badge(
     *,
     framework: Framework,
-    attestor_id: UUID,
+    org_id: UUID,
     outcome: str,
     issued_at: datetime,
 ) -> None:
-    """Create one attestation row plus its immutable badge snapshot."""
+    """Create one org attestation row plus its immutable badge snapshot."""
     async with async_session_factory() as session:
         async with session.begin():
             attestation = Attestation(
                 target_type="framework",
                 target_id=framework.id,
                 requestor_id=framework.contributor_id,
-                attestor_id=attestor_id,
+                attestor_org_id=org_id,
                 status="closed",
                 outcome=outcome,
                 review_type="quality",
@@ -137,8 +156,10 @@ async def _create_badge(
                     framework_id=framework.id,
                     review_type="quality",
                     outcome=outcome,
-                    attestor_id=attestor_id,
-                    attestor_display_name="Completed Attestor",
+                    attestor_org_id=org_id,
+                    attestor_org_slug="completed-org",
+                    verification_level=2,
+                    attestor_display_name="Completed Attestor Org",
                     credentials_snapshot=[],
                     framework_version="1.0",
                     issued_at=issued_at,
@@ -147,17 +168,18 @@ async def _create_badge(
 
 
 @pytest.fixture
-async def attestor_with_completed_badges(clean_state: None) -> UUID:
-    """Create one attestor with approved and rejected completed badge rows."""
+async def org_with_completed_badges(clean_state: None) -> UUID:
+    """Create one attestor org with approved and rejected completed badge rows."""
     del clean_state
     contributor_id = await _create_user(
         "completed-framework-owner@auracles.space",
         ["contributor"],
     )
-    attestor_id = await _create_user(
-        "completed-attestor@auracles.space",
+    owner_id = await _create_user(
+        "completed-org-owner@auracles.space",
         ["attestor"],
     )
+    org_id = await _create_attestor_org(owner_id)
     approved_framework = await _create_framework(
         contributor_id,
         title="Approved Completed Framework",
@@ -168,26 +190,26 @@ async def attestor_with_completed_badges(clean_state: None) -> UUID:
     )
     await _create_badge(
         framework=approved_framework,
-        attestor_id=attestor_id,
+        org_id=org_id,
         outcome="approved",
         issued_at=datetime(2026, 7, 2, tzinfo=UTC),
     )
     await _create_badge(
         framework=rejected_framework,
-        attestor_id=attestor_id,
+        org_id=org_id,
         outcome="rejected",
         issued_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
-    return attestor_id
+    return org_id
 
 
 async def test_lists_positive_completed_with_framework_title(
     client,
-    attestor_with_completed_badges: UUID,
+    org_with_completed_badges: UUID,
 ) -> None:
-    """Public list returns the attestor's positive badges with framework titles."""
+    """Public list returns the org's positive badges with framework titles."""
     response = await client.get(
-        f"/v1/attestors/{attestor_with_completed_badges}/completed"
+        f"/v1/attestor-orgs/{org_with_completed_badges}/completed"
     )
 
     assert response.status_code == 200

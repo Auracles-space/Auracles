@@ -37,17 +37,18 @@ def migrated_engine() -> Iterator[Engine]:
 
 
 def test_amm_matching_schema_added(migrated_engine: Engine) -> None:
-    """Upgrade adds offer score fields and the CoI reminder timestamp."""
+    """Upgrade adds the offer score fields.
+
+    The AMM migration's ``attestor_profiles.coi_reminder_sent_at`` addition is no
+    longer asserted at head: that table was retired in the org-attestor drop
+    migration. The downgrade test below still covers it at the pre-AMM revision.
+    """
     inspector = inspect(migrated_engine)
     offer_cols = {
         column["name"] for column in inspector.get_columns("attestation_offers")
     }
-    profile_cols = {
-        column["name"] for column in inspector.get_columns("attestor_profiles")
-    }
 
     assert {"match_score", "score_breakdown"}.issubset(offer_cols)
-    assert "coi_reminder_sent_at" in profile_cols
 
 
 def test_downgrade_reverts_amm_matching_schema() -> None:

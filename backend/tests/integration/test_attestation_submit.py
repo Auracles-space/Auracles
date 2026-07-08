@@ -30,10 +30,14 @@ from app.modules.attestation.models import (
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorProfile,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -74,7 +78,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(PlatformConfig))
@@ -144,9 +150,19 @@ async def _seed_in_review_attestation_with_rubric(
     now = datetime.now(UTC)
 
     async with async_session_factory() as session:
+        org = Organization(
+            slug=f"submit-org-{uuid4().hex[:6]}",
+            name="Submit Org LLP",
+            country="US",
+            created_by=attestor.id,
+        )
+        session.add(org)
+        await session.flush()
+        member = OrgMember(org_id=org.id, user_id=attestor.id, role="owner")
+        session.add(member)
         session.add(
-            AttestorProfile(
-                user_id=attestor.id,
+            OrgAttestorProfile(
+                org_id=org.id,
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
@@ -154,16 +170,17 @@ async def _seed_in_review_attestation_with_rubric(
                 active=True,
                 approved_at=now,
                 verification_level=4,
-                coi_declarations=[],
                 coi_signed_at=now,
                 coi_expires_at=now + timedelta(days=365),
             )
         )
+        await session.flush()
         attestation = Attestation(
             target_type="contributor",
             target_id=uuid4(),
             requestor_id=requestor.id,
-            attestor_id=attestor.id,
+            attestor_org_id=org.id,
+            reviewing_member_id=member.id,
             status=status,
             review_type="quality",
             fee_amount=Decimal("500.00"),
@@ -285,7 +302,9 @@ async def test_submit_past_deadline_within_grace_stamps_late(
     async with async_session_factory() as session:
         attestation = await session.get(Attestation, attestation_id)
         profile = await session.scalar(
-            select(AttestorProfile).where(AttestorProfile.user_id == attestor_id)
+            select(OrgAttestorProfile).where(
+                OrgAttestorProfile.org_id == attestation.attestor_org_id
+            )
         )
         audits = (
             (

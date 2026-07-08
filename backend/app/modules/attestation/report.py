@@ -25,7 +25,6 @@ from app.modules.attestation.dependencies import resolve_attestor_actor
 from app.modules.attestation.models import (
     Attestation,
     AttestationUploadSession,
-    AttestorProfile,
 )
 from app.modules.attestation.schemas import (
     AttestationEvidenceUploadCreateRequest,
@@ -184,22 +183,13 @@ async def submit_report(
             and now > attestation.completion_due_at
         ):
             attestation.submitted_late = True
-            if attestation.attestor_org_id is not None:
-                org_profile = await db.scalar(
-                    select(OrgAttestorProfile)
-                    .where(OrgAttestorProfile.org_id == attestation.attestor_org_id)
-                    .with_for_update()
-                )
-                if org_profile is not None:
-                    org_profile.late_submission_count += 1
-            else:
-                profile = await db.scalar(
-                    select(AttestorProfile)
-                    .where(AttestorProfile.user_id == attestor_id)
-                    .with_for_update()
-                )
-                if profile is not None:
-                    profile.late_submission_count += 1
+            org_profile = await db.scalar(
+                select(OrgAttestorProfile)
+                .where(OrgAttestorProfile.org_id == attestation.attestor_org_id)
+                .with_for_update()
+            )
+            if org_profile is not None:
+                org_profile.late_submission_count += 1
             await write_audit(
                 db=db,
                 actor_id=attestor_id,

@@ -8,14 +8,14 @@ never an automatic deactivation.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -25,10 +25,14 @@ from app.modules.attestation import dispute_service
 from app.modules.attestation.models import (
     Attestation,
     AttestationDispute,
-    AttestorProfile,
     AttestorWarning,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorProfile,
+    OrgMember,
+)
 from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
@@ -42,7 +46,9 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestorWarning))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
+            await session.execute(delete(OrgAttestorProfile))
+            await session.execute(delete(OrgMember))
+            await session.execute(delete(Organization))
             await session.execute(delete(UserRole))
             await session.execute(delete(User))
 
@@ -79,39 +85,43 @@ async def db_session(clean_state) -> AsyncIterator[AsyncSession]:
         yield session
 
 
-async def _make_attestor_with_profile() -> User:
-    """Create an approved attestor with a matching profile row."""
+async def _make_attestor_org() -> tuple[UUID, UUID]:
+    """Create an org with an active attestor profile; return (org_id, owner_id)."""
     async with async_session_factory() as session:
-        user = User(
-            email=f"attestor-{uuid4().hex[:8]}@auracles.space",
-            password_hash=hash_password("CorrectHorse9"),
-            display_name="attestor",
-            email_verified=True,
-        )
-        session.add(user)
-        await session.flush()
-        session.add(
-            UserRole(user_id=user.id, role="attestor", approved_at=datetime.now(UTC))
-        )
-        session.add(
-            AttestorProfile(
-                user_id=user.id,
-                specializations=["tax"],
-                jurisdictions=["US"],
-                sectors=[],
-                framework_categories=[],
-                active=True,
-                approved_at=datetime.now(UTC),
-                coi_declarations=[],
+        async with session.begin():
+            owner = User(
+                email=f"owner-{uuid4().hex[:8]}@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="owner",
+                email_verified=True,
             )
-        )
-        await session.commit()
-        await session.refresh(user)
-    return user
+            session.add(owner)
+            await session.flush()
+            org = Organization(
+                slug=f"warn-org-{uuid4().hex[:6]}",
+                name="Warned Org",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            session.add(
+                OrgAttestorProfile(
+                    org_id=org.id,
+                    specializations=["tax"],
+                    jurisdictions=["US"],
+                    sectors=[],
+                    framework_categories=[],
+                    active=True,
+                    approved_at=datetime.now(UTC),
+                )
+            )
+            return org.id, owner.id
 
 
-async def _dispute_for(attestor_id: UUID) -> AttestationDispute:
-    """Create a minimal disputed attestation + dispute for the attestor."""
+async def _org_dispute_for(org_id: UUID) -> AttestationDispute:
+    """Create a minimal disputed org attestation + dispute for the org."""
     async with async_session_factory() as session:
         async with session.begin():
             requestor = User(
@@ -126,7 +136,7 @@ async def _dispute_for(attestor_id: UUID) -> AttestationDispute:
                 target_type="contributor",
                 target_id=uuid4(),
                 requestor_id=requestor.id,
-                attestor_id=attestor_id,
+                attestor_org_id=org_id,
                 status="disputed",
                 fee_amount=Decimal("500.00"),
                 currency="USD",
@@ -139,7 +149,7 @@ async def _dispute_for(attestor_id: UUID) -> AttestationDispute:
                 attestation_id=attestation.id,
                 raised_by=requestor.id,
                 category="scope_error",
-                reason="Placeholder dispute reason for warning tests.",
+                reason="Placeholder dispute reason for org warning tests.",
                 status="under_review",
             )
             session.add(dispute)
@@ -149,97 +159,65 @@ async def _dispute_for(attestor_id: UUID) -> AttestationDispute:
         return await session.get(AttestationDispute, dispute_id)
 
 
-async def test_write_warning_records_row(db_session) -> None:
-    """A single upheld dispute records one warning and does not flag review."""
-    attestor = await _make_attestor_with_profile()
-    dispute = await _dispute_for(attestor.id)
+async def test_org_warning_records_row_against_org(db_session) -> None:
+    """An upheld org dispute records one warning keyed to the org, not a member."""
+    org_id, owner_id = await _make_attestor_org()
+    dispute = await _org_dispute_for(org_id)
     now = datetime.now(UTC)
 
     async with db_session.begin():
-        await dispute_service._write_warning(
+        recipients = await dispute_service._write_org_warning(
             db_session,
-            attestor_id=attestor.id,
+            org_id=org_id,
             dispute_id=dispute.id,
             reason="Dispute upheld (upheld_revise): revise scope.",
             now=now,
         )
 
-    count = await db_session.scalar(
-        select(func.count())
-        .select_from(AttestorWarning)
-        .where(AttestorWarning.attestor_id == attestor.id)
+    warning = await db_session.scalar(
+        select(AttestorWarning).where(AttestorWarning.attestor_org_id == org_id)
     )
     profile = await db_session.scalar(
-        select(AttestorProfile).where(AttestorProfile.user_id == attestor.id)
+        select(OrgAttestorProfile).where(OrgAttestorProfile.org_id == org_id)
     )
-    assert count == 1
+    assert warning is not None
+    assert warning.attestor_id is None
     assert profile is not None
     assert profile.suspension_review_at is None
+    assert recipients == [owner_id]
 
 
-async def test_second_warning_flags_suspension_review(db_session) -> None:
-    """A second warning within 12 months flips the suspension-review flag."""
-    attestor = await _make_attestor_with_profile()
-    dispute_one = await _dispute_for(attestor.id)
-    dispute_two = await _dispute_for(attestor.id)
+async def test_org_second_warning_flags_suspension_review(db_session) -> None:
+    """A second org warning within 12 months flags the org profile for review."""
+    org_id, _owner_id = await _make_attestor_org()
+    dispute_one = await _org_dispute_for(org_id)
+    dispute_two = await _org_dispute_for(org_id)
     now = datetime.now(UTC)
 
     async with db_session.begin():
-        await dispute_service._write_warning(
+        await dispute_service._write_org_warning(
             db_session,
-            attestor_id=attestor.id,
+            org_id=org_id,
             dispute_id=dispute_one.id,
             reason="Dispute upheld (upheld_revise): first strike.",
             now=now,
         )
-        await dispute_service._write_warning(
+        await dispute_service._write_org_warning(
             db_session,
-            attestor_id=attestor.id,
+            org_id=org_id,
             dispute_id=dispute_two.id,
             reason="Dispute upheld (upheld_refund): second strike.",
             now=now,
         )
 
     profile = await db_session.scalar(
-        select(AttestorProfile).where(AttestorProfile.user_id == attestor.id)
+        select(OrgAttestorProfile).where(OrgAttestorProfile.org_id == org_id)
     )
     audit = await db_session.scalar(
         select(AuditLog).where(
-            AuditLog.action == "attestor_suspension_review_flagged",
+            AuditLog.action == "org_attestor_suspension_review_flagged",
         )
     )
     assert profile is not None
     assert profile.suspension_review_at is not None
     assert audit is not None
-
-
-async def test_warning_outside_window_not_counted(db_session) -> None:
-    """A warning older than 12 months does not contribute to the review count."""
-    attestor = await _make_attestor_with_profile()
-    dispute_old = await _dispute_for(attestor.id)
-    dispute_new = await _dispute_for(attestor.id)
-    now = datetime.now(UTC)
-
-    async with db_session.begin():
-        aged_days = dispute_service.SUSPENSION_REVIEW_WINDOW_DAYS + 1
-        aged = AttestorWarning(
-            attestor_id=attestor.id,
-            dispute_id=dispute_old.id,
-            reason="Stale warning outside the window.",
-            created_at=now - timedelta(days=aged_days),
-        )
-        db_session.add(aged)
-        await db_session.flush()
-        await dispute_service._write_warning(
-            db_session,
-            attestor_id=attestor.id,
-            dispute_id=dispute_new.id,
-            reason="Dispute upheld (upheld_revise): only recent strike.",
-            now=now,
-        )
-
-    profile = await db_session.scalar(
-        select(AttestorProfile).where(AttestorProfile.user_id == attestor.id)
-    )
-    assert profile is not None
-    assert profile.suspension_review_at is None

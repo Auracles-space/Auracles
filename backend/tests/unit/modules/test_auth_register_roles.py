@@ -30,9 +30,10 @@ def test_operator_and_contributor_can_coexist() -> None:
     assert set(request.roles) == {"operator", "contributor"}
 
 
-def test_attestor_alone_is_allowed() -> None:
-    """Attestor on its own is a valid registration."""
-    assert _request(["attestor"]).roles == ["attestor"]
+def test_attestor_alone_is_rejected() -> None:
+    """Attestor is no longer self-selectable at registration (org-derived only)."""
+    with pytest.raises(ValidationError):
+        _request(["attestor"])
 
 
 def test_attestor_cannot_combine_with_operator() -> None:

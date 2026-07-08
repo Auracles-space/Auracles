@@ -18,10 +18,16 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
+from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
 from app.modules.gdpr import export_service as gdpr_export_service
 from app.modules.gdpr.models import DataExportRequest
-from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgMember,
+    OrgMemberNda,
+)
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
 
@@ -139,6 +145,8 @@ async def export_test_context(
     async with async_session_factory() as session:
         await session.execute(delete(DataExportRequest))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(Attestation))
+        await session.execute(delete(OrgMemberNda))
         await session.execute(delete(OrgCapability))
         await session.execute(delete(OrgMember))
         await session.execute(delete(Organization))
@@ -388,6 +396,81 @@ async def test_export_bundle_includes_organization_memberships(
     assert memberships[0]["org_name"] == "Export Org"
     assert memberships[0]["role"] == "owner"
     assert memberships[0]["joined_at"]
+
+
+async def test_export_bundle_includes_nda_and_reviewing_assignments(
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The attestation bundle lists the member's NDA and reviewing-member work.
+
+    The reviewing-member assignment history exposes attestation ids and dates
+    only — never the report content or the org's earnings. Org-owned attestor
+    application data is never part of a member's personal export.
+    """
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user(
+        f"export-nda-{uuid4().hex[:8]}@auracles.space"
+    )
+    requestor_id = await create_verified_user(
+        f"export-req-{uuid4().hex[:8]}@auracles.space"
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=f"export-nda-{uuid4().hex[:6]}",
+                name="NDA Org",
+                country="GB",
+                created_by=user_id,
+            )
+            session.add(organization)
+            await session.flush()
+            member = OrgMember(
+                org_id=organization.id, user_id=user_id, role="member"
+            )
+            session.add(member)
+            await session.flush()
+            session.add(
+                OrgMemberNda(member_id=member.id, nda_version="v1")
+            )
+            attestation = Attestation(
+                target_type="contributor",
+                target_id=requestor_id,
+                requestor_id=requestor_id,
+                attestor_org_id=organization.id,
+                reviewing_member_id=member.id,
+                status="closed",
+                review_type="quality",
+                fee_amount=10,
+                currency="USD",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(attestation)
+            request = DataExportRequest(user_id=user_id, status="pending")
+            session.add(request)
+            await session.flush()
+            request_id = request.id
+            attestation_id = attestation.id
+
+    result = await gdpr_beat._generate_data_export_impl(str(request_id))
+
+    assert result["status"] == "ready"
+    bundle = json.loads(fake_s3.uploads[0]["body"].decode("utf-8"))
+    attestation_section = bundle["attestation"]
+    ndas = attestation_section["nda_signatures"]
+    assert len(ndas) == 1
+    assert ndas[0]["nda_version"] == "v1"
+    assert ndas[0]["signed_at"]
+    assignments = attestation_section["reviewing_member_assignments"]
+    assert len(assignments) == 1
+    assert assignments[0]["attestation_id"] == str(attestation_id)
+    assert assignments[0]["accepted_at"]
+    # Org application data is never surfaced in a member's personal export.
+    assert "org_attestor_application" not in attestation_section
+    assert "org_application" not in bundle
 
 
 async def test_ready_export_download_redirects_to_private_presigned_url(

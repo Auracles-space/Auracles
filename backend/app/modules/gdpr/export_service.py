@@ -24,8 +24,6 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.integrations import s3
 from app.modules.attestation.models import (
     Attestation,
-    AttestorApplication,
-    AttestorProfile,
     Credential,
 )
 from app.modules.auth.models import User, UserRole
@@ -47,6 +45,7 @@ from app.modules.gdpr.models import DataExportRequest
 from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
 from app.modules.integrations.service import export_user_connections
+from app.modules.organizations.models import OrgMember, OrgMemberNda
 from app.modules.organizations.service import export_user_org_memberships
 from app.modules.projects.models import (
     Deliverable,
@@ -540,21 +539,13 @@ async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
 
 
 async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
-    """Collect attestation records tied to the user."""
-    applications = (
-        (
-            await db.execute(
-                select(AttestorApplication)
-                .where(AttestorApplication.user_id == user_id)
-                .order_by(AttestorApplication.created_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    profile = await db.scalar(
-        select(AttestorProfile).where(AttestorProfile.user_id == user_id)
-    )
+    """Collect attestation records tied to the user.
+
+    Covers the user's own requested attestations, their user-owned credentials,
+    NDA signatures, and the ids/dates of attestations they personally staffed as
+    an org reviewing member. Org attestor application/profile data is org-owned
+    and is not part of a user export.
+    """
     credentials = (
         (
             await db.execute(
@@ -570,43 +561,37 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
         (
             await db.execute(
                 select(Attestation)
-                .where(
-                    or_(
-                        Attestation.requestor_id == user_id,
-                        Attestation.attestor_id == user_id,
-                    )
-                )
+                .where(Attestation.requestor_id == user_id)
                 .order_by(Attestation.updated_at)
             )
         )
         .scalars()
         .all()
     )
+    nda_signatures = (
+        await db.execute(
+            select(OrgMemberNda.nda_version, OrgMemberNda.signed_at)
+            .join(OrgMember, OrgMember.id == OrgMemberNda.member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(OrgMemberNda.signed_at)
+        )
+    ).all()
+    # Reviewing-member assignment history: attestations this user personally
+    # staffed on behalf of an attestor org. Ids and dates only — never the
+    # report content, requestor identity, or the org's earnings.
+    reviewing_assignments = (
+        await db.execute(
+            select(
+                Attestation.id,
+                Attestation.accepted_at,
+                Attestation.updated_at,
+            )
+            .join(OrgMember, OrgMember.id == Attestation.reviewing_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Attestation.updated_at)
+        )
+    ).all()
     return {
-        "applications": [
-            {
-                "id": str(row.id),
-                "status": row.status,
-                "specializations": row.specializations,
-                "jurisdictions": row.jurisdictions,
-                "credentials_summary": row.credentials_summary,
-                "admin_feedback": row.admin_feedback,
-                "created_at": _json_value(row.created_at),
-            }
-            for row in applications
-        ],
-        "profile": (
-            {
-                "id": str(profile.id),
-                "specializations": profile.specializations,
-                "jurisdictions": profile.jurisdictions,
-                "active": profile.active,
-                "approved_at": _json_value(profile.approved_at),
-                "updated_at": _json_value(profile.updated_at),
-            }
-            if profile is not None
-            else None
-        ),
         "credentials": [
             {
                 "id": str(row.id),
@@ -624,7 +609,6 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
                 "target_type": row.target_type,
                 "target_id": str(row.target_id),
                 "requestor_id": str(row.requestor_id),
-                "attestor_id": str(row.attestor_id) if row.attestor_id else None,
                 "status": row.status,
                 "outcome": row.outcome,
                 "summary": row.summary,
@@ -632,6 +616,21 @@ async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any
                 "updated_at": _json_value(row.updated_at),
             }
             for row in attestations
+        ],
+        "nda_signatures": [
+            {
+                "nda_version": nda_version,
+                "signed_at": _json_value(signed_at),
+            }
+            for nda_version, signed_at in nda_signatures
+        ],
+        "reviewing_member_assignments": [
+            {
+                "attestation_id": str(attestation_id),
+                "accepted_at": _json_value(accepted_at),
+                "updated_at": _json_value(updated_at),
+            }
+            for attestation_id, accepted_at, updated_at in reviewing_assignments
         ],
     }
 

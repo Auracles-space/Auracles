@@ -51,15 +51,16 @@ export function OrganizationInvitations() {
       } else {
         setError("Failed to load invitations.");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred loading invitations.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     loadInvitations();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
   async function handleInvite(e: React.FormEvent) {
@@ -84,7 +85,7 @@ export function OrganizationInvitations() {
         setInviteRole("member");
         await loadInvitations();
       }
-    } catch (err) {
+    } catch {
       setInviteError("Unexpected error occurred while inviting.");
     } finally {
       setInviteLoading(false);
@@ -112,7 +113,7 @@ export function OrganizationInvitations() {
         setRevokeLoading(false);
         await loadInvitations();
       }
-    } catch (err) {
+    } catch {
       setRevokeError("Unexpected error occurred while revoking.");
       setRevokeLoading(false);
       setInvitationToRevoke(null);

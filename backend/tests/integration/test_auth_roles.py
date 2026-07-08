@@ -150,7 +150,7 @@ async def test_user_cannot_self_add_attestor_and_duplicate_returns_409(
     migrated_database: None,
     role_test_context: dict[str, Any],
 ) -> None:
-    """Attestor self-add is forbidden and duplicate roles are conflicts."""
+    """Attestor self-add is rejected (org-derived only) and duplicates conflict."""
     user_id = await create_user_with_roles(
         "contributor@auracles.space",
         ["contributor"],
@@ -168,7 +168,9 @@ async def test_user_cannot_self_add_attestor_and_duplicate_returns_409(
         headers=auth_headers(user_id, ["contributor"]),
     )
 
-    assert attestor.status_code == 403
+    # Attestor is no longer self-selectable — it is granted only as a derived
+    # role through an organization's active attestor capability.
+    assert attestor.status_code == 422
     assert duplicate.status_code == 409
 
 

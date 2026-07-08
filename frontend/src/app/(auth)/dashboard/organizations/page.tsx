@@ -27,7 +27,7 @@ export default function OrganizationsPage() {
         } else {
           setError("Failed to load organizations");
         }
-      } catch (err) {
+      } catch {
         setError("An error occurred while loading organizations.");
       } finally {
         setLoading(false);

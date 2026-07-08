@@ -21,16 +21,15 @@ from app.modules.attestation.models import (
     AttestationDispute,
     AttestationOffer,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
     Credential,
 )
 
 PHASE_FOUR_A_HEAD = "2026_06_10_0012"
 
+# The individual attestor_applications / attestor_profiles tables and their
+# attestor_application_status_enum were retired in the org-attestor drop
+# migration (2026_07_06_0068); the head schema no longer carries them.
 ATTESTATION_TABLES = {
-    "attestor_applications",
-    "attestor_profiles",
     "credentials",
     "attestations",
     "attestation_offers",
@@ -38,7 +37,6 @@ ATTESTATION_TABLES = {
     "attestation_upload_sessions",
 }
 ATTESTATION_ENUMS = {
-    "attestor_application_status_enum",
     "attestation_target_enum",
     "attestation_status_enum",
     "attestation_outcome_enum",
@@ -108,12 +106,6 @@ def test_attestation_migration_creates_tables_enums_indexes_and_seed_config(
             )
         }
 
-    application_indexes = {
-        index["name"] for index in inspector.get_indexes("attestor_applications")
-    }
-    profile_indexes = {
-        index["name"] for index in inspector.get_indexes("attestor_profiles")
-    }
     attestation_indexes = {
         index["name"] for index in inspector.get_indexes("attestations")
     }
@@ -124,14 +116,8 @@ def test_attestation_migration_creates_tables_enums_indexes_and_seed_config(
     assert ATTESTATION_TABLES.issubset(set(inspector.get_table_names()))
     assert ATTESTATION_ENUMS.issubset(enum_names)
     assert ATTESTATION_CONFIG_SEEDS.items() <= config_rows.items()
-    assert "uq_attestor_applications_user_submitted" in application_indexes
-    assert {
-        "idx_attestor_profiles_specializations_gin",
-        "idx_attestor_profiles_jurisdictions_gin",
-    }.issubset(profile_indexes)
     assert {
         "idx_attestations_target",
-        "idx_attestations_attestor_status",
         "idx_attestations_status_dispute_window",
         "idx_attestations_status_completion_due",
     }.issubset(attestation_indexes)
@@ -173,7 +159,7 @@ def test_attestation_migration_preserves_key_constraints(
         "ck_attestations_fee_amount_positive",
     }.issubset(attestation_checks)
     assert "ck_attestation_upload_sessions_single_parent" in upload_checks
-    assert "uq_attestation_offers_attestation_attestor" in offer_uniques
+    assert "uq_attestation_offers_attestation_org" in offer_uniques
     assert "uq_attestation_upload_sessions_s3_key" in upload_uniques
 
 
@@ -213,14 +199,6 @@ def test_attestation_orm_models_bind_to_slice_one_tables() -> None:
     """ORM models expose stable metadata for later attestation service slices."""
     configure_mappers()
 
-    assert AttestorApplication.__tablename__ == "attestor_applications"
-    assert {"credentials_summary", "sample_work", "admin_feedback"}.issubset(
-        AttestorApplication.__table__.columns.keys()
-    )
-    assert AttestorProfile.__tablename__ == "attestor_profiles"
-    assert {"specializations", "jurisdictions", "active"}.issubset(
-        AttestorProfile.__table__.columns.keys()
-    )
     assert Credential.__tablename__ == "credentials"
     assert "evidence_file_keys" in Credential.__table__.columns.keys()
     assert Attestation.__tablename__ == "attestations"

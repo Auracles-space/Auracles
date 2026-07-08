@@ -7,7 +7,6 @@ import {
   CheckCircledIcon,
   ClockIcon,
   InfoCircledIcon,
-  StarFilledIcon,
 } from "@radix-ui/react-icons";
 import Link from "next/link";
 

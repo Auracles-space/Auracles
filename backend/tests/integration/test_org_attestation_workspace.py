@@ -32,7 +32,6 @@ from app.modules.attestation.models import (
     AttestationOffer,
     AttestationRubricDimension,
     AttestationRubricScore,
-    AttestorProfile,
 )
 from app.modules.attestation.schemas import AttestationReportSubmitRequest
 from app.modules.auth.models import User, UserRole
@@ -61,7 +60,6 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationRubricScore))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))
@@ -188,6 +186,7 @@ async def _staffed_attestation(
     status: str = "accepted",
     completion_due_at: datetime | None = None,
     seed_rubric: bool = False,
+    content_acked: bool = True,
 ) -> Attestation:
     """Create an org attestation staffed on one reviewing member."""
     requestor_id = await _new_user("requestor")
@@ -205,8 +204,8 @@ async def _staffed_attestation(
             currency="USD",
             requested_specializations=["tax"],
             requested_jurisdictions=["US"],
-            content_ack_at=now,
-            content_ack_version="v1",
+            content_ack_at=now if content_acked else None,
+            content_ack_version="v1" if content_acked else None,
             review_started_at=now if status == "in_review" else None,
             completion_due_at=completion_due_at or (now + timedelta(days=7)),
         )
@@ -333,6 +332,82 @@ async def test_stranger_hidden_404(client: AsyncClient, clean_state) -> None:
 
     response = await client.post(
         f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth(stranger),
+    )
+    assert response.status_code == 404
+
+
+async def test_reviewing_member_records_content_ack(
+    client: AsyncClient, clean_state
+) -> None:
+    """The staffed member records the content-use ack, unlocking start-review."""
+    del clean_state
+    org_id, _owner = await _attestor_org()
+    member_id, member_user = await _add_member(org_id)
+    attestation = await _staffed_attestation(org_id, member_id, content_acked=False)
+
+    acked = await client.post(
+        f"/v1/attestations/{attestation.id}/content-ack",
+        json={"content_ack": True, "ack_version": "v1"},
+        headers=_auth(member_user),
+    )
+    assert acked.status_code == 200
+
+    started = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth(member_user),
+    )
+    assert started.status_code == 200
+    assert started.json()["status"] == "in_review"
+
+
+async def test_content_ack_requires_affirmation(
+    client: AsyncClient, clean_state
+) -> None:
+    """A non-affirmed acknowledgment is rejected (422)."""
+    del clean_state
+    org_id, _owner = await _attestor_org()
+    member_id, member_user = await _add_member(org_id)
+    attestation = await _staffed_attestation(org_id, member_id, content_acked=False)
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/content-ack",
+        json={"content_ack": False, "ack_version": "v1"},
+        headers=_auth(member_user),
+    )
+    assert response.status_code == 422
+
+
+async def test_content_ack_denied_to_org_manager(
+    client: AsyncClient, clean_state
+) -> None:
+    """An org owner/admin cannot record the member's content ack (403)."""
+    del clean_state
+    org_id, owner_user = await _attestor_org()
+    member_id, _ = await _add_member(org_id)
+    attestation = await _staffed_attestation(org_id, member_id, content_acked=False)
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/content-ack",
+        json={"content_ack": True, "ack_version": "v1"},
+        headers=_auth(owner_user),
+    )
+    assert response.status_code == 403
+
+
+async def test_content_ack_hidden_from_stranger(
+    client: AsyncClient, clean_state
+) -> None:
+    """A user unrelated to the attestor org is hidden the attestation (404)."""
+    del clean_state
+    org_id, _owner = await _attestor_org()
+    member_id, _ = await _add_member(org_id)
+    attestation = await _staffed_attestation(org_id, member_id, content_acked=False)
+    stranger = await _new_user("stranger")
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/content-ack",
+        json={"content_ack": True, "ack_version": "v1"},
         headers=_auth(stranger),
     )
     assert response.status_code == 404

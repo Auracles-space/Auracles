@@ -36,8 +36,6 @@ from app.modules.attestation.models import (
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
-    AttestorApplication,
-    AttestorProfile,
     AttestorWarning,
     Credential,
 )
@@ -171,16 +169,14 @@ async def reset_matching_state() -> None:
             await session.execute(delete(AttestorWarning))
             await session.execute(delete(AttestationDispute))
             await session.execute(delete(Attestation))
-            await session.execute(delete(AttestorProfile))
-            await session.execute(delete(AttestorApplication))
+            await session.execute(delete(Milestone))
+            await session.execute(delete(Escrow))
+            await session.execute(delete(Transaction))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
             await session.execute(delete(Organization))
-            await session.execute(delete(Milestone))
-            await session.execute(delete(Escrow))
-            await session.execute(delete(Transaction))
             await session.execute(delete(Credential))
             await session.execute(delete(Framework))
             await session.execute(delete(Project))
@@ -246,30 +242,6 @@ async def create_admin_user() -> tuple[UUID, str]:
                 )
             )
         return user.id, secret
-
-
-async def create_attestor_profile(
-    user_id: UUID,
-    *,
-    specializations: list[str],
-    jurisdictions: list[str],
-    approved_at: datetime | None = None,
-) -> None:
-    """Create one active approved matching profile with a valid signed CoI."""
-    now = datetime.now(UTC)
-    async with async_session_factory() as session:
-        async with session.begin():
-            session.add(
-                AttestorProfile(
-                    user_id=user_id,
-                    specializations=specializations,
-                    jurisdictions=jurisdictions,
-                    active=True,
-                    approved_at=approved_at or now,
-                    coi_signed_at=now,
-                    coi_expires_at=now + timedelta(days=365),
-                )
-            )
 
 
 async def create_org_attestor(
@@ -560,7 +532,6 @@ async def test_attestation_matching_offers_and_first_accept_wins(
     assert attestation.status == "accepted"
     assert attestation.attestor_org_id == first_org
     assert attestation.reviewing_member_id == first_member
-    assert attestation.attestor_id is None
     assert attestation.accepted_at is not None
     assert attestation.completion_due_at is not None
     assert transaction is not None
@@ -584,49 +555,6 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         str(second_owner),
     }
     assert notification_calls[3]["user_id"] == str(requestor_id)
-
-
-async def test_accept_requires_content_use_acknowledgment(
-    client: AsyncClient,
-    migrated_database: None,
-    matching_context: dict[str, Any],
-) -> None:
-    """Accepting an attestation offer without the acknowledgment returns 422."""
-    del migrated_database
-    requestor_id = await create_user(
-        "ack-requestor@auracles.space",
-        ["operator"],
-    )
-    attestor_id = await create_user("ack-attestor@auracles.space", ["attestor"])
-    await create_attestor_profile(
-        attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-    )
-    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
-    matching_context["event"] = payment_intent_event(
-        "evt_attestation_ack_required",
-        transaction_id=transaction_id,
-        attestation_id=attestation_id,
-        requestor_id=requestor_id,
-    )
-    webhook_response = await client.post(
-        "/v1/webhooks/stripe",
-        content=b'{"raw":true}',
-        headers={"Stripe-Signature": "valid-signature"},
-    )
-
-    accept_response = await client.post(
-        f"/v1/attestations/{attestation_id}/accept",
-        headers=auth_headers(attestor_id, ["attestor"]),
-        json={"content_ack": False, "ack_version": "v1"},
-    )
-
-    assert webhook_response.status_code == 200
-    assert accept_response.status_code == 422
-    assert accept_response.json()["detail"] == (
-        "Content-use acknowledgment is required to accept."
-    )
 
 
 async def test_attestation_decline_advances_to_next_cohort(
@@ -713,11 +641,10 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
     """Offer expiry closes stale offers and escalates when no cohort remains."""
     del migrated_database, matching_context
     requestor_id = await create_user("expiry-requestor@auracles.space", ["operator"])
-    attestor_id = await create_user("expiry-attestor@auracles.space", ["attestor"])
-    await create_attestor_profile(
-        attestor_id,
+    org_id, _attestor_id, _member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
+        slug_prefix="expiry",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     current_time = datetime.now(UTC)
@@ -733,7 +660,7 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
             session.add(
                 AttestationOffer(
                     attestation_id=attestation_id,
-                    attestor_id=attestor_id,
+                    org_id=org_id,
                     cohort_index=0,
                     status="offered",
                     offered_at=current_time - timedelta(hours=49),
@@ -769,102 +696,6 @@ async def test_expire_stale_attestation_offers_marks_needs_admin(
     assert needs_admin_audit is not None
 
 
-async def test_revoke_overdue_attestation_reoffers_and_clears_payee(
-    migrated_database: None,
-    matching_context: dict[str, Any],
-) -> None:
-    """Overdue accepted assignments are revoked and moved to the next cohort."""
-    del migrated_database, matching_context
-    await set_platform_config("attestation_cohort_size", "1")
-    requestor_id = await create_user("overdue-requestor@auracles.space", ["operator"])
-    first_attestor_id = await create_user("overdue-first@auracles.space", ["attestor"])
-    await create_attestor_profile(
-        first_attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-        approved_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-    second_org, _, _ = await create_org_attestor(
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-        approved_at=datetime(2026, 1, 2, tzinfo=UTC),
-        slug_prefix="overdue",
-    )
-    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
-    current_time = datetime.now(UTC)
-
-    async with async_session_factory() as session:
-        async with session.begin():
-            attestation = await session.get(Attestation, attestation_id)
-            transaction = await session.get(Transaction, transaction_id)
-            assert attestation is not None
-            assert transaction is not None
-            attestation.status = "accepted"
-            attestation.attestor_id = first_attestor_id
-            attestation.accepted_at = current_time - timedelta(days=8)
-            # Past SLA *and* past the 24h completion grace window (§4.8), so the
-            # grace-aware revoke beat fires.
-            attestation.completion_due_at = current_time - timedelta(hours=25)
-            transaction.status = "completed"
-            transaction.payee_id = first_attestor_id
-            session.add(
-                AttestationOffer(
-                    attestation_id=attestation_id,
-                    attestor_id=first_attestor_id,
-                    cohort_index=0,
-                    status="accepted",
-                    offered_at=current_time - timedelta(days=9),
-                    responded_at=current_time - timedelta(days=8),
-                    expires_at=current_time - timedelta(days=7),
-                )
-            )
-
-    async with async_session_factory() as session:
-        revoked_count = await matching_service.revoke_overdue_attestations(
-            session,
-            now=current_time,
-        )
-
-    async with async_session_factory() as session:
-        attestation = await session.get(Attestation, attestation_id)
-        transaction = await session.get(Transaction, transaction_id)
-        offers = (
-            (
-                await session.execute(
-                    select(AttestationOffer)
-                    .where(AttestationOffer.attestation_id == attestation_id)
-                    .order_by(AttestationOffer.cohort_index)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        reassigned_audit = await session.scalar(
-            select(AuditLog).where(
-                AuditLog.action == "attestation_reassigned",
-                AuditLog.target_id == attestation_id,
-            )
-        )
-
-    assert revoked_count == 1
-    assert attestation is not None
-    assert attestation.status == "offered"
-    assert attestation.attestor_id is None
-    assert attestation.accepted_at is None
-    assert attestation.completion_due_at is None
-    assert transaction is not None
-    assert transaction.payee_id is None
-    offer_states = [
-        (offer.attestor_id, offer.org_id, offer.status, offer.cohort_index)
-        for offer in offers
-    ]
-    assert offer_states == [
-        (first_attestor_id, None, "superseded", 0),
-        (None, second_org, "offered", 1),
-    ]
-    assert reassigned_audit is not None
-
-
 async def test_assigned_attestor_uploads_evidence_and_submits_report(
     client: AsyncClient,
     migrated_database: None,
@@ -875,11 +706,10 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
     del migrated_database, matching_context
     notification_calls: list[dict[str, Any]] = []
     requestor_id = await create_user("report-requestor@auracles.space", ["operator"])
-    attestor_id = await create_user("report-attestor@auracles.space", ["attestor"])
-    await create_attestor_profile(
-        attestor_id,
+    org_id, attestor_id, member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
+        slug_prefix="report",
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     dispatched_tasks: list[str] = []
@@ -935,17 +765,18 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
             assert attestation is not None
             assert transaction is not None
             attestation.status = "in_review"
-            attestation.attestor_id = attestor_id
+            attestation.attestor_org_id = org_id
+            attestation.reviewing_member_id = member_id
             attestation.accepted_at = current_time
             attestation.review_type = "quality"
             attestation.review_started_at = current_time
             attestation.completion_due_at = current_time + timedelta(days=7)
             transaction.status = "completed"
-            transaction.payee_id = attestor_id
+            transaction.payee_id = None
             session.add(
                 AttestationOffer(
                     attestation_id=attestation_id,
-                    attestor_id=attestor_id,
+                    org_id=org_id,
                     cohort_index=0,
                     status="accepted",
                     offered_at=current_time - timedelta(hours=2),
@@ -1067,23 +898,15 @@ async def test_unassigned_attestor_cannot_submit_report(
         "report-denied-requestor@auracles.space",
         ["operator"],
     )
-    assigned_attestor_id = await create_user(
-        "report-denied-assigned@auracles.space",
-        ["attestor"],
+    org_id, _assigned_attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="report-denied",
     )
+    # A verified attestor who is not a member of the staffed org.
     unassigned_attestor_id = await create_user(
         "report-denied-unassigned@auracles.space",
         ["attestor"],
-    )
-    await create_attestor_profile(
-        assigned_attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
-    )
-    await create_attestor_profile(
-        unassigned_attestor_id,
-        specializations=["healthcare"],
-        jurisdictions=["US"],
     )
     attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
     current_time = datetime.now(UTC)
@@ -1095,11 +918,12 @@ async def test_unassigned_attestor_cannot_submit_report(
             assert attestation is not None
             assert transaction is not None
             attestation.status = "accepted"
-            attestation.attestor_id = assigned_attestor_id
+            attestation.attestor_org_id = org_id
+            attestation.reviewing_member_id = member_id
             attestation.accepted_at = current_time
             attestation.completion_due_at = current_time + timedelta(days=7)
             transaction.status = "completed"
-            transaction.payee_id = assigned_attestor_id
+            transaction.payee_id = None
 
     upload_response = await client.post(
         f"/v1/attestations/{attestation_id}/uploads",
@@ -1127,7 +951,8 @@ async def test_unassigned_attestor_cannot_submit_report(
 
 async def create_report_submitted_attestation(
     requestor_id: UUID,
-    attestor_id: UUID,
+    org_id: UUID,
+    member_id: UUID,
     *,
     dispute_window_ends_at: datetime | None = None,
 ) -> tuple[UUID, UUID, UUID]:
@@ -1139,7 +964,8 @@ async def create_report_submitted_attestation(
                 target_type="operator",
                 target_id=requestor_id,
                 requestor_id=requestor_id,
-                attestor_id=attestor_id,
+                attestor_org_id=org_id,
+                reviewing_member_id=member_id,
                 status="report_submitted",
                 outcome="approved",
                 requested_specializations=["healthcare"],
@@ -1160,7 +986,7 @@ async def create_report_submitted_attestation(
             await session.flush()
             transaction = Transaction(
                 payer_id=requestor_id,
-                payee_id=attestor_id,
+                payee_id=None,
                 amount=Decimal("300.00"),
                 currency="USD",
                 platform_commission=Decimal("0.00"),
@@ -1253,12 +1079,16 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
         FakeNotificationTask(notification_calls),
     )
     requestor_id = await create_user("release-requestor@auracles.space", ["operator"])
-    attestor_id = await create_user("release-attestor@auracles.space", ["attestor"])
+    org_id, attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="release",
+    )
     (
         attestation_id,
         transaction_id,
         escrow_id,
-    ) = await create_report_submitted_attestation(requestor_id, attestor_id)
+    ) = await create_report_submitted_attestation(requestor_id, org_id, member_id)
 
     response = await client.post(
         f"/v1/attestations/{attestation_id}/accept-report",
@@ -1291,7 +1121,8 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     assert attestation.report_published_eligible is True
     assert transaction is not None
     assert transaction.status == "completed"
-    assert transaction.payee_id == attestor_id
+    assert transaction.payee_id is None
+    assert transaction.payee_org_id == org_id
     assert escrow is not None
     assert escrow.status == "released"
     assert escrow.released_by == requestor_id
@@ -1313,18 +1144,21 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
         "auto-release-requestor@auracles.space",
         ["operator"],
     )
-    attestor_id = await create_user(
-        "auto-release-attestor@auracles.space",
-        ["attestor"],
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="autorel",
     )
     releasable_id, _, releasable_escrow_id = await create_report_submitted_attestation(
         requestor_id,
-        attestor_id,
+        org_id,
+        member_id,
         dispute_window_ends_at=datetime.now(UTC) - timedelta(minutes=1),
     )
     disputed_id, _, disputed_escrow_id = await create_report_submitted_attestation(
         requestor_id,
-        attestor_id,
+        org_id,
+        member_id,
         dispute_window_ends_at=datetime.now(UTC) - timedelta(minutes=1),
     )
     async with async_session_factory() as session:
@@ -1391,10 +1225,15 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
         FakeNotificationTask(notification_calls),
     )
     requestor_id = await create_user("dispute-requestor@auracles.space", ["operator"])
-    attestor_id = await create_user("dispute-attestor@auracles.space", ["attestor"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="dispute",
+    )
     attestation_id, _, _ = await create_report_submitted_attestation(
         requestor_id,
-        attestor_id,
+        org_id,
+        member_id,
     )
 
     response = await client.post(
@@ -1436,7 +1275,7 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert [call["notification_type"] for call in notification_calls] == [
         "attestation_disputed",
     ]
-    assert notification_calls[0]["user_id"] == str(attestor_id)
+    assert notification_calls[0]["user_id"] == str(_attestor_id)
 
 
 async def test_admin_rejects_attestation_dispute_releases_and_publishes(
@@ -1462,10 +1301,14 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     )
 
     requestor_id = await create_user("reject-req@auracles.space", ["operator"])
-    attestor_id = await create_user("reject-att@auracles.space", ["attestor"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="reject",
+    )
     admin_id, totp_secret = await create_admin_user()
     attestation_id, _, escrow_id = await create_report_submitted_attestation(
-        requestor_id, attestor_id
+        requestor_id, org_id, member_id
     )
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
@@ -1563,13 +1406,17 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
     )
 
     requestor_id = await create_user("refund-req@auracles.space", ["operator"])
-    attestor_id = await create_user("refund-att@auracles.space", ["attestor"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="refund",
+    )
     admin_id, totp_secret = await create_admin_user()
     (
         attestation_id,
         transaction_id,
         escrow_id,
-    ) = await create_report_submitted_attestation(requestor_id, attestor_id)
+    ) = await create_report_submitted_attestation(requestor_id, org_id, member_id)
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
         headers=auth_headers(requestor_id, ["operator"]),
@@ -1597,7 +1444,7 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
         warning_count = await session.scalar(
             select(func.count())
             .select_from(AttestorWarning)
-            .where(AttestorWarning.attestor_id == attestor_id)
+            .where(AttestorWarning.attestor_org_id == org_id)
         )
 
     app.dependency_overrides.pop(get_redis, None)
@@ -1648,10 +1495,14 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
     )
 
     requestor_id = await create_user("revise-req@auracles.space", ["operator"])
-    attestor_id = await create_user("revise-att@auracles.space", ["attestor"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="revise",
+    )
     admin_id, totp_secret = await create_admin_user()
     attestation_id, _, escrow_id = await create_report_submitted_attestation(
-        requestor_id, attestor_id
+        requestor_id, org_id, member_id
     )
     raised = await client.post(
         f"/v1/attestations/{attestation_id}/disputes",
@@ -1679,7 +1530,7 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
         warning_count = await session.scalar(
             select(func.count())
             .select_from(AttestorWarning)
-            .where(AttestorWarning.attestor_id == attestor_id)
+            .where(AttestorWarning.attestor_org_id == org_id)
         )
 
     app.dependency_overrides.pop(get_redis, None)
@@ -1703,7 +1554,7 @@ async def test_admin_manually_assigns_needs_admin_attestation(
     migrated_database: None,
     matching_context: dict[str, Any],
 ) -> None:
-    """Admin can manually assign a needs-admin Attestation to an approved Attestor."""
+    """Admin manually assigns a needs-admin Attestation to an org + member."""
     del migrated_database, matching_context
     fake_redis = FakeRedis()
 
@@ -1716,14 +1567,10 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         "manual-assign-requestor@auracles.space",
         ["operator"],
     )
-    attestor_id = await create_user(
-        "manual-assign-attestor@auracles.space",
-        ["attestor"],
-    )
-    await create_attestor_profile(
-        attestor_id,
+    org_id, _attestor_id, member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
+        slug_prefix="manual",
     )
     admin_id, totp_secret = await create_admin_user()
     attestation_id, transaction_id, _ = await create_needs_admin_attestation(
@@ -1734,7 +1581,8 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         f"/v1/admin/attestations/{attestation_id}/assign",
         headers=auth_headers(admin_id, ["admin"]),
         json={
-            "attestor_id": str(attestor_id),
+            "attestor_org_id": str(org_id),
+            "reviewing_member_id": str(member_id),
             "reason": "Manual assignment after cohort exhaustion.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
         },
@@ -1746,7 +1594,7 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         offer = await session.scalar(
             select(AttestationOffer).where(
                 AttestationOffer.attestation_id == attestation_id,
-                AttestationOffer.attestor_id == attestor_id,
+                AttestationOffer.org_id == org_id,
             )
         )
         audit = await session.scalar(
@@ -1760,13 +1608,18 @@ async def test_admin_manually_assigns_needs_admin_attestation(
 
     assert response.status_code == 200
     assert response.json()["status"] == "accepted"
-    assert response.json()["attestor_id"] == str(attestor_id)
+    assert response.json()["attestor_org_id"] == str(org_id)
+    # Reviewing-member identity is internal and must never surface in the
+    # requestor-facing response schema.
+    assert "reviewing_member_id" not in response.json()
     assert attestation is not None
     assert attestation.status == "accepted"
+    assert attestation.attestor_org_id == org_id
+    assert attestation.reviewing_member_id == member_id
     assert attestation.accepted_at is not None
     assert attestation.completion_due_at is not None
     assert transaction is not None
-    assert transaction.payee_id == attestor_id
+    assert transaction.payee_id is None
     assert offer is not None
     assert offer.status == "accepted"
     assert audit is not None
@@ -1871,13 +1724,15 @@ async def test_escalate_attestation_disputes_flags_overdue_resolutions(
         "overdue-dispute-requestor@auracles.space",
         ["operator"],
     )
-    attestor_id = await create_user(
-        "overdue-dispute-attestor@auracles.space",
-        ["attestor"],
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="overdue",
     )
     attestation_id, _, _ = await create_report_submitted_attestation(
         requestor_id,
-        attestor_id,
+        org_id,
+        member_id,
     )
     frozen_now = datetime.now(UTC)
     async with async_session_factory() as session:

@@ -139,7 +139,6 @@ async def test_attestation_org_assignment_round_trip(repoint_state: None) -> Non
             await session.refresh(attestation)
             assert attestation.attestor_org_id == org.id
             assert attestation.reviewing_member_id == member.id
-            assert attestation.attestor_id is None
 
 
 async def test_offer_org_key_and_unique(repoint_state: None) -> None:
@@ -184,7 +183,6 @@ async def test_trial_org_re_key_round_trip(repoint_state: None) -> None:
             await session.refresh(trial)
             assert trial.org_id == org.id
             assert trial.member_id == member.id
-            assert trial.application_id is None
             assert trial.org_application_id is None
             assert trial.status == "assigned"
 
