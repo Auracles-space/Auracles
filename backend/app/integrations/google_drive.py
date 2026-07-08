@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from loguru import logger
@@ -30,6 +30,8 @@ GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 _DRIVE_TIMEOUT_SECONDS = 30.0
 _DRIVE_PAGE_SIZE = 25
+_THUMBNAIL_TIMEOUT_SECONDS = 15.0
+THUMBNAIL_ALLOWED_HOST_SUFFIXES = (".googleusercontent.com", ".google.com")
 
 # Google-native document types cannot be downloaded raw; they are exported
 # to the mapped Office format (and get the mapped file extension).
@@ -371,6 +373,29 @@ async def get_drive_file_metadata(
     return dict(response.json())
 
 
+async def fetch_drive_source_state(
+    *,
+    access_token: str,
+    file_id: str,
+) -> tuple[str, str | None]:
+    """Fetch the current revision marker and thumbnail link for a Drive file."""
+    try:
+        async with httpx.AsyncClient(timeout=_DRIVE_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                f"{DRIVE_API_BASE}/files/{file_id}",
+                params={"fields": "modifiedTime,thumbnailLink"},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as exc:
+        raise GoogleDriveError("Google Drive unreachable.") from exc
+    if response.status_code >= 400:
+        _raise_for_drive_response(response, action="fetch_drive_source_state")
+    payload = response.json()
+    modified_time = str(payload.get("modifiedTime", ""))
+    thumbnail_link = payload.get("thumbnailLink")
+    return modified_time, (str(thumbnail_link) if thumbnail_link else None)
+
+
 async def download_drive_file(
     *,
     access_token: str,
@@ -429,4 +454,50 @@ async def download_drive_file(
                 chunks.append(chunk)
     except httpx.HTTPError as exc:
         raise GoogleDriveError("Google Drive unreachable.") from exc
+    return b"".join(chunks)
+
+
+def _thumbnail_host_allowed(thumbnail_link: str) -> bool:
+    """Return whether the thumbnail host is on the Google allowlist."""
+    host = urlsplit(thumbnail_link).hostname or ""
+    return any(
+        host == suffix.lstrip(".") or host.endswith(suffix)
+        for suffix in THUMBNAIL_ALLOWED_HOST_SUFFIXES
+    )
+
+
+async def download_drive_thumbnail(
+    *,
+    thumbnail_link: str,
+    access_token: str,
+    max_bytes: int,
+) -> bytes:
+    """Download a Drive thumbnail within a byte budget after host validation."""
+    if not _thumbnail_host_allowed(thumbnail_link):
+        logger.bind(module="integrations", action="download_drive_thumbnail").warning(
+            "thumbnail_host_rejected"
+        )
+        raise GoogleDriveError("Thumbnail host is not allowed.")
+
+    chunks: list[bytes] = []
+    received = 0
+    try:
+        async with (
+            httpx.AsyncClient(timeout=_THUMBNAIL_TIMEOUT_SECONDS) as client,
+            client.stream(
+                "GET",
+                thumbnail_link,
+                headers={"Authorization": f"Bearer {access_token}"},
+            ) as response,
+        ):
+            if response.status_code >= 400:
+                await response.aread()
+                raise GoogleDriveError("Thumbnail fetch failed.")
+            async for chunk in response.aiter_bytes():
+                received += len(chunk)
+                if received > max_bytes:
+                    raise DriveFileTooLargeError("Thumbnail exceeds the byte budget.")
+                chunks.append(chunk)
+    except httpx.HTTPError as exc:
+        raise GoogleDriveError("Google thumbnail unreachable.") from exc
     return b"".join(chunks)

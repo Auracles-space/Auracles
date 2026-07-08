@@ -47,6 +47,7 @@ from app.modules.frameworks.schemas import (
     PricingConfig,
     SimilarityNotice,
     SimilarityNoticeAcknowledgementRequest,
+    SourcePreviewResponse,
 )
 from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.workers.tasks.artifacts import process_artifact, scan_artifact
@@ -69,6 +70,8 @@ ALLOWED_ARTIFACT_MIME_TYPES = {
 }
 ARTIFACT_MAX_TOTAL_SIZE = 500 * 1024 * 1024
 ARTIFACT_UPLOAD_URL_TTL_SECONDS = 900
+_SOURCE_PREVIEW_MAX_BYTES = 5 * 1024 * 1024
+_SOURCE_PREVIEW_URL_TTL_SECONDS = 300
 REVIEW_EDIT_WINDOW = timedelta(days=30)
 
 
@@ -1242,6 +1245,109 @@ async def request_artifact_upload_url(
         file_key=file_key,
         max_size=ARTIFACT_MAX_TOTAL_SIZE,
         expires_in=ARTIFACT_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def get_source_preview(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> SourcePreviewResponse:
+    """Return the owner-only draft source preview for a connector artifact."""
+    from app.integrations import google_drive
+    from app.integrations.google_drive import (
+        DriveFileTooLargeError,
+        GoogleDriveAuthError,
+        GoogleDriveError,
+    )
+    from app.modules.integrations.service import (
+        get_active_connection_with_fresh_token,
+    )
+
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_editable_artifacts(framework)
+    artifact = await db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.framework_id == framework.id,
+            Artifact.current_for_framework.is_(True),
+        )
+    )
+    if (
+        artifact is None
+        or artifact.source_kind != "google_drive"
+        or artifact.source_connection_id is None
+        or artifact.source_external_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No connector source for this artifact.",
+        )
+
+    _, access_token = await get_active_connection_with_fresh_token(
+        db,
+        user_id=contributor.id,
+        connection_id=artifact.source_connection_id,
+    )
+    try:
+        modified_time, thumbnail_link = await google_drive.fetch_drive_source_state(
+            access_token=access_token,
+            file_id=artifact.source_external_id,
+        )
+    except GoogleDriveAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "reauth_required",
+                "message": "The connection is no longer authorized. Reconnect it.",
+            },
+        ) from None
+    except GoogleDriveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The file provider is unavailable.",
+        ) from exc
+
+    source_updated = bool(modified_time) and modified_time != (
+        artifact.source_synced_revision or ""
+    )
+    preview_url: str | None = None
+    settings = get_settings()
+    bucket = settings.s3_artifacts_bucket
+    if thumbnail_link and modified_time:
+        prefix = (
+            f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
+        )
+        key = f"{prefix}{modified_time}.png"
+        if not s3.storage.object_exists(bucket, key):
+            try:
+                body = await google_drive.download_drive_thumbnail(
+                    thumbnail_link=thumbnail_link,
+                    access_token=access_token,
+                    max_bytes=_SOURCE_PREVIEW_MAX_BYTES,
+                )
+            except (DriveFileTooLargeError, GoogleDriveError):
+                body = None
+            if body is not None:
+                s3.storage.delete_prefix(bucket, prefix)
+                s3.storage.upload_bytes(
+                    bucket=bucket,
+                    key=key,
+                    body=body,
+                    mime_type="image/png",
+                )
+        if s3.storage.object_exists(bucket, key):
+            preview_url = s3.storage.presigned_get(
+                bucket,
+                key,
+                _SOURCE_PREVIEW_URL_TTL_SECONDS,
+            )
+
+    return SourcePreviewResponse(
+        preview_url=preview_url,
+        source_updated=source_updated,
+        source_last_synced_at=artifact.source_last_synced_at,
     )
 
 

@@ -257,6 +257,16 @@ class ArtifactResponse(BaseModel):
     created_at: datetime
 
 
+class SourcePreviewResponse(BaseModel):
+    """Owner-only, draft-only source preview response for a bound artifact."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    preview_url: str | None
+    source_updated: bool
+    source_last_synced_at: datetime | None
+
+
 class FrameworkReviewCreate(BaseModel):
     """Request body for creating an Operator review of a licensed Framework."""
 

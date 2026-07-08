@@ -14,8 +14,10 @@ from app.integrations.google_drive import (
     EXPORT_MIME_MAP,
     DriveFileTooLargeError,
     GoogleDriveAuthError,
+    GoogleDriveError,
     build_drive_authorization_url,
     download_drive_file,
+    download_drive_thumbnail,
     exchange_drive_code,
     fetch_drive_account_email,
     get_drive_file_metadata,
@@ -223,6 +225,16 @@ async def test_download_enforces_byte_budget() -> None:
     with pytest.raises(DriveFileTooLargeError):
         await download_drive_file(
             access_token="at", file_id="f1", export_mime=None, max_bytes=99
+        )
+
+
+async def test_download_drive_thumbnail_rejects_foreign_host() -> None:
+    """A thumbnail host outside Google's allowlist must never be fetched."""
+    with pytest.raises(GoogleDriveError):
+        await download_drive_thumbnail(
+            thumbnail_link="https://evil.example.com/x.png",
+            access_token="t",
+            max_bytes=1024,
         )
 
 

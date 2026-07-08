@@ -40,6 +40,7 @@ from app.modules.frameworks.schemas import (
     FrameworkVersionCreate,
     PreviewArtifactRequest,
     SimilarityNoticeAcknowledgementRequest,
+    SourcePreviewResponse,
 )
 
 router = APIRouter(prefix="/frameworks", tags=["Frameworks"])
@@ -425,6 +426,31 @@ async def import_artifact_from_connector(
         contributor=contributor,
         framework_id=framework_id,
         payload=payload,
+    )
+
+
+@router.get(
+    "/{framework_id}/artifacts/{artifact_id}/source-preview",
+    response_model=SourcePreviewResponse,
+    summary="Draft live-mirror preview for a connector-bound artifact",
+    description=(
+        "Owner-only, pre-publish-only. Returns a presigned thumbnail of the "
+        "current source file and whether the source changed since import. "
+        "Never exposed on public, catalog, or buyer surfaces."
+    ),
+)
+async def get_artifact_source_preview(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> SourcePreviewResponse:
+    """Return the owner-only draft source preview for a connector-bound artifact."""
+    return await service.get_source_preview(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        artifact_id=artifact_id,
     )
 
 
