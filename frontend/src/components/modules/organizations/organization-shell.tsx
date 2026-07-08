@@ -83,6 +83,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     tabs.push({ id: "invitations", label: "Invitations" });
     tabs.push({ id: "teams", label: "Teams" });
     tabs.push({ id: "attestor", label: "Attestor" });
+    tabs.push({ id: "financials", label: "Financials" });
     tabs.push({ id: "offers", label: "Offers" });
     tabs.push({ id: "queue", label: "Queue" });
   }

@@ -12,6 +12,9 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/components/modules/organizations/organization-context", () => ({
   useOrganization: () => ({ orgId: "org-1", role: "member", memberId: "mem-1" }),
 }));
+vi.mock("next/navigation", () => ({
+  useRouter: vi.fn(() => ({ push: vi.fn(), refresh: vi.fn() }))
+}));
 vi.mock("@/lib/generated/sdk.gen", () => ({
   getAttestation: vi.fn(),
   listOrgAttestations: vi.fn(),

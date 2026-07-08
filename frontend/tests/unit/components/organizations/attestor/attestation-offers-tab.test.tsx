@@ -3,14 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AttestationOffersTab } from "../../../../../src/components/modules/organizations/attestor/attestation-offers-tab";
 import { listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet } from "../../../../../src/lib/generated/sdk.gen";
 
-vi.mock("../../../../../../src/lib/auth/form-client", () => ({
+vi.mock("../../../../../src/lib/auth/form-client", () => ({
   describeGeneratedError: vi.fn(() => "err"),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
+  configureBrowserClient: vi.fn(),
 }));
-vi.mock("../../../../../../src/components/modules/organizations/organization-context", () => ({
+vi.mock("../../../../../src/components/modules/organizations/organization-context", () => ({
   useOrganization: () => ({ orgId: "org-1", role: "owner" }),
 }));
-vi.mock("../../../../../../src/lib/generated/sdk.gen", () => ({ 
+vi.mock("../../../../../src/lib/generated/sdk.gen", () => ({ 
   listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet: vi.fn() 
 }));
 const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
