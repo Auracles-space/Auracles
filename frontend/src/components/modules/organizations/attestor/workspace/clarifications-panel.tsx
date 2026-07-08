@@ -34,15 +34,16 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
       });
       if (res.error) throw new Error("Failed to load clarifications");
       setClarifications(res.data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
+    useEffect(() => {
     fetchClarifications();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attestationId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,8 +62,8 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
       await fetchClarifications();
       setQuestion("");
       setIsAsking(false);
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setSubmitting(false);
     }

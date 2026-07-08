@@ -288,11 +288,12 @@ export function ProfileEditor({
         headers: getAccessTokenHeaders(),
       });
       if (result.data) {
+        if (onSaved) onSaved(result.data);
         router.push("/profile/me");
       } else {
         setError(describeGeneratedError(result.error));
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
     }
     setSaving(false);

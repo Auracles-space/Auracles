@@ -4,9 +4,7 @@ import { useEffect, useState } from "react";
 import { 
   getAttestation,
   startAttestationReview,
-  listOrgAttestations,
-  giveAttestationConsent,
-  ackAttestationContent
+  listOrgAttestations
 } from "@/lib/generated/sdk.gen";
 import type { AttestationRequestResponse, OrgAttestationItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
@@ -26,7 +24,7 @@ type AttestationWorkspaceProps = {
 };
 
 export function AttestationWorkspace({ orgId, attestationId }: AttestationWorkspaceProps) {
-  const { memberId, role } = useOrganization() as { memberId?: string, role: string };
+  const { memberId } = useOrganization() as { memberId?: string, role: string };
   const [attestation, setAttestation] = useState<AttestationRequestResponse | null>(null);
   const [queueItem, setQueueItem] = useState<OrgAttestationItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,15 +54,16 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
       
       setAttestation(res.data);
       setQueueItem(foundQueueItem || null);
-    } catch (err: any) {
-      setError(err.message || "Failed to load attestation.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load attestation.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attestationId, orgId]);
 
   if (loading) {
@@ -97,8 +96,8 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
       if (res.error) throw new Error(describeGeneratedError(res.error));
       setActionSuccess("Review started.");
       await load();
-    } catch (err: any) {
-      setActionError(err.message || "Failed to start review.");
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to start review.");
     } finally {
       setStarting(false);
     }

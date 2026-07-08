@@ -47,7 +47,7 @@ export function OrganizationProfile() {
         setSuccess(true);
         router.refresh(); // Refresh page data to reflect the changes everywhere
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);

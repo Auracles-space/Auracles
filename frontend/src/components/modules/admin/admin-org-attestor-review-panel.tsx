@@ -18,9 +18,8 @@ import {
   suspendOrgAttestorCapability,
   reinstateOrgAttestorCapability,
   revokeOrgAttestorCapability,
-  type OrgAttestorAdminListItem,
-  type OrgAttestorApplicationResponse,
 } from "@/lib/generated/sdk.gen";
+import type { OrgAttestorAdminListItem } from "@/lib/generated/types.gen";
 
 type StatusFilter = "submitted" | "needs_info" | "trial" | "approved" | "rejected";
 
@@ -74,7 +73,7 @@ export function AdminOrgAttestorReviewPanel() {
         return;
       }
       setApplications(result.data.applications);
-    } catch (err) {
+    } catch {
       setError("Failed to load review queue.");
     } finally {
       setLoading(false);
@@ -114,9 +113,9 @@ export function AdminOrgAttestorReviewPanel() {
       if (result && !result.response.ok) {
         setError(describeGeneratedError(result.error));
       } else if (result?.data) {
-        applyUpdate(applicationId, (result.data as any).status || "updated");
+        applyUpdate(applicationId, (result.data as { status?: string }).status || "updated");
       }
-    } catch (err) {
+    } catch {
       setError(`Failed to perform action: ${actionName}`);
     } finally {
       setBusyId(null);
@@ -151,12 +150,12 @@ export function AdminOrgAttestorReviewPanel() {
       if (result && !result.response.ok) {
         setError(describeGeneratedError(result.error));
       } else if (result?.data) {
-        applyUpdate(applicationId, (result.data as any).status || "updated");
+        applyUpdate(applicationId, (result.data as { status?: string }).status || "updated");
         setOpenFeedbackId(null);
         setFeedbackText("");
         setFeedbackAction(null);
       }
-    } catch (err) {
+    } catch {
       setError(`Failed to process feedback action.`);
     } finally {
       setBusyId(null);
@@ -193,7 +192,7 @@ export function AdminOrgAttestorReviewPanel() {
         setOpenCapabilityId(null);
         setCapabilityAction(null);
       }
-    } catch (err) {
+    } catch {
       setError(`Failed to update capability.`);
     } finally {
       setBusyId(null);
@@ -272,7 +271,7 @@ export function AdminOrgAttestorReviewPanel() {
                   <p><span className="font-semibold">KYB Verified:</span> {app.kyb_verified_at ? new Date(app.kyb_verified_at).toLocaleString() : "Pending"}</p>
                   <p><span className="font-semibold">Created:</span> {new Date(app.created_at).toLocaleString()}</p>
                   <Button 
-                    variant="outline"
+                    variant="secondary"
                     className="mt-2"
                     onClick={() => {
                       alert("Contract Gap: The OpenAPI spec does not define an endpoint to download KYB/tax documents for org attestor applications. Stop and Escalate.");
@@ -340,7 +339,7 @@ export function AdminOrgAttestorReviewPanel() {
                       <Button
                         disabled={isBusy || !feedbackText.trim()}
                         onClick={() => handleFeedbackAction(app.id)}
-                        variant={feedbackAction === "reject" ? "destructive" : "default"}
+                        variant={feedbackAction === "reject" ? "destructive" : "primary"}
                       >
                         Confirm {feedbackAction === "reject" ? "Reject" : "Needs Info"}
                       </Button>

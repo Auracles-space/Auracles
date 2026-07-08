@@ -10,7 +10,7 @@ describe("AttestorOrgProfile", () => {
       verification_level: "verified", completed_count: 12, member_count: 4,
       sectors: ["cybersecurity"],
       reviewing_member_name: "SHOULD-NOT-RENDER",
-    } as any} />);
+    } as never} />);
 
     expect(screen.getByText("Audit Ltd")).toBeInTheDocument();
     expect(screen.getByText(/12/)).toBeInTheDocument();

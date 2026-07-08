@@ -14,7 +14,6 @@ import { MarketingNav } from "@/components/modules/landing/marketing-nav";
 import { RoleStrip } from "@/components/modules/landing/role-strip";
 import { TrustGrid } from "@/components/modules/landing/trust-grid";
 
-const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 
 export default function Home() {
   return (

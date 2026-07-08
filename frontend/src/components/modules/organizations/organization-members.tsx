@@ -43,15 +43,16 @@ export function OrganizationMembers() {
       } else {
         setError("Failed to load members.");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred loading members.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     loadMembers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   async function handleRoleChange(memberId: string, newRole: "admin" | "member") {
@@ -70,7 +71,7 @@ export function OrganizationMembers() {
       } else {
         await loadMembers();
       }
-    } catch (err) {
+    } catch {
       setActionError("Unexpected error occurred while changing role.");
     }
   }
@@ -110,7 +111,7 @@ export function OrganizationMembers() {
           setMembers(res.data);
         }
       }
-    } catch (err) {
+    } catch {
       setActionError("Unexpected error occurred while removing member.");
       setIsRemoving(false);
       setMemberToRemove(null);

@@ -83,7 +83,7 @@ function RubricDimensionCard({
       if (res.error) throw new Error("Failed to save score");
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
-    } catch (err) {
+    } catch {
       setSaveStatus("error");
     }
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { listOrgAttestationsV1OrgsOrgIdAttestationsGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
@@ -46,6 +46,7 @@ export function AttestationQueueTab() {
     };
     doLoad();
     return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   if (loading) {

@@ -7,10 +7,8 @@ import {
   requestOrgPayout,
   listOrgInvoices,
   getOrgAttestorApplication,
-  type EarningsResponse,
-  type OrgAttestorApplicationResponse,
-  type OrgInvoiceListItem,
 } from "@/lib/generated/sdk.gen";
+import type { EarningsResponse, OrgAttestorApplicationResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { TotpInput } from "@/components/modules/auth/totp-input";
@@ -47,6 +45,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
 
   useEffect(() => {
     fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   const handleSetupPayoutAccount = async () => {
@@ -158,7 +157,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
               >
                 Confirm Payout
               </Button>
-              <Button variant="outline" onClick={() => setShowTotp(false)} disabled={isActionLoading}>
+              <Button variant="secondary" onClick={() => setShowTotp(false)} disabled={isActionLoading}>
                 Cancel
               </Button>
             </div>

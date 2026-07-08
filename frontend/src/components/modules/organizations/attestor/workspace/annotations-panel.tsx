@@ -48,15 +48,16 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
       });
       if (res.error) throw new Error("Failed to load annotations");
       setAnnotations(res.data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
+    useEffect(() => {
     fetchAnnotations();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attestationId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,8 +86,8 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
       setNewExcerpt("");
       setNewComment("");
       setIsAdding(false);
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -104,8 +105,8 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
       });
       if (res.error) throw new Error("Failed to delete annotation");
       setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "An error occurred");
     }
   };
 
@@ -142,7 +143,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Type</label>
-                    <Select value={newType} onChange={(e) => setNewType(e.target.value as any)}>
+                    <Select value={newType} onChange={(e) => setNewType(e.target.value as AnnotationCreateRequest["annotation_type"])}>
                       {ANNOTATION_TYPES.map((t) => (
                         <option key={t.value} value={t.value}>{t.label}</option>
                       ))}
@@ -213,7 +214,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
                       
                       {ann.quoted_excerpt && (
                         <blockquote className="mt-3 border-l-4 border-accent pl-4 text-sm italic text-foreground-muted mb-4 bg-surface-elevated/50 p-2 rounded-r-md">
-                          "{ann.quoted_excerpt}"
+                          &quot;{ann.quoted_excerpt}&quot;
                         </blockquote>
                       )}
 

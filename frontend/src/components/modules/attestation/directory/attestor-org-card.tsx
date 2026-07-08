@@ -1,6 +1,6 @@
-import React from "react";
 import Link from "next/link";
-import { type AttestorDirectoryEntry } from "@/lib/generated/sdk.gen";
+
+import type { AttestorDirectoryEntry } from "@/lib/generated/types.gen";
 
 export function AttestorOrgCard({ org }: { org: AttestorDirectoryEntry }) {
   return (
@@ -24,7 +24,7 @@ export function AttestorOrgCard({ org }: { org: AttestorDirectoryEntry }) {
             Expertise
           </p>
           <div className="flex flex-wrap gap-2">
-            {org.sectors.slice(0, 3).map((sector) => (
+            {org.sectors.map((sector: string) => (
               <span key={sector} className="px-2 py-1 text-xs bg-surface-2 rounded-md border border-border-default">
                 {sector}
               </span>
@@ -39,7 +39,7 @@ export function AttestorOrgCard({ org }: { org: AttestorDirectoryEntry }) {
 
         <div className="flex items-center justify-between pt-4 border-t border-border-default">
           <div className="text-sm">
-            <span className="font-semibold text-foreground">{org.completed_count ?? 0}</span>
+            <span className="font-semibold text-foreground">{org.completed_attestations ?? 0}</span>
             <span className="text-foreground-muted ml-1">Attestations</span>
           </div>
           {org.member_count !== undefined && (

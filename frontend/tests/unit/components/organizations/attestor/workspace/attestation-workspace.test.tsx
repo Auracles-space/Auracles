@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AttestationWorkspace } from "@/components/modules/organizations/attestor/workspace/attestation-workspace";
-import { getAttestation, startAttestationReview, listOrgAttestations } from "@/lib/generated/sdk.gen";
+import { getAttestation, listOrgAttestations } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -29,10 +29,10 @@ describe("AttestationWorkspace", () => {
 
   it("offers Start review to the assigned reviewing member before review starts", async () => {
     vi.mocked(getAttestation).mockResolvedValue(
-      ok({ id: "att-1", status: "assigned" }) as any,
+      ok({ id: "att-1", status: "assigned" }) as never,
     );
     vi.mocked(listOrgAttestations).mockResolvedValue(
-      ok([{ id: "att-1", status: "assigned", reviewing_member_id: "mem-1", review_started_at: null }]) as any,
+      ok([{ id: "att-1", status: "assigned", reviewing_member_id: "mem-1", review_started_at: null }]) as never,
     );
     render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
     await waitFor(() => expect(screen.getByRole("button", { name: /start review/i })).toBeEnabled());
@@ -40,10 +40,10 @@ describe("AttestationWorkspace", () => {
 
   it("is read-only for an owner who is not the reviewing member", async () => {
     vi.mocked(getAttestation).mockResolvedValue(
-      ok({ id: "att-1", status: "in_review" }) as any,
+      ok({ id: "att-1", status: "in_review" }) as never,
     );
     vi.mocked(listOrgAttestations).mockResolvedValue(
-      ok([{ id: "att-1", status: "in_review", reviewing_member_id: "mem-9", review_started_at: "2026-07-05T00:00:00Z" }]) as any,
+      ok([{ id: "att-1", status: "in_review", reviewing_member_id: "mem-9", review_started_at: "2026-07-05T00:00:00Z" }]) as never,
     );
     render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
     await waitFor(() => screen.getByText(/att-1/));

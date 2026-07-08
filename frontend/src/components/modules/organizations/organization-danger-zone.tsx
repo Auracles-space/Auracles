@@ -49,7 +49,7 @@ export function OrganizationDangerZone() {
           // Exclude self from potential new owners
           setMembers(result.data.filter((m: OrgMemberResponse) => m.role !== "owner"));
         }
-      } catch (err) {
+      } catch {
         // Ignore error for now
       } finally {
         setLoadingMembers(false);
@@ -80,7 +80,7 @@ export function OrganizationDangerZone() {
         router.refresh();
         window.location.reload();
       }
-    } catch (err) {
+    } catch {
       setTransferError("An unexpected error occurred during transfer.");
       setTransferLoading(false);
     }
@@ -106,7 +106,7 @@ export function OrganizationDangerZone() {
       } else {
         router.push("/dashboard/organizations");
       }
-    } catch (err) {
+    } catch {
       setDeactivateError("An unexpected error occurred during deactivation.");
       setDeactivateLoading(false);
       setShowDeactivateDialog(false);
@@ -122,7 +122,7 @@ export function OrganizationDangerZone() {
   }
 
   const expectedConfirmText = `Delete ${org.name}`;
-  const isDeactivateConfirmValid = deactivateConfirmText === expectedConfirmText;
+
 
   return (
     <div className="flex flex-col gap-8 max-w-4xl">

@@ -5,7 +5,7 @@ import { uploadOrgAttestorTaxDocument } from "@/lib/generated/sdk.gen";
 import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
-import { Select } from "@/components/ui/select";
+
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
 
 export function TaxDocumentGate({
@@ -57,7 +57,7 @@ export function TaxDocumentGate({
       } else {
         onChange();
       }
-    } catch (e) {
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);

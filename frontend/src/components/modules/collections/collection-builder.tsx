@@ -123,8 +123,8 @@ export function CollectionBuilder() {
     async function load() {
       try {
         await refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Collections are unavailable.");
+      } catch {
+        setError("Collections are unavailable.");
       } finally {
         setLoading(false);
       }

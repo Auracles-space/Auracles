@@ -54,7 +54,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         } else {
           setError(result.error?.detail?.error_code || "Invalid or expired invitation.");
         }
-      } catch (err) {
+      } catch {
         setError("An error occurred loading the invitation.");
       } finally {
         setLoading(false);
@@ -84,7 +84,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
           router.push("/dashboard/organizations");
         }
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
       setAccepting(false);
     }
@@ -106,7 +106,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         setNdaSigned(true);
         setTimeout(() => router.push("/dashboard/organizations"), 1500);
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
       setSigningNda(false);
     }
@@ -157,7 +157,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
               <>
                 <p className="mb-4 text-sm text-foreground-muted">
                   You have successfully joined <span className="font-semibold text-foreground">{joinedOrg.name}</span>! 
-                  However, you must sign the organization's NDA before you can participate in any attestations or view confidential materials.
+                  However, you must sign the organization&apos;s NDA before you can participate in any attestations or view confidential materials.
                 </p>
                 <div className="border border-border-default rounded-md p-4 bg-surface-2 text-xs h-32 overflow-y-auto whitespace-pre-wrap font-mono text-foreground-muted mb-6 text-left">
                   [Confidentiality Agreement Text Placeholder]

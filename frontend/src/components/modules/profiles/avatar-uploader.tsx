@@ -263,7 +263,7 @@ export function AvatarUploader({
         "image/jpeg",
         0.85
       );
-    } catch (err) {
+    } catch {
       setError("Failed to process image.");
       setBusy(false);
     }
@@ -311,7 +311,7 @@ export function AvatarUploader({
       onUploaded(confirmed.data.avatar_url ?? target.data.avatar_url);
       setTempImageSrc(null);
       setOriginalFile(null);
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred during upload.");
     } finally {
       setBusy(false);

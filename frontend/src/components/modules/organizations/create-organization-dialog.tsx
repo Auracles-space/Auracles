@@ -77,7 +77,7 @@ export function CreateOrganizationDialog({ open, onClose }: CreateOrganizationDi
 
       // Success
       router.push(`/dashboard/organizations/${result.data?.id}`);
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred.");
       setLoading(false);
     }

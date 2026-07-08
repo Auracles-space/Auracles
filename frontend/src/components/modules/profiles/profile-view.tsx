@@ -11,7 +11,7 @@
  *
  * Maps to: FR-SET-001/002.
  */
-import { CheckCircledIcon, GlobeIcon, StarFilledIcon } from "@radix-ui/react-icons";
+import { CheckCircledIcon, GlobeIcon } from "@radix-ui/react-icons";
 import type { ReactNode } from "react";
 
 import {

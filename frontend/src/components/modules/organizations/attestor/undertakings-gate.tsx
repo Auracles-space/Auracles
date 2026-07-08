@@ -71,7 +71,7 @@ export function UndertakingsGate({
       } else {
         onChange();
       }
-    } catch (e) {
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);

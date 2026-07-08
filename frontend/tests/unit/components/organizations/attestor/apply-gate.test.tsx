@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplyGate } from "@/components/modules/organizations/attestor/apply-gate";
-import { submitOrgAttestorApplication, updateOrgAttestorApplication } from "@/lib/generated/sdk.gen";
+import { updateOrgAttestorApplication } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   describeGeneratedError: (e: unknown) => (e as Error).message,

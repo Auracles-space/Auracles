@@ -27,7 +27,7 @@ export function AdminOrganizationsList() {
   // Suspend State
   const [orgToSuspend, setOrgToSuspend] = useState<AdminOrgResponse | null>(null);
   const [suspendLoading, setSuspendLoading] = useState(false);
-  const [suspendError, setSuspendError] = useState<string | null>(null);
+  const [, setSuspendError] = useState<string | null>(null);
 
   async function loadOrgs(currentPage: number, query: string) {
     setLoading(true);
@@ -47,7 +47,7 @@ export function AdminOrganizationsList() {
       } else {
         setError("Failed to load organizations.");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred loading organizations.");
     } finally {
       setLoading(false);
@@ -84,7 +84,7 @@ export function AdminOrganizationsList() {
         setOrgToSuspend(null);
         await loadOrgs(page, searchQuery);
       }
-    } catch (err) {
+    } catch {
       setSuspendError("An unexpected error occurred.");
       setSuspendLoading(false);
     }

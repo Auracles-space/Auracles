@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ReviewingMemberPicker } from "./reviewing-member-picker";
 import { acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost } from "@/lib/generated/sdk.gen";

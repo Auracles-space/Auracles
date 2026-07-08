@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
-import Link from "next/link";
+
 import { GlobeIcon, CalendarIcon, PersonIcon } from "@radix-ui/react-icons";
 
 interface Props {
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: `${res.data.name} - Auracles`,
       description: res.data.description || `Public profile for ${res.data.name}`,
     };
-  } catch (error) {
+  } catch {
     return { title: "Organization Not Found - Auracles" };
   }
 }
@@ -34,7 +34,7 @@ export default async function PublicOrganizationPage({ params }: Props) {
       notFound();
     }
     org = res.data;
-  } catch (error) {
+  } catch {
     notFound();
   }
 

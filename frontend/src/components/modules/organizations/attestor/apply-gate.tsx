@@ -72,7 +72,7 @@ export function ApplyGate({
       } else {
         onChange();
       }
-    } catch (e) {
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);
@@ -126,7 +126,7 @@ export function ApplyGate({
       } else {
         onChange();
       }
-    } catch (e) {
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);

@@ -21,7 +21,7 @@ describe("AcceptAndStaffDialog", () => {
       ok({ members: [{ id: "mem-1", user_id: "u1", display_name: "Ada", email: "ada@ex.com", role: "member", joined_at: "2026-07-01T00:00:00Z" }] })
     );
     vi.mocked(acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost).mockResolvedValue(
-      ok({ status: "accepted" }) as any
+      ok({ status: "accepted" }) as never
     );
     const onDone = vi.fn();
     const onClose = vi.fn();

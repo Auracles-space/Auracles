@@ -1,13 +1,12 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { OrgAttestorFinancialsTab } from "./org-attestor-financials-tab";
 import {
   getOrgAttestorEarnings,
-  onboardOrgPayoutAccount,
   requestOrgPayout,
   listOrgInvoices,
   getOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
+import { OrgAttestorFinancialsTab } from "./org-attestor-financials-tab";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   getOrgAttestorEarnings: vi.fn(),
@@ -20,7 +19,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 describe("OrgAttestorFinancialsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: {
         id: "app-id",
@@ -28,7 +27,7 @@ describe("OrgAttestorFinancialsTab", () => {
         status: "approved",
         payout_account_id: null,
       },
-    } as any);
+    } as never);
 
     vi.mocked(getOrgAttestorEarnings).mockResolvedValue({
       data: {
@@ -39,13 +38,13 @@ describe("OrgAttestorFinancialsTab", () => {
         commission_rate: "0.20",
         minimum_payout: "50.00",
       },
-    } as any);
+    } as never);
 
     vi.mocked(listOrgInvoices).mockResolvedValue({
       data: {
         invoices: [],
       },
-    } as any);
+    } as never);
   });
 
   it("shows onboard CTA when no payout account exists", async () => {
@@ -65,7 +64,7 @@ describe("OrgAttestorFinancialsTab", () => {
         status: "approved",
         payout_account_id: "payout-acc-id",
       },
-    } as any);
+    } as never);
 
     render(<OrgAttestorFinancialsTab orgId="org-1" />);
     await waitFor(() => {
@@ -73,7 +72,7 @@ describe("OrgAttestorFinancialsTab", () => {
     });
 
     fireEvent.click(screen.getByText("Request Payout"));
-    
+
     // Should show TOTP input
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeInTheDocument();
@@ -103,13 +102,13 @@ describe("OrgAttestorFinancialsTab", () => {
         status: "pending",
         payout_account_id: "payout-acc-id",
       },
-    } as any);
+    } as never);
 
     render(<OrgAttestorFinancialsTab orgId="org-1" />);
     await waitFor(() => {
       expect(screen.getByText("Account Pending")).toBeInTheDocument();
     });
-    
+
     expect(screen.queryByText("Request Payout")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { type AttestorDirectoryEntry } from "@/lib/generated/sdk.gen";
+import type { AttestorDirectoryEntry } from "@/lib/generated/types.gen";
 
 export function AttestorOrgProfile({ org }: { org: AttestorDirectoryEntry }) {
   return (
@@ -15,9 +15,9 @@ export function AttestorOrgProfile({ org }: { org: AttestorDirectoryEntry }) {
                 <span className="text-foreground-muted">Level</span>
                 <span>{org.verification_level}</span>
               </div>
-              {org.certification_mark && (
+              {org.certified && (
                 <div className="flex items-center space-x-1 px-3 py-1.5 bg-surface-2 border border-border-strong rounded-full text-sm font-semibold">
-                  <span>{org.certification_mark}</span>
+                  <span>Certified</span>
                 </div>
               )}
             </div>
@@ -25,7 +25,7 @@ export function AttestorOrgProfile({ org }: { org: AttestorDirectoryEntry }) {
 
           <div className="flex items-center gap-6">
             <div className="text-center">
-              <p className="text-3xl font-bold text-foreground">{org.completed_count ?? 0}</p>
+              <p className="text-3xl font-bold text-foreground">{org.completed_attestations ?? 0}</p>
               <p className="text-sm font-medium text-foreground-muted uppercase tracking-wider">Attestations</p>
             </div>
             {org.member_count !== undefined && (
@@ -49,7 +49,7 @@ export function AttestorOrgProfile({ org }: { org: AttestorDirectoryEntry }) {
               Areas of Expertise
             </h2>
             <div className="flex flex-wrap gap-2">
-              {org.sectors.map((sector) => (
+              {org.sectors.map((sector: string) => (
                 <span key={sector} className="px-3 py-1.5 text-sm bg-surface-2 rounded-md border border-border-default">
                   {sector}
                 </span>

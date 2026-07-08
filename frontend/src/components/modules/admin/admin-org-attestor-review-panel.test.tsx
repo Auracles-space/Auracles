@@ -32,7 +32,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
       total: 1,
       page: 1,
       page_size: 10
-    }));vi.mocked(verifyOrgAttestorKyb).mockResolvedValue(ok({ id: "app-1" }) as any);
+    }));vi.mocked(verifyOrgAttestorKyb).mockResolvedValue(ok({ id: "app-1" }) as never);
     render(<AdminOrgAttestorReviewPanel />);
     await waitFor(() => screen.getByText(/Audit Ltd/));
     fireEvent.click(screen.getByRole("button", { name: /verify kyb/i }));

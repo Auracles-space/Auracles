@@ -163,10 +163,7 @@ export function AttestorApplicationTab() {
       
   const kybStatus = checklist?.kyb_verified ? "complete" : "not_started";
   const credentialsStatus = checklist?.credentials_reviewed ? "complete" : "not_started";
-  const coiStatus = checklist?.undertakings_signed ? "complete" : "not_started";
-  const payoutStatus = checklist?.payout_account_linked ? "complete" : "not_started";
-  const taxStatus = checklist?.tax_document_uploaded ? "complete" : "not_started";
-  const trialStatus = checklist?.trial_passed ? "complete" : "not_started";
+
   const activationStatus = app?.status === "approved" ? "complete" : "not_started";
 
   return (

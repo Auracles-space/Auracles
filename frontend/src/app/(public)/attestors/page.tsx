@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { listAttestorOrgs } from "@/lib/generated/sdk.gen";
+import type { AttestorDirectoryEntry } from "@/lib/generated/types.gen";
 import { AttestorOrgCard } from "@/components/modules/attestation/directory/attestor-org-card";
 
 export const metadata: Metadata = {
@@ -58,7 +59,7 @@ export default async function AttestorsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {attestors.map((attestor) => (
+          {attestors.map((attestor: AttestorDirectoryEntry) => (
             <AttestorOrgCard key={attestor.org_id} org={attestor} />
           ))}
         </div>

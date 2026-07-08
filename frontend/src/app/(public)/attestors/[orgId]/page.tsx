@@ -2,10 +2,10 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { getAttestorOrg, listAttestorOrgCompleted } from "@/lib/generated/sdk.gen";
+import type { AttestorCompletedAttestation } from "@/lib/generated/types.gen";
 import { AttestorOrgProfile } from "@/components/modules/attestation/directory/attestor-org-profile";
 import { CredentialStatusBadge } from "@/components/modules/attestation/credential-status-badge";
 import Link from "next/link";
-import { formatRelativeTime } from "@/lib/marketplace/format";
 
 type PageProps = {
   params: Promise<{ orgId: string }>;
@@ -74,31 +74,31 @@ export default async function AttestorProfilePage({ params }: PageProps) {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {completedAttestations.map((attestation) => (
+            {completedAttestations.map((attestation: AttestorCompletedAttestation) => (
               <div 
-                key={attestation.id} 
+                key={attestation.framework_id} 
                 className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm space-y-4"
               >
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="font-semibold text-foreground truncate">
-                      {attestation.target_title}
+                      {attestation.framework_title}
                     </h3>
                     <p className="text-xs text-foreground-muted uppercase tracking-wider mt-1">
-                      {attestation.target_type}
+                      {attestation.review_type}
                     </p>
                   </div>
-                  <CredentialStatusBadge status={attestation.status as any} />
+                  <CredentialStatusBadge status={attestation.outcome} expired={false} />
                 </div>
                 
                 <div className="pt-3 border-t border-border-default flex justify-between items-center text-sm">
                   <span className="text-foreground-muted">
-                    {attestation.published_at 
-                      ? formatRelativeTime(new Date(attestation.published_at)) 
+                    {attestation.issued_at 
+                      ? new Date(attestation.issued_at).toLocaleDateString() 
                       : 'Unknown date'}
                   </span>
                   <Link 
-                    href={`/explore/${attestation.target_id}`} 
+                    href={`/explore/${attestation.framework_id}`} 
                     className="text-accent hover:underline font-medium"
                   >
                     View Framework

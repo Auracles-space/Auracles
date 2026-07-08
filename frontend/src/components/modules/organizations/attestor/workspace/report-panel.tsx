@@ -8,7 +8,6 @@ import {
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Spinner } from "@/components/ui/spinner";
 import { Select } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 
@@ -27,7 +26,6 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
   const [conditions, setConditions] = useState("");
 
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
-  const [evidenceUploadIds, setEvidenceUploadIds] = useState<Record<string, string>>({});
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +92,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       const res = await submitAttestationReport({
         path: { attestation_id: attestationId },
         body: {
-          outcome: outcome as any,
+          outcome: outcome as "approved" | "conditional" | "rejected",
           summary,
           scope,
           conditions: conditions || null,
@@ -110,8 +108,8 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       // Success
       alert("Report submitted successfully.");
       router.push(`/dashboard/organizations/${orgId}/queue`);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsSubmitting(false);
     }
@@ -143,7 +141,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Outcome *</label>
-          <Select value={outcome} onChange={(e) => setOutcome(e.target.value as any)} required>
+          <Select value={outcome} onChange={(e) => setOutcome(e.target.value as "approved" | "conditional" | "rejected")} required>
             <option value="" disabled>Select an outcome...</option>
             <option value="approved">Approved</option>
             <option value="conditional">Conditional Approval</option>

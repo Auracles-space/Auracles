@@ -40,7 +40,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
         } else {
           setError("Failed to load organization.");
         }
-      } catch (err) {
+      } catch {
         setError("An error occurred.");
       } finally {
         setLoading(false);

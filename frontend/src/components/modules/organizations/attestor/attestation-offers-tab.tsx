@@ -47,6 +47,7 @@ export function AttestationOffersTab() {
     };
     doLoad();
     return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   async function handleDecline(offerId: string) {
