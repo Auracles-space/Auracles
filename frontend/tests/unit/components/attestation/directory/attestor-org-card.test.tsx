@@ -7,10 +7,12 @@ describe("AttestorOrgCard", () => {
   it("renders org identity and completed count, never member identities", () => {
     render(<AttestorOrgCard org={{
       org_id: "org-1", name: "Audit Ltd", slug: "audit-ltd",
-      verification_level: "verified", completed_count: 12, member_count: 4,
-      sectors: ["cybersecurity"],
+      verification_level: 2, completed_attestations: 12, member_count: 4,
+      sectors: ["cybersecurity"], framework_categories: [], jurisdictions: [],
+      reputation: null,
+      // @ts-expect-error member identity must never reach a public surface
       reviewing_member_name: "SHOULD-NOT-RENDER",
-    } as never} />);
+    }} />);
     
     expect(screen.getByText("Audit Ltd")).toBeInTheDocument();
     expect(screen.getByText(/12/)).toBeInTheDocument();

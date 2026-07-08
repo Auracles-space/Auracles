@@ -89,9 +89,11 @@ export function AttestationQueueTab() {
               <div className="text-sm text-foreground-muted font-mono">
                 Attestation ID: {att.id}
               </div>
-              <div className="text-sm text-foreground-muted">
-                Assigned to: {att.reviewing_member_id || "Unassigned"}
-              </div>
+              {isAdmin && (
+                <div className="text-sm text-foreground-muted">
+                  Assigned to: {att.reviewing_member_id || "Unassigned"}
+                </div>
+              )}
             </div>
             
             <div className="flex flex-col sm:flex-row gap-2">
