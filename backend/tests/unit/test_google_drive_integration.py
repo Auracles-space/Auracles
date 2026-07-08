@@ -238,6 +238,50 @@ async def test_download_drive_thumbnail_rejects_foreign_host() -> None:
         )
 
 
+async def test_get_drive_file_metadata_encodes_file_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path-significant characters in file_id are percent-encoded."""
+    captured: dict[str, str] = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {
+                "id": "x",
+                "name": "n",
+                "mimeType": "application/pdf",
+                "size": "1",
+                "modifiedTime": "t",
+            }
+
+    class _Client:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            """Match httpx.AsyncClient construction for the monkeypatch."""
+
+        async def __aenter__(self) -> _Client:
+            """Enter the async client context manager."""
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            """Exit the async client context manager."""
+
+        async def get(
+            self, url: str, params: dict[str, str], headers: dict[str, str]
+        ) -> _Resp:
+            """Capture the URL used for the metadata request."""
+            captured["url"] = url
+            return _Resp()
+
+    monkeypatch.setattr("app.integrations.google_drive.httpx.AsyncClient", _Client)
+
+    await get_drive_file_metadata(access_token="t", file_id="a b?c/d")
+
+    assert "?c" not in captured["url"].split("/files/")[1]
+    assert "a%20b" in captured["url"]
+
+
 @respx.mock
 async def test_fetch_account_email_reads_about_payload() -> None:
     """The connected account email comes from the Drive about endpoint."""

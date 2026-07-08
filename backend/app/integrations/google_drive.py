@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 from loguru import logger
@@ -362,7 +362,7 @@ async def get_drive_file_metadata(
     try:
         async with httpx.AsyncClient(timeout=_DRIVE_TIMEOUT_SECONDS) as client:
             response = await client.get(
-                f"{DRIVE_API_BASE}/files/{file_id}",
+                f"{DRIVE_API_BASE}/files/{quote(file_id, safe='')}",
                 params={"fields": "id,name,mimeType,size,modifiedTime"},
                 headers={"Authorization": f"Bearer {access_token}"},
             )
@@ -382,7 +382,7 @@ async def fetch_drive_source_state(
     try:
         async with httpx.AsyncClient(timeout=_DRIVE_TIMEOUT_SECONDS) as client:
             response = await client.get(
-                f"{DRIVE_API_BASE}/files/{file_id}",
+                f"{DRIVE_API_BASE}/files/{quote(file_id, safe='')}",
                 params={"fields": "modifiedTime,thumbnailLink"},
                 headers={"Authorization": f"Bearer {access_token}"},
             )
@@ -425,10 +425,10 @@ async def download_drive_file(
         GoogleDriveError: On other failures.
     """
     if export_mime is not None:
-        url = f"{DRIVE_API_BASE}/files/{file_id}/export"
+        url = f"{DRIVE_API_BASE}/files/{quote(file_id, safe='')}/export"
         params = {"mimeType": export_mime}
     else:
-        url = f"{DRIVE_API_BASE}/files/{file_id}"
+        url = f"{DRIVE_API_BASE}/files/{quote(file_id, safe='')}"
         params = {"alt": "media"}
     chunks: list[bytes] = []
     received = 0

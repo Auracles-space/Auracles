@@ -16,12 +16,14 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.security import hash_password
+from app.core.security import decrypt_connector_token, hash_password
+from app.integrations.google_drive import revoke_drive_token
 from app.modules.auth.models import KycDocument, OAuthAccount, User, UserBackupCode
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials.models import PayoutAccount
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.redaction import redact_metadata
+from app.modules.integrations.models import OAuthConnection
 from app.shared.models.audit_log import AuditLog
 
 TOMBSTONE_DISPLAY_NAME = "Deleted user"
@@ -89,6 +91,25 @@ async def anonymise_user_records(
     await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
     await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user_id))
     await db.execute(delete(KycDocument).where(KycDocument.user_id == user_id))
+    connections = list(
+        (
+            await db.execute(
+                select(OAuthConnection).where(OAuthConnection.user_id == user_id)
+            )
+        ).scalars()
+    )
+    for connection in connections:
+        for encrypted_token in (
+            connection.access_token_encrypted,
+            connection.refresh_token_encrypted,
+        ):
+            if not encrypted_token:
+                continue
+            try:
+                await revoke_drive_token(decrypt_connector_token(encrypted_token))
+            except Exception:
+                continue
+    await db.execute(delete(OAuthConnection).where(OAuthConnection.user_id == user_id))
 
     payout_accounts = list(
         (
