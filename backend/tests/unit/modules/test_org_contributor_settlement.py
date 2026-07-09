@@ -18,6 +18,7 @@ import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
@@ -458,6 +459,59 @@ async def test_create_framework_purchase_keeps_individual_beneficiary(
     assert transaction is not None
     assert transaction.payee_id == contributor.id
     assert transaction.payee_org_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("suspend", [True, False])
+async def test_create_framework_purchase_blocks_inactive_org_seller(
+    migrated_database: None,
+    settlement_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+    suspend: bool,
+) -> None:
+    """Purchasing an org-owned Framework must 404 once the org is inactive.
+
+    Mirrors the individual-seller suspension guard: an admin trust action
+    (suspension) or owner deactivation must stop new sales settling to the
+    organization, matching catalog visibility.
+    """
+    del migrated_database, settlement_state
+    operator = await _create_user("operator", stripe_customer_id="cus_operator")
+    owner = await _create_user("org-owner")
+    organization = await _create_org(owner.id)
+    framework_id = await _create_published_framework(
+        contributor_id=None,
+        contributor_org_id=organization.id,
+    )
+
+    async def fail_create_payment_intent(**_: object) -> SimpleNamespace:
+        """Fail loudly if checkout reaches the provider for an inactive seller."""
+        raise AssertionError("Stripe must not be called for an inactive org seller.")
+
+    monkeypatch.setattr(
+        financials_service.stripe,
+        "create_payment_intent",
+        fail_create_payment_intent,
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org_row = await session.get(Organization, organization.id)
+            assert org_row is not None
+            if suspend:
+                org_row.suspended_at = datetime.now(UTC)
+            else:
+                org_row.deactivated_at = datetime.now(UTC)
+
+    with pytest.raises(HTTPException) as exc_info:
+        async with async_session_factory() as session:
+            await financials_service.create_framework_purchase(
+                session,
+                operator,
+                framework_id=framework_id,
+                payload=PurchaseRequest(license_type="single_user"),
+            )
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

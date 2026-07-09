@@ -878,6 +878,19 @@ async def create_framework_purchase(
             )
     else:
         contributor_id = None
+        # Org seller parity with the individual suspension guard: a suspended
+        # (admin trust action) or deactivated organization must not settle new
+        # sales. Matches catalog visibility, which already hides such orgs.
+        seller_org = await db.get(Organization, seller.org_id)
+        if (
+            seller_org is None
+            or seller_org.suspended_at is not None
+            or seller_org.deactivated_at is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
 
     if contributor_id == operator_id:
         raise HTTPException(
