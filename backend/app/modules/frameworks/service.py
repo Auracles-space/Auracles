@@ -27,6 +27,7 @@ from app.modules.frameworks.models_artifact import (
     ArtifactPiiAudit,
     ArtifactRarityAudit,
 )
+from app.modules.frameworks.ownership import FrameworkOwner
 from app.modules.frameworks.pipeline_gate import evaluate_framework_pipeline
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
@@ -36,6 +37,8 @@ from app.modules.frameworks.schemas import (
     ArtifactUploadUrlResponse,
     FrameworkCreate,
     FrameworkListItem,
+    FrameworkMetadataUpdate,
+    FrameworkPricingUpdate,
     FrameworkResponse,
     FrameworkReviewCreate,
     FrameworkReviewListResponse,
@@ -138,6 +141,7 @@ def framework_to_response(framework: Framework) -> FrameworkResponse:
     return FrameworkResponse(
         id=framework.id,
         contributor_id=framework.contributor_id,
+        contributor_org_id=framework.contributor_org_id,
         source_project_id=framework.source_project_id,
         title=framework.title,
         description=framework.description,
@@ -274,6 +278,36 @@ async def _load_owned_framework_by_user_id(
     return framework
 
 
+async def _load_owned_framework_by_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> Framework:
+    """Load a Framework owned by the provided owner context or raise 404."""
+    statement = select(Framework).where(Framework.id == framework_id)
+    if owner.org_id is not None:
+        statement = statement.where(Framework.contributor_org_id == owner.org_id)
+    else:
+        statement = statement.where(Framework.contributor_id == owner.user_id)
+    framework = await db.scalar(statement)
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    return framework
+
+
+def _require_live_state_access(owner: FrameworkOwner) -> None:
+    """Reject live-state mutations unless the owner context permits them."""
+    if owner.can_manage_live_state:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not permitted.",
+    )
+
+
 def _require_draft(framework: Framework) -> None:
     """Reject mutations unless the Framework is still a draft."""
     if framework.status != "draft":
@@ -300,6 +334,55 @@ def _require_metadata_editable(framework: Framework) -> None:
                 "published, or delisted."
             ),
         )
+
+
+def _apply_framework_metadata_update(
+    framework: Framework,
+    payload: FrameworkUpdate | FrameworkMetadataUpdate,
+) -> None:
+    """Apply mutable metadata fields from a Framework patch payload."""
+    fields = payload.model_fields_set
+    if "title" in fields and payload.title is not None:
+        framework.title = payload.title.strip()
+    if "description" in fields and payload.description is not None:
+        framework.description = payload.description.strip()
+    if "category" in fields and payload.category is not None:
+        framework.category = payload.category.strip()
+    if "sector" in fields:
+        framework.sector = payload.sector.strip() if payload.sector else None
+    if "industry" in fields:
+        framework.industry = payload.industry.strip() if payload.industry else None
+    if "function" in fields:
+        framework.business_function = (
+            payload.function.strip() if payload.function else None
+        )
+    if "tags" in fields and payload.tags is not None:
+        framework.tags = payload.tags
+        framework.tags_text = _tags_text(payload.tags)
+    if "jurisdiction" in fields:
+        framework.jurisdiction = (
+            payload.jurisdiction.strip() if payload.jurisdiction else None
+        )
+    if "complexity" in fields:
+        framework.complexity = payload.complexity
+    if "org_size" in fields:
+        framework.org_size = payload.org_size
+    if "lifecycle_stage" in fields:
+        framework.lifecycle_stage = (
+            payload.lifecycle_stage.strip() if payload.lifecycle_stage else None
+        )
+
+
+def _apply_framework_pricing_update(
+    framework: Framework,
+    pricing: PricingConfig,
+) -> None:
+    """Apply pricing and licensing fields to a Framework row."""
+    framework.price = pricing.price
+    framework.currency = pricing.currency
+    framework.license_types = list(pricing.license_types)
+    framework.commercial_rights = pricing.commercial_rights
+    framework.usage_restrictions = pricing.usage_restrictions
 
 
 def _require_editable_artifacts(framework: Framework) -> None:
@@ -357,11 +440,11 @@ async def _ensure_source_project_can_seed_framework(
 
 async def create_framework(
     db: AsyncSession,
-    contributor: User,
+    owner: FrameworkOwner,
     payload: FrameworkCreate,
 ) -> FrameworkResponse:
     """Create a draft Framework owned by the verified Contributor."""
-    contributor_id = contributor.id
+    contributor_id = owner.user_id or owner.actor_id
     pricing = payload.pricing
     if db.in_transaction():
         await db.rollback()
@@ -373,7 +456,9 @@ async def create_framework(
             source_project_id=payload.source_project_id,
         )
         framework = Framework(
-            contributor_id=contributor_id,
+            contributor_id=owner.user_id,
+            contributor_org_id=owner.org_id,
+            authoring_member_id=owner.authoring_member_id,
             source_project_id=payload.source_project_id,
             title=payload.title.strip(),
             description=payload.description.strip(),
@@ -438,6 +523,16 @@ async def get_framework_for_contributor(
     return framework_to_response(framework)
 
 
+async def get_framework_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Return one Framework owned by the provided owner context."""
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    return framework_to_response(framework)
+
+
 async def list_contributor_frameworks(
     db: AsyncSession,
     contributor: User,
@@ -449,6 +544,28 @@ async def list_contributor_frameworks(
                 select(Framework)
                 .where(Framework.contributor_id == contributor.id)
                 .order_by(desc(Framework.created_at))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_framework_to_list_item(framework) for framework in frameworks]
+
+
+async def list_frameworks_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+) -> list[FrameworkListItem]:
+    """Return Frameworks owned by the provided owner context."""
+    statement = select(Framework)
+    if owner.org_id is not None:
+        statement = statement.where(Framework.contributor_org_id == owner.org_id)
+    else:
+        statement = statement.where(Framework.contributor_id == owner.user_id)
+    frameworks = (
+        (
+            await db.execute(
+                statement.order_by(desc(Framework.created_at))
             )
         )
         .scalars()
@@ -631,43 +748,9 @@ async def update_framework(
     """
     framework = await _load_owned_framework(db, contributor, framework_id)
     _require_metadata_editable(framework)
-
-    fields = payload.model_fields_set
-    if "title" in fields and payload.title is not None:
-        framework.title = payload.title.strip()
-    if "description" in fields and payload.description is not None:
-        framework.description = payload.description.strip()
-    if "category" in fields and payload.category is not None:
-        framework.category = payload.category.strip()
-    if "sector" in fields:
-        framework.sector = payload.sector.strip() if payload.sector else None
-    if "industry" in fields:
-        framework.industry = payload.industry.strip() if payload.industry else None
-    if "function" in fields:
-        framework.business_function = (
-            payload.function.strip() if payload.function else None
-        )
-    if "tags" in fields and payload.tags is not None:
-        framework.tags = payload.tags
-        framework.tags_text = _tags_text(payload.tags)
-    if "jurisdiction" in fields:
-        framework.jurisdiction = (
-            payload.jurisdiction.strip() if payload.jurisdiction else None
-        )
-    if "complexity" in fields:
-        framework.complexity = payload.complexity
-    if "org_size" in fields:
-        framework.org_size = payload.org_size
-    if "lifecycle_stage" in fields:
-        framework.lifecycle_stage = (
-            payload.lifecycle_stage.strip() if payload.lifecycle_stage else None
-        )
+    _apply_framework_metadata_update(framework, payload)
     if payload.pricing is not None:
-        framework.price = payload.pricing.price
-        framework.currency = payload.pricing.currency
-        framework.license_types = list(payload.pricing.license_types)
-        framework.commercial_rights = payload.pricing.commercial_rights
-        framework.usage_restrictions = payload.pricing.usage_restrictions
+        _apply_framework_pricing_update(framework, payload.pricing)
 
     await write_audit(
         db=db,
@@ -683,6 +766,67 @@ async def update_framework(
         module="frameworks",
         action="update_framework",
         user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_updated")
+    return framework_to_response(framework)
+
+
+async def update_framework_metadata_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: FrameworkMetadataUpdate,
+) -> FrameworkResponse:
+    """Update metadata for an owned Framework without changing pricing."""
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    _require_metadata_editable(framework)
+    _apply_framework_metadata_update(framework, payload)
+
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="framework_updated",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"status": framework.status},
+    )
+    await db.commit()
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="update_framework",
+        user_id=owner.actor_id,
+        framework_id=framework.id,
+    ).info("framework_updated")
+    return framework_to_response(framework)
+
+
+async def update_framework_pricing_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: FrameworkPricingUpdate,
+) -> FrameworkResponse:
+    """Update pricing for an owned Framework with live-state permission."""
+    _require_live_state_access(owner)
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    _require_metadata_editable(framework)
+    _apply_framework_pricing_update(framework, payload.pricing)
+
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="framework_updated",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"status": framework.status},
+    )
+    await db.commit()
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="update_framework_pricing",
+        user_id=owner.actor_id,
         framework_id=framework.id,
     ).info("framework_updated")
     return framework_to_response(framework)
@@ -753,6 +897,51 @@ async def unpublish_framework(
         module="frameworks",
         action="unpublish_framework",
         user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_unpublished")
+    return framework_to_response(framework)
+
+
+async def unpublish_framework_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Move an owned published Framework out of the public catalog."""
+    _require_live_state_access(owner)
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    if framework.status == "unpublished":
+        return framework_to_response(framework)
+    if framework.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only published Frameworks can be unpublished.",
+        )
+
+    framework.status = "unpublished"
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="framework_unpublished",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"version": framework.version},
+    )
+    await db.commit()
+    try:
+        await remove_framework_artifacts_from_index(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="frameworks",
+            action="remove_framework_from_lsh",
+            user_id=owner.actor_id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_remove_failed", error=str(exc))
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="unpublish_framework",
+        user_id=owner.actor_id,
         framework_id=framework.id,
     ).info("framework_unpublished")
     return framework_to_response(framework)
@@ -974,6 +1163,71 @@ async def submit_framework(
         module="frameworks",
         action="submit_framework",
         user_id=contributor.id,
+        framework_id=framework.id,
+    ).info("framework_submitted")
+    return framework_to_response(framework)
+
+
+async def submit_framework_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Submit an owned draft Framework into the processing gate."""
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    if framework.status not in {"draft", "pipeline_failed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or failed Frameworks can be submitted.",
+        )
+
+    artifacts = (
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not artifacts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="At least one Artifact is required.",
+        )
+
+    framework.status = "submitted"
+    framework.pipeline_failure_reasons = {}
+    framework.last_pipeline_run_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="framework_submitted",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"artifact_count": len(artifacts)},
+    )
+    dispatched_artifact_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.processing_status in {"pending", "processing"}:
+            artifact.processing_status = "processing"
+            dispatched_artifact_ids.append(str(artifact.id))
+
+    await evaluate_framework_pipeline(db, framework, force=True)
+    await db.commit()
+    for artifact_id in dispatched_artifact_ids:
+        scan_artifact.delay(artifact_id)
+
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="submit_framework",
+        user_id=owner.actor_id,
         framework_id=framework.id,
     ).info("framework_submitted")
     return framework_to_response(framework)
@@ -1249,6 +1503,90 @@ async def request_artifact_upload_url(
     )
 
 
+async def request_artifact_upload_url_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: ArtifactUploadUrlRequest,
+) -> ArtifactUploadUrlResponse:
+    """Create a pending Artifact row and return a private S3 POST upload target."""
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    _require_editable_artifacts(framework)
+    if framework.status == "pipeline_passed":
+        framework.status = "draft"
+        framework.pipeline_failure_reasons = {}
+    if payload.mime_type not in ALLOWED_ARTIFACT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported artifact MIME type.",
+        )
+
+    existing_size = await db.scalar(
+        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(
+            Artifact.framework_id == framework.id
+        )
+    )
+    total_size = int(existing_size or 0) + payload.file_size
+    if total_size > ARTIFACT_MAX_TOTAL_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        )
+
+    artifact_id = uuid4()
+    file_key = (
+        f"frameworks/{framework.id}/artifacts/{artifact_id}."
+        f"{_extension_for_filename(payload.filename)}"
+    )
+    artifact = Artifact(
+        id=artifact_id,
+        framework_id=framework.id,
+        name=payload.filename.strip(),
+        file_key=file_key,
+        file_size=payload.file_size,
+        mime_type=payload.mime_type,
+    )
+    db.add(artifact)
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="artifact_uploaded",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={
+            "framework_id": str(framework.id),
+            "status": "upload_url_created",
+        },
+    )
+    settings = get_settings()
+    upload_target = s3.storage.presigned_post(
+        bucket=settings.s3_artifacts_bucket,
+        key=file_key,
+        mime_type=payload.mime_type,
+        max_size=ARTIFACT_MAX_TOTAL_SIZE,
+        expires_in=ARTIFACT_UPLOAD_URL_TTL_SECONDS,
+    )
+    await db.commit()
+    logger.bind(
+        module="frameworks",
+        action="request_artifact_upload_url",
+        user_id=owner.actor_id,
+        framework_id=framework.id,
+        artifact_id=artifact.id,
+    ).info("artifact_upload_url_created")
+    return ArtifactUploadUrlResponse(
+        artifact_id=artifact.id,
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(field_name): str(field_value)
+            for field_name, field_value in upload_target["fields"].items()
+        },
+        file_key=file_key,
+        max_size=ARTIFACT_MAX_TOTAL_SIZE,
+        expires_in=ARTIFACT_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
 async def get_source_preview(
     db: AsyncSession,
     contributor: User,
@@ -1431,6 +1769,50 @@ async def confirm_artifact_upload(
             module="frameworks",
             action="confirm_artifact_upload",
             user_id=contributor.id,
+            framework_id=framework.id,
+            artifact_id=artifact.id,
+        ).info("artifact_processing_started")
+    else:
+        await db.commit()
+
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
+
+
+async def confirm_artifact_upload_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: ArtifactConfirmRequest,
+) -> ArtifactResponse:
+    """Confirm an Artifact object exists in S3 and dispatch virus scanning."""
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    _require_editable_artifacts(framework)
+    artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
+
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_artifacts_bucket, artifact.file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Artifact object has not been uploaded.",
+        )
+
+    if artifact.processing_status == "pending":
+        artifact.processing_status = "processing"
+        await write_audit(
+            db=db,
+            actor_id=owner.actor_id,
+            action="artifact_uploaded",
+            target_type="artifact",
+            target_id=artifact.id,
+            metadata={"framework_id": str(framework.id)},
+        )
+        await db.commit()
+        scan_artifact.delay(str(artifact.id))
+        logger.bind(
+            module="frameworks",
+            action="confirm_artifact_upload",
+            user_id=owner.actor_id,
             framework_id=framework.id,
             artifact_id=artifact.id,
         ).info("artifact_processing_started")
@@ -1867,20 +2249,27 @@ async def accept_redaction(
 
 async def publish_framework(
     db: AsyncSession,
-    contributor: User,
+    owner: FrameworkOwner,
     framework_id: UUID,
 ) -> FrameworkResponse:
     """Publish an owned Framework after every pipeline gate has passed."""
-    contributor_id = contributor.id
+    _require_live_state_access(owner)
+    if owner.org_id is not None:
+        from app.modules.organizations.contributor_service import (
+            contributor_capability_active,
+        )
+
+        if not await contributor_capability_active(db, org_id=owner.org_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error_code": "capability_suspended"},
+            )
+    contributor_id = owner.actor_id
     if db.in_transaction():
         await db.rollback()
     gate_failed = False
     async with db.begin():
-        framework = await _load_owned_framework_by_user_id(
-            db,
-            contributor_id,
-            framework_id,
-        )
+        framework = await _load_owned_framework_by_owner(db, owner, framework_id)
         if framework.status != "pipeline_passed":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -2107,6 +2496,120 @@ async def create_new_version(
         module="frameworks",
         action="create_new_version",
         user_id=contributor_id,
+        framework_id=framework.id,
+    ).info("framework_version_bumped")
+    return framework_to_response(framework)
+
+
+async def create_new_version_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: FrameworkVersionCreate,
+) -> FrameworkResponse:
+    """Start a new draft version from a published or unpublished Framework."""
+    _require_live_state_access(owner)
+    if not payload.artifact_inheritance:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Nothing to bump.",
+        )
+
+    settings = get_settings()
+    actor_id = owner.actor_id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+        if framework.status not in {"published", "unpublished"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only published or unpublished Frameworks can be versioned.",
+            )
+
+        current_artifact_rows = await db.execute(
+            select(Artifact)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.current_for_framework.is_(True),
+            )
+            .order_by(Artifact.created_at)
+        )
+        current_artifacts = list(current_artifact_rows.scalars().all())
+        current_artifact_ids = {artifact.id for artifact in current_artifacts}
+        requested_artifact_ids = set(payload.artifact_inheritance)
+        if not requested_artifact_ids.issubset(current_artifact_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Artifact inheritance contains non-current Artifacts.",
+            )
+        if not current_artifacts:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="At least one Artifact is required to create a new version.",
+            )
+
+        await _snapshot_current_version(db, framework, current_artifacts, payload)
+
+        preview_replacement_id: UUID | None = None
+        cloned_artifact_ids: list[str] = []
+        for artifact in current_artifacts:
+            should_inherit = payload.artifact_inheritance.get(artifact.id, True)
+            if should_inherit:
+                continue
+
+            artifact.current_for_framework = False
+            new_artifact_id = uuid4()
+            extension = _extension_for_filename(artifact.name)
+            new_file_key = (
+                f"frameworks/{framework.id}/artifacts/{new_artifact_id}.{extension}"
+            )
+            s3.storage.copy_object(
+                settings.s3_artifacts_bucket,
+                artifact.file_key,
+                settings.s3_artifacts_bucket,
+                new_file_key,
+            )
+            new_artifact = Artifact(
+                id=new_artifact_id,
+                framework_id=framework.id,
+                name=artifact.name,
+                file_key=new_file_key,
+                file_size=artifact.file_size,
+                mime_type=artifact.mime_type,
+                current_for_framework=True,
+            )
+            db.add(new_artifact)
+            await db.flush()
+            cloned_artifact_ids.append(str(new_artifact_id))
+            if framework.preview_artifact_id == artifact.id:
+                preview_replacement_id = new_artifact_id
+
+        if preview_replacement_id is not None:
+            framework.preview_artifact_id = preview_replacement_id
+        framework.version = _bump_semver(framework.version, payload.change_type)
+        framework.status = "draft"
+        framework.change_type = payload.change_type
+        framework.published_at = None
+        framework.pipeline_failure_reasons = {}
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="framework_version_bumped",
+            target_type="framework",
+            target_id=framework.id,
+            metadata={
+                "version": framework.version,
+                "change_type": payload.change_type,
+                "cloned_artifact_ids": cloned_artifact_ids,
+            },
+        )
+
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="create_new_version",
+        user_id=actor_id,
         framework_id=framework.id,
     ).info("framework_version_bumped")
     return framework_to_response(framework)

@@ -23,6 +23,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.explore.schemas import AttestationBadgeDetail
 from app.modules.frameworks import service
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.ownership import FrameworkOwner
 from app.modules.frameworks.schemas import (
     ArtifactConfirmRequest,
     ArtifactFromConnectorRequest,
@@ -31,6 +32,8 @@ from app.modules.frameworks.schemas import (
     ArtifactUploadUrlResponse,
     FrameworkCreate,
     FrameworkListItem,
+    FrameworkMetadataUpdate,
+    FrameworkPricingUpdate,
     FrameworkResponse,
     FrameworkReviewCreate,
     FrameworkReviewListResponse,
@@ -42,14 +45,22 @@ from app.modules.frameworks.schemas import (
     SimilarityNoticeAcknowledgementRequest,
     SourcePreviewResponse,
 )
+from app.modules.organizations.dependencies import (
+    OrgContext,
+    require_org_capability,
+    require_org_role,
+)
 
 router = APIRouter(prefix="/frameworks", tags=["Frameworks"])
+org_router = APIRouter(prefix="/orgs/{org_id}/frameworks", tags=["Frameworks"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 ProfileCompleteUser = Annotated[User, Depends(require_profile_complete)]
+OrgMemberContext = Annotated[OrgContext, Depends(require_org_role("member"))]
+OrgAdminContext = Annotated[OrgContext, Depends(require_org_role("admin"))]
 optional_bearer = HTTPBearer(auto_error=False)
 
 
@@ -84,7 +95,45 @@ async def create_framework(
     """Create a draft Framework for the authenticated Contributor."""
     return await service.create_framework(
         db=db,
-        contributor=contributor,
+        owner=FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        payload=payload,
+    )
+
+
+@org_router.post(
+    "",
+    response_model=FrameworkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create organization Framework",
+    description=(
+        "Create a draft Framework under the organization contributor identity "
+        "as an organization member while the contributor capability is active."
+    ),
+)
+async def create_org_framework(
+    org_id: UUID,
+    payload: FrameworkCreate,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Create a draft Framework owned by the organization."""
+    del org_id
+    return await service.create_framework(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
         payload=payload,
     )
 
@@ -96,6 +145,35 @@ async def list_frameworks(
 ) -> list[FrameworkListItem]:
     """List Frameworks owned by the authenticated Contributor."""
     return await service.list_contributor_frameworks(db=db, contributor=contributor)
+
+
+@org_router.get(
+    "",
+    response_model=list[FrameworkListItem],
+    summary="List organization Frameworks",
+    description=(
+        "List Frameworks owned by the organization contributor identity for "
+        "organization members while the contributor capability is active."
+    ),
+)
+async def list_org_frameworks(
+    org_id: UUID,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> list[FrameworkListItem]:
+    """List Frameworks owned by one organization."""
+    del org_id
+    return await service.list_frameworks_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
+    )
 
 
 @router.post(
@@ -170,6 +248,37 @@ async def get_framework(
     )
 
 
+@org_router.get(
+    "/{framework_id}",
+    response_model=FrameworkResponse,
+    summary="Get organization Framework",
+    description=(
+        "Return one organization-owned Framework for an organization member "
+        "while the contributor capability is active."
+    ),
+)
+async def get_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Return one Framework owned by the organization."""
+    del org_id
+    return await service.get_framework_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
+        framework_id=framework_id,
+    )
+
+
 @router.get(
     "/{framework_id}/attestation-badges",
     response_model=list[AttestationBadgeDetail],
@@ -233,6 +342,72 @@ async def update_framework(
     )
 
 
+@org_router.patch(
+    "/{framework_id}",
+    response_model=FrameworkResponse,
+    summary="Update organization Framework metadata",
+    description=(
+        "Update editable metadata for an organization-owned Framework as an "
+        "organization member while the contributor capability is active."
+    ),
+)
+async def update_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: FrameworkMetadataUpdate,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Update organization-owned Framework metadata."""
+    del org_id
+    return await service.update_framework_metadata_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@org_router.patch(
+    "/{framework_id}/pricing",
+    response_model=FrameworkResponse,
+    summary="Update organization Framework pricing",
+    description=(
+        "Update pricing for an organization-owned Framework as an organization "
+        "owner or admin while the contributor capability is active."
+    ),
+)
+async def update_org_framework_pricing(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: FrameworkPricingUpdate,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Update organization-owned Framework pricing."""
+    del org_id
+    return await service.update_framework_pricing_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=True,
+        ),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
 @router.delete("/{framework_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_framework(
     framework_id: UUID,
@@ -258,6 +433,38 @@ async def unpublish_framework(
     return await service.unpublish_framework(
         db=db,
         contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/unpublish",
+    response_model=FrameworkResponse,
+    summary="Unpublish organization Framework",
+    description=(
+        "Unpublish an organization-owned Framework so new catalog purchases "
+        "stop. Restricted to organization owners and admins while the "
+        "contributor capability is active."
+    ),
+)
+async def unpublish_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Unpublish one organization-owned Framework."""
+    del org_id
+    return await service.unpublish_framework_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=True,
+        ),
         framework_id=framework_id,
     )
 
@@ -296,6 +503,40 @@ async def create_new_version(
     )
 
 
+@org_router.post(
+    "/{framework_id}/version",
+    response_model=FrameworkResponse,
+    summary="Start organization Framework version",
+    description=(
+        "Start a new editable draft version of an organization-owned Framework. "
+        "Restricted to organization owners and admins while the contributor "
+        "capability is active."
+    ),
+)
+async def create_new_org_version(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: FrameworkVersionCreate,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Start a new draft version for an organization-owned Framework."""
+    del org_id
+    return await service.create_new_version_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=True,
+        ),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
 @router.post("/{framework_id}/submit", response_model=FrameworkResponse)
 async def submit_framework(
     framework_id: UUID,
@@ -308,6 +549,37 @@ async def submit_framework(
     return await service.submit_framework(
         db=db,
         contributor=contributor,
+        framework_id=framework_id,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/submit",
+    response_model=FrameworkResponse,
+    summary="Submit organization Framework",
+    description=(
+        "Submit an organization-owned Framework to the processing gate as an "
+        "organization member while the contributor capability is active."
+    ),
+)
+async def submit_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Submit one organization-owned Framework."""
+    del org_id
+    return await service.submit_framework_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
         framework_id=framework_id,
     )
 
@@ -362,7 +634,45 @@ async def publish_framework(
     """Publish an owned Framework after pipeline checks pass."""
     return await service.publish_framework(
         db=db,
-        contributor=contributor,
+        owner=FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id=framework_id,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/publish",
+    response_model=FrameworkResponse,
+    summary="Publish organization Framework",
+    description=(
+        "Publish an organization-owned Framework after pipeline checks pass. "
+        "Restricted to organization owners and admins while the contributor "
+        "capability is active."
+    ),
+)
+async def publish_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Publish one organization-owned Framework."""
+    del org_id
+    return await service.publish_framework(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=True,
+        ),
         framework_id=framework_id,
     )
 
@@ -383,6 +693,39 @@ async def request_artifact_upload_url(
     return await service.request_artifact_upload_url(
         db=db,
         contributor=contributor,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/artifacts/upload-url",
+    response_model=ArtifactUploadUrlResponse,
+    summary="Create organization artifact upload URL",
+    description=(
+        "Create a private S3 upload target for an organization-owned Framework "
+        "artifact while the contributor capability is active."
+    ),
+)
+async def request_org_artifact_upload_url(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: ArtifactUploadUrlRequest,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ArtifactUploadUrlResponse:
+    """Create a private upload target for an organization Framework artifact."""
+    del org_id
+    return await service.request_artifact_upload_url_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
         framework_id=framework_id,
         payload=payload,
     )
@@ -467,6 +810,39 @@ async def confirm_artifact_upload(
     return await service.confirm_artifact_upload(
         db=db,
         contributor=contributor,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/artifacts/confirm",
+    response_model=ArtifactResponse,
+    summary="Confirm organization artifact upload",
+    description=(
+        "Confirm an uploaded artifact for an organization-owned Framework and "
+        "dispatch scanning while the contributor capability is active."
+    ),
+)
+async def confirm_org_artifact_upload(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: ArtifactConfirmRequest,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Confirm an uploaded organization Framework artifact."""
+    del org_id
+    return await service.confirm_artifact_upload_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=context.user.id,
+            user_id=None,
+            org_id=context.org.id,
+            authoring_member_id=context.member.id,
+            can_manage_live_state=context.member.role in {"owner", "admin"},
+        ),
         framework_id=framework_id,
         payload=payload,
     )

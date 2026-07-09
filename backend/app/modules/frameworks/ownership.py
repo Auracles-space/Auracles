@@ -22,6 +22,17 @@ class FrameworkSeller:
     org_id: UUID | None
 
 
+@dataclass(frozen=True)
+class FrameworkOwner:
+    """Actor-scoped ownership context for Framework mutations."""
+
+    actor_id: UUID
+    user_id: UUID | None
+    org_id: UUID | None
+    authoring_member_id: UUID | None
+    can_manage_live_state: bool
+
+
 def resolve_framework_seller(framework: Framework) -> FrameworkSeller:
     """Return the effective seller branch for one Framework row."""
     if framework.contributor_org_id is not None:

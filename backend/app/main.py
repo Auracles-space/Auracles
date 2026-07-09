@@ -18,6 +18,9 @@ from app.modules.developer.partner_router import router as partner_router
 from app.modules.developer.router import router as developer_router
 from app.modules.explore.router import router as explore_router
 from app.modules.financials.router import router as financials_router
+from app.modules.frameworks.router import (
+    org_router as org_frameworks_router,
+)
 from app.modules.frameworks.router import router as frameworks_router
 from app.modules.gdpr.router import router as gdpr_router
 from app.modules.health.router import router as health_router
@@ -88,6 +91,7 @@ def create_app() -> FastAPI:
     application.include_router(explore_router, prefix="/v1")
     application.include_router(financials_router, prefix="/v1")
     application.include_router(frameworks_router, prefix="/v1")
+    application.include_router(org_frameworks_router, prefix="/v1")
     application.include_router(gdpr_router, prefix="/v1")
     application.include_router(integrations_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")

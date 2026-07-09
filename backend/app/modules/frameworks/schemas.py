@@ -105,13 +105,44 @@ class FrameworkUpdate(BaseModel):
         return [tag.strip() for tag in value if tag.strip()]
 
 
+class FrameworkMetadataUpdate(BaseModel):
+    """Request body for editing Framework metadata without pricing changes."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, min_length=1)
+    category: FrameworkCategory | None = None
+    sector: FrameworkSector | None = None
+    industry: FrameworkIndustry | None = None
+    function: FrameworkFunction | None = None
+    tags: list[str] | None = None
+    jurisdiction: str | None = Field(default=None, max_length=100)
+    complexity: int | None = Field(default=None, ge=1, le=5)
+    org_size: OrgSize | None = None
+    lifecycle_stage: str | None = Field(default=None, max_length=100)
+
+    @field_validator("tags")
+    @classmethod
+    def tags_are_trimmed(cls, value: list[str] | None) -> list[str] | None:
+        """Trim tag text and remove accidental blank tags."""
+        if value is None:
+            return None
+        return [tag.strip() for tag in value if tag.strip()]
+
+
+class FrameworkPricingUpdate(BaseModel):
+    """Request body for editing Framework pricing and licensing fields."""
+
+    pricing: PricingConfig
+
+
 class FrameworkResponse(BaseModel):
     """Contributor-facing Framework representation."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    contributor_id: UUID
+    contributor_id: UUID | None
+    contributor_org_id: UUID | None = None
     source_project_id: UUID | None
     title: str
     description: str

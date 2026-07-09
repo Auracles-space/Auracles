@@ -5105,6 +5105,450 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks:
+    post:
+      tags:
+      - Frameworks
+      summary: Create organization Framework
+      description: Create a draft Framework under the organization contributor identity
+        as an organization member while the contributor capability is active.
+      operationId: create_org_framework_v1_orgs__org_id__frameworks_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Frameworks
+      summary: List organization Frameworks
+      description: List Frameworks owned by the organization contributor identity
+        for organization members while the contributor capability is active.
+      operationId: list_org_frameworks_v1_orgs__org_id__frameworks_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FrameworkListItem'
+                title: Response List Org Frameworks V1 Orgs  Org Id  Frameworks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}:
+    get:
+      tags:
+      - Frameworks
+      summary: Get organization Framework
+      description: Return one organization-owned Framework for an organization member
+        while the contributor capability is active.
+      operationId: get_org_framework_v1_orgs__org_id__frameworks__framework_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Frameworks
+      summary: Update organization Framework metadata
+      description: Update editable metadata for an organization-owned Framework as
+        an organization member while the contributor capability is active.
+      operationId: update_org_framework_v1_orgs__org_id__frameworks__framework_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkMetadataUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/pricing:
+    patch:
+      tags:
+      - Frameworks
+      summary: Update organization Framework pricing
+      description: Update pricing for an organization-owned Framework as an organization
+        owner or admin while the contributor capability is active.
+      operationId: update_org_framework_pricing_v1_orgs__org_id__frameworks__framework_id__pricing_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkPricingUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/unpublish:
+    post:
+      tags:
+      - Frameworks
+      summary: Unpublish organization Framework
+      description: Unpublish an organization-owned Framework so new catalog purchases
+        stop. Restricted to organization owners and admins while the contributor capability
+        is active.
+      operationId: unpublish_org_framework_v1_orgs__org_id__frameworks__framework_id__unpublish_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/version:
+    post:
+      tags:
+      - Frameworks
+      summary: Start organization Framework version
+      description: Start a new editable draft version of an organization-owned Framework.
+        Restricted to organization owners and admins while the contributor capability
+        is active.
+      operationId: create_new_org_version_v1_orgs__org_id__frameworks__framework_id__version_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkVersionCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/submit:
+    post:
+      tags:
+      - Frameworks
+      summary: Submit organization Framework
+      description: Submit an organization-owned Framework to the processing gate as
+        an organization member while the contributor capability is active.
+      operationId: submit_org_framework_v1_orgs__org_id__frameworks__framework_id__submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/publish:
+    post:
+      tags:
+      - Frameworks
+      summary: Publish organization Framework
+      description: Publish an organization-owned Framework after pipeline checks pass.
+        Restricted to organization owners and admins while the contributor capability
+        is active.
+      operationId: publish_org_framework_v1_orgs__org_id__frameworks__framework_id__publish_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/upload-url:
+    post:
+      tags:
+      - Frameworks
+      summary: Create organization artifact upload URL
+      description: Create a private S3 upload target for an organization-owned Framework
+        artifact while the contributor capability is active.
+      operationId: request_org_artifact_upload_url_v1_orgs__org_id__frameworks__framework_id__artifacts_upload_url_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactUploadUrlRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactUploadUrlResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
+    post:
+      tags:
+      - Frameworks
+      summary: Confirm organization artifact upload
+      description: Confirm an uploaded artifact for an organization-owned Framework
+        and dispatch scanning while the contributor capability is active.
+      operationId: confirm_org_artifact_upload_v1_orgs__org_id__frameworks__framework_id__artifacts_confirm_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactConfirmRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/gdpr/consent:
     get:
       tags:
@@ -15799,6 +16243,134 @@ components:
       - updated_at
       title: FrameworkListItem
       description: Compact Framework row for the Contributor's dashboard list.
+    FrameworkMetadataUpdate:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Title
+        description:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Description
+        category:
+          anyOf:
+          - type: string
+            enum:
+            - framework
+            - playbook
+            - sop
+            - policy
+            - template
+            - toolkit
+            - assessment
+            - control_matrix
+            - workflow
+            - training_program
+          - type: 'null'
+          title: Category
+        sector:
+          anyOf:
+          - type: string
+            enum:
+            - private_equity
+            - venture_capital
+            - infrastructure
+            - real_estate
+            - healthcare
+            - manufacturing
+            - government
+            - education
+            - financial_services
+            - energy
+            - telecommunications
+            - technology
+          - type: 'null'
+          title: Sector
+        industry:
+          anyOf:
+          - type: string
+            enum:
+            - fund_management
+            - portfolio_operations
+            - energy_infrastructure
+            - transportation_infrastructure
+            - residential_real_estate
+            - commercial_real_estate
+            - property_management
+            - healthcare_providers
+            - health_technology
+            - medical_devices
+            - software_engineering
+            - data_centers
+            - renewable_energy
+            - public_sector_agencies
+          - type: 'null'
+          title: Industry
+        function:
+          anyOf:
+          - type: string
+            enum:
+            - governance
+            - compliance
+            - risk_management
+            - operations
+            - finance
+            - legal
+            - engineering
+            - human_resources
+            - sales
+            - marketing
+            - product
+            - data_ai
+            - information_security
+          - type: 'null'
+          title: Function
+        tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Tags
+        jurisdiction:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Jurisdiction
+        complexity:
+          anyOf:
+          - type: integer
+            maximum: 5.0
+            minimum: 1.0
+          - type: 'null'
+          title: Complexity
+        org_size:
+          anyOf:
+          - type: string
+            enum:
+            - startup
+            - small_business
+            - sme
+            - mid_market
+            - enterprise
+          - type: 'null'
+          title: Org Size
+        lifecycle_stage:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Lifecycle Stage
+      type: object
+      title: FrameworkMetadataUpdate
+      description: Request body for editing Framework metadata without pricing changes.
     FrameworkPrefillResponse:
       properties:
         title:
@@ -15834,6 +16406,15 @@ components:
       - source_deliverable_id
       title: FrameworkPrefillResponse
       description: Framework draft prefill data derived from an approved Deliverable.
+    FrameworkPricingUpdate:
+      properties:
+        pricing:
+          $ref: '#/components/schemas/PricingConfig-Input'
+      type: object
+      required:
+      - pricing
+      title: FrameworkPricingUpdate
+      description: Request body for editing Framework pricing and licensing fields.
     FrameworkResponse:
       properties:
         id:
@@ -15841,9 +16422,17 @@ components:
           format: uuid
           title: Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         source_project_id:
           anyOf:
           - type: string
