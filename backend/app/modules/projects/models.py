@@ -195,6 +195,10 @@ class Proposal(CreatedAtMixin, Base):
         CheckConstraint("budget > 0", name="ck_proposals_budget_positive"),
         CheckConstraint("currency = 'USD'", name="ck_proposals_currency_usd"),
         CheckConstraint("timeline_days > 0", name="ck_proposals_timeline_positive"),
+        CheckConstraint(
+            "(contributor_id IS NULL) != (contributor_org_id IS NULL)",
+            name="ck_proposals_seller_xor",
+        ),
         Index("idx_proposals_project_status", "project_id", "status"),
         Index("idx_proposals_contributor_status", "contributor_id", "status"),
         Index(
@@ -203,6 +207,15 @@ class Proposal(CreatedAtMixin, Base):
             "contributor_id",
             unique=True,
             postgresql_where=text("status IN ('pending', 'accepted')"),
+        ),
+        Index(
+            "uq_proposals_project_org_active",
+            "project_id",
+            "contributor_org_id",
+            unique=True,
+            postgresql_where=text(
+                "contributor_org_id IS NOT NULL AND status IN ('pending', 'accepted')"
+            ),
         ),
     )
 
@@ -216,10 +229,20 @@ class Proposal(CreatedAtMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    contributor_id: Mapped[UUID] = mapped_column(
+    contributor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    contributor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    delivering_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
     )
     scope: Mapped[str] = mapped_column(Text, nullable=False)
     budget: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -363,6 +386,10 @@ class Deliverable(CreatedAtMixin, Base):
 
     __tablename__ = "deliverables"
     __table_args__ = (
+        CheckConstraint(
+            "(contributor_id IS NULL) != (contributor_org_id IS NULL)",
+            name="ck_deliverables_seller_xor",
+        ),
         Index("idx_deliverables_milestone_status", "milestone_id", "status"),
     )
 
@@ -376,10 +403,15 @@ class Deliverable(CreatedAtMixin, Base):
         ForeignKey("milestones.id", ondelete="CASCADE"),
         nullable=False,
     )
-    contributor_id: Mapped[UUID] = mapped_column(
+    contributor_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    contributor_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)

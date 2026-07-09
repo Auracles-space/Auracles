@@ -29,6 +29,7 @@ from app.modules.projects.models import (
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     DeliverableSpec,
+    OrgDeliveryResponse,
     ProjectCreateRequest,
     ProjectResponse,
     ProjectsResponse,
@@ -458,6 +459,246 @@ async def submit_proposal(
     return proposal
 
 
+async def submit_org_proposal(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    delivering_member_id: UUID,
+    scope: str,
+    budget: Decimal,
+    timeline_days: int,
+    deliverables: list[dict[str, str]],
+) -> Proposal:
+    """Submit an organization-owned Proposal against an open Project."""
+    from app.modules.organizations.contributor_service import (
+        contributor_capability_active,
+    )
+    from app.modules.organizations.models import OrgMember
+
+    if not await contributor_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project = await db.scalar(
+            select(Project).where(Project.id == project_id).with_for_update()
+        )
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if project.status != "open":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Proposals can only be submitted to open Projects.",
+            )
+        self_deal = await db.scalar(
+            select(OrgMember.id)
+            .where(
+                OrgMember.org_id == org_id,
+                OrgMember.user_id == project.operator_id,
+            )
+            .limit(1)
+        )
+        if self_deal is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"error_code": "self_deal_conflict"},
+            )
+
+        staffed_member = await db.scalar(
+            select(OrgMember).where(
+                OrgMember.id == delivering_member_id,
+                OrgMember.org_id == org_id,
+            )
+        )
+        if staffed_member is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"error_code": "delivering_member_invalid"},
+            )
+        existing = await db.scalar(
+            select(Proposal.id)
+            .where(
+                Proposal.project_id == project_id,
+                Proposal.contributor_org_id == org_id,
+                Proposal.status.in_(("pending", "accepted")),
+            )
+            .limit(1)
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Organization already has an active Proposal for this Project.",
+            )
+
+        proposal = Proposal(
+            project_id=project_id,
+            contributor_id=None,
+            contributor_org_id=org_id,
+            delivering_member_id=delivering_member_id,
+            scope=scope,
+            budget=budget,
+            currency="USD",
+            timeline_days=timeline_days,
+            deliverables=deliverables,
+        )
+        db.add(proposal)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="proposal_submitted",
+            target_type="proposal",
+            target_id=proposal.id,
+            metadata={"project_id": str(project_id), "org_id": str(org_id)},
+        )
+        await db.flush()
+        await db.refresh(proposal)
+
+    project_notifications.notify_proposal_submitted(
+        operator_id=project.operator_id,
+        proposal=proposal,
+    )
+    return proposal
+
+
+async def reassign_delivering_member(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    proposal_id: UUID,
+    delivering_member_id: UUID,
+) -> Proposal:
+    """Reassign the staffed org member for accepted work before funding starts."""
+    from app.modules.organizations.models import OrgMember
+
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        proposal = await db.scalar(
+            select(Proposal)
+            .where(
+                Proposal.id == proposal_id,
+                Proposal.contributor_org_id == org_id,
+            )
+            .with_for_update()
+        )
+        if proposal is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Proposal not found.",
+            )
+        if proposal.status != "accepted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only accepted Proposals can be reassigned.",
+            )
+
+        staffed_member = await db.scalar(
+            select(OrgMember).where(
+                OrgMember.id == delivering_member_id,
+                OrgMember.org_id == org_id,
+            )
+        )
+        if staffed_member is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"error_code": "delivering_member_invalid"},
+            )
+
+        started_work = await db.scalar(
+            select(Milestone.id)
+            .where(
+                Milestone.project_id == proposal.project_id,
+                Milestone.status != "pending",
+            )
+            .limit(1)
+        )
+        if started_work is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Started delivery cannot be reassigned.",
+            )
+
+        proposal.delivering_member_id = delivering_member_id
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="proposal_delivering_member_reassigned",
+            target_type="proposal",
+            target_id=proposal.id,
+            metadata={"delivering_member_id": str(delivering_member_id)},
+        )
+        await db.flush()
+        await db.refresh(proposal)
+    return proposal
+
+
+async def withdraw_org_proposal(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    proposal_id: UUID,
+) -> Proposal:
+    """Withdraw one pending organization-owned Proposal."""
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        proposal = await db.scalar(
+            select(Proposal)
+            .where(
+                Proposal.id == proposal_id,
+                Proposal.contributor_org_id == org_id,
+            )
+            .with_for_update()
+        )
+        if proposal is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Proposal not found.",
+            )
+        if proposal.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only pending Proposals can be withdrawn.",
+            )
+        proposal.status = "withdrawn"
+        proposal.withdrawn_at = datetime.now(UTC)
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="proposal_withdrawn",
+            target_type="proposal",
+            target_id=proposal.id,
+            metadata={"project_id": str(proposal.project_id), "org_id": str(org_id)},
+        )
+        operator_id = await db.scalar(
+            select(Project.operator_id).where(Project.id == proposal.project_id)
+        )
+        await db.flush()
+        await db.refresh(proposal)
+
+    if operator_id is not None:
+        project_notifications.notify_proposal_withdrawn(
+            operator_id=operator_id,
+            project_id=proposal.project_id,
+            proposal_id=proposal.id,
+        )
+    return proposal
+
+
 def _proposal_with_name(
     proposal: Proposal, contributor_name: str | None
 ) -> ProposalResponse:
@@ -465,6 +706,85 @@ def _proposal_with_name(
     response = ProposalResponse.model_validate(proposal)
     response.contributor_name = contributor_name
     return response
+
+
+async def _proposal_workspace_user_id(db: AsyncSession, proposal: Proposal) -> UUID:
+    """Resolve the user currently representing the Proposal in the workspace."""
+    if proposal.contributor_id is not None:
+        return proposal.contributor_id
+
+    from app.modules.organizations.models import OrgMember
+
+    user_id = await db.scalar(
+        select(OrgMember.user_id)
+        .where(
+            OrgMember.id == proposal.delivering_member_id,
+            OrgMember.org_id == proposal.contributor_org_id,
+        )
+        .limit(1)
+    )
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Accepted Proposal is missing its staffed delivery member.",
+        )
+    return user_id
+
+
+async def list_org_proposals(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    org_name: str,
+) -> ProposalsResponse:
+    """List Proposals submitted under one organization identity."""
+    rows = await db.execute(
+        select(Proposal)
+        .where(Proposal.contributor_org_id == org_id)
+        .order_by(Proposal.created_at.desc())
+    )
+    return ProposalsResponse(
+        proposals=[
+            _proposal_with_name(proposal, org_name) for proposal in rows.scalars()
+        ]
+    )
+
+
+async def list_org_deliveries(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    member_id: UUID,
+    member_role: str,
+) -> list[OrgDeliveryResponse]:
+    """List accepted Project workspaces for one organization view."""
+    query = (
+        select(Proposal, Project)
+        .join(Project, Project.id == Proposal.project_id)
+        .where(
+            Proposal.contributor_org_id == org_id,
+            Proposal.status == "accepted",
+            Project.status.in_(("assigned", "in_progress", "delivered", "disputed")),
+        )
+        .order_by(Proposal.accepted_at.desc().nullslast(), Proposal.created_at.desc())
+    )
+    if member_role == "member":
+        query = query.where(Proposal.delivering_member_id == member_id)
+
+    rows = await db.execute(query)
+    return [
+        OrgDeliveryResponse(
+            proposal_id=proposal.id,
+            project_id=project.id,
+            project_title=project.title,
+            project_status=project.status,
+            milestone_plan_status=project.milestone_plan_status,
+            delivering_member_id=proposal.delivering_member_id,
+            accepted_at=proposal.accepted_at,
+            created_at=proposal.created_at,
+        )
+        for proposal, project in rows.all()
+    ]
 
 
 async def list_project_proposals(
@@ -723,13 +1043,13 @@ async def accept_proposal(
         # notified of the outcome after commit.
         rejected_proposals = (
             await db.execute(
-                select(Proposal.id, Proposal.contributor_id).where(
+                select(Proposal).where(
                     Proposal.project_id == project_id,
                     Proposal.id != proposal.id,
                     Proposal.status == "pending",
                 )
             )
-        ).all()
+        ).scalars().all()
         await db.execute(
             update(Proposal)
             .where(
@@ -747,10 +1067,19 @@ async def accept_proposal(
             target_id=proposal.id,
             metadata={
                 "project_id": str(project.id),
-                "contributor_id": str(proposal.contributor_id),
+                "contributor_id": (
+                    str(proposal.contributor_id)
+                    if proposal.contributor_id is not None
+                    else None
+                ),
+                "contributor_org_id": (
+                    str(proposal.contributor_org_id)
+                    if proposal.contributor_org_id is not None
+                    else None
+                ),
             },
         )
-        accepted_contributor_id = proposal.contributor_id
+        accepted_contributor_id = await _proposal_workspace_user_id(db, proposal)
         await db.flush()
         await db.refresh(project)
 
@@ -758,11 +1087,14 @@ async def accept_proposal(
         contributor_id=accepted_contributor_id,
         proposal=proposal,
     )
-    for rejected_id, rejected_contributor_id in rejected_proposals:
+    for rejected_proposal in rejected_proposals:
+        rejected_contributor_id = await _proposal_workspace_user_id(
+            db, rejected_proposal
+        )
         project_notifications.notify_proposal_rejected(
             contributor_id=rejected_contributor_id,
             project_id=project_id,
-            proposal_id=rejected_id,
+            proposal_id=rejected_proposal.id,
         )
     return project
 
@@ -858,9 +1190,10 @@ async def propose_amendment(
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
         # The counterparty is the accepted member who did not propose the change.
-        counterparty_id = (
-            {project.operator_id, proposal.contributor_id} - {actor_id}
-        ).pop()
+        if actor_id == project.operator_id:
+            counterparty_id = await _proposal_workspace_user_id(db, proposal)
+        else:
+            counterparty_id = project.operator_id
         amendment_project_id = project.id
         await db.flush()
         await db.refresh(amendment)
@@ -1053,9 +1386,12 @@ async def withdraw_amendment(
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
         # Notify the counterparty who was awaiting a response, not the proposer.
-        withdraw_counterparty_id = (
-            {project.operator_id, proposal.contributor_id} - {actor_id}
-        ).pop()
+        if actor_id == project.operator_id:
+            withdraw_counterparty_id = await _proposal_workspace_user_id(
+                db, proposal
+            )
+        else:
+            withdraw_counterparty_id = project.operator_id
         withdrawn_project_id = project.id
         await db.flush()
         await db.refresh(amendment)

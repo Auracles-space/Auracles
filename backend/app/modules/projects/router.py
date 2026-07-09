@@ -14,6 +14,11 @@ from app.core.dependencies import (
     require_role,
 )
 from app.modules.auth.models import User
+from app.modules.organizations.dependencies import (
+    OrgContext,
+    require_org_capability,
+    require_org_role,
+)
 from app.modules.projects import dispute_service, milestone_service, service
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
@@ -32,6 +37,9 @@ from app.modules.projects.schemas import (
     MilestoneResponse,
     MilestonesResponse,
     MilestoneUpdateRequest,
+    OrgDeliveriesResponse,
+    OrgProposalCreateRequest,
+    OrgProposalReassignRequest,
     ProjectCreateRequest,
     ProjectResponse,
     ProjectsResponse,
@@ -45,11 +53,14 @@ from app.modules.reputation.schemas import ReputationSummary
 from app.shared.schemas.token import TokenPayload
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+org_router = APIRouter(prefix="/orgs/{org_id}", tags=["Projects"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 TokenClaims = Annotated[TokenPayload, Depends(get_current_token_payload)]
+OrgMemberContext = Annotated[OrgContext, Depends(require_org_role("member"))]
+OrgAdminContext = Annotated[OrgContext, Depends(require_org_role("admin"))]
 
 
 @router.post(
@@ -158,6 +169,144 @@ async def submit_proposal(
         payload=payload,
     )
     return ProposalResponse.model_validate(proposal)
+
+
+@org_router.post(
+    "/projects/{project_id}/proposals",
+    response_model=ProposalResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit organization Proposal",
+    description=(
+        "Submit a Proposal under the organization contributor identity as an "
+        "organization owner or admin while the contributor capability is active."
+    ),
+)
+async def submit_org_proposal(
+    org_id: UUID,
+    project_id: UUID,
+    payload: OrgProposalCreateRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ProposalResponse:
+    """Submit an organization-owned Proposal for one Project."""
+    del org_id
+    proposal = await service.submit_org_proposal(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        delivering_member_id=payload.delivering_member_id,
+        scope=payload.scope,
+        budget=payload.budget,
+        timeline_days=payload.timeline_days,
+        deliverables=[item.model_dump() for item in payload.deliverables],
+    )
+    return ProposalResponse.model_validate(proposal)
+
+
+@org_router.post(
+    "/proposals/{proposal_id}/reassign",
+    response_model=ProposalResponse,
+    summary="Reassign organization delivery member",
+    description=(
+        "Reassign the staffed organization delivery member for accepted work "
+        "before funded work has started."
+    ),
+)
+async def reassign_org_proposal(
+    org_id: UUID,
+    proposal_id: UUID,
+    payload: OrgProposalReassignRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ProposalResponse:
+    """Reassign the staffed member for one organization-owned Proposal."""
+    del org_id
+    proposal = await service.reassign_delivering_member(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        proposal_id=proposal_id,
+        delivering_member_id=payload.delivering_member_id,
+    )
+    return ProposalResponse.model_validate(proposal)
+
+
+@org_router.delete(
+    "/proposals/{proposal_id}",
+    response_model=ProposalResponse,
+    summary="Withdraw organization Proposal",
+    description=(
+        "Withdraw a pending Proposal submitted under the organization "
+        "contributor identity."
+    ),
+)
+async def withdraw_org_proposal(
+    org_id: UUID,
+    proposal_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ProposalResponse:
+    """Withdraw one pending organization-owned Proposal."""
+    del org_id
+    proposal = await service.withdraw_org_proposal(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        proposal_id=proposal_id,
+    )
+    return ProposalResponse.model_validate(proposal)
+
+
+@org_router.get(
+    "/proposals",
+    response_model=ProposalsResponse,
+    summary="List organization Proposals",
+    description="List Proposals submitted under the organization identity.",
+)
+async def list_org_proposals(
+    org_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> ProposalsResponse:
+    """List Proposals owned by one organization."""
+    del org_id
+    return await service.list_org_proposals(
+        db=db,
+        org_id=context.org.id,
+        org_name=context.org.name,
+    )
+
+
+@org_router.get(
+    "/deliveries",
+    response_model=OrgDeliveriesResponse,
+    summary="List organization deliveries",
+    description=(
+        "List accepted Project workspaces for the organization. Owners and "
+        "admins see every accepted workspace; plain members see only work "
+        "staffed to themselves."
+    ),
+)
+async def list_org_deliveries(
+    org_id: UUID,
+    context: OrgMemberContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> OrgDeliveriesResponse:
+    """List active delivery workspaces for one organization."""
+    del org_id
+    deliveries = await service.list_org_deliveries(
+        db=db,
+        org_id=context.org.id,
+        member_id=context.member.id,
+        member_role=context.member.role,
+    )
+    return OrgDeliveriesResponse(deliveries=deliveries)
 
 
 @router.get("/{project_id}/proposals", response_model=ProposalsResponse)

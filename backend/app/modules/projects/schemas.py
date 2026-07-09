@@ -108,6 +108,18 @@ class ProposalCreateRequest(BaseModel):
         return value.upper()
 
 
+class OrgProposalCreateRequest(ProposalCreateRequest):
+    """Organization-admin request body for submitting an org Proposal."""
+
+    delivering_member_id: UUID
+
+
+class OrgProposalReassignRequest(BaseModel):
+    """Organization-admin request body for reassigning staffed delivery."""
+
+    delivering_member_id: UUID
+
+
 class AmendmentCreateRequest(BaseModel):
     """Project member request body for proposing a Proposal amendment."""
 
@@ -223,7 +235,8 @@ class DeliverableResponse(BaseModel):
 
     id: UUID
     milestone_id: UUID
-    contributor_id: UUID
+    contributor_id: UUID | None
+    contributor_org_id: UUID | None = None
     name: str
     description: str
     file_keys: list[str]
@@ -370,7 +383,8 @@ class ProposalResponse(BaseModel):
 
     id: UUID
     project_id: UUID
-    contributor_id: UUID
+    contributor_id: UUID | None
+    contributor_org_id: UUID | None = None
     contributor_name: str | None = None
     scope: str
     budget: Decimal
@@ -389,3 +403,22 @@ class ProposalsResponse(BaseModel):
     """List response for Project proposals."""
 
     proposals: list[ProposalResponse]
+
+
+class OrgDeliveryResponse(BaseModel):
+    """Organization-internal view of one accepted Project delivery workspace."""
+
+    proposal_id: UUID
+    project_id: UUID
+    project_title: str
+    project_status: str
+    milestone_plan_status: str
+    delivering_member_id: UUID | None
+    accepted_at: datetime | None
+    created_at: datetime
+
+
+class OrgDeliveriesResponse(BaseModel):
+    """List of active organization delivery workspaces."""
+
+    deliveries: list[OrgDeliveryResponse]

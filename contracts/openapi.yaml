@@ -9331,6 +9331,194 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/proposals:
+    post:
+      tags:
+      - Projects
+      summary: Submit organization Proposal
+      description: Submit a Proposal under the organization contributor identity as
+        an organization owner or admin while the contributor capability is active.
+      operationId: submit_org_proposal_v1_orgs__org_id__projects__project_id__proposals_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgProposalCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/proposals/{proposal_id}/reassign:
+    post:
+      tags:
+      - Projects
+      summary: Reassign organization delivery member
+      description: Reassign the staffed organization delivery member for accepted
+        work before funded work has started.
+      operationId: reassign_org_proposal_v1_orgs__org_id__proposals__proposal_id__reassign_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: proposal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Proposal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgProposalReassignRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/proposals/{proposal_id}:
+    delete:
+      tags:
+      - Projects
+      summary: Withdraw organization Proposal
+      description: Withdraw a pending Proposal submitted under the organization contributor
+        identity.
+      operationId: withdraw_org_proposal_v1_orgs__org_id__proposals__proposal_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: proposal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Proposal Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/proposals:
+    get:
+      tags:
+      - Projects
+      summary: List organization Proposals
+      description: List Proposals submitted under the organization identity.
+      operationId: list_org_proposals_v1_orgs__org_id__proposals_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/deliveries:
+    get:
+      tags:
+      - Projects
+      summary: List organization deliveries
+      description: List accepted Project workspaces for the organization. Owners and
+        admins see every accepted workspace; plain members see only work staffed to
+        themselves.
+      operationId: list_org_deliveries_v1_orgs__org_id__deliveries_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgDeliveriesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/partner/catalog:
     get:
       tags:
@@ -14493,9 +14681,17 @@ components:
           format: uuid
           title: Milestone Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         name:
           type: string
           title: Name
@@ -18342,6 +18538,65 @@ components:
       - updated_at
       title: OrgCapabilityResponse
       description: One organization capability row.
+    OrgDeliveriesResponse:
+      properties:
+        deliveries:
+          items:
+            $ref: '#/components/schemas/OrgDeliveryResponse'
+          type: array
+          title: Deliveries
+      type: object
+      required:
+      - deliveries
+      title: OrgDeliveriesResponse
+      description: List of active organization delivery workspaces.
+    OrgDeliveryResponse:
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+          title: Proposal Id
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        project_title:
+          type: string
+          title: Project Title
+        project_status:
+          type: string
+          title: Project Status
+        milestone_plan_status:
+          type: string
+          title: Milestone Plan Status
+        delivering_member_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Delivering Member Id
+        accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Accepted At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - proposal_id
+      - project_id
+      - project_title
+      - project_status
+      - milestone_plan_status
+      - delivering_member_id
+      - accepted_at
+      - created_at
+      title: OrgDeliveryResponse
+      description: Organization-internal view of one accepted Project delivery workspace.
     OrgInvitationCreateRequest:
       properties:
         email:
@@ -18621,6 +18876,61 @@ components:
         \nThe organization's registered ``country`` is authoritative for provider\n\
         routing, so \u2014 unlike the individual request \u2014 no country is accepted\
         \ here."
+    OrgProposalCreateRequest:
+      properties:
+        scope:
+          type: string
+          maxLength: 10000
+          minLength: 10
+          title: Scope
+        budget:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+          title: Budget
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: USD
+        timeline_days:
+          type: integer
+          maximum: 3650.0
+          exclusiveMinimum: 0.0
+          title: Timeline Days
+        deliverables:
+          items:
+            $ref: '#/components/schemas/DeliverableSpec'
+          type: array
+          minItems: 1
+          title: Deliverables
+        delivering_member_id:
+          type: string
+          format: uuid
+          title: Delivering Member Id
+      type: object
+      required:
+      - scope
+      - budget
+      - timeline_days
+      - deliverables
+      - delivering_member_id
+      title: OrgProposalCreateRequest
+      description: Organization-admin request body for submitting an org Proposal.
+    OrgProposalReassignRequest:
+      properties:
+        delivering_member_id:
+          type: string
+          format: uuid
+          title: Delivering Member Id
+      type: object
+      required:
+      - delivering_member_id
+      title: OrgProposalReassignRequest
+      description: Organization-admin request body for reassigning staffed delivery.
     OrgReassignReviewerRequest:
       properties:
         reviewing_member_id:
@@ -20444,9 +20754,17 @@ components:
           format: uuid
           title: Project Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         contributor_name:
           anyOf:
           - type: string

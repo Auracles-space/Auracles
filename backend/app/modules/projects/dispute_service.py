@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -61,6 +62,30 @@ def _ensure_project_member(project: Project, proposal: Proposal, user_id: UUID) 
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Project members can access disputes.",
         )
+
+
+async def _proposal_workspace_user_id(
+    db: AsyncSession,
+    *,
+    proposal: Proposal,
+) -> UUID | None:
+    """Resolve the user currently representing the accepted Proposal."""
+    if proposal.contributor_id is not None:
+        return proposal.contributor_id
+
+    from app.modules.organizations.models import OrgMember
+
+    return cast(
+        UUID | None,
+        await db.scalar(
+        select(OrgMember.user_id)
+        .where(
+            OrgMember.id == proposal.delivering_member_id,
+            OrgMember.org_id == proposal.contributor_org_id,
+        )
+        .limit(1)
+        ),
+    )
 
 
 async def _load_project_with_accepted_proposal(
@@ -305,10 +330,11 @@ async def create_dispute(
         await db.flush()
         project.status = "disputed"
         milestone.status = "disputed"
+        proposal_user_id = await _proposal_workspace_user_id(db, proposal=proposal)
         notify_user_ids = [
             user_id
-            for user_id in (project.operator_id, proposal.contributor_id)
-            if user_id != actor_id
+            for user_id in (project.operator_id, proposal_user_id)
+            if user_id is not None and user_id != actor_id
         ]
         db.add(
             WorkspaceMessage(
@@ -699,7 +725,10 @@ async def resolve_dispute(
         dispute.resolution_notes = resolution_notes.strip()
         dispute.resolved_at = now
         await _recompute_project_status(db, project=project, now=now)
-        notify_user_ids = [project.operator_id, proposal.contributor_id]
+        proposal_user_id = await _proposal_workspace_user_id(db, proposal=proposal)
+        notify_user_ids = [project.operator_id]
+        if proposal_user_id is not None:
+            notify_user_ids.append(proposal_user_id)
         db.add(
             WorkspaceMessage(
                 project_id=project.id,

@@ -432,6 +432,7 @@ async def remove_member(
             )
 
         await _guard_and_release_member_reviews(db, member_id=target.id)
+        await _guard_and_release_member_deliveries(db, member_id=target.id)
 
         removed_user_id = target.user_id
         await db.delete(target)
@@ -509,6 +510,53 @@ async def _guard_and_release_member_reviews(
             action="attestation_reviewer_unassigned",
             target_type="attestation",
             target_id=attestation_id,
+            metadata={"reason": "member_removed", "member_id": str(member_id)},
+        )
+
+
+async def _guard_and_release_member_deliveries(
+    db: AsyncSession,
+    *,
+    member_id: UUID,
+) -> None:
+    """Block removal on started deliveries; unassign unstarted staffed work."""
+    from app.modules.projects.models import Milestone, Proposal
+
+    started = await db.scalar(
+        select(func.count())
+        .select_from(Proposal)
+        .join(Milestone, Milestone.project_id == Proposal.project_id)
+        .where(
+            Proposal.delivering_member_id == member_id,
+            Proposal.status == "accepted",
+            Milestone.status != "pending",
+        )
+    )
+    if started and int(started) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This member has a started Project delivery. A platform admin "
+                "must resolve it before removal."
+            ),
+        )
+
+    result = await db.execute(
+        update(Proposal)
+        .where(
+            Proposal.delivering_member_id == member_id,
+            Proposal.status.in_(("pending", "accepted")),
+        )
+        .values(delivering_member_id=None)
+        .returning(Proposal.id)
+    )
+    for (proposal_id,) in result.all():
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="proposal_delivering_member_unassigned",
+            target_type="proposal",
+            target_id=proposal_id,
             metadata={"reason": "member_removed", "member_id": str(member_id)},
         )
 

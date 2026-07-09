@@ -23,7 +23,9 @@ from app.modules.organizations.models import (
 from app.modules.organizations.schemas import ContributorOrgDirectoryEntry
 
 
-def _public_directory_query() -> Select[tuple[Organization, OrgContributorProfile, int, int]]:
+def _public_directory_query() -> Select[
+    tuple[Organization, OrgContributorProfile, int, int]
+]:
     """Build the shared query for active public contributor organizations."""
     published_framework_count = (
         select(func.count(Framework.id))

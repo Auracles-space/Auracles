@@ -41,6 +41,7 @@ from app.modules.organizations.router import (
     router as organizations_router,
 )
 from app.modules.profiles.router import router as profiles_router
+from app.modules.projects.router import org_router as org_projects_router
 from app.modules.projects.router import router as projects_router
 from app.modules.realtime.gateway import router as realtime_router
 from app.modules.reputation.router import router as reputation_router
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
     application.include_router(admin_org_attestor_router, prefix="/v1")
     application.include_router(profiles_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
+    application.include_router(org_projects_router, prefix="/v1")
     application.include_router(partner_router, prefix="/v1")
     application.include_router(realtime_router, prefix="/v1")
     application.include_router(reputation_router, prefix="/v1")

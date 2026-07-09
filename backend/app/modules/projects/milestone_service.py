@@ -113,6 +113,60 @@ def _ensure_accepted_contributor(proposal: Proposal, contributor_id: UUID) -> No
         )
 
 
+async def _resolve_workspace_contributor_seller(
+    db: AsyncSession,
+    *,
+    proposal: Proposal,
+    contributor_id: UUID,
+) -> tuple[UUID | None, UUID | None]:
+    """Authorize a workspace contributor and return the Deliverable seller stamp."""
+    if proposal.contributor_org_id is None:
+        _ensure_accepted_contributor(proposal, contributor_id)
+        return proposal.contributor_id, None
+
+    from app.modules.organizations.models import OrgMember
+
+    staffed_member = await db.scalar(
+        select(OrgMember).where(
+            OrgMember.id == proposal.delivering_member_id,
+            OrgMember.org_id == proposal.contributor_org_id,
+        )
+    )
+    if staffed_member is None or staffed_member.user_id != contributor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the staffed delivery member can manage Milestones.",
+        )
+    return None, proposal.contributor_org_id
+
+
+async def _proposal_workspace_user_id(
+    db: AsyncSession,
+    *,
+    proposal: Proposal,
+) -> UUID:
+    """Resolve the user currently representing the accepted Proposal."""
+    if proposal.contributor_id is not None:
+        return proposal.contributor_id
+
+    from app.modules.organizations.models import OrgMember
+
+    user_id = await db.scalar(
+        select(OrgMember.user_id)
+        .where(
+            OrgMember.id == proposal.delivering_member_id,
+            OrgMember.org_id == proposal.contributor_org_id,
+        )
+        .limit(1)
+    )
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Accepted Proposal is missing its staffed delivery member.",
+        )
+    return user_id
+
+
 def _ensure_project_member(project: Project, proposal: Proposal, user_id: UUID) -> None:
     """Raise unless the current user belongs to the accepted Project workspace."""
     if user_id not in {project.operator_id, proposal.contributor_id}:
@@ -399,7 +453,7 @@ async def _create_pending_milestone_transaction(
     customer_id: str,
     project_id: UUID,
     milestone_id: UUID,
-) -> tuple[UUID, UUID, Decimal, str]:
+) -> tuple[UUID, UUID | None, Decimal, str]:
     """Create the pending local transaction for a Milestone funding intent."""
     if db.in_transaction():
         await db.rollback()
@@ -1064,7 +1118,13 @@ async def submit_deliverable(
             project_id=project_id,
             milestone_id=milestone_id,
         )
-        _ensure_accepted_contributor(proposal, contributor_id)
+        deliverable_contributor_id, deliverable_contributor_org_id = (
+            await _resolve_workspace_contributor_seller(
+                db,
+                proposal=proposal,
+                contributor_id=contributor_id,
+            )
+        )
         if milestone.status not in {"funded", "revision_requested"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1072,7 +1132,8 @@ async def submit_deliverable(
             )
         deliverable = Deliverable(
             milestone_id=milestone.id,
-            contributor_id=contributor_id,
+            contributor_id=deliverable_contributor_id,
+            contributor_org_id=deliverable_contributor_org_id,
             name=payload.name,
             description=payload.description,
             file_keys=payload.file_keys,
@@ -1131,10 +1192,12 @@ async def request_deliverable_revision(
         await db.rollback()
 
     async with db.begin():
-        project, _, milestone = await _load_project_milestone_for_workspace_action(
-            db=db,
-            project_id=project_id,
-            milestone_id=milestone_id,
+        project, proposal, milestone = (
+            await _load_project_milestone_for_workspace_action(
+                db=db,
+                project_id=project_id,
+                milestone_id=milestone_id,
+            )
         )
         if project.operator_id != operator_id:
             raise HTTPException(
@@ -1177,7 +1240,9 @@ async def request_deliverable_revision(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
-        revision_contributor_id = deliverable.contributor_id
+        revision_contributor_id = await _proposal_workspace_user_id(
+            db, proposal=proposal
+        )
         await db.flush()
         await db.refresh(deliverable)
 
@@ -1205,10 +1270,12 @@ async def approve_deliverable(
 
     now = datetime.now(UTC)
     async with db.begin():
-        project, _, milestone = await _load_project_milestone_for_workspace_action(
-            db=db,
-            project_id=project_id,
-            milestone_id=milestone_id,
+        project, proposal, milestone = (
+            await _load_project_milestone_for_workspace_action(
+                db=db,
+                project_id=project_id,
+                milestone_id=milestone_id,
+            )
         )
         if project.operator_id != operator_id:
             raise HTTPException(
@@ -1272,7 +1339,9 @@ async def approve_deliverable(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
-        approved_contributor_id = deliverable.contributor_id
+        approved_contributor_id = await _proposal_workspace_user_id(
+            db, proposal=proposal
+        )
         await db.flush()
         await db.refresh(deliverable)
 
