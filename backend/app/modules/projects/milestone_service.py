@@ -41,6 +41,7 @@ from app.modules.projects.schemas import (
     MilestonesResponse,
     MilestoneUpdateRequest,
 )
+from app.modules.projects.workspace import workspace_contributor_user_id
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.tasks.deliverable_scan import scan_deliverable_upload
 
@@ -104,9 +105,16 @@ async def _load_project_with_accepted_proposal(
     return project, proposal
 
 
-def _ensure_accepted_contributor(proposal: Proposal, contributor_id: UUID) -> None:
-    """Raise unless the current user owns the accepted Proposal."""
-    if proposal.contributor_id != contributor_id:
+async def _ensure_accepted_contributor(
+    db: AsyncSession, proposal: Proposal, contributor_id: UUID
+) -> None:
+    """Raise unless the current user represents the accepted Proposal.
+
+    Admits the individual Contributor for user-owned Proposals and the staffed
+    delivering member for organization-owned Proposals.
+    """
+    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+    if workspace_user_id is None or workspace_user_id != contributor_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the accepted Contributor can manage Milestones.",
@@ -120,23 +128,9 @@ async def _resolve_workspace_contributor_seller(
     contributor_id: UUID,
 ) -> tuple[UUID | None, UUID | None]:
     """Authorize a workspace contributor and return the Deliverable seller stamp."""
+    await _ensure_accepted_contributor(db, proposal, contributor_id)
     if proposal.contributor_org_id is None:
-        _ensure_accepted_contributor(proposal, contributor_id)
         return proposal.contributor_id, None
-
-    from app.modules.organizations.models import OrgMember
-
-    staffed_member = await db.scalar(
-        select(OrgMember).where(
-            OrgMember.id == proposal.delivering_member_id,
-            OrgMember.org_id == proposal.contributor_org_id,
-        )
-    )
-    if staffed_member is None or staffed_member.user_id != contributor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the staffed delivery member can manage Milestones.",
-        )
     return None, proposal.contributor_org_id
 
 
@@ -146,19 +140,7 @@ async def _proposal_workspace_user_id(
     proposal: Proposal,
 ) -> UUID:
     """Resolve the user currently representing the accepted Proposal."""
-    if proposal.contributor_id is not None:
-        return proposal.contributor_id
-
-    from app.modules.organizations.models import OrgMember
-
-    user_id = await db.scalar(
-        select(OrgMember.user_id)
-        .where(
-            OrgMember.id == proposal.delivering_member_id,
-            OrgMember.org_id == proposal.contributor_org_id,
-        )
-        .limit(1)
-    )
+    user_id = await workspace_contributor_user_id(db, proposal=proposal)
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -167,9 +149,12 @@ async def _proposal_workspace_user_id(
     return user_id
 
 
-def _ensure_project_member(project: Project, proposal: Proposal, user_id: UUID) -> None:
+async def _ensure_project_member(
+    db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
+) -> None:
     """Raise unless the current user belongs to the accepted Project workspace."""
-    if user_id not in {project.operator_id, proposal.contributor_id}:
+    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+    if user_id not in {project.operator_id, workspace_user_id}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Project members can view Milestones.",
@@ -313,7 +298,7 @@ async def list_deliverables(
         lock_project=False,
         lock_milestone=False,
     )
-    _ensure_project_member(project, proposal, user.id)
+    await _ensure_project_member(db, project, proposal, user.id)
     rows = await db.execute(
         select(Deliverable)
         .where(Deliverable.milestone_id == milestone.id)
@@ -357,7 +342,7 @@ async def create_deliverable_download(
             lock_project=False,
             lock_milestone=False,
         )
-        _ensure_project_member(project, proposal, user_id)
+        await _ensure_project_member(db, project, proposal, user_id)
         deliverable = await db.scalar(
             select(Deliverable).where(
                 Deliverable.id == deliverable_id,
@@ -684,7 +669,7 @@ async def create_milestone(
             lock_project=True,
             lock_proposal=True,
         )
-        _ensure_accepted_contributor(proposal, contributor_id)
+        await _ensure_accepted_contributor(db, proposal, contributor_id)
         _ensure_draft_plan(project)
         await _ensure_sequence_available(
             db=db,
@@ -734,7 +719,7 @@ async def list_milestones(
         db=db,
         project_id=project_id,
     )
-    _ensure_project_member(project, proposal, user.id)
+    await _ensure_project_member(db, project, proposal, user.id)
     rows = await db.execute(
         select(Milestone)
         .where(Milestone.project_id == project.id)
@@ -763,7 +748,7 @@ async def update_milestone(
             lock_project=True,
             lock_proposal=True,
         )
-        _ensure_accepted_contributor(proposal, contributor_id)
+        await _ensure_accepted_contributor(db, proposal, contributor_id)
         _ensure_draft_plan(project)
         milestone = await _load_pending_milestone(
             db=db,
@@ -825,7 +810,7 @@ async def delete_milestone(
             lock_project=True,
             lock_proposal=True,
         )
-        _ensure_accepted_contributor(proposal, contributor_id)
+        await _ensure_accepted_contributor(db, proposal, contributor_id)
         _ensure_draft_plan(project)
         milestone = await _load_pending_milestone(
             db=db,
@@ -861,7 +846,7 @@ async def finalize_milestone_plan(
             lock_project=True,
             lock_proposal=True,
         )
-        _ensure_accepted_contributor(proposal, contributor_id)
+        await _ensure_accepted_contributor(db, proposal, contributor_id)
         _ensure_draft_plan(project)
 
         total = await db.scalar(
@@ -933,7 +918,7 @@ async def reopen_milestone_plan(
             lock_project=True,
             lock_proposal=True,
         )
-        _ensure_project_member(project, proposal, user_id)
+        await _ensure_project_member(db, project, proposal, user_id)
         if project.milestone_plan_status != "finalized":
             raise HTTPException(
                 status_code=409,
@@ -1370,7 +1355,7 @@ async def build_framework_prefill_from_deliverable(
         lock_project=False,
         lock_milestone=False,
     )
-    _ensure_accepted_contributor(proposal, contributor.id)
+    await _ensure_accepted_contributor(db, proposal, contributor.id)
     deliverable = await db.scalar(
         select(Deliverable).where(
             Deliverable.id == deliverable_id,

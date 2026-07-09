@@ -38,6 +38,7 @@ from app.modules.projects.schemas import (
     ProposalResponse,
     ProposalsResponse,
 )
+from app.modules.projects.workspace import workspace_contributor_user_id
 from app.modules.workspace.models import WorkspaceMessage
 
 ACTIVE_PROJECT_STATUSES = {
@@ -145,19 +146,26 @@ def _normalize_amendment_after(
     return normalized
 
 
-def _is_project_member(project: Project, proposal: Proposal, user_id: UUID) -> bool:
-    """Return whether a user is the Project Operator or accepted Contributor."""
-    return user_id in {project.operator_id, proposal.contributor_id}
+async def _is_project_member(
+    db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
+) -> bool:
+    """Return whether a user is the Project Operator or accepted Contributor side."""
+    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+    return user_id in {project.operator_id, workspace_user_id}
 
 
-def _is_counterparty(
+async def _is_counterparty(
+    db: AsyncSession,
     project: Project,
     proposal: Proposal,
     actor_id: UUID,
     proposed_by: UUID,
 ) -> bool:
     """Return whether actor is the other Project party for an amendment."""
-    return _is_project_member(project, proposal, actor_id) and actor_id != proposed_by
+    return (
+        await _is_project_member(db, project, proposal, actor_id)
+        and actor_id != proposed_by
+    )
 
 
 def _workspace_system_message(
@@ -710,19 +718,7 @@ def _proposal_with_name(
 
 async def _proposal_workspace_user_id(db: AsyncSession, proposal: Proposal) -> UUID:
     """Resolve the user currently representing the Proposal in the workspace."""
-    if proposal.contributor_id is not None:
-        return proposal.contributor_id
-
-    from app.modules.organizations.models import OrgMember
-
-    user_id = await db.scalar(
-        select(OrgMember.user_id)
-        .where(
-            OrgMember.id == proposal.delivering_member_id,
-            OrgMember.org_id == proposal.contributor_org_id,
-        )
-        .limit(1)
-    )
+    user_id = await workspace_contributor_user_id(db, proposal=proposal)
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -950,14 +946,15 @@ async def cancel_acceptance(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Accepted Proposal is not available.",
             )
-        if user_id not in {project.operator_id, proposal.contributor_id}:
+        workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+        if user_id not in {project.operator_id, workspace_user_id}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Project members can cancel the acceptance.",
             )
 
         now = datetime.now(UTC)
-        if user_id == proposal.contributor_id:
+        if user_id == workspace_user_id:
             proposal.status = "withdrawn"
             proposal.withdrawn_at = now
         else:
@@ -1132,7 +1129,7 @@ async def propose_amendment(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Amendments require an accepted Proposal.",
             )
-        if not _is_project_member(project, proposal, actor_id):
+        if not await _is_project_member(db, project, proposal, actor_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Project members can propose amendments.",
@@ -1227,7 +1224,9 @@ async def accept_amendment(
             proposal_id=proposal_id,
             amendment_id=amendment_id,
         )
-        if not _is_counterparty(project, proposal, actor_id, amendment.proposed_by):
+        if not await _is_counterparty(
+            db, project, proposal, actor_id, amendment.proposed_by
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the amendment counterparty can accept it.",
@@ -1297,7 +1296,9 @@ async def reject_amendment(
             proposal_id=proposal_id,
             amendment_id=amendment_id,
         )
-        if not _is_counterparty(project, proposal, actor_id, amendment.proposed_by):
+        if not await _is_counterparty(
+            db, project, proposal, actor_id, amendment.proposed_by
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the amendment counterparty can reject it.",

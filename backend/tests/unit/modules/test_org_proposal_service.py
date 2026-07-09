@@ -25,7 +25,10 @@ from app.modules.organizations.service import remove_member
 from app.modules.projects import milestone_service
 from app.modules.projects import service as project_service
 from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
-from app.modules.projects.schemas import DeliverableSubmitRequest
+from app.modules.projects.schemas import (
+    DeliverableSubmitRequest,
+    MilestoneCreateRequest,
+)
 from tests.support.db_cleanup import clear_identity_state_async
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -748,4 +751,115 @@ async def test_non_delivering_member_cannot_submit_org_deliverable(
                 ),
             )
 
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delivering_member_can_build_and_finalize_milestone_plan(
+    migrated_database: None,
+    org_project_state: None,
+) -> None:
+    """The staffed member drives the org workspace milestone plan end to end.
+
+    Regression: before org-aware workspace guards, the accepted-Contributor
+    side of an org Proposal (contributor_id NULL) was rejected by every
+    milestone endpoint, so the plan could never be built or funded.
+    """
+    del migrated_database, org_project_state
+    operator = await _create_user("project-operator")
+    owner = await _create_user("project-owner")
+    staffed_user = await _create_user("project-delivery")
+    organization = await _create_organization(owner)
+    staffed_member_id = await _add_member(organization.id, staffed_user.id)
+    await _set_contributor_capability(organization.id)
+    project = await _create_project(operator.id)
+
+    async with async_session_factory() as session:
+        proposal = await project_service.submit_org_proposal(
+            db=session,
+            org_id=organization.id,
+            actor_id=owner.id,
+            project_id=project.id,
+            delivering_member_id=staffed_member_id,
+            scope="Org proposal scope that is long enough.",
+            budget=Decimal("1500.00"),
+            timeline_days=14,
+            deliverables=[{"name": "Operating model", "description": "Model"}],
+        )
+    await _accept_proposal(project.id, proposal.id)
+
+    async with async_session_factory() as session:
+        milestone = await milestone_service.create_milestone(
+            db=session,
+            contributor=staffed_user,
+            project_id=project.id,
+            payload=MilestoneCreateRequest(
+                sequence=1,
+                name="Discovery",
+                description="Initial delivery milestone.",
+                budget=Decimal("1500.00"),
+            ),
+        )
+    assert milestone.project_id == project.id
+
+    async with async_session_factory() as session:
+        listed = await milestone_service.list_milestones(
+            db=session,
+            user=staffed_user,
+            project_id=project.id,
+        )
+    assert [row.id for row in listed.milestones] == [milestone.id]
+
+    async with async_session_factory() as session:
+        finalized = await milestone_service.finalize_milestone_plan(
+            db=session,
+            contributor=staffed_user,
+            project_id=project.id,
+        )
+    assert finalized.milestone_plan_status == "finalized"
+
+
+@pytest.mark.asyncio
+async def test_non_member_cannot_build_org_milestone_plan(
+    migrated_database: None,
+    org_project_state: None,
+) -> None:
+    """A user outside the org and Project cannot draft its Milestone plan."""
+    del migrated_database, org_project_state
+    operator = await _create_user("project-operator")
+    owner = await _create_user("project-owner")
+    staffed_user = await _create_user("project-delivery")
+    outsider = await _create_user("project-outsider")
+    organization = await _create_organization(owner)
+    staffed_member_id = await _add_member(organization.id, staffed_user.id)
+    await _set_contributor_capability(organization.id)
+    project = await _create_project(operator.id)
+
+    async with async_session_factory() as session:
+        proposal = await project_service.submit_org_proposal(
+            db=session,
+            org_id=organization.id,
+            actor_id=owner.id,
+            project_id=project.id,
+            delivering_member_id=staffed_member_id,
+            scope="Org proposal scope that is long enough.",
+            budget=Decimal("1500.00"),
+            timeline_days=14,
+            deliverables=[{"name": "Operating model", "description": "Model"}],
+        )
+    await _accept_proposal(project.id, proposal.id)
+
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await milestone_service.create_milestone(
+                db=session,
+                contributor=outsider,
+                project_id=project.id,
+                payload=MilestoneCreateRequest(
+                    sequence=1,
+                    name="Discovery",
+                    description="Initial delivery milestone.",
+                    budget=Decimal("1500.00"),
+                ),
+            )
     assert exc.value.status_code == 403

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -41,6 +40,7 @@ from app.modules.projects.schemas import (
     DisputeResponse,
     DisputesResponse,
 )
+from app.modules.projects.workspace import workspace_contributor_user_id
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
@@ -55,9 +55,12 @@ def _normalise_money(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"))
 
 
-def _ensure_project_member(project: Project, proposal: Proposal, user_id: UUID) -> None:
+async def _ensure_project_member(
+    db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
+) -> None:
     """Raise unless a user belongs to the Project workspace."""
-    if user_id not in {project.operator_id, proposal.contributor_id}:
+    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+    if user_id not in {project.operator_id, workspace_user_id}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Project members can access disputes.",
@@ -70,22 +73,7 @@ async def _proposal_workspace_user_id(
     proposal: Proposal,
 ) -> UUID | None:
     """Resolve the user currently representing the accepted Proposal."""
-    if proposal.contributor_id is not None:
-        return proposal.contributor_id
-
-    from app.modules.organizations.models import OrgMember
-
-    return cast(
-        UUID | None,
-        await db.scalar(
-        select(OrgMember.user_id)
-        .where(
-            OrgMember.id == proposal.delivering_member_id,
-            OrgMember.org_id == proposal.contributor_org_id,
-        )
-        .limit(1)
-        ),
-    )
+    return await workspace_contributor_user_id(db, proposal=proposal)
 
 
 async def _load_project_with_accepted_proposal(
@@ -142,7 +130,7 @@ async def _load_project_member_context(
         lock_project=lock_project,
         lock_proposal=lock_proposal,
     )
-    _ensure_project_member(project, proposal, user_id)
+    await _ensure_project_member(db, project, proposal, user_id)
     return project, proposal
 
 
