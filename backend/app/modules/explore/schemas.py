@@ -65,8 +65,15 @@ class ExploreFrameworkCard(BaseModel):
     """Public catalog card for one published Framework."""
 
     id: UUID
-    contributor_id: UUID
+    contributor_id: UUID | None
+    contributor_org_id: UUID | None = None
     contributor_name: str
+    contributor_slug: str | None = None
+    contributor_verification_level: int | None = None
+    contributor_reputation_score: Decimal | None = Field(
+        default=None,
+        decimal_places=2,
+    )
     title: str
     description: str
     version: str

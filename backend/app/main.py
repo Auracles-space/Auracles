@@ -35,6 +35,9 @@ from app.modules.organizations.router import (
     invitation_router as org_invitation_router,
 )
 from app.modules.organizations.router import (
+    public_router as contributor_orgs_router,
+)
+from app.modules.organizations.router import (
     router as organizations_router,
 )
 from app.modules.profiles.router import router as profiles_router
@@ -97,6 +100,7 @@ def create_app() -> FastAPI:
     application.include_router(library_router, prefix="/v1")
     application.include_router(notifications_router, prefix="/v1")
     application.include_router(organizations_router, prefix="/v1")
+    application.include_router(contributor_orgs_router, prefix="/v1")
     application.include_router(org_invitation_router, prefix="/v1")
     application.include_router(admin_orgs_router, prefix="/v1")
     application.include_router(admin_org_attestor_router, prefix="/v1")

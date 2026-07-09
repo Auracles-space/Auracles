@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import cast
@@ -10,7 +11,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
-from sqlalchemy import Select, desc, func, or_, select
+from sqlalchemy import Select, and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -41,6 +42,12 @@ from app.modules.explore.schemas import (
 )
 from app.modules.frameworks.models import Framework, License, Review
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.frameworks.ownership import resolve_framework_seller
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgContributorProfile,
+)
 from app.modules.reputation import service as reputation_service
 
 PREVIEW_URL_TTL_SECONDS = 900
@@ -49,6 +56,18 @@ PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
 PUBLIC_POSITIVE_ATTESTATION_OUTCOMES = ("approved", "conditional")
 PUBLIC_ATTESTATION_REPORT_STATUSES = ("report_submitted", "closed")
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
+
+
+@dataclass(frozen=True)
+class PublicSellerIdentity:
+    """Public seller identity resolved for one Framework card or detail view."""
+
+    contributor_id: UUID | None
+    contributor_org_id: UUID | None
+    contributor_name: str
+    contributor_slug: str | None
+    contributor_verification_level: int | None
+    contributor_reputation_score: Decimal | None
 
 
 def _safe_public_url(value: str | None) -> str | None:
@@ -75,15 +94,19 @@ def _card_from_framework(
     rarity_score: Decimal | None,
     attestation_badge: ExploreAttestationBadge | None,
     review_aggregate: tuple[Decimal | None, int] | None,
-    contributor_name: str,
+    seller_identity: PublicSellerIdentity,
     reputation: dict[str, object] | None = None,
 ) -> ExploreFrameworkCard:
     """Map a published Framework row into a public catalog card."""
     average_review_score, review_count = review_aggregate or (None, 0)
     return ExploreFrameworkCard(
         id=framework.id,
-        contributor_id=framework.contributor_id,
-        contributor_name=contributor_name,
+        contributor_id=seller_identity.contributor_id,
+        contributor_org_id=seller_identity.contributor_org_id,
+        contributor_name=seller_identity.contributor_name,
+        contributor_slug=seller_identity.contributor_slug,
+        contributor_verification_level=seller_identity.contributor_verification_level,
+        contributor_reputation_score=seller_identity.contributor_reputation_score,
         title=framework.title,
         description=framework.description,
         version=framework.version,
@@ -212,16 +235,53 @@ def _search_match(framework: Framework, query: str) -> bool:
 
 def _base_catalog_query(current_user_id: UUID | None) -> Select[tuple[Framework]]:
     """Build the base query for public catalog reads."""
-    query = (
-        select(Framework)
-        .join(User, User.id == Framework.contributor_id)
+    contributor_user_visible = (
+        select(User.id)
         .where(
-            Framework.status == "published",
+            User.id == Framework.contributor_id,
             User.suspended_at.is_(None),
         )
+        .limit(1)
+        .exists()
+    )
+    contributor_org_visible = (
+        select(Organization.id)
+        .join(
+            OrgCapability,
+            and_(
+                OrgCapability.org_id == Organization.id,
+                OrgCapability.capability == "contributor",
+                OrgCapability.status == "active",
+            ),
+        )
+        .where(
+            Organization.id == Framework.contributor_org_id,
+            Organization.suspended_at.is_(None),
+            Organization.deactivated_at.is_(None),
+        )
+        .limit(1)
+        .exists()
+    )
+    query = select(Framework).where(
+        Framework.status == "published",
+        or_(
+            and_(
+                Framework.contributor_id.is_not(None),
+                contributor_user_visible,
+            ),
+            and_(
+                Framework.contributor_org_id.is_not(None),
+                contributor_org_visible,
+            ),
+        ),
     )
     if current_user_id is not None:
-        query = query.where(Framework.contributor_id != current_user_id)
+        query = query.where(
+            or_(
+                Framework.contributor_id.is_(None),
+                Framework.contributor_id != current_user_id,
+            )
+        )
     return query
 
 
@@ -433,6 +493,94 @@ async def _user_display_names(
         select(User.id, User.display_name).where(User.id.in_(user_ids))
     )
     return {user_id: display_name for user_id, display_name in rows.all()}
+
+
+async def _org_seller_rows(
+    db: AsyncSession,
+    org_ids: list[UUID],
+) -> dict[UUID, tuple[str, str, int | None, Decimal | None]]:
+    """Return public org seller fields keyed by organization id."""
+    if not org_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            Organization.id,
+            Organization.name,
+            Organization.slug,
+            OrgContributorProfile.verification_level,
+            OrgContributorProfile.reputation_score,
+        )
+        .join(OrgContributorProfile, OrgContributorProfile.org_id == Organization.id)
+        .where(Organization.id.in_(org_ids))
+    )
+    return {
+        org_id: (
+            name,
+            slug,
+            verification_level,
+            (
+                Decimal(str(reputation_score)).quantize(Decimal("0.01"))
+                if reputation_score is not None
+                else None
+            ),
+        )
+        for org_id, name, slug, verification_level, reputation_score in rows.all()
+    }
+
+
+async def _framework_seller_identities(
+    db: AsyncSession,
+    frameworks: list[Framework],
+) -> dict[UUID, PublicSellerIdentity]:
+    """Resolve public seller identity for each Framework in one batch."""
+    if not frameworks:
+        return {}
+    user_names = await _user_display_names(
+        db,
+        [
+            framework.contributor_id
+            for framework in frameworks
+            if framework.contributor_id is not None
+        ],
+    )
+    org_rows = await _org_seller_rows(
+        db,
+        [
+            framework.contributor_org_id
+            for framework in frameworks
+            if framework.contributor_org_id is not None
+        ],
+    )
+    identities: dict[UUID, PublicSellerIdentity] = {}
+    for framework in frameworks:
+        seller = resolve_framework_seller(framework)
+        if seller.kind == "org" and seller.org_id is not None:
+            name, slug, verification_level, reputation_score = org_rows.get(
+                seller.org_id,
+                ("Contributor Organization", None, None, None),
+            )
+            identities[framework.id] = PublicSellerIdentity(
+                contributor_id=None,
+                contributor_org_id=seller.org_id,
+                contributor_name=name,
+                contributor_slug=slug,
+                contributor_verification_level=verification_level,
+                contributor_reputation_score=reputation_score,
+            )
+            continue
+        identities[framework.id] = PublicSellerIdentity(
+            contributor_id=seller.user_id,
+            contributor_org_id=None,
+            contributor_name=(
+                user_names.get(seller.user_id, "Contributor")
+                if seller.user_id is not None
+                else "Contributor"
+            ),
+            contributor_slug=None,
+            contributor_verification_level=None,
+            contributor_reputation_score=None,
+        )
+    return identities
 
 
 def _public_attestation_status(status_: str, outcome: str | None) -> str | None:
@@ -667,14 +815,7 @@ async def list_catalog_from_filters(
         subject_type="framework",
         subject_ids=[framework.id for framework in frameworks],
     )
-    contributor_names = await _user_display_names(
-        db,
-        [
-            framework.contributor_id
-            for framework in frameworks
-            if framework.contributor_id is not None
-        ],
-    )
+    seller_identities = await _framework_seller_identities(db, frameworks)
     return ExploreFrameworkListResponse(
         items=[
             _card_from_framework(
@@ -682,12 +823,7 @@ async def list_catalog_from_filters(
                 rarity_scores.get(framework.id),
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
-                contributor_names.get(
-                    framework.contributor_id,
-                    "Contributor",
-                )
-                if framework.contributor_id is not None
-                else "Contributor",
+                seller_identities[framework.id],
                 reputations.get(framework.id),
             )
             for framework in frameworks
@@ -957,14 +1093,7 @@ async def list_mixed_catalog(
         subject_type="framework",
         subject_ids=[framework.id for framework in frameworks],
     )
-    framework_contributor_names = await _user_display_names(
-        db,
-        [
-            framework.contributor_id
-            for framework in frameworks
-            if framework.contributor_id is not None
-        ],
-    )
+    framework_seller_identities = await _framework_seller_identities(db, frameworks)
     framework_items: list[ExploreCatalogItem] = [
         _catalog_item_from_framework_card(
             _card_from_framework(
@@ -972,14 +1101,7 @@ async def list_mixed_catalog(
                 rarity_scores.get(framework.id),
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
-                (
-                    framework_contributor_names.get(
-                        framework.contributor_id,
-                        "Contributor",
-                    )
-                )
-                if framework.contributor_id is not None
-                else "Contributor",
+                framework_seller_identities[framework.id],
                 reputations.get(framework.id),
             )
         )
@@ -1119,10 +1241,7 @@ async def get_detail(
     reputations = await reputation_service.summaries_for_subjects(
         db, subject_type="framework", subject_ids=[framework.id]
     )
-    contributor_names = await _user_display_names(
-        db,
-        [framework.contributor_id] if framework.contributor_id is not None else [],
-    )
+    seller_identities = await _framework_seller_identities(db, [framework])
     preview_artifact = next(
         (
             artifact
@@ -1136,9 +1255,7 @@ async def get_detail(
         rarity_scores.get(framework.id),
         attestation_badges.get(framework.id),
         review_aggregates.get(framework.id),
-        contributor_names.get(framework.contributor_id, "Contributor")
-        if framework.contributor_id is not None
-        else "Contributor",
+        seller_identities[framework.id],
         reputations.get(framework.id),
     )
     card.owned = has_active_license
@@ -1184,13 +1301,7 @@ async def related_frameworks(
 ) -> list[ExploreFrameworkCard]:
     """Return up to six related published Frameworks."""
     source = await db.scalar(
-        select(Framework)
-        .join(User, User.id == Framework.contributor_id)
-        .where(
-            Framework.id == framework_id,
-            Framework.status == "published",
-            User.suspended_at.is_(None),
-        )
+        _base_catalog_query(current_user_id).where(Framework.id == framework_id)
     )
     if source is None:
         raise HTTPException(
@@ -1225,23 +1336,14 @@ async def related_frameworks(
         subject_type="framework",
         subject_ids=[framework.id for framework in ranked],
     )
-    contributor_names = await _user_display_names(
-        db,
-        [
-            framework.contributor_id
-            for framework in ranked
-            if framework.contributor_id is not None
-        ],
-    )
+    seller_identities = await _framework_seller_identities(db, ranked)
     return [
         _card_from_framework(
             framework,
             rarity_scores.get(framework.id),
             attestation_badges.get(framework.id),
             review_aggregates.get(framework.id),
-            contributor_names.get(framework.contributor_id, "Contributor")
-            if framework.contributor_id is not None
-            else "Contributor",
+            seller_identities[framework.id],
             reputations.get(framework.id),
         )
         for framework in ranked
@@ -1352,7 +1454,14 @@ async def get_contributor_profile(
                 rarity_scores.get(framework.id),
                 attestation_badges.get(framework.id),
                 review_aggregates.get(framework.id),
-                contributor.display_name,
+                PublicSellerIdentity(
+                    contributor_id=contributor.id,
+                    contributor_org_id=None,
+                    contributor_name=contributor.display_name,
+                    contributor_slug=None,
+                    contributor_verification_level=None,
+                    contributor_reputation_score=None,
+                ),
                 reputations.get(framework.id),
             )
             for framework in frameworks
@@ -1401,28 +1510,14 @@ async def public_framework_cards(
     reputations = await reputation_service.summaries_for_subjects(
         db, subject_type="framework", subject_ids=ids
     )
-    contributor_ids = {
-        framework.contributor_id
-        for framework in frameworks
-        if framework.contributor_id is not None
-    }
-    names: dict[UUID, str] = {
-        row[0]: row[1]
-        for row in (
-            await db.execute(
-                select(User.id, User.display_name).where(User.id.in_(contributor_ids))
-            )
-        ).all()
-    }
+    seller_identities = await _framework_seller_identities(db, frameworks)
     return {
         framework.id: _card_from_framework(
             framework,
             rarity_scores.get(framework.id),
             attestation_badges.get(framework.id),
             review_aggregates.get(framework.id),
-            names.get(framework.contributor_id, "")
-            if framework.contributor_id is not None
-            else "",
+            seller_identities[framework.id],
             reputations.get(framework.id),
         )
         for framework in frameworks

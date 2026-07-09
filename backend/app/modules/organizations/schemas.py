@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -148,6 +149,28 @@ class PublicOrganizationResponse(BaseModel):
     active_capabilities: list[str]
     member_count: int
     created_at: datetime
+
+
+class ContributorOrgDirectoryEntry(BaseModel):
+    """Public contributor-organization directory row safe for anonymous reads."""
+
+    org_id: UUID
+    name: str
+    slug: str
+    logo_key: str | None
+    country: str
+    website: str | None
+    description: str | None
+    verification_level: int
+    published_framework_count: int
+    member_count: int
+    reputation: Decimal | None = Field(default=None, decimal_places=2)
+
+
+class ContributorOrgDirectoryResponse(BaseModel):
+    """Public list response for contributor organizations."""
+
+    contributors: list[ContributorOrgDirectoryEntry]
 
 
 class OrgMemberResponse(BaseModel):

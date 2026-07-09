@@ -7388,6 +7388,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/contributors:
+    get:
+      tags:
+      - Organizations
+      summary: List public contributor organizations
+      description: Return active contributor organizations for public directory browsing,
+        including only org identity, verification, reputation, and aggregate counts.
+      operationId: list_public_contributor_orgs_v1_contributors_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorOrgDirectoryResponse'
+  /v1/contributors/{org_slug}:
+    get:
+      tags:
+      - Organizations
+      summary: Get public contributor organization profile
+      description: Return one active contributor organization's public profile without
+        member identities or internal staffing metadata.
+      operationId: get_public_contributor_org_v1_contributors__org_slug__get
+      parameters:
+      - name: org_slug
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Slug
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorOrgDirectoryEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -13918,6 +13961,78 @@ components:
       - accepted_at
       title: ConsentLogItem
       description: Single consent log entry returned to the owning user.
+    ContributorOrgDirectoryEntry:
+      properties:
+        org_id:
+          type: string
+          format: uuid
+          title: Org Id
+        name:
+          type: string
+          title: Name
+        slug:
+          type: string
+          title: Slug
+        logo_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Key
+        country:
+          type: string
+          title: Country
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        verification_level:
+          type: integer
+          title: Verification Level
+        published_framework_count:
+          type: integer
+          title: Published Framework Count
+        member_count:
+          type: integer
+          title: Member Count
+        reputation:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          - type: 'null'
+          title: Reputation
+      type: object
+      required:
+      - org_id
+      - name
+      - slug
+      - logo_key
+      - country
+      - website
+      - description
+      - verification_level
+      - published_framework_count
+      - member_count
+      title: ContributorOrgDirectoryEntry
+      description: Public contributor-organization directory row safe for anonymous
+        reads.
+    ContributorOrgDirectoryResponse:
+      properties:
+        contributors:
+          items:
+            $ref: '#/components/schemas/ContributorOrgDirectoryEntry'
+          type: array
+          title: Contributors
+      type: object
+      required:
+      - contributors
+      title: ContributorOrgDirectoryResponse
+      description: Public list response for contributor organizations.
     CredentialCreateRequest:
       properties:
         title:
@@ -15458,12 +15573,36 @@ components:
           format: uuid
           title: Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         contributor_name:
           type: string
           title: Contributor Name
+        contributor_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Contributor Slug
+        contributor_verification_level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Contributor Verification Level
+        contributor_reputation_score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          - type: 'null'
+          title: Contributor Reputation Score
         title:
           type: string
           title: Title
@@ -15599,12 +15738,36 @@ components:
           format: uuid
           title: Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         contributor_name:
           type: string
           title: Contributor Name
+        contributor_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Contributor Slug
+        contributor_verification_level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Contributor Verification Level
+        contributor_reputation_score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          - type: 'null'
+          title: Contributor Reputation Score
         title:
           type: string
           title: Title
@@ -15745,12 +15908,36 @@ components:
           format: uuid
           title: Id
         contributor_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Contributor Id
+        contributor_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Contributor Org Id
         contributor_name:
           type: string
           title: Contributor Name
+        contributor_slug:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Contributor Slug
+        contributor_verification_level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Contributor Verification Level
+        contributor_reputation_score:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          - type: 'null'
+          title: Contributor Reputation Score
         title:
           type: string
           title: Title

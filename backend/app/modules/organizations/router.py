@@ -30,6 +30,7 @@ from app.modules.financials.schemas import (
 )
 from app.modules.organizations import (
     attestor_application_service,
+    contributor_directory_service,
     contributor_service,
     nda_service,
     service,
@@ -38,6 +39,8 @@ from app.modules.organizations.dependencies import OrgContext, require_org_role
 from app.modules.organizations.models import OrgAttestorApplication
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
+    ContributorOrgDirectoryEntry,
+    ContributorOrgDirectoryResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
     OrgAcceptOfferRequest,
@@ -77,6 +80,7 @@ from app.modules.organizations.schemas import (
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
+public_router = APIRouter(prefix="/contributors", tags=["Organizations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
@@ -189,6 +193,44 @@ async def get_public_org(
 ) -> PublicOrganizationResponse:
     """Return the public organization profile for the given slug."""
     return await service.get_public_org(db=db, slug=slug)
+
+
+@public_router.get(
+    "",
+    response_model=ContributorOrgDirectoryResponse,
+    summary="List public contributor organizations",
+    description=(
+        "Return active contributor organizations for public directory browsing, "
+        "including only org identity, verification, reputation, and aggregate counts."
+    ),
+)
+async def list_public_contributor_orgs(
+    db: DatabaseSession,
+) -> ContributorOrgDirectoryResponse:
+    """Return active public contributor-organization directory entries."""
+    return ContributorOrgDirectoryResponse(
+        contributors=await contributor_directory_service.list_contributor_orgs(db)
+    )
+
+
+@public_router.get(
+    "/{org_slug}",
+    response_model=ContributorOrgDirectoryEntry,
+    summary="Get public contributor organization profile",
+    description=(
+        "Return one active contributor organization's public profile without "
+        "member identities or internal staffing metadata."
+    ),
+)
+async def get_public_contributor_org(
+    org_slug: str,
+    db: DatabaseSession,
+) -> ContributorOrgDirectoryEntry:
+    """Return one active public contributor-organization directory entry."""
+    return await contributor_directory_service.get_contributor_org(
+        db,
+        org_slug=org_slug,
+    )
 
 
 @router.patch(

@@ -365,13 +365,7 @@ async def get_detail(
 ) -> PartnerFrameworkDetailResponse:
     """Return Partner-safe public detail for one published Framework."""
     framework = await db.scalar(
-        select(Framework)
-        .join(User, User.id == Framework.contributor_id)
-        .where(
-            Framework.id == framework_id,
-            Framework.status == "published",
-            User.suspended_at.is_(None),
-        )
+        explore_service._base_catalog_query(None).where(Framework.id == framework_id)  # noqa: SLF001
     )
     if framework is None:
         raise HTTPException(
@@ -390,18 +384,16 @@ async def get_detail(
         db,
         [framework.id],
     )
-    contributor_names = await explore_service._user_display_names(  # noqa: SLF001
+    seller_identities = await explore_service._framework_seller_identities(  # noqa: SLF001
         db,
-        [framework.contributor_id] if framework.contributor_id is not None else [],
+        [framework],
     )
     card = explore_service._card_from_framework(  # noqa: SLF001
         framework,
         rarity_scores.get(framework.id),
         attestation_badges.get(framework.id),
         review_aggregates.get(framework.id),
-        contributor_names.get(framework.contributor_id, "Contributor")
-        if framework.contributor_id is not None
-        else "Contributor",
+        seller_identities[framework.id],
     )
     return PartnerFrameworkDetailResponse(
         **card.model_dump(),
@@ -418,13 +410,7 @@ async def get_preview(
 ) -> PartnerPreviewArtifactResponse:
     """Return the designated preview Artifact and URL for a published Framework."""
     framework = await db.scalar(
-        select(Framework)
-        .join(User, User.id == Framework.contributor_id)
-        .where(
-            Framework.id == framework_id,
-            Framework.status == "published",
-            User.suspended_at.is_(None),
-        )
+        explore_service._base_catalog_query(None).where(Framework.id == framework_id)  # noqa: SLF001
     )
     if framework is None:
         raise HTTPException(
@@ -476,13 +462,9 @@ async def list_attestations(
 ) -> PartnerAttestationsResponse:
     """Return public Attestation report metadata for one published Framework."""
     framework_exists = await db.scalar(
-        select(Framework.id)
-        .join(User, User.id == Framework.contributor_id)
-        .where(
-            Framework.id == framework_id,
-            Framework.status == "published",
-            User.suspended_at.is_(None),
-        )
+        explore_service._base_catalog_query(None)  # noqa: SLF001
+        .where(Framework.id == framework_id)
+        .with_only_columns(Framework.id)
     )
     if framework_exists is None:
         raise HTTPException(
