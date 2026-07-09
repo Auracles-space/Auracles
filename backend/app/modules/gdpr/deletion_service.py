@@ -292,6 +292,36 @@ async def _count_active_reviewing_assignments(
     )
 
 
+async def _count_active_delivery_assignments(
+    db: AsyncSession,
+    user_id: UUID,
+) -> int:
+    """Return started, unfinished org deliveries staffed by the user.
+
+    The blocker mirrors org member-removal rules but clears once the delivery
+    reaches a resolved project state. Only organization-backed proposals count;
+    individual contributor work is already covered by the general active
+    project blocker.
+    """
+    return int(
+        await db.scalar(
+            select(func.count(func.distinct(Proposal.id)))
+            .select_from(Proposal)
+            .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
+            .join(Project, Project.id == Proposal.project_id)
+            .join(Milestone, Milestone.project_id == Project.id)
+            .where(
+                OrgMember.user_id == user_id,
+                Proposal.contributor_org_id.is_not(None),
+                Proposal.status == "accepted",
+                Project.status.in_(ACTIVE_PROJECT_STATUSES),
+                Milestone.status != "pending",
+            )
+        )
+        or 0
+    )
+
+
 async def collect_blocked_reasons(
     *,
     db: AsyncSession,
@@ -359,6 +389,21 @@ async def collect_blocked_reasons(
                     "requesting account deletion."
                 ),
                 count=reviewing_assignment_count,
+            )
+        )
+    delivery_assignment_count = await _count_active_delivery_assignments(
+        db,
+        user_id,
+    )
+    if delivery_assignment_count > 0:
+        reasons.append(
+            AccountDeletionBlockedReason(
+                code="active_delivery_assignment",
+                message=(
+                    "Complete your in-flight organization deliveries before "
+                    "requesting account deletion."
+                ),
+                count=delivery_assignment_count,
             )
         )
 

@@ -10,7 +10,7 @@ Maps to: full-spec section 10 (reputation factors).
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -28,6 +28,10 @@ from app.modules.reputation.service import FactorResult
 from app.modules.reputation.weights import ReputationConfig
 
 _ADOPTION_TARGET = Decimal("25")  # active licenses to saturate framework adoption
+_ORG_CONTRIBUTOR_PROJECT_TARGET = Decimal("5")
+_ORG_CONTRIBUTOR_REVIEW_WEIGHT = Decimal("0.80")
+_ORG_CONTRIBUTOR_PROJECT_WEIGHT = Decimal("0.20")
+_SCORE_QUANT = Decimal("0.01")
 
 
 def _avg_review_norm(avg: Decimal | None) -> Decimal:
@@ -205,6 +209,60 @@ async def contributor_factors(
         "attestations_received": attestations_received,
         "activity": activity,
     }
+
+
+async def org_contributor_reputation_score(
+    db: AsyncSession,
+    org_id: UUID,
+) -> Decimal | None:
+    """Aggregate the public reputation score for one contributor organization.
+
+    The org profile exposes a lightweight public score, not a full
+    ``reputation_scores`` subject. Reviews come from the org's published
+    Frameworks; project signal comes from closed Projects whose accepted
+    Proposal belongs to the org. Individual contributor reputation remains on
+    the user subject path and is not modified here.
+    """
+    avg_review, review_count = (
+        await db.execute(
+            select(func.avg(Review.score), func.count(Review.id))
+            .join(Framework, Framework.id == Review.framework_id)
+            .where(
+                Framework.contributor_org_id == org_id,
+                Framework.status == "published",
+            )
+        )
+    ).one()
+    completed_project_count = int(
+        await db.scalar(
+            select(func.count(func.distinct(Project.id)))
+            .join(Proposal, Proposal.id == Project.accepted_proposal_id)
+            .where(
+                Proposal.contributor_org_id == org_id,
+                Proposal.status == "accepted",
+                Project.status == "closed",
+            )
+        )
+        or 0
+    )
+    if int(review_count or 0) == 0 and completed_project_count == 0:
+        return None
+
+    review_component = _avg_review_norm(
+        Decimal(str(avg_review)) if avg_review is not None else None
+    )
+    project_component = _saturating(
+        completed_project_count,
+        _ORG_CONTRIBUTOR_PROJECT_TARGET,
+    )
+    score = (
+        (
+            review_component * _ORG_CONTRIBUTOR_REVIEW_WEIGHT
+            + project_component * _ORG_CONTRIBUTOR_PROJECT_WEIGHT
+        )
+        * Decimal("100")
+    )
+    return score.quantize(_SCORE_QUANT, rounding=ROUND_HALF_UP)
 
 
 async def operator_factors(

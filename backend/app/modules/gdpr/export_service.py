@@ -538,6 +538,90 @@ async def _collect_projects(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     }
 
 
+async def _collect_org_contributor_activity(
+    db: AsyncSession,
+    user_id: UUID,
+) -> dict[str, list[dict[str, Any]]]:
+    """Collect org-backed contributor history for one staffed member.
+
+    This is member-scoped provenance only: ids + dates that show which
+    Frameworks the user authored for an organization and which org Proposals
+    and Deliverables they staffed. Organization-owned earnings stay outside the
+    personal export.
+    """
+    authored_frameworks = (
+        (
+            await db.execute(
+                select(Framework, OrgMember.org_id)
+                .join(OrgMember, OrgMember.id == Framework.authoring_member_id)
+                .where(OrgMember.user_id == user_id)
+                .order_by(Framework.updated_at)
+            )
+        )
+        .all()
+    )
+    staffed_proposals = (
+        (
+            await db.execute(
+                select(Proposal, OrgMember.org_id)
+                .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
+                .where(OrgMember.user_id == user_id)
+                .order_by(Proposal.created_at)
+            )
+        )
+        .all()
+    )
+    staffed_deliverables = (
+        (
+            await db.execute(
+                select(
+                    Deliverable,
+                    Proposal.project_id,
+                    OrgMember.org_id,
+                )
+                .join(Milestone, Milestone.id == Deliverable.milestone_id)
+                .join(Project, Project.id == Milestone.project_id)
+                .join(Proposal, Proposal.id == Project.accepted_proposal_id)
+                .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
+                .where(OrgMember.user_id == user_id)
+                .order_by(Deliverable.created_at)
+            )
+        )
+        .all()
+    )
+    return {
+        "framework_authoring": [
+            {
+                "org_id": str(org_id),
+                "framework_id": str(framework.id),
+                "updated_at": _json_value(framework.updated_at),
+            }
+            for framework, org_id in authored_frameworks
+        ],
+        "delivery_assignments": [
+            {
+                "org_id": str(org_id),
+                "proposal_id": str(proposal.id),
+                "project_id": str(proposal.project_id),
+                "created_at": _json_value(proposal.created_at),
+                "accepted_at": _json_value(proposal.accepted_at),
+            }
+            for proposal, org_id in staffed_proposals
+        ],
+        "deliverable_submissions": [
+            {
+                "org_id": str(org_id),
+                "deliverable_id": str(deliverable.id),
+                "project_id": str(project_id),
+                "milestone_id": str(deliverable.milestone_id),
+                "created_at": _json_value(deliverable.created_at),
+                "submitted_at": _json_value(deliverable.submitted_at),
+            }
+            for deliverable, project_id, org_id in staffed_deliverables
+        ],
+    }
+
+
 async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect attestation records tied to the user.
 
@@ -937,6 +1021,9 @@ async def build_data_export_bundle(
         "reviews": await _collect_reviews(db, user_id),
         "frameworks": await _collect_frameworks(db, user_id),
         "projects": await _collect_projects(db, user_id),
+        "organization_contributor_activity": await _collect_org_contributor_activity(
+            db, user_id
+        ),
         "attestation": await _collect_attestation(db, user_id),
         "developer": await _collect_developer(db, user_id),
         "reputation": {},

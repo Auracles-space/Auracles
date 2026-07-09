@@ -45,6 +45,7 @@ from app.modules.financials.models import (
     PlatformConfig,
     Transaction,
 )
+from app.modules.frameworks.models import Framework
 from app.modules.gdpr import deletion_service
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
@@ -184,6 +185,7 @@ async def account_deletion_test_context(
                 await session.execute(delete(Milestone))
                 await session.execute(delete(Escrow))
                 await session.execute(delete(Transaction))
+                await session.execute(delete(Framework))
                 await session.execute(delete(Proposal))
                 await session.execute(delete(Project))
                 await session.execute(delete(OrgCapability))
@@ -835,6 +837,114 @@ async def test_active_reviewing_member_blocks_deletion_until_resolved(
             db=session, user_id=member_user_id
         )
     assert "active_reviewing_assignment" not in {reason.code for reason in cleared}
+
+
+async def test_started_org_delivery_blocks_member_deletion_until_resolution(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """A staffed member cannot delete their account mid-delivery for an org."""
+    del client, migrated_database, account_deletion_test_context
+    member_user_id, _secret = await create_verified_user(
+        "delivering-member-delete@auracles.space",
+    )
+    operator_id, _r = await create_verified_user(
+        "delivery-operator@auracles.space",
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                slug=f"delivery-org-{uuid4().hex[:6]}",
+                name="Delivery Org",
+                country="US",
+                created_by=member_user_id,
+            )
+            session.add(org)
+            await session.flush()
+            member = OrgMember(
+                org_id=org.id,
+                user_id=member_user_id,
+                role="member",
+            )
+            session.add(member)
+            session.add(
+                OrgCapability(
+                    org_id=org.id,
+                    capability="contributor",
+                    status="active",
+                )
+            )
+            project = Project(
+                operator_id=operator_id,
+                title="Started Org Delivery",
+                description="Started work should block deletion.",
+                category="framework_customization",
+                required_deliverables=[
+                    {"name": "Memo", "description": "One memo"}
+                ],
+                budget_min=Decimal("900.00"),
+                budget_max=Decimal("1200.00"),
+                currency="USD",
+                deadline=datetime.now(UTC).date() + timedelta(days=30),
+                status="in_progress",
+                milestone_plan_status="finalized",
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+            session.add(project)
+            await session.flush()
+            proposal = Proposal(
+                project_id=project.id,
+                contributor_org_id=org.id,
+                delivering_member_id=member.id,
+                scope="A valid scoped proposal.",
+                budget=Decimal("1000.00"),
+                currency="USD",
+                timeline_days=14,
+                deliverables=[{"name": "Memo", "description": "One memo"}],
+                status="accepted",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(proposal)
+            await session.flush()
+            project.accepted_proposal_id = proposal.id
+            milestone = Milestone(
+                project_id=project.id,
+                sequence=1,
+                name="Started Milestone",
+                description="In-flight work.",
+                budget=Decimal("1000.00"),
+                currency="USD",
+                status="funded",
+                funded_at=datetime.now(UTC),
+            )
+            session.add(milestone)
+            await session.flush()
+            project_id = project.id
+            milestone_id = milestone.id
+
+    async with async_session_factory() as session:
+        blocked = await deletion_service.collect_blocked_reasons(
+            db=session,
+            user_id=member_user_id,
+        )
+    assert "active_delivery_assignment" in {reason.code for reason in blocked}
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            project = await session.get(Project, project_id)
+            milestone = await session.get(Milestone, milestone_id)
+            assert project is not None and milestone is not None
+            project.status = "closed"
+            milestone.status = "approved"
+            milestone.approved_at = datetime.now(UTC)
+
+    async with async_session_factory() as session:
+        cleared = await deletion_service.collect_blocked_reasons(
+            db=session,
+            user_id=member_user_id,
+        )
+    assert "active_delivery_assignment" not in {reason.code for reason in cleared}
 
 
 async def test_request_account_deletion_requires_totp_when_enabled(

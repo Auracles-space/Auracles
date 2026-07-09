@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -20,6 +21,8 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Transaction
+from app.modules.frameworks.models import Framework
 from app.modules.gdpr import export_service as gdpr_export_service
 from app.modules.gdpr.models import DataExportRequest
 from app.modules.organizations.models import (
@@ -28,6 +31,7 @@ from app.modules.organizations.models import (
     OrgMember,
     OrgMemberNda,
 )
+from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
 
@@ -145,11 +149,19 @@ async def export_test_context(
     async with async_session_factory() as session:
         await session.execute(delete(DataExportRequest))
         await session.execute(delete(AuditLog))
+        await session.execute(delete(Transaction))
+        await session.execute(delete(Deliverable))
+        await session.execute(delete(Milestone))
+        await session.execute(delete(Proposal))
+        await session.execute(delete(Project))
+        await session.execute(delete(Framework))
         await session.execute(delete(Attestation))
         await session.execute(delete(OrgMemberNda))
         await session.execute(delete(OrgCapability))
         await session.execute(delete(OrgMember))
         await session.execute(delete(Organization))
+        await session.execute(delete(UserRole))
+        await session.execute(delete(User))
         await session.commit()
 
     app.dependency_overrides[get_redis] = lambda: fake_redis
@@ -396,6 +408,174 @@ async def test_export_bundle_includes_organization_memberships(
     assert memberships[0]["org_name"] == "Export Org"
     assert memberships[0]["role"] == "owner"
     assert memberships[0]["joined_at"]
+
+
+async def test_export_bundle_includes_org_contributor_activity_without_org_earnings(
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member export includes org authoring and delivery history, not org earnings.
+
+    Org-backed contributor activity is personal history for the staffed member,
+    but organization-owned Framework sales remain excluded from the user's
+    financial export.
+    """
+    del migrated_database, export_test_context
+    fake_s3 = FakeS3Storage()
+    monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
+    user_id = await create_verified_user(
+        f"export-contrib-{uuid4().hex[:8]}@auracles.space"
+    )
+    operator_id = await create_verified_user(
+        f"export-contrib-op-{uuid4().hex[:8]}@auracles.space"
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=f"export-contrib-{uuid4().hex[:6]}",
+                name="Contributor Org",
+                country="GB",
+                created_by=user_id,
+            )
+            session.add(organization)
+            await session.flush()
+            member = OrgMember(
+                org_id=organization.id,
+                user_id=user_id,
+                role="member",
+            )
+            session.add(member)
+            session.add(
+                OrgCapability(
+                    org_id=organization.id,
+                    capability="contributor",
+                    status="active",
+                )
+            )
+            await session.flush()
+            framework = Framework(
+                contributor_org_id=organization.id,
+                authoring_member_id=member.id,
+                title="Org Export Framework",
+                description="Framework history export coverage.",
+                version="1.0.0",
+                status="published",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["export"],
+                tags_text="export",
+                jurisdiction="gb",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("250.00"),
+                currency="USD",
+                license_types=["single_user"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            project = Project(
+                operator_id=operator_id,
+                title="Org Delivery Project",
+                description="Export delivery history project.",
+                category="framework_customization",
+                required_deliverables=[
+                    {"name": "Memo", "description": "Custom memo"}
+                ],
+                budget_min=Decimal("1000.00"),
+                budget_max=Decimal("1500.00"),
+                currency="USD",
+                deadline=datetime.now(UTC).date() + timedelta(days=30),
+                status="in_progress",
+                milestone_plan_status="finalized",
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+            session.add(project)
+            await session.flush()
+            proposal = Proposal(
+                project_id=project.id,
+                contributor_org_id=organization.id,
+                delivering_member_id=member.id,
+                scope="Scoped enough for export history coverage.",
+                budget=Decimal("1200.00"),
+                currency="USD",
+                timeline_days=14,
+                deliverables=[{"name": "Memo", "description": "Custom memo"}],
+                status="accepted",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(proposal)
+            await session.flush()
+            project.accepted_proposal_id = proposal.id
+            milestone = Milestone(
+                project_id=project.id,
+                sequence=1,
+                name="Phase 1",
+                description="Delivery phase",
+                budget=Decimal("1200.00"),
+                currency="USD",
+                status="submitted",
+                funded_at=datetime.now(UTC),
+                submitted_at=datetime.now(UTC),
+            )
+            session.add(milestone)
+            await session.flush()
+            deliverable = Deliverable(
+                milestone_id=milestone.id,
+                contributor_org_id=organization.id,
+                name="Delivery Memo",
+                description="Submitted by staffed member.",
+                file_keys=["deliverables/export-memo.pdf"],
+                status="submitted",
+                scan_status="visible",
+                submitted_at=datetime.now(UTC),
+            )
+            session.add(deliverable)
+            session.add(
+                Transaction(
+                    payer_id=operator_id,
+                    payee_org_id=organization.id,
+                    amount=Decimal("250.00"),
+                    currency="USD",
+                    platform_commission=Decimal("25.00"),
+                    net_amount=Decimal("225.00"),
+                    transaction_type="purchase",
+                    status="completed",
+                    provider="stripe",
+                    ref_id=framework.id,
+                    ref_type="framework",
+                )
+            )
+            request = DataExportRequest(user_id=user_id, status="pending")
+            session.add(request)
+            await session.flush()
+            request_id = request.id
+
+    result = await gdpr_beat._generate_data_export_impl(str(request_id))
+
+    assert result["status"] == "ready"
+    bundle = json.loads(fake_s3.uploads[0]["body"].decode("utf-8"))
+    org_activity = bundle["organization_contributor_activity"]
+    assert len(org_activity["framework_authoring"]) == 1
+    assert org_activity["framework_authoring"][0]["framework_id"] == str(framework.id)
+    assert org_activity["framework_authoring"][0]["updated_at"]
+    assert len(org_activity["delivery_assignments"]) == 1
+    assert org_activity["delivery_assignments"][0]["proposal_id"] == str(proposal.id)
+    assert org_activity["delivery_assignments"][0]["accepted_at"]
+    assert len(org_activity["deliverable_submissions"]) == 1
+    assert org_activity["deliverable_submissions"][0]["deliverable_id"] == str(
+        deliverable.id
+    )
+    assert org_activity["deliverable_submissions"][0]["submitted_at"]
+    assert bundle["financial"]["transactions"] == []
+    assert all(
+        item.get("id") != str(framework.id)
+        for item in bundle["frameworks"]
+    )
 
 
 async def test_export_bundle_includes_nda_and_reviewing_assignments(

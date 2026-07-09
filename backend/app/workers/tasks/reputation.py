@@ -10,7 +10,7 @@ Maps to: BR-ATT-005.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from loguru import logger
@@ -63,10 +63,35 @@ async def recompute_subject(*, subject_type: str, subject_id: UUID) -> None:
                 )
 
 
+async def recompute_org_contributor_profile(*, org_id: UUID) -> None:
+    """Recompute and persist one contributor organization's public score."""
+    from app.modules.organizations.models import OrgContributorProfile
+
+    async with async_session_factory() as db:
+        async with db.begin():
+            profile = await db.scalar(
+                select(OrgContributorProfile)
+                .where(OrgContributorProfile.org_id == org_id)
+                .with_for_update()
+            )
+            if profile is None:
+                return
+            profile.reputation_score = cast(
+                "Any",
+                await factors.org_contributor_reputation_score(
+                    db,
+                    org_id,
+                ),
+            )
+
+
 async def _recompute_all_impl() -> dict[str, int]:
     """Recompute every scorable subject; frameworks first for contributor rollups."""
     from app.modules.auth.models import UserRole
-    from app.modules.organizations.models import OrgAttestorProfile
+    from app.modules.organizations.models import (
+        OrgAttestorProfile,
+        OrgContributorProfile,
+    )
 
     counts = {
         "framework": 0,
@@ -117,12 +142,25 @@ async def _recompute_all_impl() -> dict[str, int]:
             .scalars()
             .all()
         )
+        contributor_org_ids = (
+            (
+                await db.execute(
+                    select(OrgContributorProfile.org_id).where(
+                        OrgContributorProfile.active.is_(True)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     # Frameworks before contributors: contributor framework_performance reads
     # already-computed framework scores.
     for fid in framework_ids:
         await recompute_subject(subject_type="framework", subject_id=fid)
         counts["framework"] += 1
+    for org_id in set(contributor_org_ids):
+        await recompute_org_contributor_profile(org_id=org_id)
     for cid in set(contributor_ids):
         await recompute_subject(subject_type="contributor", subject_id=cid)
         counts["contributor"] += 1
