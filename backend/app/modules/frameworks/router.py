@@ -64,6 +64,28 @@ OrgAdminContext = Annotated[OrgContext, Depends(require_org_role("admin"))]
 optional_bearer = HTTPBearer(auto_error=False)
 
 
+def _self_owner(user: User) -> FrameworkOwner:
+    """Build a self-owned Framework context for an individual Contributor."""
+    return FrameworkOwner(
+        actor_id=user.id,
+        user_id=user.id,
+        org_id=None,
+        authoring_member_id=None,
+        can_manage_live_state=True,
+    )
+
+
+def _org_owner(context: OrgContext) -> FrameworkOwner:
+    """Build an organization-owned Framework context from an org membership."""
+    return FrameworkOwner(
+        actor_id=context.user.id,
+        user_id=None,
+        org_id=context.org.id,
+        authoring_member_id=context.member.id,
+        can_manage_live_state=context.member.role in {"owner", "admin"},
+    )
+
+
 async def optional_review_viewer(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
@@ -95,13 +117,7 @@ async def create_framework(
     """Create a draft Framework for the authenticated Contributor."""
     return await service.create_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=contributor.id,
-            user_id=contributor.id,
-            org_id=None,
-            authoring_member_id=None,
-            can_manage_live_state=True,
-        ),
+        owner=_self_owner(contributor),
         payload=payload,
     )
 
@@ -127,13 +143,7 @@ async def create_org_framework(
     del org_id
     return await service.create_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         payload=payload,
     )
 
@@ -166,13 +176,7 @@ async def list_org_frameworks(
     del org_id
     return await service.list_frameworks_for_owner(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
     )
 
 
@@ -268,13 +272,7 @@ async def get_org_framework(
     del org_id
     return await service.get_framework_for_owner(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
     )
 
@@ -336,7 +334,7 @@ async def update_framework(
     """Update an owned draft Framework."""
     return await service.update_framework(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
         payload=payload,
     )
@@ -361,17 +359,11 @@ async def update_org_framework(
 ) -> FrameworkResponse:
     """Update organization-owned Framework metadata."""
     del org_id
-    return await service.update_framework_metadata_for_owner(
+    return await service.update_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
-        payload=payload,
+        payload=FrameworkUpdate(**payload.model_dump(exclude_unset=True)),
     )
 
 
@@ -394,17 +386,11 @@ async def update_org_framework_pricing(
 ) -> FrameworkResponse:
     """Update organization-owned Framework pricing."""
     del org_id
-    return await service.update_framework_pricing_for_owner(
+    return await service.update_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=True,
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
-        payload=payload,
+        payload=FrameworkUpdate(pricing=payload.pricing),
     )
 
 
@@ -432,7 +418,7 @@ async def unpublish_framework(
     """Unpublish an owned Framework so new catalog purchases stop."""
     return await service.unpublish_framework(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
     )
 
@@ -456,15 +442,9 @@ async def unpublish_org_framework(
 ) -> FrameworkResponse:
     """Unpublish one organization-owned Framework."""
     del org_id
-    return await service.unpublish_framework_for_owner(
+    return await service.unpublish_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=True,
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
     )
 
@@ -497,7 +477,7 @@ async def create_new_version(
     """Start a new editable draft version of an owned Framework."""
     return await service.create_new_version(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
         payload=payload,
     )
@@ -523,15 +503,9 @@ async def create_new_org_version(
 ) -> FrameworkResponse:
     """Start a new draft version for an organization-owned Framework."""
     del org_id
-    return await service.create_new_version_for_owner(
+    return await service.create_new_version(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=True,
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
         payload=payload,
     )
@@ -548,7 +522,7 @@ async def submit_framework(
     """Submit an owned Framework to the processing gate."""
     return await service.submit_framework(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
     )
 
@@ -571,15 +545,9 @@ async def submit_org_framework(
 ) -> FrameworkResponse:
     """Submit one organization-owned Framework."""
     del org_id
-    return await service.submit_framework_for_owner(
+    return await service.submit_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
     )
 
@@ -634,13 +602,7 @@ async def publish_framework(
     """Publish an owned Framework after pipeline checks pass."""
     return await service.publish_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=contributor.id,
-            user_id=contributor.id,
-            org_id=None,
-            authoring_member_id=None,
-            can_manage_live_state=True,
-        ),
+        owner=_self_owner(contributor),
         framework_id=framework_id,
     )
 
@@ -666,13 +628,7 @@ async def publish_org_framework(
     del org_id
     return await service.publish_framework(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=True,
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
     )
 
@@ -692,7 +648,7 @@ async def request_artifact_upload_url(
     """Create a private S3 upload target for a draft Framework Artifact."""
     return await service.request_artifact_upload_url(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
         payload=payload,
     )
@@ -717,15 +673,9 @@ async def request_org_artifact_upload_url(
 ) -> ArtifactUploadUrlResponse:
     """Create a private upload target for an organization Framework artifact."""
     del org_id
-    return await service.request_artifact_upload_url_for_owner(
+    return await service.request_artifact_upload_url(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
         payload=payload,
     )
@@ -809,7 +759,7 @@ async def confirm_artifact_upload(
     """Confirm an uploaded Artifact and dispatch virus scanning."""
     return await service.confirm_artifact_upload(
         db=db,
-        contributor=contributor,
+        owner=_self_owner(contributor),
         framework_id=framework_id,
         payload=payload,
     )
@@ -834,15 +784,9 @@ async def confirm_org_artifact_upload(
 ) -> ArtifactResponse:
     """Confirm an uploaded organization Framework artifact."""
     del org_id
-    return await service.confirm_artifact_upload_for_owner(
+    return await service.confirm_artifact_upload(
         db=db,
-        owner=FrameworkOwner(
-            actor_id=context.user.id,
-            user_id=None,
-            org_id=context.org.id,
-            authoring_member_id=context.member.id,
-            can_manage_live_state=context.member.role in {"owner", "admin"},
-        ),
+        owner=_org_owner(context),
         framework_id=framework_id,
         payload=payload,
     )
