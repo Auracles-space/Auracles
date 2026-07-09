@@ -132,6 +132,50 @@ async def hold(
     return escrow
 
 
+async def _credit_project_milestone_beneficiary(
+    db: AsyncSession,
+    *,
+    escrow: Escrow,
+) -> None:
+    """Stamp the released milestone transaction with its effective beneficiary."""
+    if escrow.ref_type != "project_milestone":
+        return
+
+    transaction = await db.get(Transaction, escrow.transaction_id, with_for_update=True)
+    if transaction is None:
+        return
+
+    # Local imports keep the financials/projects dependency one-way.
+    from app.modules.projects.models import Milestone, Project, Proposal
+
+    milestone = await db.scalar(
+        select(Milestone).where(Milestone.id == escrow.ref_id).with_for_update()
+    )
+    if milestone is None:
+        return
+
+    project = await db.scalar(
+        select(Project).where(Project.id == milestone.project_id).with_for_update()
+    )
+    if project is None or project.accepted_proposal_id is None:
+        return
+
+    proposal = await db.scalar(
+        select(Proposal)
+        .where(Proposal.id == project.accepted_proposal_id)
+        .with_for_update()
+    )
+    if proposal is None:
+        return
+
+    if proposal.contributor_org_id is not None:
+        transaction.payee_id = None
+        transaction.payee_org_id = proposal.contributor_org_id
+        return
+
+    transaction.payee_id = proposal.contributor_id
+
+
 async def release(
     db: AsyncSession,
     *,
@@ -155,6 +199,7 @@ async def release(
             detail="Refunded escrow cannot be released.",
         )
 
+    await _credit_project_milestone_beneficiary(db, escrow=escrow)
     escrow.status = "released"
     escrow.released_at = datetime.now(UTC)
     escrow.released_by = actor_id

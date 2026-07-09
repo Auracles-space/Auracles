@@ -22,10 +22,9 @@ from weasyprint import HTML  # type: ignore[import-untyped]
 
 from app.core.database import async_session_factory
 from app.modules.attestation.models import Attestation
+from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.organizations.models import (
-    Organization,
-    OrgAttestorApplication,
     OrgMember,
 )
 
@@ -227,21 +226,11 @@ async def annual_org_line_items(
 async def org_name(db: AsyncSession, org_id: UUID) -> str:
     """Return an org's billing name for its annual summary.
 
-    Prefers the approved application's ``legal_name``, falling back to the
-    organization's display name.
+    Prefers the shared legal-profile name, falling back to the organization's
+    display name when the profile has not been set yet.
     """
-    legal_name = await db.scalar(
-        select(OrgAttestorApplication.legal_name).where(
-            OrgAttestorApplication.org_id == org_id,
-            OrgAttestorApplication.status == "approved",
-        )
-    )
-    if legal_name:
-        return legal_name
-    name = await db.scalar(select(Organization.name).where(Organization.id == org_id))
-    if name is None:
-        raise ValueError("Organization not found.")
-    return name
+    seller = await financials_invoices.org_invoice_seller_identity(db, org_id=org_id)
+    return seller.name
 
 
 async def org_owner_id(db: AsyncSession, org_id: UUID) -> UUID | None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,11 +32,12 @@ from app.modules.organizations import (
     attestor_application_service,
     contributor_directory_service,
     contributor_service,
+    legal_profile_service,
     nda_service,
     service,
 )
 from app.modules.organizations.dependencies import OrgContext, require_org_role
-from app.modules.organizations.models import OrgAttestorApplication
+from app.modules.organizations.models import OrgAttestorApplication, OrgLegalProfile
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     ContributorOrgDirectoryEntry,
@@ -64,6 +65,8 @@ from app.modules.organizations.schemas import (
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
+    OrgLegalProfileResponse,
+    OrgLegalProfileUpdateRequest,
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
@@ -129,6 +132,20 @@ def _application_response(
         reviewed_at=application.reviewed_at,
         created_at=application.created_at,
         gate_checklist=checklist,
+    )
+
+
+def _legal_profile_response(profile: OrgLegalProfile) -> OrgLegalProfileResponse:
+    """Map one org legal-profile row to an owner-visible response schema."""
+    return OrgLegalProfileResponse(
+        org_id=profile.org_id,
+        legal_name=profile.legal_name,
+        registration_number=profile.registration_number,
+        address=cast("dict[str, object] | None", profile.address),
+        tax_document_type=profile.tax_document_type,
+        tax_document_uploaded=profile.tax_document_key is not None,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
     )
 
 
@@ -1004,12 +1021,91 @@ async def decline_invitation(
 
 
 @router.get(
+    "/{org_id}/legal-profile",
+    response_model=OrgLegalProfileResponse,
+    summary="Get the organization legal profile",
+    description=(
+        "Return the organization's shared legal identity used for invoicing and "
+        "payout readiness. Org owner only."
+    ),
+)
+async def get_legal_profile(
+    org_id: UUID,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> OrgLegalProfileResponse:
+    """Return the shared legal profile for one organization owner."""
+    del context
+    profile = await legal_profile_service.get_legal_profile(db, org_id=org_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization legal profile not found.",
+        )
+    return _legal_profile_response(profile)
+
+
+@router.put(
+    "/{org_id}/legal-profile",
+    response_model=OrgLegalProfileResponse,
+    summary="Upsert the organization legal profile",
+    description=(
+        "Create or update the organization's shared legal identity after an "
+        "owner TOTP step-up. Org owner only."
+    ),
+)
+async def upsert_legal_profile(
+    org_id: UUID,
+    payload: OrgLegalProfileUpdateRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgLegalProfileResponse:
+    """Create or update the shared legal profile for one organization."""
+    profile = await legal_profile_service.upsert_legal_profile(
+        db,
+        redis,
+        org_id=org_id,
+        actor_id=context.user.id,
+        totp_code=payload.totp_code,
+        legal_name=payload.legal_name,
+        registration_number=payload.registration_number,
+        address=payload.address,
+    )
+    return _legal_profile_response(profile)
+
+
+@router.post(
+    "/{org_id}/legal-profile/tax-document",
+    response_model=CredentialEvidenceUploadSessionResponse,
+    summary="Create an organization legal-profile tax-document upload session",
+    description=(
+        "Create a presigned upload session for the organization's shared legal "
+        "profile tax document. Org owner only."
+    ),
+)
+async def set_legal_profile_tax_document(
+    org_id: UUID,
+    payload: OrgAttestorTaxDocumentRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned upload session for the org legal-profile tax document."""
+    return await legal_profile_service.set_tax_document(
+        db,
+        org_id=org_id,
+        actor_id=context.user.id,
+        payload=payload,
+    )
+
+
+@router.get(
     "/{org_id}/financials/earnings",
     response_model=EarningsResponse,
-    summary="Organization attestation earnings",
+    summary="Organization earnings",
     description=(
-        "Released attestation earnings and available payout balance for the "
-        "organization. Owner/admin only."
+        "Released organization earnings and available payout balance across "
+        "supported commercial capabilities. Owner/admin only."
     ),
 )
 async def get_org_earnings(
@@ -1017,7 +1113,7 @@ async def get_org_earnings(
     context: OrgAdmin,
     db: DatabaseSession,
 ) -> EarningsResponse:
-    """Return the org's released attestation earnings balances."""
+    """Return the org's released earnings balances."""
     del context
     return await financials_service.get_org_earnings(db, org_id=org_id)
 
@@ -1049,9 +1145,9 @@ async def onboard_org_payout_account(
     response_model=PayoutResponse,
     summary="Request an organization payout",
     description=(
-        "Request a payout of the org's available attestation earnings. "
-        "TOTP-gated (requester's own TOTP); requires an approved attestor "
-        "application and a verified org payout account. Owner/admin only."
+        "Request a payout of the org's available earnings. TOTP-gated "
+        "(requester's own TOTP); requires a verified org payout account and "
+        "an eligible active capability path. Owner/admin only."
     ),
 )
 async def request_org_payout(
@@ -1072,7 +1168,7 @@ async def request_org_payout(
     response_model=OrgInvoicesResponse,
     summary="Organization issued invoices",
     description=(
-        "List invoices issued for the organization's attested work. "
+        "List invoices issued for the organization's settled work. "
         "Non-sensitive metadata only. Owner/admin only."
     ),
 )
@@ -1081,7 +1177,7 @@ async def list_org_invoices(
     context: OrgAdmin,
     db: DatabaseSession,
 ) -> OrgInvoicesResponse:
-    """List issued invoices for the org's attested work."""
+    """List issued invoices for the org's settled work."""
     del context
     return await financials_service.list_org_invoices(db, org_id=org_id)
 

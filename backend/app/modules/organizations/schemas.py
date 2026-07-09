@@ -173,6 +173,36 @@ class ContributorOrgDirectoryResponse(BaseModel):
     contributors: list[ContributorOrgDirectoryEntry]
 
 
+class OrgLegalProfileUpdateRequest(BaseModel):
+    """Owner-scoped request body for the shared organization legal profile."""
+
+    legal_name: str = Field(min_length=2, max_length=200)
+    registration_number: str | None = Field(default=None, min_length=1, max_length=200)
+    address: dict[str, Any] | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
+
+    @field_validator("legal_name", "registration_number")
+    @classmethod
+    def _clean_legal_profile_text(cls, value: str | None) -> str | None:
+        """Reject markup/control characters in legal-profile text fields."""
+        return _ensure_safe_prose(value) if value is not None else None
+
+
+class OrgLegalProfileResponse(BaseModel):
+    """Owner-visible shared legal identity for one organization."""
+
+    org_id: UUID
+    legal_name: str
+    registration_number: str | None
+    address: dict[str, Any] | None
+    tax_document_type: str | None
+    tax_document_uploaded: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OrgMemberResponse(BaseModel):
     """One organization member, with email hidden from plain members."""
 

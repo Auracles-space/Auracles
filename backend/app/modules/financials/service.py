@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.security import (
     decrypt_payout_provider_account_id,
     encrypt_payout_provider_account_id,
@@ -28,6 +29,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
+from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import (
     Escrow,
     Payout,
@@ -66,6 +68,8 @@ from app.modules.invoicing.models import Invoice
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
+    OrgCapability,
+    OrgLegalProfile,
 )
 from app.workers.tasks.financials import generate_invoice_pdf
 from app.workers.tasks.payouts import process_payout
@@ -601,9 +605,12 @@ async def get_framework_purchase_invoice(
             detail="Invoice is only available for settled purchases.",
         )
 
-    from app.core.config import get_settings
-
-    settings = get_settings()
+    framework = await db.get(Framework, transaction.ref_id)
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
     invoice = await invoicing_service.issue_invoice(
         db,
         doc_type=invoicing_service.DOC_SALES_INVOICE,
@@ -612,13 +619,17 @@ async def get_framework_purchase_invoice(
         source_ref_id=transaction_id,
         currency=transaction.currency,
         subtotal=transaction.amount,
-        seller=invoicing_service.seller_identity(settings),
+        seller=await financials_invoices.framework_invoice_seller_identity(
+            db,
+            framework=framework,
+        ),
         buyer_name=operator.display_name,
         buyer_email=operator.email,
     )
     await db.commit()
 
     key = invoice.s3_key
+    settings = get_settings()
     if s3.storage.object_exists(settings.s3_reports_bucket, key):
         invoice_url = s3.storage.presigned_get(
             settings.s3_reports_bucket,
@@ -720,7 +731,8 @@ async def _create_pending_purchase_transaction(
     *,
     operator_id: UUID,
     customer_id: str,
-    contributor_id: UUID,
+    payee_id: UUID | None,
+    payee_org_id: UUID | None,
     framework_id: UUID,
     amount: Decimal,
     currency: str,
@@ -739,7 +751,8 @@ async def _create_pending_purchase_transaction(
             operator.stripe_customer_id = customer_id
         transaction = Transaction(
             payer_id=operator_id,
-            payee_id=contributor_id,
+            payee_id=payee_id,
+            payee_org_id=payee_org_id,
             amount=amount,
             currency=currency,
             platform_commission=Decimal("0.00"),
@@ -839,12 +852,10 @@ async def create_framework_purchase(
 
     framework = await db.scalar(
         select(Framework)
-        .join(User, User.id == Framework.contributor_id)
         .where(
             Framework.id == framework_id,
             Framework.status == "published",
             Framework.deleted_at.is_(None),
-            User.suspended_at.is_(None),
         )
     )
     if framework is None:
@@ -853,8 +864,21 @@ async def create_framework_purchase(
             detail="Framework not found.",
         )
 
-    contributor_id = framework.contributor_id
-    assert contributor_id is not None
+    from app.modules.frameworks.ownership import resolve_framework_seller
+
+    seller = resolve_framework_seller(framework)
+    if seller.kind == "user":
+        contributor_id = seller.user_id
+        assert contributor_id is not None
+        contributor = await db.get(User, contributor_id)
+        if contributor is None or contributor.suspended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+    else:
+        contributor_id = None
+
     if contributor_id == operator_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -914,7 +938,8 @@ async def create_framework_purchase(
         db=db,
         operator_id=operator_id,
         customer_id=customer_id,
-        contributor_id=contributor_id,
+        payee_id=contributor_id,
+        payee_org_id=seller.org_id,
         framework_id=framework_id,
         amount=amount,
         currency=currency,
@@ -1375,23 +1400,25 @@ async def get_contributor_earnings(
 
 
 # ---------------------------------------------------------------------------
-# Organization (org-as-Attestor) settlement, payout, and invoicing
+# Organization settlement, payout, and invoicing
 #
-# An organization earns only from attestations: released attestation fees are
-# credited to ``transactions.payee_org_id`` at settlement (see
-# ``attestation.release_service``). These helpers mirror the individual payout
-# machinery keyed on the org beneficiary. Marketplace earnings do not apply —
-# this sub-project scopes an organization to the Attestor capability.
+# Organizations can now earn from contributor marketplace activity
+# (Framework sales and released project Milestones) as well as attestation
+# work. These helpers mirror the individual payout machinery keyed on
+# ``transactions.payee_org_id``.
 # ---------------------------------------------------------------------------
 
 
-async def _sum_org_attestation_transactions(
+async def _sum_org_transactions(
     db: AsyncSession,
     *,
     org_id: UUID,
     currency: str,
+    earning_class: str,
+    before: datetime | None = None,
+    after_or_at: datetime | None = None,
 ) -> Decimal:
-    """Return gross completed, released attestation earnings for one org."""
+    """Return gross completed org earnings for one earning class."""
     released_escrow_exists = exists(
         select(Escrow.id).where(
             Escrow.ref_id == Transaction.ref_id,
@@ -1399,15 +1426,33 @@ async def _sum_org_attestation_transactions(
             Escrow.status == "released",
         )
     )
-    value = await db.scalar(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.payee_org_id == org_id,
-            Transaction.transaction_type == "attestation_fee",
-            Transaction.ref_type == "attestation",
-            released_escrow_exists,
-            Transaction.status == "completed",
-            Transaction.currency == currency,
+    if earning_class == _ATTESTATION_EARNING_CLASS:
+        class_filter = or_(
+            (Transaction.transaction_type == "attestation_fee")
+            & (Transaction.ref_type == "attestation")
+            & released_escrow_exists
         )
+    else:
+        class_filter = or_(
+            Transaction.transaction_type == "purchase",
+            (
+                (Transaction.transaction_type == "milestone")
+                & (Transaction.ref_type == "project_milestone")
+                & released_escrow_exists
+            ),
+        )
+    filters = [
+        Transaction.payee_org_id == org_id,
+        class_filter,
+        Transaction.status == "completed",
+        Transaction.currency == currency,
+    ]
+    if before is not None:
+        filters.append(Transaction.created_at < before)
+    if after_or_at is not None:
+        filters.append(Transaction.created_at >= after_or_at)
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Transaction.amount), 0)).where(*filters)
     )
     return _normalise_money(Decimal(value or "0"))
 
@@ -1435,19 +1480,51 @@ async def _available_org_payout_balance(
     org_id: UUID,
     currency: str,
 ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
-    """Return gross, pending, available, claimed, and commission for an org.
-
-    Attestation earnings clear immediately on release at the attestation
-    commission rate, so an org carries no pending-clearance balance.
-    """
+    """Return gross, pending, available, claimed, and commission for an org."""
+    refund_window_hours = await _refund_window_hours(db)
+    marketplace_rate = await _commission_rate(db)
     attestation_rate = await _attestation_commission_rate(db)
-    gross = await _sum_org_attestation_transactions(
-        db, org_id=org_id, currency=currency
+    cutoff = datetime.now(UTC) - timedelta(hours=refund_window_hours)
+    marketplace_gross = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
+    )
+    marketplace_pending = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
+        after_or_at=cutoff,
+    )
+    marketplace_cleared_gross = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
+        before=cutoff,
+    )
+    attestation_gross = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_ATTESTATION_EARNING_CLASS,
     )
     claimed = await _claimed_org_payouts(db, org_id=org_id, currency=currency)
-    cleared_net = _normalise_money(gross * (Decimal("1") - attestation_rate))
-    available = max(_normalise_money(cleared_net - claimed), Decimal("0.00"))
-    return gross, Decimal("0.00"), available, claimed, attestation_rate
+    marketplace_cleared_net = _normalise_money(
+        marketplace_cleared_gross * (Decimal("1") - marketplace_rate)
+    )
+    attestation_cleared_net = _normalise_money(
+        attestation_gross * (Decimal("1") - attestation_rate)
+    )
+    total_cleared_gross = marketplace_cleared_gross + attestation_gross
+    total_cleared_net = marketplace_cleared_net + attestation_cleared_net
+    available = max(_normalise_money(total_cleared_net - claimed), Decimal("0.00"))
+    gross_revenue = marketplace_gross + attestation_gross
+    pending_clearance = marketplace_pending
+    commission_rate = _blended_commission_rate(total_cleared_gross, total_cleared_net)
+    return gross_revenue, pending_clearance, available, claimed, commission_rate
 
 
 async def _lock_org_financials(db: AsyncSession, *, org_id: UUID) -> None:
@@ -1476,7 +1553,7 @@ async def get_org_earnings(
     *,
     org_id: UUID,
 ) -> EarningsResponse:
-    """Return an organization's released attestation earnings balances."""
+    """Return an organization's released earnings balances."""
     currency = "USD"
     (
         gross_revenue,
@@ -1500,7 +1577,7 @@ async def list_org_invoices(
     *,
     org_id: UUID,
 ) -> OrgInvoicesResponse:
-    """List issued invoices for an organization's attested work.
+    """List issued invoices for an organization's settled work.
 
     PII rule: only non-sensitive invoice metadata is returned — no tax data or
     payout account details.
@@ -1510,13 +1587,24 @@ async def list_org_invoices(
     org_attestation_ids = select(Attestation.id).where(
         Attestation.attestor_org_id == org_id
     )
+    org_transaction_ids = select(Transaction.id).where(
+        Transaction.payee_org_id == org_id
+    )
     rows = (
         (
             await db.execute(
                 select(Invoice)
                 .where(
-                    Invoice.source_ref_type == "attestation",
-                    Invoice.source_ref_id.in_(org_attestation_ids),
+                    or_(
+                        (
+                            (Invoice.source_ref_type == "attestation")
+                            & Invoice.source_ref_id.in_(org_attestation_ids)
+                        ),
+                        (
+                            (Invoice.source_ref_type == "transaction")
+                            & Invoice.source_ref_id.in_(org_transaction_ids)
+                        ),
+                    )
                 )
                 .order_by(Invoice.issue_date.desc(), Invoice.id)
             )
@@ -1691,6 +1779,57 @@ async def _org_has_approved_attestor_application(
     return application_id is not None
 
 
+async def _org_has_active_capability(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    capability: str,
+) -> bool:
+    """Return whether the org capability is active."""
+    capability_id = await db.scalar(
+        select(OrgCapability.id)
+        .where(
+            OrgCapability.org_id == org_id,
+            OrgCapability.capability == capability,
+            OrgCapability.status == "active",
+        )
+        .limit(1)
+    )
+    return capability_id is not None
+
+
+async def _org_has_legal_tax_document(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> bool:
+    """Return whether the org's shared legal profile has a tax document."""
+    profile_id = await db.scalar(
+        select(OrgLegalProfile.id)
+        .where(
+            OrgLegalProfile.org_id == org_id,
+            OrgLegalProfile.tax_document_key.is_not(None),
+        )
+        .limit(1)
+    )
+    return profile_id is not None
+
+
+async def _org_is_payout_eligible(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> bool:
+    """Return whether the org satisfies at least one payout eligibility path."""
+    if await _org_has_approved_attestor_application(db, org_id=org_id):
+        return True
+    return await _org_has_active_capability(
+        db,
+        org_id=org_id,
+        capability="contributor",
+    ) and await _org_has_legal_tax_document(db, org_id=org_id)
+
+
 async def request_org_payout(
     db: AsyncSession,
     redis: Redis,
@@ -1702,8 +1841,8 @@ async def request_org_payout(
     """Create a pending org payout and queue provider transfer processing.
 
     The acting org owner/admin steps up with their own TOTP. Gates: the org
-    owns a verified payout account and holds an ``approved`` attestor
-    application (KYB stands in for the individual KYC gate).
+    owns a verified payout account and satisfies at least one eligible
+    capability payout path.
     """
     actor_id = actor.id
     currency = payload.currency.upper()
@@ -1725,10 +1864,10 @@ async def request_org_payout(
         await db.rollback()
     async with db.begin():
         await _lock_org_financials(db, org_id=org_id)
-        if not await _org_has_approved_attestor_application(db, org_id=org_id):
+        if not await _org_is_payout_eligible(db, org_id=org_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Organization has no approved attestor application.",
+                detail="Organization is not payout-eligible.",
             )
         payout_account = await db.scalar(
             select(PayoutAccount)

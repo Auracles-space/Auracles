@@ -24,13 +24,13 @@ from app.integrations import s3
 from app.modules.attestation.dependencies import attestor_actor
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
+from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.financials.service import INVOICE_URL_TTL_SECONDS
 from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.annual import annual_summary_key
 from app.modules.organizations.models import (
     Organization,
-    OrgAttestorApplication,
     OrgMember,
 )
 from app.workers.tasks.invoicing import generate_invoice_document
@@ -154,7 +154,14 @@ async def get_tax_invoice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Requestor not found.",
         )
-    settings = get_settings()
+    if attestation.attestor_org_id is not None:
+        seller = await financials_invoices.org_invoice_seller_identity(
+            db,
+            org_id=attestation.attestor_org_id,
+        )
+    else:
+        settings = get_settings()
+        seller = invoicing_service.seller_identity(settings)
     invoice = await invoicing_service.issue_invoice(
         db,
         doc_type=invoicing_service.DOC_SALES_INVOICE,
@@ -163,7 +170,7 @@ async def get_tax_invoice(
         source_ref_id=attestation.id,
         currency=transaction.currency,
         subtotal=transaction.amount,
-        seller=invoicing_service.seller_identity(settings),
+        seller=seller,
         buyer_name=requestor.display_name,
         buyer_email=requestor.email,
     )
@@ -202,12 +209,6 @@ async def _earnings_buyer_identity(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestor not found.",
         )
-    legal_name = await db.scalar(
-        select(OrgAttestorApplication.legal_name).where(
-            OrgAttestorApplication.org_id == org.id,
-            OrgAttestorApplication.status == "approved",
-        )
-    )
     owner_email = await db.scalar(
         select(User.email)
         .join(OrgMember, OrgMember.user_id == User.id)
@@ -219,7 +220,8 @@ async def _earnings_buyer_identity(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestor not found.",
         )
-    return (legal_name or org.name), owner_email
+    seller = await financials_invoices.org_invoice_seller_identity(db, org_id=org.id)
+    return seller.name, owner_email
 
 
 async def get_earnings_statement(

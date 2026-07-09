@@ -7251,13 +7251,117 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/legal-profile:
+    get:
+      tags:
+      - Organizations
+      summary: Get the organization legal profile
+      description: Return the organization's shared legal identity used for invoicing
+        and payout readiness. Org owner only.
+      operationId: get_legal_profile_v1_orgs__org_id__legal_profile_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgLegalProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Organizations
+      summary: Upsert the organization legal profile
+      description: Create or update the organization's shared legal identity after
+        an owner TOTP step-up. Org owner only.
+      operationId: upsert_legal_profile_v1_orgs__org_id__legal_profile_put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgLegalProfileUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgLegalProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/legal-profile/tax-document:
+    post:
+      tags:
+      - Organizations
+      summary: Create an organization legal-profile tax-document upload session
+      description: Create a presigned upload session for the organization's shared
+        legal profile tax document. Org owner only.
+      operationId: set_legal_profile_tax_document_v1_orgs__org_id__legal_profile_tax_document_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorTaxDocumentRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/financials/earnings:
     get:
       tags:
       - Organizations
-      summary: Organization attestation earnings
-      description: Released attestation earnings and available payout balance for
-        the organization. Owner/admin only.
+      summary: Organization earnings
+      description: Released organization earnings and available payout balance across
+        supported commercial capabilities. Owner/admin only.
       operationId: get_org_earnings_v1_orgs__org_id__financials_earnings_get
       security:
       - HTTPBearer: []
@@ -7324,9 +7428,9 @@ paths:
       tags:
       - Organizations
       summary: Request an organization payout
-      description: Request a payout of the org's available attestation earnings. TOTP-gated
-        (requester's own TOTP); requires an approved attestor application and a verified
-        org payout account. Owner/admin only.
+      description: Request a payout of the org's available earnings. TOTP-gated (requester's
+        own TOTP); requires a verified org payout account and an eligible active capability
+        path. Owner/admin only.
       operationId: request_org_payout_v1_orgs__org_id__financials_payouts_post
       security:
       - HTTPBearer: []
@@ -7362,7 +7466,7 @@ paths:
       tags:
       - Organizations
       summary: Organization issued invoices
-      description: List invoices issued for the organization's attested work. Non-sensitive
+      description: List invoices issued for the organization's settled work. Non-sensitive
         metadata only. Owner/admin only.
       operationId: list_org_invoices_v1_orgs__org_id__financials_invoices_get
       security:
@@ -18737,6 +18841,85 @@ components:
       - invoices
       title: OrgInvoicesResponse
       description: Response body for an organization's issued invoice list.
+    OrgLegalProfileResponse:
+      properties:
+        org_id:
+          type: string
+          format: uuid
+          title: Org Id
+        legal_name:
+          type: string
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
+        address:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Address
+        tax_document_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tax Document Type
+        tax_document_uploaded:
+          type: boolean
+          title: Tax Document Uploaded
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - org_id
+      - legal_name
+      - registration_number
+      - address
+      - tax_document_type
+      - tax_document_uploaded
+      - created_at
+      - updated_at
+      title: OrgLegalProfileResponse
+      description: Owner-visible shared legal identity for one organization.
+    OrgLegalProfileUpdateRequest:
+      properties:
+        legal_name:
+          type: string
+          maxLength: 200
+          minLength: 2
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Registration Number
+        address:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Address
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      type: object
+      required:
+      - legal_name
+      - totp_code
+      title: OrgLegalProfileUpdateRequest
+      description: Owner-scoped request body for the shared organization legal profile.
     OrgMemberResponse:
       properties:
         id:
