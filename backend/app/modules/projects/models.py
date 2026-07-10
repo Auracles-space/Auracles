@@ -117,13 +117,24 @@ DISPUTE_RESOLUTION_ENUM = ENUM(
 
 
 class Project(UpdatedAtMixin, Base):
-    """Operator-posted request for custom framework work."""
+    """Operator-posted request for custom framework work.
+
+    A Project is operated by either an individual Operator (``operator_id``) or
+    an organization with the operator capability (``operator_org_id``), enforced
+    XOR by ``ck_projects_operator_xor``. ``posting_member_id`` records which
+    organization member posted an org-operated Project and is internal-only.
+    """
 
     __tablename__ = "projects"
     __table_args__ = (
         CheckConstraint("budget_min <= budget_max", name="ck_projects_budget_range"),
         CheckConstraint("currency = 'USD'", name="ck_projects_currency_usd"),
+        CheckConstraint(
+            "(operator_id IS NULL) != (operator_org_id IS NULL)",
+            name="ck_projects_operator_xor",
+        ),
         Index("idx_projects_operator_status", "operator_id", "status"),
+        Index("idx_projects_operator_org_status", "operator_org_id", "status"),
         Index("idx_projects_status_expires_at", "status", "expires_at"),
     )
 
@@ -132,10 +143,20 @@ class Project(UpdatedAtMixin, Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    operator_id: Mapped[UUID] = mapped_column(
+    operator_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    operator_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    posting_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)

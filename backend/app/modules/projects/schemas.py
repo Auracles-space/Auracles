@@ -343,10 +343,18 @@ class AdminDisputesResponse(BaseModel):
 
 
 class ProjectResponse(BaseModel):
-    """Project response returned by CRUD and assignment endpoints."""
+    """Project response returned by CRUD and assignment endpoints.
+
+    ``operator_id`` is set for individually-operated Projects and ``None`` for
+    organization-operated Projects, which instead carry ``operator_org_id``.
+    ``operator_name`` resolves to the Operator's display name or, for an
+    organization-operated Project, the Organization name. The internal
+    ``posting_member_id`` provenance field is never exposed here.
+    """
 
     id: UUID
-    operator_id: UUID
+    operator_id: UUID | None = None
+    operator_org_id: UUID | None = None
     operator_name: str | None = None
     title: str
     description: str

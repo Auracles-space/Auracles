@@ -1153,12 +1153,15 @@ async def submit_deliverable(
     # Dispatch the virus scan after commit so the worker can read the row; the
     # Deliverable stays pending_scan and approval is blocked until it is clean.
     scan_deliverable_upload.delay(str(deliverable.id))
-    project_notifications.notify_deliverable_submitted(
-        operator_id=operator_id,
-        project_id=project_id,
-        milestone_id=milestone_id,
-        deliverable_id=deliverable.id,
-    )
+    # Task 7 rewires org-operated Deliverable recipients; a funded Milestone
+    # only exists on individually-operated Projects today, so operator_id is set.
+    if operator_id is not None:
+        project_notifications.notify_deliverable_submitted(
+            operator_id=operator_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            deliverable_id=deliverable.id,
+        )
     return deliverable
 
 

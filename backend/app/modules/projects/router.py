@@ -121,8 +121,10 @@ async def get_project(
     )
     response = ProjectResponse.model_validate(project)
     # Surface the Operator's reputation only to a bidding/assigned Contributor —
-    # never on the Operator's own view or any public surface (BR-ATT-005).
-    if project.operator_id != current_user.id:
+    # never on the Operator's own view or any public surface (BR-ATT-005). Only
+    # individually-operated Projects carry an operator reputation subject; an
+    # org-operated Project has a NULL operator_id and no such subject here.
+    if project.operator_id is not None and project.operator_id != current_user.id:
         summaries = await reputation_service.summaries_for_subjects(
             db, subject_type="operator", subject_ids=[project.operator_id]
         )
@@ -169,6 +171,59 @@ async def submit_proposal(
         payload=payload,
     )
     return ProposalResponse.model_validate(proposal)
+
+
+@org_router.post(
+    "/projects",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Post organization Project",
+    description=(
+        "Post a custom Project operated by the organization as an organization "
+        "owner or admin while the operator capability is active."
+    ),
+)
+async def create_org_project(
+    org_id: UUID,
+    payload: ProjectCreateRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Post an organization-operated Project."""
+    del org_id
+    return await service.create_org_project(
+        db=db,
+        org_id=context.org.id,
+        actor=context.user,
+        posting_member_id=context.member.id,
+        payload=payload,
+    )
+
+
+@org_router.get(
+    "/projects",
+    response_model=ProjectsResponse,
+    summary="List organization Projects",
+    description="List Projects operated by the organization for owners and admins.",
+)
+async def list_org_projects(
+    org_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> ProjectsResponse:
+    """List Projects operated by one organization."""
+    del org_id
+    return await service.list_org_projects(
+        db=db,
+        org_id=context.org.id,
+        org_name=context.org.name,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @org_router.post(

@@ -26,6 +26,10 @@ from app.modules.projects.models import (
     Proposal,
     ProposalAmendment,
 )
+from app.modules.projects.operator_ownership import (
+    ProjectOperator,
+    resolve_project_operator,
+)
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
     DeliverableSpec,
@@ -146,12 +150,49 @@ def _normalize_amendment_after(
     return normalized
 
 
+async def _project_operator_recipient_ids(
+    db: AsyncSession, project: Project
+) -> list[UUID]:
+    """Resolve the user recipients for Operator-facing Project notifications.
+
+    For an individually-operated Project this is the single Operator. For an
+    organization-operated Project it is the organization's owner and admins,
+    who act on the Operator side. Returns an empty list when no recipient can
+    be resolved so a notification is never dispatched with a null user id.
+    """
+    operator = resolve_project_operator(project)
+    if operator.kind == "user":
+        return [operator.user_id] if operator.user_id is not None else []
+
+    # Local import avoids a circular import: organizations imports project models.
+    from app.modules.organizations.models import OrgMember
+
+    rows = await db.scalars(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == operator.org_id,
+            OrgMember.role.in_(("owner", "admin")),
+        )
+    )
+    return list(rows.all())
+
+
 async def _is_project_member(
     db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
 ) -> bool:
-    """Return whether a user is the Project Operator or accepted Contributor side."""
+    """Return whether a user is the Project Operator or accepted Contributor side.
+
+    The Operator side resolves to the individual Operator or, for an
+    organization-operated Project, any owner/admin of the operating org. A NULL
+    ``operator_id`` on an org-operated Project can never match an authenticated
+    (non-null) ``user_id``.
+    """
     workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
-    return user_id in {project.operator_id, workspace_user_id}
+    if user_id == workspace_user_id:
+        return True
+    operator = resolve_project_operator(project)
+    if operator.kind == "user":
+        return user_id == operator.user_id
+    return user_id in set(await _project_operator_recipient_ids(db, project))
 
 
 async def _is_counterparty(
@@ -183,27 +224,64 @@ def _workspace_system_message(
     )
 
 
-async def create_project(
+async def _insert_project(
     *,
     db: AsyncSession,
-    operator: User,
+    operator: ProjectOperator,
+    actor_id: UUID,
+    posting_member_id: UUID | None,
     payload: ProjectCreateRequest,
 ) -> Project:
-    """Create an open Project while enforcing the MVP active-project cap."""
-    operator_id = operator.id
-    if db.in_transaction():
-        await db.rollback()
+    """Create an open Project for a resolved operator inside a new transaction.
 
+    Threads the individual-or-organization operator descriptor through a single
+    create path so the active-project cap, audit trail, and Project row are
+    enforced identically for both ownership branches. Serializes concurrent
+    creates per account by locking the operating User or Organization row.
+
+    Args:
+        db: Async SQLAlchemy session with no open transaction.
+        operator: The resolved individual or organization operator.
+        actor_id: The acting user id recorded on the audit entry.
+        posting_member_id: The org member who posted an org-operated Project,
+            or ``None`` for an individually-operated Project.
+        payload: Validated Project create request body.
+
+    Returns:
+        The persisted open Project.
+
+    Raises:
+        HTTPException(409): If the operator already has 5 active Projects.
+    """
     now = datetime.now(UTC)
     async with db.begin():
-        # Lock the Operator row so concurrent creates serialize per account.
-        await db.scalar(select(User).where(User.id == operator_id).with_for_update())
-        active_count = await db.scalar(
-            select(func.count(Project.id)).where(
-                Project.operator_id == operator_id,
-                Project.status.in_(ACTIVE_PROJECT_STATUSES),
+        if operator.kind == "org":
+            # Local import avoids a circular import: organizations imports
+            # project models at module load.
+            from app.modules.organizations.models import Organization
+
+            await db.scalar(
+                select(Organization)
+                .where(Organization.id == operator.org_id)
+                .with_for_update()
             )
-        )
+            active_count = await db.scalar(
+                select(func.count(Project.id)).where(
+                    Project.operator_org_id == operator.org_id,
+                    Project.status.in_(ACTIVE_PROJECT_STATUSES),
+                )
+            )
+        else:
+            # Lock the Operator row so concurrent creates serialize per account.
+            await db.scalar(
+                select(User).where(User.id == operator.user_id).with_for_update()
+            )
+            active_count = await db.scalar(
+                select(func.count(Project.id)).where(
+                    Project.operator_id == operator.user_id,
+                    Project.status.in_(ACTIVE_PROJECT_STATUSES),
+                )
+            )
         if int(active_count or 0) >= MAX_ACTIVE_PROJECTS:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -211,7 +289,9 @@ async def create_project(
             )
 
         project = Project(
-            operator_id=operator_id,
+            operator_id=operator.user_id,
+            operator_org_id=operator.org_id,
+            posting_member_id=posting_member_id,
             title=payload.title,
             description=payload.description,
             category=payload.category,
@@ -228,7 +308,7 @@ async def create_project(
         await db.flush()
         await write_audit(
             db=db,
-            actor_id=operator_id,
+            actor_id=actor_id,
             action="project_created",
             target_type="project",
             target_id=project.id,
@@ -237,6 +317,121 @@ async def create_project(
         await db.flush()
         await db.refresh(project)
     return project
+
+
+async def create_project(
+    *,
+    db: AsyncSession,
+    operator: User,
+    payload: ProjectCreateRequest,
+) -> Project:
+    """Create an open Project while enforcing the MVP active-project cap."""
+    # Capture the operator id before any rollback expires the ORM instance.
+    operator_id = operator.id
+    if db.in_transaction():
+        await db.rollback()
+
+    return await _insert_project(
+        db=db,
+        operator=ProjectOperator(kind="user", user_id=operator_id, org_id=None),
+        actor_id=operator_id,
+        posting_member_id=None,
+        payload=payload,
+    )
+
+
+async def create_org_project(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor: User,
+    posting_member_id: UUID,
+    payload: ProjectCreateRequest,
+) -> ProjectResponse:
+    """Create an open Project operated by an organization.
+
+    Stamps ``operator_org_id`` and the posting member, leaving ``operator_id``
+    NULL, so the org XOR operator branch owns the Project. Requires the org
+    Operator capability to be active (BR-ORG operator gate).
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id.
+        actor: The acting admin/owner user (recorded on the audit entry).
+        posting_member_id: The acting caller's OrgMember id (internal
+            provenance, never exposed in responses).
+        payload: Validated Project create request body.
+
+    Returns:
+        The persisted Project as a response carrying the Organization name.
+
+    Raises:
+        HTTPException(403): If the org Operator capability is not active.
+        HTTPException(409): If the org already has 5 active Projects.
+    """
+    from app.modules.organizations.models import Organization
+    from app.modules.organizations.operator_service import operator_capability_active
+
+    # Capture the acting user id before any rollback expires the ORM instance.
+    actor_id = actor.id
+    if not await operator_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    project = await _insert_project(
+        db=db,
+        operator=ProjectOperator(kind="org", user_id=None, org_id=org_id),
+        actor_id=actor_id,
+        posting_member_id=posting_member_id,
+        payload=payload,
+    )
+    org_name = await db.scalar(
+        select(Organization.name).where(Organization.id == org_id)
+    )
+    return _project_with_operator_name(project, org_name)
+
+
+async def list_org_projects(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    org_name: str,
+    page: int,
+    page_size: int,
+) -> ProjectsResponse:
+    """List Projects operated by one organization for its owners and admins.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id.
+        org_name: The organization name surfaced as ``operator_name``.
+        page: 1-indexed page number.
+        page_size: Page size.
+
+    Returns:
+        A paginated response of the organization's operated Projects.
+    """
+    query = _project_query().where(Project.operator_org_id == org_id)
+    total = await db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = await db.execute(
+        query.order_by(Project.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    projects = [
+        _project_with_operator_name(project, org_name)
+        for project in rows.scalars()
+    ]
+    return ProjectsResponse(
+        projects=projects,
+        total=int(total or 0),
+        page=page,
+        page_size=page_size,
+    )
 
 
 def _project_with_operator_name(
@@ -290,17 +485,26 @@ async def list_projects(
     else:
         query = query.where(Project.operator_id == user.id)
 
+    # Local import avoids a circular import: organizations imports project models.
+    from app.modules.organizations.models import Organization
+
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
+    # Outer-join both operator branches so org-operated Projects (NULL
+    # operator_id) still appear in the Contributor feed, with the operator name
+    # resolved to the User display name or the Organization name.
     rows = await db.execute(
-        query.add_columns(User.display_name)
-        .join(User, User.id == Project.operator_id)
+        query.add_columns(User.display_name, Organization.name)
+        .outerjoin(User, User.id == Project.operator_id)
+        .outerjoin(Organization, Organization.id == Project.operator_org_id)
         .order_by(Project.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
     projects = [
-        _project_with_operator_name(project, operator_name)
-        for project, operator_name in rows.all()
+        _project_with_operator_name(
+            project, user_name if user_name is not None else org_name
+        )
+        for project, user_name, org_name in rows.all()
     ]
     return ProjectsResponse(
         projects=projects,
@@ -460,10 +664,11 @@ async def submit_proposal(
         await db.refresh(proposal)
 
     # Fanout runs after commit so the Operator only hears about a durable bid.
-    project_notifications.notify_proposal_submitted(
-        operator_id=project.operator_id,
-        proposal=proposal,
-    )
+    for recipient_id in await _project_operator_recipient_ids(db, project):
+        project_notifications.notify_proposal_submitted(
+            operator_id=recipient_id,
+            proposal=proposal,
+        )
     return proposal
 
 
@@ -507,6 +712,15 @@ async def submit_org_proposal(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Proposals can only be submitted to open Projects.",
             )
+        # Org-level self-deal: an organization's Contributor arm cannot bid on a
+        # Project its own Operator arm posted.
+        if project.operator_org_id == org_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"error_code": "self_deal_conflict"},
+            )
+        # Member-level self-deal: the individual Operator is a member of the
+        # bidding organization.
         self_deal = await db.scalar(
             select(OrgMember.id)
             .where(
@@ -571,10 +785,11 @@ async def submit_org_proposal(
         await db.flush()
         await db.refresh(proposal)
 
-    project_notifications.notify_proposal_submitted(
-        operator_id=project.operator_id,
-        proposal=proposal,
-    )
+    for recipient_id in await _project_operator_recipient_ids(db, project):
+        project_notifications.notify_proposal_submitted(
+            operator_id=recipient_id,
+            proposal=proposal,
+        )
     return proposal
 
 
@@ -1187,9 +1402,13 @@ async def propose_amendment(
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
         # The counterparty is the accepted member who did not propose the change.
+        # Amendments require an accepted Proposal, which today only exists on
+        # individually-operated Projects (org acceptance lands in Task 7), so the
+        # Operator id is always set on the non-operator branch here.
         if actor_id == project.operator_id:
             counterparty_id = await _proposal_workspace_user_id(db, proposal)
         else:
+            assert project.operator_id is not None
             counterparty_id = project.operator_id
         amendment_project_id = project.id
         await db.flush()
@@ -1387,11 +1606,15 @@ async def withdraw_amendment(
             metadata={"project_id": str(project.id), "proposal_id": str(proposal.id)},
         )
         # Notify the counterparty who was awaiting a response, not the proposer.
+        # Amendments require an accepted Proposal, which today only exists on
+        # individually-operated Projects (org acceptance lands in Task 7), so the
+        # Operator id is always set on the non-operator branch here.
         if actor_id == project.operator_id:
             withdraw_counterparty_id = await _proposal_workspace_user_id(
                 db, proposal
             )
         else:
+            assert project.operator_id is not None
             withdraw_counterparty_id = project.operator_id
         withdrawn_project_id = project.id
         await db.flush()

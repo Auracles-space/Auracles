@@ -714,7 +714,10 @@ async def resolve_dispute(
         dispute.resolved_at = now
         await _recompute_project_status(db, project=project, now=now)
         proposal_user_id = await _proposal_workspace_user_id(db, proposal=proposal)
-        notify_user_ids = [project.operator_id]
+        # Task 7 rewires org-operated dispute recipients; the individual Operator
+        # is always set on the disputes reachable here.
+        if project.operator_id is not None:
+            notify_user_ids.append(project.operator_id)
         if proposal_user_id is not None:
             notify_user_ids.append(proposal_user_id)
         db.add(

@@ -9898,6 +9898,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects:
+    post:
+      tags:
+      - Projects
+      summary: Post organization Project
+      description: Post a custom Project operated by the organization as an organization
+        owner or admin while the operator capability is active.
+      operationId: create_org_project_v1_orgs__org_id__projects_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Projects
+      summary: List organization Projects
+      description: List Projects operated by the organization for owners and admins.
+      operationId: list_org_projects_v1_orgs__org_id__projects_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/projects/{project_id}/proposals:
     post:
       tags:
@@ -21451,9 +21534,17 @@ components:
           format: uuid
           title: Id
         operator_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Operator Id
+        operator_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Operator Org Id
         operator_name:
           anyOf:
           - type: string
@@ -21534,7 +21625,6 @@ components:
       type: object
       required:
       - id
-      - operator_id
       - title
       - description
       - category
@@ -21552,7 +21642,18 @@ components:
       - created_at
       - updated_at
       title: ProjectResponse
-      description: Project response returned by CRUD and assignment endpoints.
+      description: 'Project response returned by CRUD and assignment endpoints.
+
+
+        ``operator_id`` is set for individually-operated Projects and ``None`` for
+
+        organization-operated Projects, which instead carry ``operator_org_id``.
+
+        ``operator_name`` resolves to the Operator''s display name or, for an
+
+        organization-operated Project, the Organization name. The internal
+
+        ``posting_member_id`` provenance field is never exposed here.'
     ProjectUpdateRequest:
       properties:
         title:
