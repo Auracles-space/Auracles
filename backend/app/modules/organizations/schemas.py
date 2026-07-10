@@ -204,6 +204,56 @@ class OrgLegalProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrgPaymentMethodSetupRequest(BaseModel):
+    """Request body for starting organization payment-method setup."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class OrgPaymentMethodSetupResponse(BaseModel):
+    """Stripe SetupIntent data needed to attach an org payment method."""
+
+    provider: Literal["stripe"]
+    setup_intent_id: str
+    client_secret: str
+
+
+class OrgPaymentMethodResponse(BaseModel):
+    """Safe provider-held payment method metadata returned to org admins."""
+
+    id: str
+    provider: Literal["stripe"]
+    type: str
+    brand: str | None
+    last4: str | None
+    exp_month: int | None
+    exp_year: int | None
+
+
+class OrgPaymentMethodsResponse(BaseModel):
+    """Response body for listing an organization's saved payment methods."""
+
+    payment_methods: list[OrgPaymentMethodResponse]
+
+
+class OrgPaymentMethodDeleteRequest(BaseModel):
+    """Request body for removing a provider-held org payment method."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class OrgPaymentMethodDeleteResponse(BaseModel):
+    """Response body for a removed organization payment method."""
+
+    provider: Literal["stripe"]
+    payment_method_id: str
+    removed: bool
+
+
 class OrgMemberResponse(BaseModel):
     """One organization member, with email hidden from plain members."""
 

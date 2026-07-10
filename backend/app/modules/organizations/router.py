@@ -31,6 +31,7 @@ from app.modules.financials.schemas import (
 from app.modules.library.schemas import ArtifactDownloadResponse
 from app.modules.organizations import (
     attestor_application_service,
+    billing_service,
     contributor_directory_service,
     contributor_service,
     legal_profile_service,
@@ -81,6 +82,12 @@ from app.modules.organizations.schemas import (
     OrgNdaStatusResponse,
     OrgNominateTrialMemberRequest,
     OrgOwnershipTransferRequest,
+    OrgPaymentMethodDeleteRequest,
+    OrgPaymentMethodDeleteResponse,
+    OrgPaymentMethodResponse,
+    OrgPaymentMethodSetupRequest,
+    OrgPaymentMethodSetupResponse,
+    OrgPaymentMethodsResponse,
     OrgReassignReviewerRequest,
     OrgTeamCreateRequest,
     OrgTeamRenameRequest,
@@ -108,6 +115,9 @@ ORG_CONTRIBUTOR_ACTIVATE_RATE_LIMITER = RateLimiter(
 )
 ORG_OPERATOR_ACTIVATE_RATE_LIMITER = RateLimiter(
     namespace="org_operator_activate", limit=5, window=3600
+)
+ORG_PAYMENT_METHOD_SETUP_RATE_LIMITER = RateLimiter(
+    namespace="org_payment_method_setup", limit=10, window=3600
 )
 
 
@@ -1291,6 +1301,90 @@ async def get_org_earnings(
     """Return the org's released earnings balances."""
     del context
     return await financials_service.get_org_earnings(db, org_id=org_id)
+
+
+@router.post(
+    "/{org_id}/financials/payment-methods/setup",
+    response_model=OrgPaymentMethodSetupResponse,
+    summary="Start organization payment-method setup",
+    description=(
+        "Create or reuse the organization's Stripe customer and return a "
+        "SetupIntent client secret. TOTP-gated; owner/admin only."
+    ),
+)
+async def create_org_payment_method_setup(
+    org_id: UUID,
+    payload: OrgPaymentMethodSetupRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgPaymentMethodSetupResponse:
+    """Create an organization payment-method SetupIntent after TOTP step-up."""
+    await ORG_PAYMENT_METHOD_SETUP_RATE_LIMITER.check(
+        cast(RedisCounter, redis), str(org_id)
+    )
+    response = await billing_service.create_org_payment_method_setup(
+        db,
+        redis,
+        org_id=org_id,
+        actor=context.user,
+        totp_code=payload.totp_code,
+    )
+    return OrgPaymentMethodSetupResponse(**response.model_dump())
+
+
+@router.get(
+    "/{org_id}/financials/payment-methods",
+    response_model=OrgPaymentMethodsResponse,
+    summary="List organization payment methods",
+    description=(
+        "List the organization's saved provider-held payment methods using "
+        "safe card metadata only. Owner/admin only."
+    ),
+)
+async def list_org_payment_methods(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgPaymentMethodsResponse:
+    """List safe organization payment-method metadata for org admins."""
+    del context
+    response = await billing_service.list_org_payment_methods(db, org_id=org_id)
+    return OrgPaymentMethodsResponse(
+        payment_methods=[
+            OrgPaymentMethodResponse(**payment_method.model_dump())
+            for payment_method in response.payment_methods
+        ]
+    )
+
+
+@router.delete(
+    "/{org_id}/financials/payment-methods/{payment_method_id}",
+    response_model=OrgPaymentMethodDeleteResponse,
+    summary="Remove an organization payment method",
+    description=(
+        "Detach a provider-held payment method from the organization after "
+        "TOTP verification. Owner/admin only."
+    ),
+)
+async def delete_org_payment_method(
+    org_id: UUID,
+    payment_method_id: str,
+    payload: OrgPaymentMethodDeleteRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgPaymentMethodDeleteResponse:
+    """Detach one organization payment method after TOTP and ownership checks."""
+    response = await billing_service.delete_org_payment_method(
+        db,
+        redis,
+        org_id=org_id,
+        actor=context.user,
+        payment_method_id=payment_method_id,
+        totp_code=payload.totp_code,
+    )
+    return OrgPaymentMethodDeleteResponse(**response.model_dump())
 
 
 @router.post(

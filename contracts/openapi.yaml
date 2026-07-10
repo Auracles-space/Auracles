@@ -7612,6 +7612,117 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payment-methods/setup:
+    post:
+      tags:
+      - Organizations
+      summary: Start organization payment-method setup
+      description: Create or reuse the organization's Stripe customer and return a
+        SetupIntent client secret. TOTP-gated; owner/admin only.
+      operationId: create_org_payment_method_setup_v1_orgs__org_id__financials_payment_methods_setup_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPaymentMethodSetupRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgPaymentMethodSetupResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payment-methods:
+    get:
+      tags:
+      - Organizations
+      summary: List organization payment methods
+      description: List the organization's saved provider-held payment methods using
+        safe card metadata only. Owner/admin only.
+      operationId: list_org_payment_methods_v1_orgs__org_id__financials_payment_methods_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgPaymentMethodsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/financials/payment-methods/{payment_method_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Remove an organization payment method
+      description: Detach a provider-held payment method from the organization after
+        TOTP verification. Owner/admin only.
+      operationId: delete_org_payment_method_v1_orgs__org_id__financials_payment_methods__payment_method_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: payment_method_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Payment Method Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPaymentMethodDeleteRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgPaymentMethodDeleteResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/financials/payout-accounts:
     post:
       tags:
@@ -19505,6 +19616,125 @@ components:
       - totp_code
       title: OrgOwnershipTransferRequest
       description: TOTP-gated request to transfer organization ownership.
+    OrgPaymentMethodDeleteRequest:
+      properties:
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      additionalProperties: false
+      type: object
+      required:
+      - totp_code
+      title: OrgPaymentMethodDeleteRequest
+      description: Request body for removing a provider-held org payment method.
+    OrgPaymentMethodDeleteResponse:
+      properties:
+        provider:
+          type: string
+          const: stripe
+          title: Provider
+        payment_method_id:
+          type: string
+          title: Payment Method Id
+        removed:
+          type: boolean
+          title: Removed
+      type: object
+      required:
+      - provider
+      - payment_method_id
+      - removed
+      title: OrgPaymentMethodDeleteResponse
+      description: Response body for a removed organization payment method.
+    OrgPaymentMethodResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        provider:
+          type: string
+          const: stripe
+          title: Provider
+        type:
+          type: string
+          title: Type
+        brand:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand
+        last4:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last4
+        exp_month:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Exp Month
+        exp_year:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Exp Year
+      type: object
+      required:
+      - id
+      - provider
+      - type
+      - brand
+      - last4
+      - exp_month
+      - exp_year
+      title: OrgPaymentMethodResponse
+      description: Safe provider-held payment method metadata returned to org admins.
+    OrgPaymentMethodSetupRequest:
+      properties:
+        totp_code:
+          type: string
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+      additionalProperties: false
+      type: object
+      required:
+      - totp_code
+      title: OrgPaymentMethodSetupRequest
+      description: Request body for starting organization payment-method setup.
+    OrgPaymentMethodSetupResponse:
+      properties:
+        provider:
+          type: string
+          const: stripe
+          title: Provider
+        setup_intent_id:
+          type: string
+          title: Setup Intent Id
+        client_secret:
+          type: string
+          title: Client Secret
+      type: object
+      required:
+      - provider
+      - setup_intent_id
+      - client_secret
+      title: OrgPaymentMethodSetupResponse
+      description: Stripe SetupIntent data needed to attach an org payment method.
+    OrgPaymentMethodsResponse:
+      properties:
+        payment_methods:
+          items:
+            $ref: '#/components/schemas/OrgPaymentMethodResponse'
+          type: array
+          title: Payment Methods
+      type: object
+      required:
+      - payment_methods
+      title: OrgPaymentMethodsResponse
+      description: Response body for listing an organization's saved payment methods.
     OrgPayoutAccountOnboardRequest:
       properties:
         provider:

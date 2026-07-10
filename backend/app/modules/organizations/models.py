@@ -98,6 +98,7 @@ class Organization(UpdatedAtMixin, Base):
     country: Mapped[str] = mapped_column(String(2), nullable=False)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),

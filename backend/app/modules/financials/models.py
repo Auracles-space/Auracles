@@ -89,7 +89,12 @@ class Transaction(UpdatedAtMixin, Base):
             "payee_id IS NULL OR payee_org_id IS NULL",
             name="ck_transactions_single_payee",
         ),
+        CheckConstraint(
+            "(payer_id IS NULL) != (payer_org_id IS NULL)",
+            name="ck_transactions_payer_xor",
+        ),
         Index("idx_transactions_payer", "payer_id"),
+        Index("idx_transactions_payer_org", "payer_org_id"),
         Index("idx_transactions_payee", "payee_id"),
         Index("idx_transactions_payee_org", "payee_org_id"),
         Index("idx_transactions_status", "status"),
@@ -102,10 +107,15 @@ class Transaction(UpdatedAtMixin, Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    payer_id: Mapped[UUID] = mapped_column(
+    payer_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    payer_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
     )
     payee_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
