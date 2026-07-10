@@ -312,8 +312,20 @@ class License(CreatedAtMixin, Base):
 
     __tablename__ = "licenses"
     __table_args__ = (
+        CheckConstraint(
+            "(operator_id IS NULL) != (licensee_org_id IS NULL)",
+            name="ck_licenses_holder_xor",
+        ),
         UniqueConstraint("framework_id", "operator_id", name="uq_licenses_owner"),
         Index("idx_licenses_operator", "operator_id"),
+        Index(
+            "uq_licenses_org_owner",
+            "framework_id",
+            "licensee_org_id",
+            unique=True,
+            postgresql_where=text("licensee_org_id IS NOT NULL"),
+        ),
+        Index("idx_licenses_org", "licensee_org_id"),
         Index("idx_licenses_framework", "framework_id"),
         Index("idx_licenses_collection", "collection_id"),
     )
@@ -328,10 +340,15 @@ class License(CreatedAtMixin, Base):
         ForeignKey("frameworks.id"),
         nullable=False,
     )
-    operator_id: Mapped[UUID] = mapped_column(
+    operator_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    licensee_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
     )
     transaction_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -372,7 +389,67 @@ class License(CreatedAtMixin, Base):
     seats_total: Mapped[int | None] = mapped_column(nullable=True)
 
     framework: Mapped[Framework] = relationship(back_populates="licenses")
+    grants: Mapped[list[LicenseGrant]] = relationship(
+        back_populates="license",
+        cascade="all, delete-orphan",
+    )
     reviews: Mapped[list[Review]] = relationship(back_populates="license")
+
+
+class LicenseGrant(CreatedAtMixin, Base):
+    """Allocation of one org-owned License to a team or individual member."""
+
+    __tablename__ = "license_grants"
+    __table_args__ = (
+        CheckConstraint(
+            "(team_id IS NULL) != (member_id IS NULL)",
+            name="ck_license_grants_target_xor",
+        ),
+        Index(
+            "uq_license_grants_team",
+            "license_id",
+            "team_id",
+            unique=True,
+            postgresql_where=text("team_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_license_grants_member",
+            "license_id",
+            "member_id",
+            unique=True,
+            postgresql_where=text("member_id IS NOT NULL"),
+        ),
+        Index("idx_license_grants_member", "member_id"),
+        Index("idx_license_grants_team", "team_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    license_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("licenses.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    team_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_teams.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    granted_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    license: Mapped[License] = relationship(back_populates="grants")
 
 
 class Review(UpdatedAtMixin, Base):
