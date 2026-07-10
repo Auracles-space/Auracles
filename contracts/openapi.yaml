@@ -10169,6 +10169,187 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/proposals/{proposal_id}/accept:
+    post:
+      tags:
+      - Projects
+      summary: Accept a Proposal for an organization Project
+      description: Accept a pending Proposal on a Project operated by the organization
+        as an owner or admin while the operator capability is active.
+      operationId: accept_org_proposal_v1_orgs__org_id__projects__project_id__proposals__proposal_id__accept_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: proposal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Proposal Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/milestones/{milestone_id}/fund:
+    post:
+      tags:
+      - Projects
+      summary: Fund an organization Project Milestone
+      description: Start Stripe escrow funding for a finalized Milestone from the
+        organization's own Stripe customer as an owner or admin while the operator
+        capability is active.
+      operationId: fund_org_milestone_v1_orgs__org_id__projects__project_id__milestones__milestone_id__fund_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestoneFundingResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/deliverables/{deliverable_id}/approve:
+    post:
+      tags:
+      - Projects
+      summary: Approve an organization Project Deliverable
+      description: Approve submitted work on a Project operated by the organization
+        and release its Milestone escrow to the Contributor as an owner or admin while
+        the operator capability is active.
+      operationId: approve_org_deliverable_v1_orgs__org_id__projects__project_id__deliverables__deliverable_id__approve_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: deliverable_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Deliverable Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverableResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/disputes:
+    post:
+      tags:
+      - Projects
+      summary: Raise a dispute on an organization Project
+      description: Raise a Milestone dispute on a Project operated by the organization
+        as an owner or admin while the operator capability is active.
+      operationId: create_org_dispute_v1_orgs__org_id__projects__project_id__disputes_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputeCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/partner/catalog:
     get:
       tags:

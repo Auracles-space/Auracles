@@ -33,6 +33,10 @@ from app.modules.projects.models import (
     Project,
     Proposal,
 )
+from app.modules.projects.operator_ownership import (
+    resolve_operator_recipient_user_ids,
+    user_is_project_member,
+)
 from app.modules.projects.schemas import (
     AdminDisputeResponse,
     AdminDisputesResponse,
@@ -58,9 +62,15 @@ def _normalise_money(amount: Decimal) -> Decimal:
 async def _ensure_project_member(
     db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
 ) -> None:
-    """Raise unless a user belongs to the Project workspace."""
-    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
-    if user_id not in {project.operator_id, workspace_user_id}:
+    """Raise unless a user belongs to the Project workspace.
+
+    Admits the accepted-Contributor side and the Operator side: the individual
+    Operator, or any owner/admin of the operating organization for an
+    org-operated Project.
+    """
+    if not await user_is_project_member(
+        db, project=project, proposal=proposal, user_id=user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Project members can access disputes.",
@@ -345,6 +355,128 @@ async def create_dispute(
             metadata={
                 "project_id": str(project.id),
                 "milestone_id": str(milestone.id),
+            },
+        )
+        await db.flush()
+        await db.refresh(dispute)
+
+    for user_id in notify_user_ids:
+        _queue_dispute_notification(
+            user_id=user_id,
+            notification_type="dispute_raised",
+            title="Project dispute raised",
+            body="A milestone dispute was raised on your project.",
+            project_id=project_id,
+            dispute_id=dispute.id,
+            dedupe_key=f"dispute_raised:{dispute.id}:{user_id}",
+        )
+    return dispute
+
+
+async def create_org_dispute(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    payload: DisputeCreateRequest,
+) -> Dispute:
+    """Raise a Milestone dispute for an org-operated Project as an org admin.
+
+    Org sibling of :func:`create_dispute`. The Project is matched on
+    ``operator_org_id`` (cross-org access surfaces as 404) and the acting org
+    owner/admin is recorded as the raiser. The counterparty Contributor and the
+    other operating org owners/admins are notified. Requires the org Operator
+    capability to be active. Escrow held on an org-funded Milestone carries
+    ``payer_org_id``; a later refund resolution therefore returns funds to the
+    organization, unchanged from the individual refund path.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id.
+        actor_id: The acting org owner/admin user id (dispute raiser).
+        project_id: The org-operated Project being disputed.
+        payload: Validated dispute create request body.
+
+    Returns:
+        The raised Dispute.
+
+    Raises:
+        HTTPException(403): If the org Operator capability is not active.
+        HTTPException(404): If the Project is not operated by this organization.
+        HTTPException(409): If the Milestone is not disputable.
+    """
+    from app.modules.organizations.operator_service import operator_capability_active
+
+    if not await operator_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    notify_user_ids: list[UUID] = []
+    async with db.begin():
+        project, proposal = await _load_project_with_accepted_proposal(
+            db=db,
+            project_id=project_id,
+            lock_project=True,
+            lock_proposal=True,
+        )
+        if project.operator_org_id != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        milestone = await _load_milestone_for_dispute(
+            db=db,
+            project_id=project.id,
+            milestone_id=payload.milestone_id,
+        )
+        await _reject_duplicate_active_dispute(db=db, milestone_id=milestone.id)
+
+        dispute = Dispute(
+            project_id=project.id,
+            milestone_id=milestone.id,
+            raised_by=actor_id,
+            reason=payload.reason.strip(),
+        )
+        db.add(dispute)
+        await db.flush()
+        project.status = "disputed"
+        milestone.status = "disputed"
+        proposal_user_id = await _proposal_workspace_user_id(db, proposal=proposal)
+        operator_recipient_ids = await resolve_operator_recipient_user_ids(
+            db, project=project
+        )
+        notify_user_ids = [
+            user_id
+            for user_id in (*operator_recipient_ids, proposal_user_id)
+            if user_id is not None and user_id != actor_id
+        ]
+        db.add(
+            WorkspaceMessage(
+                project_id=project.id,
+                sender_id=None,
+                system_event="dispute_raised",
+                system_payload={
+                    "dispute_id": str(dispute.id),
+                    "milestone_id": str(milestone.id),
+                    "raised_by": str(actor_id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="dispute_raised",
+            target_type="dispute",
+            target_id=dispute.id,
+            metadata={
+                "project_id": str(project.id),
+                "milestone_id": str(milestone.id),
+                "operator_org_id": str(org_id),
             },
         )
         await db.flush()
@@ -714,10 +846,11 @@ async def resolve_dispute(
         dispute.resolved_at = now
         await _recompute_project_status(db, project=project, now=now)
         proposal_user_id = await _proposal_workspace_user_id(db, proposal=proposal)
-        # Task 7 rewires org-operated dispute recipients; the individual Operator
-        # is always set on the disputes reachable here.
-        if project.operator_id is not None:
-            notify_user_ids.append(project.operator_id)
+        # Notify the Operator side (the individual Operator or the operating org's
+        # owners/admins) and the Contributor side of the resolution outcome.
+        notify_user_ids.extend(
+            await resolve_operator_recipient_user_ids(db, project=project)
+        )
         if proposal_user_id is not None:
             notify_user_ids.append(proposal_user_id)
         db.add(

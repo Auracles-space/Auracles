@@ -364,6 +364,124 @@ async def list_org_deliveries(
     return OrgDeliveriesResponse(deliveries=deliveries)
 
 
+@org_router.post(
+    "/projects/{project_id}/proposals/{proposal_id}/accept",
+    response_model=ProjectResponse,
+    summary="Accept a Proposal for an organization Project",
+    description=(
+        "Accept a pending Proposal on a Project operated by the organization as "
+        "an owner or admin while the operator capability is active."
+    ),
+)
+async def accept_org_proposal(
+    org_id: UUID,
+    project_id: UUID,
+    proposal_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Accept a Proposal on an organization-operated Project."""
+    del org_id
+    project = await service.accept_org_proposal(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        proposal_id=proposal_id,
+    )
+    return ProjectResponse.model_validate(project)
+
+
+@org_router.post(
+    "/projects/{project_id}/milestones/{milestone_id}/fund",
+    response_model=MilestoneFundingResponse,
+    summary="Fund an organization Project Milestone",
+    description=(
+        "Start Stripe escrow funding for a finalized Milestone from the "
+        "organization's own Stripe customer as an owner or admin while the "
+        "operator capability is active."
+    ),
+)
+async def fund_org_milestone(
+    org_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> MilestoneFundingResponse:
+    """Fund an organization-operated Project Milestone from the org customer."""
+    del org_id
+    return await milestone_service.fund_org_milestone(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+
+@org_router.post(
+    "/projects/{project_id}/deliverables/{deliverable_id}/approve",
+    response_model=DeliverableResponse,
+    summary="Approve an organization Project Deliverable",
+    description=(
+        "Approve submitted work on a Project operated by the organization and "
+        "release its Milestone escrow to the Contributor as an owner or admin "
+        "while the operator capability is active."
+    ),
+)
+async def approve_org_deliverable(
+    org_id: UUID,
+    project_id: UUID,
+    deliverable_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> DeliverableResponse:
+    """Approve a Deliverable and release escrow for an organization Project."""
+    del org_id
+    deliverable = await milestone_service.approve_org_deliverable(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        deliverable_id=deliverable_id,
+    )
+    return DeliverableResponse.model_validate(deliverable)
+
+
+@org_router.post(
+    "/projects/{project_id}/disputes",
+    response_model=DisputeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Raise a dispute on an organization Project",
+    description=(
+        "Raise a Milestone dispute on a Project operated by the organization as "
+        "an owner or admin while the operator capability is active."
+    ),
+)
+async def create_org_dispute(
+    org_id: UUID,
+    project_id: UUID,
+    payload: DisputeCreateRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> DisputeResponse:
+    """Raise a Milestone dispute on an organization-operated Project."""
+    del org_id
+    dispute = await dispute_service.create_org_dispute(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        payload=payload,
+    )
+    return DisputeResponse.model_validate(dispute)
+
+
 @router.get("/{project_id}/proposals", response_model=ProposalsResponse)
 async def list_project_proposals(
     project_id: UUID,

@@ -28,7 +28,8 @@ from app.modules.projects.models import (
 )
 from app.modules.projects.operator_ownership import (
     ProjectOperator,
-    resolve_project_operator,
+    resolve_operator_recipient_user_ids,
+    user_is_project_member,
 )
 from app.modules.projects.schemas import (
     AmendmentCreateRequest,
@@ -160,20 +161,7 @@ async def _project_operator_recipient_ids(
     who act on the Operator side. Returns an empty list when no recipient can
     be resolved so a notification is never dispatched with a null user id.
     """
-    operator = resolve_project_operator(project)
-    if operator.kind == "user":
-        return [operator.user_id] if operator.user_id is not None else []
-
-    # Local import avoids a circular import: organizations imports project models.
-    from app.modules.organizations.models import OrgMember
-
-    rows = await db.scalars(
-        select(OrgMember.user_id).where(
-            OrgMember.org_id == operator.org_id,
-            OrgMember.role.in_(("owner", "admin")),
-        )
-    )
-    return list(rows.all())
+    return await resolve_operator_recipient_user_ids(db, project=project)
 
 
 async def _is_project_member(
@@ -186,13 +174,9 @@ async def _is_project_member(
     ``operator_id`` on an org-operated Project can never match an authenticated
     (non-null) ``user_id``.
     """
-    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
-    if user_id == workspace_user_id:
-        return True
-    operator = resolve_project_operator(project)
-    if operator.kind == "user":
-        return user_id == operator.user_id
-    return user_id in set(await _project_operator_recipient_ids(db, project))
+    return await user_is_project_member(
+        db, project=project, proposal=proposal, user_id=user_id
+    )
 
 
 async def _is_counterparty(
@@ -1279,6 +1263,149 @@ async def accept_proposal(
             target_id=proposal.id,
             metadata={
                 "project_id": str(project.id),
+                "contributor_id": (
+                    str(proposal.contributor_id)
+                    if proposal.contributor_id is not None
+                    else None
+                ),
+                "contributor_org_id": (
+                    str(proposal.contributor_org_id)
+                    if proposal.contributor_org_id is not None
+                    else None
+                ),
+            },
+        )
+        accepted_contributor_id = await _proposal_workspace_user_id(db, proposal)
+        await db.flush()
+        await db.refresh(project)
+
+    project_notifications.notify_proposal_accepted(
+        contributor_id=accepted_contributor_id,
+        proposal=proposal,
+    )
+    for rejected_proposal in rejected_proposals:
+        rejected_contributor_id = await _proposal_workspace_user_id(
+            db, rejected_proposal
+        )
+        project_notifications.notify_proposal_rejected(
+            contributor_id=rejected_contributor_id,
+            project_id=project_id,
+            proposal_id=rejected_proposal.id,
+        )
+    return project
+
+
+async def accept_org_proposal(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    proposal_id: UUID,
+) -> Project:
+    """Accept one pending Proposal for an organization-operated Project.
+
+    Mirrors :func:`accept_proposal` for the org Operator branch: the Project is
+    matched on ``operator_org_id`` rather than ``operator_id`` (a NULL
+    ``operator_id`` on an org Project can never match an individual user), and
+    the acting org admin is recorded as the audit actor. Requires the org
+    Operator capability to be active so a suspended org cannot advance the money
+    path.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id (from the resolved org context).
+        actor_id: The acting org owner/admin user id (audit actor).
+        project_id: The org-operated Project accepting a Proposal.
+        proposal_id: The pending Proposal to accept.
+
+    Returns:
+        The assigned Project.
+
+    Raises:
+        HTTPException(403): If the org Operator capability is not active.
+        HTTPException(404): If the Project or Proposal is not found for this org.
+        HTTPException(409): If the Project is not open or the Proposal not pending.
+    """
+    from app.modules.organizations.operator_service import operator_capability_active
+
+    if not await operator_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project = await db.scalar(
+            select(Project)
+            .where(Project.id == project_id, Project.operator_org_id == org_id)
+            .with_for_update()
+        )
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if project.status != "open":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only open Projects can accept a Proposal.",
+            )
+
+        proposal = await db.scalar(
+            select(Proposal)
+            .where(
+                Proposal.id == proposal_id,
+                Proposal.project_id == project_id,
+            )
+            .with_for_update()
+        )
+        if proposal is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Proposal not found.",
+            )
+        if proposal.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only pending Proposals can be accepted.",
+            )
+
+        now = datetime.now(UTC)
+        proposal.status = "accepted"
+        proposal.accepted_at = now
+        project.status = "assigned"
+        project.accepted_proposal_id = proposal.id
+        project.milestone_plan_status = "draft"
+        rejected_proposals = (
+            await db.execute(
+                select(Proposal).where(
+                    Proposal.project_id == project_id,
+                    Proposal.id != proposal.id,
+                    Proposal.status == "pending",
+                )
+            )
+        ).scalars().all()
+        await db.execute(
+            update(Proposal)
+            .where(
+                Proposal.project_id == project_id,
+                Proposal.id != proposal.id,
+                Proposal.status == "pending",
+            )
+            .values(status="rejected")
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="proposal_accepted",
+            target_type="proposal",
+            target_id=proposal.id,
+            metadata={
+                "project_id": str(project.id),
+                "operator_org_id": str(org_id),
                 "contributor_id": (
                     str(proposal.contributor_id)
                     if proposal.contributor_id is not None

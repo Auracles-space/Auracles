@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.auth.models import User
 from app.modules.projects.models import Project, Proposal
+from app.modules.projects.operator_ownership import user_is_project_member
 from app.modules.realtime.pubsub import publish_to_channel
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.modules.workspace.schemas import (
@@ -62,22 +63,31 @@ async def is_project_member(
     project_id: UUID,
     user_id: UUID,
 ) -> bool:
-    """Return whether a user is the Operator or accepted Contributor."""
+    """Return whether a user belongs to the Project workspace.
+
+    Admits the Operator side — the individual Operator, or any owner/admin of the
+    operating organization for an org-operated Project — and the accepted
+    Contributor side (the individual Contributor or the staffed delivering member
+    for an org Proposal).
+    """
     project = await db.scalar(select(Project).where(Project.id == project_id))
     if project is None:
         return False
-    if project.operator_id == user_id:
-        return True
     if project.accepted_proposal_id is None:
-        return False
-    contributor_id = await db.scalar(
-        select(Proposal.contributor_id).where(
+        # No accepted Proposal yet: only the individual Operator can access.
+        return project.operator_id is not None and project.operator_id == user_id
+    proposal = await db.scalar(
+        select(Proposal).where(
             Proposal.id == project.accepted_proposal_id,
             Proposal.project_id == project.id,
             Proposal.status == "accepted",
         )
     )
-    return contributor_id == user_id
+    if proposal is None:
+        return project.operator_id is not None and project.operator_id == user_id
+    return await user_is_project_member(
+        db, project=project, proposal=proposal, user_id=user_id
+    )
 
 
 async def _require_project_member(

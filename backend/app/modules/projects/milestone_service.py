@@ -28,6 +28,10 @@ from app.modules.projects.models import (
     Project,
     Proposal,
 )
+from app.modules.projects.operator_ownership import (
+    resolve_operator_recipient_user_ids,
+    user_is_project_member,
+)
 from app.modules.projects.schemas import (
     DeliverableDownloadResponse,
     DeliverableFileDownload,
@@ -152,9 +156,15 @@ async def _proposal_workspace_user_id(
 async def _ensure_project_member(
     db: AsyncSession, project: Project, proposal: Proposal, user_id: UUID
 ) -> None:
-    """Raise unless the current user belongs to the accepted Project workspace."""
-    workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
-    if user_id not in {project.operator_id, workspace_user_id}:
+    """Raise unless the current user belongs to the accepted Project workspace.
+
+    Admits the accepted-Contributor side and the Operator side: the individual
+    Operator, or any owner/admin of the operating organization for an
+    org-operated Project.
+    """
+    if not await user_is_project_member(
+        db, project=project, proposal=proposal, user_id=user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Project members can view Milestones.",
@@ -213,6 +223,43 @@ async def _load_project_milestone_for_funding(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Project Operator can fund Milestones.",
+        )
+    if project.milestone_plan_status != "finalized":
+        raise HTTPException(
+            status_code=422,
+            detail="Milestone plan must be finalized before funding.",
+        )
+    milestone = await _load_pending_milestone(
+        db=db,
+        project_id=project.id,
+        milestone_id=milestone_id,
+    )
+    return project, proposal, milestone
+
+
+async def _load_org_project_milestone_for_funding(
+    *,
+    db: AsyncSession,
+    project_id: UUID,
+    milestone_id: UUID,
+    org_id: UUID,
+) -> tuple[Project, Proposal, Milestone]:
+    """Load and validate an org-operated Project's fundable Milestone.
+
+    Sibling of :func:`_load_project_milestone_for_funding` for the org Operator
+    branch: the Project is matched on ``operator_org_id`` and a mismatch surfaces
+    as 404 (cross-org access is indistinguishable from a missing resource).
+    """
+    project, proposal = await _load_project_with_accepted_proposal(
+        db=db,
+        project_id=project_id,
+        lock_project=True,
+        lock_proposal=True,
+    )
+    if project.operator_org_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
         )
     if project.milestone_plan_status != "finalized":
         raise HTTPException(
@@ -507,6 +554,92 @@ async def _create_pending_milestone_transaction(
             },
         )
         return transaction.id, proposal.contributor_id, amount, milestone.currency
+
+
+async def _create_pending_org_milestone_transaction(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+) -> tuple[UUID, Decimal, str]:
+    """Create the pending org-payer transaction for a Milestone funding intent.
+
+    Sibling of :func:`_create_pending_milestone_transaction` for the org
+    Operator branch: stamps ``payer_org_id`` with ``payer_id`` NULL (mirroring
+    the org purchase pay-in) and never lazily creates or stamps a user Stripe
+    customer. Resolves the Deliverable-side beneficiary from the accepted
+    Proposal so an org Contributor is credited via ``payee_org_id``.
+
+    Returns:
+        The transaction id, normalized amount, and currency. A resumable pending
+        transaction from an abandoned attempt is returned instead of a new one.
+    """
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project, proposal, milestone = (
+            await _load_org_project_milestone_for_funding(
+                db=db,
+                project_id=project_id,
+                milestone_id=milestone_id,
+                org_id=org_id,
+            )
+        )
+        existing = await db.scalar(
+            select(Transaction)
+            .where(
+                Transaction.ref_id == milestone.id,
+                Transaction.ref_type == "project_milestone",
+                Transaction.status.in_(("pending", "completed")),
+            )
+            .limit(1)
+        )
+        if existing is not None:
+            if existing.status == "completed":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Milestone is already funded.",
+                )
+            return (
+                existing.id,
+                _normalise_money(milestone.budget),
+                milestone.currency,
+            )
+
+        amount = _normalise_money(milestone.budget)
+        transaction = Transaction(
+            payer_id=None,
+            payer_org_id=org_id,
+            payee_id=proposal.contributor_id,
+            payee_org_id=proposal.contributor_org_id,
+            amount=amount,
+            currency=milestone.currency.upper(),
+            platform_commission=Decimal("0.00"),
+            net_amount=amount,
+            transaction_type="milestone",
+            status="pending",
+            provider="stripe",
+            ref_id=milestone.id,
+            ref_type="project_milestone",
+        )
+        db.add(transaction)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="milestone_funding_initiated",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "project_id": str(project.id),
+                "milestone_id": str(milestone.id),
+                "payer_org_id": str(org_id),
+            },
+        )
+        return transaction.id, amount, milestone.currency
 
 
 async def _mark_milestone_funding_provider_ref(
@@ -1079,6 +1212,154 @@ async def fund_milestone(
     )
 
 
+async def fund_org_milestone(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+) -> MilestoneFundingResponse:
+    """Fund a finalized Milestone of an org-operated Project from the org customer.
+
+    Org sibling of :func:`fund_milestone`. The funding ``Transaction`` is stamped
+    ``payer_org_id`` (``payer_id`` NULL) and the Stripe charge draws the
+    organization's own Stripe customer. The org customer is never created lazily:
+    a missing ``stripe_customer_id`` returns 402, mirroring the org purchase
+    pay-in. Because an org has no single approving user, the Escrow
+    ``release_conditions`` carries ``approver_org_id`` (approval authority
+    resolves to the org's owner/admins at approval time) instead of the single
+    ``approver_user_id`` used on the individual path.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id.
+        actor_id: The acting org owner/admin user id (audit actor).
+        project_id: The org-operated Project whose Milestone is funded.
+        milestone_id: The finalized, pending Milestone to fund.
+
+    Returns:
+        The funding response with the Stripe client secret for the org payer.
+
+    Raises:
+        HTTPException(403): If the org Operator capability is not active.
+        HTTPException(402): If the organization has no Stripe customer on file.
+        HTTPException(404): If the Project is not operated by this organization.
+        HTTPException(422): If the Milestone plan is unfinalized or non-USD.
+        HTTPException(502): If the payment provider is unavailable.
+    """
+    from app.modules.organizations.models import Organization
+    from app.modules.organizations.operator_service import operator_capability_active
+
+    if not await operator_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        _, _, milestone = await _load_org_project_milestone_for_funding(
+            db=db,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            org_id=org_id,
+        )
+        currency = milestone.currency.upper()
+        organization = await db.get(Organization, org_id)
+        customer_id = (
+            organization.stripe_customer_id if organization is not None else None
+        )
+
+    if currency != "USD":
+        raise HTTPException(
+            status_code=422,
+            detail="Only USD Milestone funding is supported.",
+        )
+    if customer_id is None:
+        # No lazy org-customer create on the org path (mirrors org purchase).
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Organization has no payment method on file.",
+        )
+
+    transaction_id, amount, currency = (
+        await _create_pending_org_milestone_transaction(
+            db=db,
+            org_id=org_id,
+            actor_id=actor_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
+    )
+    release_conditions = {
+        "kind": "project_milestone",
+        "milestone_id": str(milestone_id),
+        "project_id": str(project_id),
+        "approver_org_id": str(org_id),
+    }
+    try:
+        payment_intent = await stripe.create_payment_intent(
+            customer_id=customer_id,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "project_id": str(project_id),
+                "milestone_id": str(milestone_id),
+                "payer_org_id": str(org_id),
+                "release_conditions": json.dumps(release_conditions),
+            },
+            idempotency_key=f"milestone_funding:{transaction_id}",
+        )
+    except StripeProviderError as exc:
+        await _mark_milestone_funding_failed(
+            db=db,
+            operator_id=actor_id,
+            transaction_id=transaction_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
+        logger.bind(
+            module="projects",
+            action="fund_org_milestone",
+            user_id=actor_id,
+            org_id=org_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            transaction_id=transaction_id,
+        ).error("stripe_payment_intent_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_milestone_funding_provider_ref(
+        db=db,
+        operator_id=actor_id,
+        transaction_id=transaction_id,
+        provider_ref=payment_intent.id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+    logger.bind(
+        module="projects",
+        action="fund_org_milestone",
+        user_id=actor_id,
+        org_id=org_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        transaction_id=transaction_id,
+    ).info("milestone_funding_initiated")
+    return MilestoneFundingResponse(
+        transaction_id=transaction_id,
+        provider="stripe",
+        client_secret=payment_intent.client_secret,
+    )
+
+
 async def submit_deliverable(
     *,
     db: AsyncSession,
@@ -1147,15 +1428,17 @@ async def submit_deliverable(
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
         )
-        operator_id = project.operator_id
+        # Resolve the Operator-side recipients inside the transaction: the
+        # individual Operator, or every owner/admin of the operating org.
+        operator_recipient_ids = await resolve_operator_recipient_user_ids(
+            db, project=project
+        )
         await db.flush()
         await db.refresh(deliverable)
     # Dispatch the virus scan after commit so the worker can read the row; the
     # Deliverable stays pending_scan and approval is blocked until it is clean.
     scan_deliverable_upload.delay(str(deliverable.id))
-    # Task 7 rewires org-operated Deliverable recipients; a funded Milestone
-    # only exists on individually-operated Projects today, so operator_id is set.
-    if operator_id is not None:
+    for operator_id in operator_recipient_ids:
         project_notifications.notify_deliverable_submitted(
             operator_id=operator_id,
             project_id=project_id,
@@ -1326,6 +1609,159 @@ async def approve_deliverable(
             target_type="deliverable",
             target_id=deliverable.id,
             metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
+        )
+        approved_contributor_id = await _proposal_workspace_user_id(
+            db, proposal=proposal
+        )
+        await db.flush()
+        await db.refresh(deliverable)
+
+    project_notifications.notify_deliverable_approved(
+        contributor_id=approved_contributor_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable.id,
+    )
+    return deliverable
+
+
+async def _resolve_deliverable_milestone_id(
+    *,
+    db: AsyncSession,
+    deliverable_id: UUID,
+) -> UUID:
+    """Return the Milestone id owning a Deliverable, or raise 404."""
+    milestone_id = await db.scalar(
+        select(Deliverable.milestone_id).where(Deliverable.id == deliverable_id)
+    )
+    if milestone_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deliverable not found.",
+        )
+    return milestone_id
+
+
+async def approve_org_deliverable(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    deliverable_id: UUID,
+) -> Deliverable:
+    """Approve a Deliverable for an org-operated Project and release its Escrow.
+
+    Org sibling of :func:`approve_deliverable`. The Milestone is resolved from the
+    Deliverable (the org endpoint addresses the Deliverable directly), the Project
+    is matched on ``operator_org_id`` (cross-org access surfaces as 404), and the
+    acting org owner/admin is recorded as the release actor. The Escrow
+    beneficiary resolution is unchanged — :func:`escrow_service.release` still
+    credits the accepted Contributor (an individual Contributor via ``payee_id``
+    or an org Contributor via ``payee_org_id``). Only the funding payer differs on
+    the org path. Requires the org Operator capability to be active.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: The operating organization's id.
+        actor_id: The acting org owner/admin user id (release + audit actor).
+        project_id: The org-operated Project whose Deliverable is approved.
+        deliverable_id: The submitted, scanned Deliverable to approve.
+
+    Returns:
+        The approved Deliverable.
+
+    Raises:
+        HTTPException(403): If the org Operator capability is not active.
+        HTTPException(404): If the Project/Deliverable is not found for this org.
+        HTTPException(409): If the Milestone/Deliverable is not approvable.
+    """
+    from app.modules.organizations.operator_service import operator_capability_active
+
+    if not await operator_capability_active(db, org_id=org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "capability_suspended"},
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    async with db.begin():
+        milestone_id = await _resolve_deliverable_milestone_id(
+            db=db,
+            deliverable_id=deliverable_id,
+        )
+        project, proposal, milestone = (
+            await _load_project_milestone_for_workspace_action(
+                db=db,
+                project_id=project_id,
+                milestone_id=milestone_id,
+            )
+        )
+        if project.operator_org_id != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if milestone.status != "submitted" or milestone.escrow_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted escrow-backed Milestones can be approved.",
+            )
+        deliverable = await _load_deliverable_for_update(
+            db=db,
+            milestone_id=milestone.id,
+            deliverable_id=deliverable_id,
+        )
+        if deliverable.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only submitted Deliverables can be approved.",
+            )
+        if deliverable.scan_status != "visible":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Deliverable files are still being scanned or were "
+                    "quarantined; approval is blocked."
+                ),
+            )
+        await db.scalar(
+            select(Escrow).where(Escrow.id == milestone.escrow_id).with_for_update()
+        )
+        await escrow_service.release(
+            db,
+            escrow_id=milestone.escrow_id,
+            actor_id=actor_id,
+            reason="deliverable_approved",
+        )
+        deliverable.status = "approved"
+        deliverable.approved_at = now
+        milestone.status = "approved"
+        milestone.approved_at = now
+        await _maybe_mark_project_delivered(db, project=project, now=now)
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="deliverable_approved",
+                payload={
+                    "milestone_id": str(milestone.id),
+                    "deliverable_id": str(deliverable.id),
+                },
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="deliverable_approved",
+            target_type="deliverable",
+            target_id=deliverable.id,
+            metadata={
+                "project_id": str(project.id),
+                "milestone_id": str(milestone.id),
+                "operator_org_id": str(org_id),
+            },
         )
         approved_contributor_id = await _proposal_workspace_user_id(
             db, proposal=proposal

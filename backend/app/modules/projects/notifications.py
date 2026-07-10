@@ -235,6 +235,38 @@ def notify_deliverable_auto_approved(
     )
 
 
+def notify_operator_deliverable_auto_approved(
+    *,
+    operator_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+) -> None:
+    """Notify a Project Operator that inaction auto-approved a Deliverable.
+
+    Sent to the operating organization's owners/admins on an org-operated
+    Project so the Operator side learns the escrow released because no one acted
+    within the timeout. The individual-Operator path already surfaces this in the
+    workspace; this helper resolves the org's several admins rather than a single
+    operator user.
+    """
+    _dispatch(
+        user_id=operator_id,
+        notification_type="deliverable_auto_approved",
+        title="Deliverable auto-approved",
+        body=(
+            "No one acted on a submitted Deliverable in time, so it auto-approved "
+            "and the escrow was released to the Contributor."
+        ),
+        project_id=project_id,
+        dedupe_key=f"deliverable_auto_approved_operator:{deliverable_id}:{operator_id}",
+        extra_payload={
+            "milestone_id": str(milestone_id),
+            "deliverable_id": str(deliverable_id),
+        },
+    )
+
+
 def _amendment_payload(proposal_id: UUID, amendment_id: UUID) -> dict[str, str]:
     """Build the shared payload for Proposal amendment notifications."""
     return {

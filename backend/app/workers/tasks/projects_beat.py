@@ -23,6 +23,9 @@ from app.modules.projects.models import (
     Proposal,
     ProposalAmendment,
 )
+from app.modules.projects.operator_ownership import (
+    resolve_operator_recipient_user_ids,
+)
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
@@ -196,6 +199,9 @@ async def _auto_approve_deliverables() -> int:
     # Collect recipients during the transaction; notify after it commits so the
     # Contributor only hears about a durable auto-approval.
     auto_approved_notifications: list[tuple[UUID, UUID, UUID, UUID]] = []
+    # Org-operated Projects have no single Operator user; collect the operating
+    # org's owner/admin recipients so the Operator side is notified too.
+    operator_notifications: list[tuple[list[UUID], UUID, UUID, UUID]] = []
     async with async_session_factory() as db:
         async with db.begin():
             rows = (
@@ -234,6 +240,9 @@ async def _auto_approve_deliverables() -> int:
                     .where(Escrow.id == milestone.escrow_id)
                     .with_for_update()
                 )
+                # actor_id is the individual Operator, or NULL for an org-operated
+                # Project (a system-initiated release with no single acting user);
+                # released_by and the audit actor both accept NULL.
                 await escrow_service.release(
                     db,
                     escrow_id=milestone.escrow_id,
@@ -266,6 +275,18 @@ async def _auto_approve_deliverables() -> int:
                         deliverable.id,
                     )
                 )
+                if project.operator_org_id is not None:
+                    operator_recipient_ids = (
+                        await resolve_operator_recipient_user_ids(db, project=project)
+                    )
+                    operator_notifications.append(
+                        (
+                            operator_recipient_ids,
+                            project.id,
+                            milestone.id,
+                            deliverable.id,
+                        )
+                    )
                 await write_audit(
                     db=db,
                     actor_id=None,
@@ -284,12 +305,30 @@ async def _auto_approve_deliverables() -> int:
         milestone_id,
         deliverable_id,
     ) in auto_approved_notifications:
+        # An org-Contributor Deliverable stamps contributor_org_id, not
+        # contributor_id; skip the single-user notification when there is no
+        # individual Contributor recipient to address.
+        if contributor_id is None:
+            continue
         project_notifications.notify_deliverable_auto_approved(
             contributor_id=contributor_id,
             project_id=project_id,
             milestone_id=milestone_id,
             deliverable_id=deliverable_id,
         )
+    for (
+        operator_recipient_ids,
+        project_id,
+        milestone_id,
+        deliverable_id,
+    ) in operator_notifications:
+        for operator_id in operator_recipient_ids:
+            project_notifications.notify_operator_deliverable_auto_approved(
+                operator_id=operator_id,
+                project_id=project_id,
+                milestone_id=milestone_id,
+                deliverable_id=deliverable_id,
+            )
     return auto_approved_count
 
 
