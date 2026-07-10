@@ -619,11 +619,27 @@ async def _mark_project_milestone_funded(
             "transaction_id": str(transaction.id),
         },
     )
-    # The payee is the assigned Contributor, who starts work once escrow holds.
-    if transaction.payee_id is None:
-        raise WebhookProcessingError("milestone escrow transaction missing payee")
+    # Resolve the staffed workspace contributor even when the org, not the
+    # member, is the milestone's financial beneficiary.
+    # Local imports keep the projects -> webhooks dependency one-way.
+    from app.modules.projects.models import Proposal
+    from app.modules.projects.workspace import workspace_contributor_user_id
+
+    proposal = await db.scalar(
+        select(Proposal)
+        .where(Proposal.id == project.accepted_proposal_id)
+        .with_for_update()
+    )
+    if proposal is None:
+        raise WebhookProcessingError("project milestone accepted proposal not found")
+
+    contributor_user_id = await workspace_contributor_user_id(db, proposal=proposal)
+    if contributor_user_id is None:
+        raise WebhookProcessingError(
+            "project milestone funded without a staffed workspace contributor"
+        )
     project_notifications.notify_milestone_funded(
-        contributor_id=transaction.payee_id,
+        contributor_id=contributor_user_id,
         project_id=project.id,
         milestone_id=milestone.id,
     )
