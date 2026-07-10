@@ -59,7 +59,11 @@ from app.workers.tasks.org_notifications import send_org_invitation
 
 INVITATION_TTL_DAYS = 7
 INVITE_RATE_LIMITER = RateLimiter(namespace="org_invite", limit=20, window=3600)
-_DERIVED_ROLE_MAP = {"attestor": "attestor", "contributor": "contributor"}
+_DERIVED_ROLE_MAP = {
+    "attestor": "attestor",
+    "contributor": "contributor",
+    "operator": "operator",
+}
 
 
 async def create_organization(

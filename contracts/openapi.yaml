@@ -6329,6 +6329,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/operator-capability/activate:
+    post:
+      tags:
+      - Organizations
+      summary: Activate operator capability
+      description: Self-activate the organization's operator capability as an org
+        admin or owner and grant members the derived operator role.
+      operationId: activate_operator_capability_v1_orgs__org_id__operator_capability_activate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgCapabilityResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/members/{member_id}:
     delete:
       tags:
@@ -7842,6 +7873,87 @@ paths:
       description: Revoke an org's contributor capability, deactivate its profile,
         and remove derived contributor roles from its members.
       operationId: admin_revoke_contributor_capability_v1_admin_orgs__org_id__contributor_capability_revoke_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/operator-capability/suspend:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Suspend an org's operator capability (platform admin)
+      description: Suspend an org's operator capability and remove derived operator
+        roles from its members.
+      operationId: admin_suspend_operator_capability_v1_admin_orgs__org_id__operator_capability_suspend_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/operator-capability/reinstate:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Reinstate an org's operator capability (platform admin)
+      description: Reactivate a suspended org operator capability and re-grant any
+        derived operator roles.
+      operationId: admin_reinstate_operator_capability_v1_admin_orgs__org_id__operator_capability_reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/operator-capability/revoke:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Revoke an org's operator capability (platform admin)
+      description: Revoke an org's operator capability and remove derived operator
+        roles from its members.
+      operationId: admin_revoke_operator_capability_v1_admin_orgs__org_id__operator_capability_revoke_post
       security:
       - HTTPBearer: []
       parameters:

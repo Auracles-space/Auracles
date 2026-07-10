@@ -34,6 +34,7 @@ from app.modules.organizations import (
     contributor_service,
     legal_profile_service,
     nda_service,
+    operator_service,
     service,
 )
 from app.modules.organizations.dependencies import OrgContext, require_org_role
@@ -97,6 +98,9 @@ ORG_ATTESTOR_APPLY_RATE_LIMITER = RateLimiter(
 )
 ORG_CONTRIBUTOR_ACTIVATE_RATE_LIMITER = RateLimiter(
     namespace="org_contributor_activate", limit=5, window=3600
+)
+ORG_OPERATOR_ACTIVATE_RATE_LIMITER = RateLimiter(
+    namespace="org_operator_activate", limit=5, window=3600
 )
 
 
@@ -327,6 +331,34 @@ async def activate_contributor_capability(
         cast(RedisCounter, redis), str(context.org.id)
     )
     capability = await contributor_service.activate_contributor_capability(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+    )
+    return OrgCapabilityResponse.model_validate(capability)
+
+
+@router.post(
+    "/{org_id}/operator-capability/activate",
+    response_model=OrgCapabilityResponse,
+    summary="Activate operator capability",
+    description=(
+        "Self-activate the organization's operator capability as an org "
+        "admin or owner and grant members the derived operator role."
+    ),
+)
+async def activate_operator_capability(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgCapabilityResponse:
+    """Activate the org Operator capability."""
+    del org_id
+    await ORG_OPERATOR_ACTIVATE_RATE_LIMITER.check(
+        cast(RedisCounter, redis), str(context.org.id)
+    )
+    capability = await operator_service.activate_operator_capability(
         db,
         org_id=context.org.id,
         actor_id=context.user.id,
@@ -1333,6 +1365,60 @@ async def admin_revoke_contributor_capability(
 ) -> None:
     """Revoke an org's contributor capability."""
     await contributor_service.admin_set_contributor_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/operator-capability/suspend",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Suspend an org's operator capability (platform admin)",
+    description=(
+        "Suspend an org's operator capability and remove derived operator "
+        "roles from its members."
+    ),
+)
+async def admin_suspend_operator_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Suspend an org's operator capability."""
+    await operator_service.admin_set_operator_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/operator-capability/reinstate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reinstate an org's operator capability (platform admin)",
+    description=(
+        "Reactivate a suspended org operator capability and re-grant any "
+        "derived operator roles."
+    ),
+)
+async def admin_reinstate_operator_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Reinstate an org's operator capability."""
+    await operator_service.admin_set_operator_capability_status(
+        db, org_id=org_id, admin_id=admin.id, status_value="active"
+    )
+
+
+@admin_orgs_router.post(
+    "/{org_id}/operator-capability/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke an org's operator capability (platform admin)",
+    description=(
+        "Revoke an org's operator capability and remove derived operator "
+        "roles from its members."
+    ),
+)
+async def admin_revoke_operator_capability(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Revoke an org's operator capability."""
+    await operator_service.admin_set_operator_capability_status(
         db, org_id=org_id, admin_id=admin.id, status_value="revoked"
     )
 
