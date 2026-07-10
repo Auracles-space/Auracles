@@ -60,6 +60,15 @@ class FakeStripePaymentIntent:
         self.client_secret = client_secret
 
 
+class FakeStripeRefund:
+    """Small stand-in for a Stripe refund result."""
+
+    def __init__(self, refund_id: str) -> None:
+        """Store the provider refund id and status."""
+        self.id = refund_id
+        self.status = "succeeded"
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure the current schema exists for money-path unit tests."""
@@ -621,3 +630,83 @@ async def test_org_dispute_refund_routes_to_payer_org(
     # The refunded transaction is the org-payer transaction: funds route to the org.
     assert transaction.payer_id is None
     assert transaction.payer_org_id == org["org_id"]
+
+
+async def test_escrow_split_preserves_org_payer_and_payee_attribution(
+    migrated_database: None,
+    money_path_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Splitting an org-funded escrow must not null out the org XOR columns.
+
+    The funding ``Transaction`` for an org-operated Project has
+    ``payer_id=None`` / ``payer_org_id=<org>`` (BR enforced by
+    ``ck_transactions_payer_xor``). ``escrow_service.split`` builds two new
+    ``Transaction`` rows (release + refund); both must carry the source
+    row's ``payer_org_id`` (and the release row the ``payee_org_id``) or the
+    flush raises ``IntegrityError`` — after the Stripe refund has already
+    fired, leaving escrow and Stripe state mismatched.
+    """
+    del migrated_database, money_path_state
+    org = await _seed_org(prefix="splitorg")
+    contributor_org = await _seed_org(prefix="splitcontrib")
+    seed = await _seed_org_project(
+        org_id=org["org_id"],
+        contributor_id=None,
+        contributor_org_id=contributor_org["org_id"],
+        milestone_status="funded",
+        project_status="in_progress",
+        with_escrow=True,
+    )
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Stub the Stripe refund portion of a split resolution."""
+        return FakeStripeRefund("re_org_split_unit")
+
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+
+    async with async_session_factory() as db:
+        async with db.begin():
+            await escrow_service.split(
+                db,
+                escrow_id=seed["escrow_id"],
+                actor_id=org["admin_id"],
+                release_amount=Decimal("900.00"),
+                refund_amount=Decimal("600.00"),
+                reason="dispute_split",
+                admin_override=True,
+            )
+
+    async with async_session_factory() as session:
+        transactions = (
+            (
+                await session.execute(
+                    select(Transaction)
+                    .where(Transaction.ref_id == seed["milestone_id"])
+                    .order_by(Transaction.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    # Original funding row, plus the release and refund rows created by split.
+    assert len(transactions) == 3
+    release_row = next(t for t in transactions if t.transaction_type == "milestone")
+    refund_row = next(t for t in transactions if t.transaction_type == "refund")
+
+    assert release_row.payer_id is None
+    assert release_row.payer_org_id == org["org_id"]
+    assert release_row.payee_id is None
+    assert release_row.payee_org_id == contributor_org["org_id"]
+
+    assert refund_row.payer_id is None
+    assert refund_row.payer_org_id == org["org_id"]
+    assert refund_row.payee_id is None
+    assert refund_row.payee_org_id is None

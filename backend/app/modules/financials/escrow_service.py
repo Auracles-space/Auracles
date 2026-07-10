@@ -334,7 +334,9 @@ async def split(
     db.add(
         Transaction(
             payer_id=transaction.payer_id,
+            payer_org_id=transaction.payer_org_id,
             payee_id=transaction.payee_id,
+            payee_org_id=transaction.payee_org_id,
             amount=normalized_release,
             currency=transaction.currency.upper(),
             platform_commission=Decimal("0.00"),
@@ -350,6 +352,7 @@ async def split(
     db.add(
         Transaction(
             payer_id=transaction.payer_id,
+            payer_org_id=transaction.payer_org_id,
             payee_id=None,
             amount=normalized_refund,
             currency=transaction.currency.upper(),
