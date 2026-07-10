@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,11 +28,13 @@ from app.modules.financials.schemas import (
     PayoutRequest,
     PayoutResponse,
 )
+from app.modules.library.schemas import ArtifactDownloadResponse
 from app.modules.organizations import (
     attestor_application_service,
     contributor_directory_service,
     contributor_service,
     legal_profile_service,
+    library_service,
     nda_service,
     operator_service,
     service,
@@ -68,6 +70,11 @@ from app.modules.organizations.schemas import (
     OrgInvitationsResponse,
     OrgLegalProfileResponse,
     OrgLegalProfileUpdateRequest,
+    OrgLibraryItem,
+    OrgLibraryResponse,
+    OrgLicenseGrantRequest,
+    OrgLicenseGrantResponse,
+    OrgLicenseGrantsResponse,
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
@@ -364,6 +371,142 @@ async def activate_operator_capability(
         actor_id=context.user.id,
     )
     return OrgCapabilityResponse.model_validate(capability)
+
+
+@router.post(
+    "/{org_id}/licenses/{license_id}/grants",
+    response_model=OrgLicenseGrantResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an organization license grant",
+    description=(
+        "Allocate one org-owned License to exactly one team or one member."
+    ),
+)
+async def add_org_license_grant(
+    org_id: UUID,
+    license_id: UUID,
+    payload: OrgLicenseGrantRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgLicenseGrantResponse:
+    """Create one org License grant for a team or member."""
+    del org_id
+    grant = await library_service.add_license_grant(
+        db,
+        org_id=context.org.id,
+        license_id=license_id,
+        actor_member_id=context.member.id,
+        team_id=payload.team_id,
+        member_id=payload.member_id,
+    )
+    return OrgLicenseGrantResponse.model_validate(grant)
+
+
+@router.delete(
+    "/{org_id}/licenses/{license_id}/grants/{grant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke an organization license grant",
+    description="Remove one team or member allocation from an org-owned License.",
+)
+async def revoke_org_license_grant(
+    org_id: UUID,
+    license_id: UUID,
+    grant_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Delete one org License grant."""
+    del org_id
+    await library_service.revoke_license_grant(
+        db,
+        org_id=context.org.id,
+        license_id=license_id,
+        grant_id=grant_id,
+    )
+
+
+@router.get(
+    "/{org_id}/licenses/{license_id}/grants",
+    response_model=OrgLicenseGrantsResponse,
+    summary="List organization license grants",
+    description="List the current team and member allocations for one org License.",
+)
+async def list_org_license_grants(
+    org_id: UUID,
+    license_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgLicenseGrantsResponse:
+    """Return the current grant rows for one org-owned License."""
+    del org_id
+    grants = await library_service.list_license_grants(
+        db,
+        org_id=context.org.id,
+        license_id=license_id,
+    )
+    return OrgLicenseGrantsResponse(
+        grants=[OrgLicenseGrantResponse.model_validate(grant) for grant in grants]
+    )
+
+
+@router.get(
+    "/{org_id}/library",
+    response_model=OrgLibraryResponse,
+    summary="List one organization's shared library",
+    description=(
+        "Return the org-owned Licenses visible to the caller. Admins and owners "
+        "see the full library; plain members see only granted Licenses."
+    ),
+)
+async def list_org_library(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgLibraryResponse:
+    """Return the org shared library for the current member."""
+    del org_id
+    items = await library_service.list_org_library(
+        db,
+        org_id=context.org.id,
+        member=context.member,
+    )
+    return OrgLibraryResponse(
+        items=[
+            OrgLibraryItem.model_validate(
+                {**item.model_dump(), "grant_count": grant_count}
+            )
+            for item, grant_count in items
+        ]
+    )
+
+
+@router.post(
+    "/{org_id}/library/{license_id}/artifacts/{artifact_id}/download",
+    response_model=ArtifactDownloadResponse,
+    summary="Request an org library artifact download",
+    description=(
+        "Return a short-lived presigned URL for one Artifact covered by a "
+        "granted org-owned License."
+    ),
+)
+async def request_org_library_artifact_download(
+    org_id: UUID,
+    license_id: UUID,
+    artifact_id: UUID,
+    request: Request,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> ArtifactDownloadResponse:
+    """Return a short-lived download URL for a granted org library Artifact."""
+    del org_id
+    return await library_service.request_org_artifact_download(
+        db,
+        org_id=context.org.id,
+        license_id=license_id,
+        artifact_id=artifact_id,
+        member=context.member,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 @router.delete(

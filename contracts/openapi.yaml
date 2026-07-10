@@ -6360,6 +6360,201 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/licenses/{license_id}/grants:
+    post:
+      tags:
+      - Organizations
+      summary: Add an organization license grant
+      description: Allocate one org-owned License to exactly one team or one member.
+      operationId: add_org_license_grant_v1_orgs__org_id__licenses__license_id__grants_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: license_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: License Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgLicenseGrantRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgLicenseGrantResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Organizations
+      summary: List organization license grants
+      description: List the current team and member allocations for one org License.
+      operationId: list_org_license_grants_v1_orgs__org_id__licenses__license_id__grants_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: license_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: License Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgLicenseGrantsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/licenses/{license_id}/grants/{grant_id}:
+    delete:
+      tags:
+      - Organizations
+      summary: Revoke an organization license grant
+      description: Remove one team or member allocation from an org-owned License.
+      operationId: revoke_org_license_grant_v1_orgs__org_id__licenses__license_id__grants__grant_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: license_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: License Id
+      - name: grant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Grant Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/library:
+    get:
+      tags:
+      - Organizations
+      summary: List one organization's shared library
+      description: Return the org-owned Licenses visible to the caller. Admins and
+        owners see the full library; plain members see only granted Licenses.
+      operationId: list_org_library_v1_orgs__org_id__library_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgLibraryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/library/{license_id}/artifacts/{artifact_id}/download:
+    post:
+      tags:
+      - Organizations
+      summary: Request an org library artifact download
+      description: Return a short-lived presigned URL for one Artifact covered by
+        a granted org-owned License.
+      operationId: request_org_library_artifact_download_v1_orgs__org_id__library__license_id__artifacts__artifact_id__download_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: license_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: License Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactDownloadResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/members/{member_id}:
     delete:
       tags:
@@ -19032,6 +19227,170 @@ components:
       - totp_code
       title: OrgLegalProfileUpdateRequest
       description: Owner-scoped request body for the shared organization legal profile.
+    OrgLibraryItem:
+      properties:
+        license_id:
+          type: string
+          format: uuid
+          title: License Id
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+        title:
+          type: string
+          title: Title
+        version_at_grant:
+          type: string
+          title: Version At Grant
+        current_version:
+          type: string
+          title: Current Version
+        license_type:
+          type: string
+          title: License Type
+        source:
+          type: string
+          title: Source
+        collection_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Collection Id
+        status:
+          type: string
+          title: Status
+        seats_used:
+          type: integer
+          title: Seats Used
+        seats_total:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Seats Total
+        price:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Price
+        currency:
+          type: string
+          title: Currency
+        thumbnail_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Key
+        granted_at:
+          type: string
+          format: date-time
+          title: Granted At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        grant_count:
+          type: integer
+          title: Grant Count
+      type: object
+      required:
+      - license_id
+      - framework_id
+      - title
+      - version_at_grant
+      - current_version
+      - license_type
+      - source
+      - collection_id
+      - status
+      - seats_used
+      - seats_total
+      - price
+      - currency
+      - thumbnail_key
+      - granted_at
+      - expires_at
+      - grant_count
+      title: OrgLibraryItem
+      description: One org-library item plus its aggregate grant count.
+    OrgLibraryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OrgLibraryItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: OrgLibraryResponse
+      description: List wrapper for the org shared library visible to one member.
+    OrgLicenseGrantRequest:
+      properties:
+        team_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Team Id
+        member_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Member Id
+      type: object
+      title: OrgLicenseGrantRequest
+      description: Admin-scoped request to allocate one org License to one target.
+    OrgLicenseGrantResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        license_id:
+          type: string
+          format: uuid
+          title: License Id
+        team_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Team Id
+        member_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Member Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - license_id
+      - team_id
+      - member_id
+      - created_at
+      title: OrgLicenseGrantResponse
+      description: One org License grant row exposed to org admins.
+    OrgLicenseGrantsResponse:
+      properties:
+        grants:
+          items:
+            $ref: '#/components/schemas/OrgLicenseGrantResponse'
+          type: array
+          title: Grants
+      type: object
+      required:
+      - grants
+      title: OrgLicenseGrantsResponse
+      description: List wrapper for one org License's allocation rows.
     OrgMemberResponse:
       properties:
         id:

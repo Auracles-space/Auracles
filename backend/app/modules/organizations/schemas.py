@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.modules.attestation.schemas import CoiEntry
 from app.modules.attestation.taxonomy import validate_categories, validate_sectors
+from app.modules.library.schemas import LibraryItem
 
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x1f\x7f]")
 
@@ -303,6 +304,43 @@ class OrgTeamsResponse(BaseModel):
     """List wrapper for organization teams."""
 
     teams: list[OrgTeamResponse]
+
+
+class OrgLicenseGrantRequest(BaseModel):
+    """Admin-scoped request to allocate one org License to one target."""
+
+    team_id: UUID | None = None
+    member_id: UUID | None = None
+
+
+class OrgLicenseGrantResponse(BaseModel):
+    """One org License grant row exposed to org admins."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    license_id: UUID
+    team_id: UUID | None
+    member_id: UUID | None
+    created_at: datetime
+
+
+class OrgLicenseGrantsResponse(BaseModel):
+    """List wrapper for one org License's allocation rows."""
+
+    grants: list[OrgLicenseGrantResponse]
+
+
+class OrgLibraryItem(LibraryItem):
+    """One org-library item plus its aggregate grant count."""
+
+    grant_count: int
+
+
+class OrgLibraryResponse(BaseModel):
+    """List wrapper for the org shared library visible to one member."""
+
+    items: list[OrgLibraryItem]
 
 
 class AdminOrgResponse(BaseModel):
