@@ -27,6 +27,8 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardResponse,
     PayoutRequest,
     PayoutResponse,
+    PurchaseRequest,
+    PurchaseResponse,
 )
 from app.modules.library.schemas import ArtifactDownloadResponse
 from app.modules.organizations import (
@@ -40,7 +42,11 @@ from app.modules.organizations import (
     operator_service,
     service,
 )
-from app.modules.organizations.dependencies import OrgContext, require_org_role
+from app.modules.organizations.dependencies import (
+    OrgContext,
+    require_org_capability,
+    require_org_role,
+)
 from app.modules.organizations.models import OrgAttestorApplication, OrgLegalProfile
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
@@ -118,6 +124,9 @@ ORG_OPERATOR_ACTIVATE_RATE_LIMITER = RateLimiter(
 )
 ORG_PAYMENT_METHOD_SETUP_RATE_LIMITER = RateLimiter(
     namespace="org_payment_method_setup", limit=10, window=3600
+)
+ORG_FRAMEWORK_PURCHASE_RATE_LIMITER = RateLimiter(
+    namespace="org_framework_purchase", limit=30, window=3600
 )
 
 
@@ -1449,6 +1458,39 @@ async def list_org_invoices(
     """List issued invoices for the org's settled work."""
     del context
     return await financials_service.list_org_invoices(db, org_id=org_id)
+
+
+@router.post(
+    "/{org_id}/frameworks/{framework_id}/purchase",
+    response_model=PurchaseResponse,
+    summary="Purchase a Framework as an organization",
+    description=(
+        "Start Stripe checkout for a Framework purchased on behalf of the "
+        "organization. The resulting License is owned by the organization. "
+        "Requires an active Operator capability and a payment method on "
+        "file. Owner/admin only."
+    ),
+)
+async def create_org_framework_purchase(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: PurchaseRequest,
+    context: OrgAdmin,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> PurchaseResponse:
+    """Start org-payer Stripe checkout for one Framework."""
+    await ORG_FRAMEWORK_PURCHASE_RATE_LIMITER.check(
+        cast(RedisCounter, redis), str(org_id)
+    )
+    return await financials_service.create_org_framework_purchase(
+        db,
+        org_id=org_id,
+        actor=context.user,
+        framework_id=framework_id,
+        payload=payload,
+    )
 
 
 admin_orgs_router = APIRouter(

@@ -229,53 +229,111 @@ async def _handle_purchase_succeeded(
     if license_type not in framework.license_types:
         raise WebhookProcessingError("license type is unavailable")
 
-    existing_license = await db.scalar(
-        select(License).where(
-            License.framework_id == framework.id,
-            License.operator_id == transaction.payer_id,
+    # Org-payer purchases must branch before any operator_id-keyed lookup:
+    # when payer_id is NULL (org-paid), `operator_id == transaction.payer_id`
+    # compiles to `operator_id IS NULL`, which would match an unrelated
+    # individual-less License row instead of resolving the org's own License.
+    if transaction.payer_org_id is not None:
+        existing_license = await db.scalar(
+            select(License).where(
+                License.framework_id == framework.id,
+                License.licensee_org_id == transaction.payer_org_id,
+            )
         )
-    )
-    if existing_license is None:
-        existing_license = License(
-            framework_id=framework.id,
-            operator_id=transaction.payer_id,
-            transaction_id=transaction.id,
-            license_type=license_type,
-            status="active",
-            version_at_grant=framework.version,
-            seats_used=1,
-            seats_total=_license_seats_total(license_type),
+        if existing_license is None:
+            existing_license = License(
+                framework_id=framework.id,
+                operator_id=None,
+                licensee_org_id=transaction.payer_org_id,
+                transaction_id=transaction.id,
+                license_type=license_type,
+                status="active",
+                version_at_grant=framework.version,
+                seats_used=1,
+                seats_total=_license_seats_total(license_type),
+            )
+            db.add(existing_license)
+            await db.flush()
+        elif existing_license.transaction_id == transaction.id:
+            pass
+        elif existing_license.status != "active":
+            existing_license.transaction_id = transaction.id
+            existing_license.license_type = license_type
+            existing_license.status = "active"
+            existing_license.version_at_grant = framework.version
+            existing_license.seats_used = 1
+            existing_license.seats_total = _license_seats_total(license_type)
+        else:
+            raise WebhookProcessingError(
+                "framework already licensed by a different transaction"
+            )
+
+        transaction.status = "completed"
+        # The initiating org admin is already audited at purchase_initiated;
+        # this completion event has no individual actor.
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="purchase_completed",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "provider": "stripe",
+                "framework_id": str(framework.id),
+                "license_id": str(existing_license.id),
+                "license_type": license_type,
+                "payer_org_id": str(transaction.payer_org_id),
+            },
         )
-        db.add(existing_license)
-        await db.flush()
-    elif existing_license.transaction_id == transaction.id:
-        pass
-    elif existing_license.status != "active":
-        existing_license.transaction_id = transaction.id
-        existing_license.license_type = license_type
-        existing_license.status = "active"
-        existing_license.version_at_grant = framework.version
-        existing_license.seats_used = 1
-        existing_license.seats_total = _license_seats_total(license_type)
     else:
-        raise WebhookProcessingError(
-            "framework already licensed by a different transaction"
+        existing_license = await db.scalar(
+            select(License).where(
+                License.framework_id == framework.id,
+                License.operator_id == transaction.payer_id,
+            )
+        )
+        if existing_license is None:
+            existing_license = License(
+                framework_id=framework.id,
+                operator_id=transaction.payer_id,
+                transaction_id=transaction.id,
+                license_type=license_type,
+                status="active",
+                version_at_grant=framework.version,
+                seats_used=1,
+                seats_total=_license_seats_total(license_type),
+            )
+            db.add(existing_license)
+            await db.flush()
+        elif existing_license.transaction_id == transaction.id:
+            pass
+        elif existing_license.status != "active":
+            existing_license.transaction_id = transaction.id
+            existing_license.license_type = license_type
+            existing_license.status = "active"
+            existing_license.version_at_grant = framework.version
+            existing_license.seats_used = 1
+            existing_license.seats_total = _license_seats_total(license_type)
+        else:
+            raise WebhookProcessingError(
+                "framework already licensed by a different transaction"
+            )
+
+        transaction.status = "completed"
+        await write_audit(
+            db=db,
+            actor_id=transaction.payer_id,
+            action="purchase_completed",
+            target_type="transaction",
+            target_id=transaction.id,
+            metadata={
+                "provider": "stripe",
+                "framework_id": str(framework.id),
+                "license_id": str(existing_license.id),
+                "license_type": license_type,
+            },
         )
 
-    transaction.status = "completed"
-    await write_audit(
-        db=db,
-        actor_id=transaction.payer_id,
-        action="purchase_completed",
-        target_type="transaction",
-        target_id=transaction.id,
-        metadata={
-            "provider": "stripe",
-            "framework_id": str(framework.id),
-            "license_id": str(existing_license.id),
-            "license_type": license_type,
-        },
-    )
     after_commit_work = await _create_partner_commission_if_attributed(
         db=db,
         transaction=transaction,
