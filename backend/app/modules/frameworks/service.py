@@ -2687,6 +2687,12 @@ async def create_new_version(
                 file_size=artifact.file_size,
                 mime_type=artifact.mime_type,
                 current_for_framework=True,
+                content_sha256=artifact.content_sha256,
+                source_kind=artifact.source_kind,
+                source_external_id=artifact.source_external_id,
+                source_connection_id=artifact.source_connection_id,
+                source_last_synced_at=artifact.source_last_synced_at,
+                source_synced_revision=artifact.source_synced_revision,
             )
             db.add(new_artifact)
             await db.flush()
