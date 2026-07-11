@@ -202,7 +202,7 @@ async def _mark_event_status(
 async def _handle_purchase_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
-) -> tuple[UUID, list[Callable[[], None]]]:
+) -> tuple[UUID | None, list[Callable[[], None]]]:
     """Mark a purchase complete and grant its Framework License."""
     transaction_id = _purchase_transaction_id(event)
     payment_intent_id = _event_object_id(event)
@@ -339,7 +339,13 @@ async def _handle_purchase_succeeded(
         transaction=transaction,
         framework_id=framework.id,
     )
-    return transaction.id, after_commit_work
+    # Only individual purchases queue an invoice PDF: the invoice worker keys on
+    # ``payer_id`` and no org purchase-invoice is issued (unspecced), so an org
+    # (NULL-payer) row would fail the worker permanently. Skip its dispatch.
+    invoice_transaction_id = (
+        None if transaction.payer_org_id is not None else transaction.id
+    )
+    return invoice_transaction_id, after_commit_work
 
 
 async def _create_partner_commission_if_attributed(

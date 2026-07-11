@@ -335,6 +335,10 @@ async def test_org_purchase_happy_path_and_webhook_grants_org_library_access(
     assert license_row is not None
     assert license_row.licensee_org_id == UUID(org["id"])
     assert license_row.operator_id is None
+    # Org purchases have no personal buyer, and no org purchase-invoice is issued
+    # (unspecced). The invoice PDF worker keys on payer_id and would fail forever
+    # for a NULL-payer org row, so the org branch must not dispatch it.
+    assert org_purchase_context["invoice_task"].dispatched == []
 
     grant_response = await client.post(
         f"/v1/orgs/{org['id']}/licenses/{license_row.id}/grants",
