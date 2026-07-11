@@ -114,3 +114,17 @@ async def test_reserve_excludes_replaced_artifact(
     await service._reserve_artifact_budget(
         db, framework.id, add_bytes=200 * 1024 * 1024, exclude_id=artifact.id
     )
+
+
+@pytest.mark.asyncio
+async def test_reserve_returns_existing_sum(
+    budget_ctx: tuple[AsyncSession, Framework, Artifact],
+) -> None:
+    """The helper returns current usage so callers can derive a streaming cap."""
+    from app.modules.frameworks import service
+
+    db, framework, _artifact = budget_ctx
+    existing = await service._reserve_artifact_budget(
+        db, framework.id, add_bytes=0, exclude_id=None
+    )
+    assert existing == 400 * 1024 * 1024

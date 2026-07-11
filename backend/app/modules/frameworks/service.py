@@ -1260,14 +1260,13 @@ async def import_artifact_from_connector(
         )
 
     metadata_size = metadata.get("size")
-    if metadata_size is not None:
-        await _reserve_artifact_budget(
-            db,
-            framework.id,
-            add_bytes=int(metadata_size),
-            exclude_id=None,
-        )
-    remaining = ARTIFACT_MAX_TOTAL_SIZE
+    existing_bytes = await _reserve_artifact_budget(
+        db,
+        framework.id,
+        add_bytes=int(metadata_size) if metadata_size is not None else 0,
+        exclude_id=None,
+    )
+    remaining = ARTIFACT_MAX_TOTAL_SIZE - existing_bytes
 
     try:
         body = await download_drive_file(
@@ -1579,7 +1578,7 @@ async def _reserve_artifact_budget(
     *,
     add_bytes: int,
     exclude_id: UUID | None,
-) -> None:
+) -> int:
     """Serialize the 500MB framework artifact budget check under a row lock.
 
     Locks the Framework row FOR UPDATE, then sums the current artifact bytes
@@ -1592,6 +1591,10 @@ async def _reserve_artifact_budget(
         framework_id: Framework whose budget is being reserved.
         add_bytes: Bytes about to be added.
         exclude_id: An artifact id to exclude from the sum (the row being replaced).
+
+    Returns:
+        The current total artifact bytes for the framework (excluding
+        ``exclude_id``), so callers can derive a real streaming cap.
 
     Raises:
         HTTPException(413): If the reservation would exceed the size budget.
@@ -1610,6 +1613,7 @@ async def _reserve_artifact_budget(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Framework artifacts exceed the 500MB limit.",
         )
+    return int(existing or 0)
 
 
 async def confirm_artifact_upload(
