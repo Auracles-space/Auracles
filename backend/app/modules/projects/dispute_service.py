@@ -26,6 +26,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
+from app.modules.organizations.models import Organization, OrgMember
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -541,8 +542,17 @@ async def list_disputes_for_admin(
     Returns:
         Disputes ordered newest-first, each with resolution context.
     """
+    # Each side of a Project is either an individual user or an organization
+    # (XOR), so every user/org join is an outer join and the name resolves from
+    # whichever side is populated. The raiser is joined directly on
+    # ``Dispute.raised_by`` because for an org side the acting user is an org
+    # admin, not the (NULL) individual operator/contributor.
     operator_user = aliased(User, name="operator_user")
     contributor_user = aliased(User, name="contributor_user")
+    operator_org = aliased(Organization, name="operator_org")
+    contributor_org = aliased(Organization, name="contributor_org")
+    raiser_user = aliased(User, name="raiser_user")
+    operator_raiser_member = aliased(OrgMember, name="operator_raiser_member")
     statement = (
         select(
             Dispute,
@@ -551,13 +561,27 @@ async def list_disputes_for_admin(
             Escrow,
             operator_user,
             contributor_user,
+            operator_org,
+            contributor_org,
+            raiser_user,
+            operator_raiser_member.id,
         )
         .join(Project, Project.id == Dispute.project_id)
         .join(Milestone, Milestone.id == Dispute.milestone_id)
         .outerjoin(Escrow, Escrow.id == Milestone.escrow_id)
-        .join(operator_user, operator_user.id == Project.operator_id)
+        .outerjoin(operator_user, operator_user.id == Project.operator_id)
+        .outerjoin(operator_org, operator_org.id == Project.operator_org_id)
         .join(Proposal, Proposal.id == Project.accepted_proposal_id)
-        .join(contributor_user, contributor_user.id == Proposal.contributor_id)
+        .outerjoin(contributor_user, contributor_user.id == Proposal.contributor_id)
+        .outerjoin(
+            contributor_org, contributor_org.id == Proposal.contributor_org_id
+        )
+        .outerjoin(raiser_user, raiser_user.id == Dispute.raised_by)
+        .outerjoin(
+            operator_raiser_member,
+            (operator_raiser_member.org_id == Project.operator_org_id)
+            & (operator_raiser_member.user_id == Dispute.raised_by),
+        )
         .order_by(Dispute.created_at.desc())
     )
     if status_filter is None:
@@ -567,10 +591,39 @@ async def list_disputes_for_admin(
 
     rows = await db.execute(statement)
     disputes: list[AdminDisputeResponse] = []
-    for dispute, project, milestone, escrow, operator, contributor in rows.all():
-        # The raiser is always one of the two parties; label which side acted.
-        raised_by_operator = dispute.raised_by == operator.id
-        raiser = operator if raised_by_operator else contributor
+    for (
+        dispute,
+        project,
+        milestone,
+        escrow,
+        operator,
+        contributor,
+        operator_organization,
+        contributor_organization,
+        raiser,
+        operator_raiser_member_id,
+    ) in rows.all():
+        # Label which side raised: an individual operator/contributor matches by
+        # id; an org operator matches when the raiser is a member of the
+        # operating org. Everything else is the contributor side.
+        if operator is not None and dispute.raised_by == operator.id:
+            raised_by_role = "operator"
+        elif contributor is not None and dispute.raised_by == contributor.id:
+            raised_by_role = "contributor"
+        elif operator_raiser_member_id is not None:
+            raised_by_role = "operator"
+        else:
+            raised_by_role = "contributor"
+        operator_name = (
+            operator.display_name
+            if operator is not None
+            else operator_organization.name
+        )
+        contributor_name = (
+            contributor.display_name
+            if contributor is not None
+            else contributor_organization.name
+        )
         disputes.append(
             AdminDisputeResponse(
                 **DisputeResponse.model_validate(dispute).model_dump(),
@@ -580,10 +633,10 @@ async def list_disputes_for_admin(
                 currency=milestone.currency,
                 escrow_amount=escrow.amount if escrow is not None else None,
                 escrow_status=escrow.status if escrow is not None else None,
-                raised_by_name=raiser.display_name,
-                raised_by_role="operator" if raised_by_operator else "contributor",
-                operator_name=operator.display_name,
-                contributor_name=contributor.display_name,
+                raised_by_name=raiser.display_name if raiser is not None else None,
+                raised_by_role=raised_by_role,
+                operator_name=operator_name,
+                contributor_name=contributor_name,
             )
         )
     return AdminDisputesResponse(disputes=disputes)

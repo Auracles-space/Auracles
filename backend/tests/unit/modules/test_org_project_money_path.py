@@ -632,6 +632,57 @@ async def test_org_dispute_refund_routes_to_payer_org(
     assert transaction.payer_org_id == org["org_id"]
 
 
+async def test_admin_dispute_queue_surfaces_org_operated_and_org_contributor_dispute(
+    migrated_database: None,
+    money_path_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Org-side disputes appear in the platform Admin queue with org names.
+
+    Regression for the admin queue's inner joins on ``Project.operator_id`` and
+    ``Proposal.contributor_id``: when both sides are organizations those columns
+    are NULL, so an inner join dropped the dispute entirely. The queue must
+    outer-join both sides and resolve the display name from the organization.
+    """
+    del migrated_database, money_path_state
+    _patch_notifications(monkeypatch)
+    operator_org = await _seed_org(prefix="adminq-op")
+    contributor_org = await _seed_org(prefix="adminq-con")
+    seed = await _seed_org_project(
+        org_id=operator_org["org_id"],
+        contributor_id=None,
+        contributor_org_id=contributor_org["org_id"],
+        milestone_status="funded",
+        project_status="in_progress",
+        with_escrow=True,
+    )
+
+    async with async_session_factory() as db:
+        dispute = await dispute_service.create_org_dispute(
+            db=db,
+            org_id=operator_org["org_id"],
+            actor_id=operator_org["admin_id"],
+            project_id=seed["project_id"],
+            payload=DisputeCreateRequest(
+                milestone_id=seed["milestone_id"],
+                reason="Submitted work does not match the agreed scope here.",
+            ),
+        )
+    dispute_id = dispute.id
+
+    async with async_session_factory() as db:
+        queue = await dispute_service.list_disputes_for_admin(db=db)
+
+    listed = next(row for row in queue.disputes if row.id == dispute_id)
+    assert listed.operator_name == "adminq-op"
+    assert listed.contributor_name == "adminq-con"
+    assert listed.escrow_amount == Decimal("1500.00")
+    # The operator-side org admin raised it, so the role reads operator and the
+    # name resolves to that admin, not the org.
+    assert listed.raised_by_role == "operator"
+    assert listed.raised_by_name == "adminq-op-admin"
+
+
 async def test_escrow_split_preserves_org_payer_and_payee_attribution(
     migrated_database: None,
     money_path_state: None,

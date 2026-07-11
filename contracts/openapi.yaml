@@ -12162,7 +12162,9 @@ components:
           - type: 'null'
           title: Escrow Status
         raised_by_name:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Raised By Name
         raised_by_role:
           type: string
