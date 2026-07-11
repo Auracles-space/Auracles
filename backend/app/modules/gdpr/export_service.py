@@ -41,6 +41,7 @@ from app.modules.financials.models import (
     Transaction,
 )
 from app.modules.frameworks.models import Framework, License, Review
+from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.gdpr.models import DataExportRequest
 from app.modules.gdpr.redaction import redact_metadata
 from app.modules.gdpr.schemas import DataExportRequestResponse
@@ -622,6 +623,74 @@ async def _collect_org_contributor_activity(
     }
 
 
+async def _collect_org_operator_activity(
+    db: AsyncSession,
+    user_id: UUID,
+) -> dict[str, list[dict[str, Any]]]:
+    """Collect member-scoped org operator activity for one user.
+
+    This surfaces only the user's own org-backed operator actions: which
+    org-owned Artifacts they downloaded, which org-operated Projects they
+    posted, and which Framework reviews they authored for an operator org.
+    Organization billing and transactions remain org-owned and excluded.
+    """
+    library_downloads = (
+        await db.execute(
+            select(
+                ArtifactDownload.artifact_id,
+                ArtifactDownload.downloaded_at,
+            )
+            .select_from(ArtifactDownload)
+            .join(License, License.id == ArtifactDownload.license_id)
+            .join(OrgMember, OrgMember.org_id == License.licensee_org_id)
+            .where(
+                ArtifactDownload.user_id == user_id,
+                OrgMember.user_id == user_id,
+            )
+            .order_by(ArtifactDownload.downloaded_at)
+        )
+    ).all()
+    project_postings = (
+        await db.execute(
+            select(Project.id, Project.created_at)
+            .join(OrgMember, OrgMember.id == Project.posting_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Project.created_at)
+        )
+    ).all()
+    review_authorship = (
+        await db.execute(
+            select(Review.framework_id, Review.created_at)
+            .join(OrgMember, OrgMember.id == Review.reviewing_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Review.created_at)
+        )
+    ).all()
+    return {
+        "library_downloads": [
+            {
+                "artifact_id": str(artifact_id),
+                "downloaded_at": _json_value(downloaded_at),
+            }
+            for artifact_id, downloaded_at in library_downloads
+        ],
+        "project_postings": [
+            {
+                "project_id": str(project_id),
+                "created_at": _json_value(created_at),
+            }
+            for project_id, created_at in project_postings
+        ],
+        "review_authorship": [
+            {
+                "framework_id": str(framework_id),
+                "created_at": _json_value(created_at),
+            }
+            for framework_id, created_at in review_authorship
+        ],
+    }
+
+
 async def _collect_attestation(db: AsyncSession, user_id: UUID) -> dict[str, Any]:
     """Collect attestation records tied to the user.
 
@@ -1022,6 +1091,9 @@ async def build_data_export_bundle(
         "frameworks": await _collect_frameworks(db, user_id),
         "projects": await _collect_projects(db, user_id),
         "organization_contributor_activity": await _collect_org_contributor_activity(
+            db, user_id
+        ),
+        "organization_operator_activity": await _collect_org_operator_activity(
             db, user_id
         ),
         "attestation": await _collect_attestation(db, user_id),

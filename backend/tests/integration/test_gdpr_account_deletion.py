@@ -45,11 +45,18 @@ from app.modules.financials.models import (
     PlatformConfig,
     Transaction,
 )
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, License, LicenseGrant, Review
+from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.modules.gdpr import deletion_service
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
-from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgMember,
+    OrgTeam,
+    OrgTeamMember,
+)
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
@@ -185,9 +192,16 @@ async def account_deletion_test_context(
                 await session.execute(delete(Milestone))
                 await session.execute(delete(Escrow))
                 await session.execute(delete(Transaction))
+                await session.execute(delete(ArtifactDownload))
+                await session.execute(delete(Review))
+                await session.execute(delete(LicenseGrant))
+                await session.execute(delete(License))
+                await session.execute(delete(Artifact))
                 await session.execute(delete(Framework))
                 await session.execute(delete(Proposal))
                 await session.execute(delete(Project))
+                await session.execute(delete(OrgTeamMember))
+                await session.execute(delete(OrgTeam))
                 await session.execute(delete(OrgCapability))
                 await session.execute(delete(OrgMember))
                 await session.execute(delete(Organization))
@@ -945,6 +959,149 @@ async def test_started_org_delivery_blocks_member_deletion_until_resolution(
             user_id=member_user_id,
         )
     assert "active_delivery_assignment" not in {reason.code for reason in cleared}
+
+
+async def test_org_operator_activity_does_not_block_deletion_and_clears_access_rows(
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """Org-operator activity is non-blocking and deletion strips access rows."""
+    del migrated_database
+    user_id, _secret = await create_verified_user("org-operator-delete@auracles.space")
+    contributor_id, _other_secret = await create_verified_user(
+        "org-operator-seller@auracles.space"
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=f"org-operator-delete-{uuid4().hex[:6]}",
+                name="Operator Delete Org",
+                country="US",
+                created_by=contributor_id,
+            )
+            session.add(organization)
+            await session.flush()
+            member = OrgMember(org_id=organization.id, user_id=user_id, role="member")
+            session.add(member)
+            team = OrgTeam(org_id=organization.id, name="Operators")
+            session.add(team)
+            await session.flush()
+            session.add(OrgTeamMember(team_id=team.id, member_id=member.id))
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Deletion Coverage Framework",
+                description="Supports org operator deletion coverage.",
+                version="1.0.0",
+                status="published",
+                category="framework",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["deletion"],
+                tags_text="deletion",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("199.00"),
+                currency="USD",
+                license_types=["team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            license_row = License(
+                framework_id=framework.id,
+                operator_id=None,
+                licensee_org_id=organization.id,
+                license_type="team",
+                status="active",
+                version_at_grant="1.0.0",
+                seats_used=1,
+                seats_total=10,
+            )
+            session.add(license_row)
+            await session.flush()
+            session.add(
+                LicenseGrant(
+                    license_id=license_row.id,
+                    member_id=member.id,
+                    granted_by=member.id,
+                )
+            )
+            session.add(
+                LicenseGrant(
+                    license_id=license_row.id,
+                    team_id=team.id,
+                    granted_by=member.id,
+                )
+            )
+            session.add(
+                Project(
+                    operator_id=None,
+                    operator_org_id=organization.id,
+                    posting_member_id=member.id,
+                    title="Deletion Coverage Project",
+                    description="Org posting should not block account deletion.",
+                    category="framework_customization",
+                    required_deliverables=[
+                        {"name": "Memo", "description": "One memo"}
+                    ],
+                    budget_min=Decimal("900.00"),
+                    budget_max=Decimal("1200.00"),
+                    currency="USD",
+                    deadline=datetime.now(UTC).date() + timedelta(days=30),
+                    expires_at=datetime.now(UTC) + timedelta(days=30),
+                )
+            )
+            session.add(
+                AccountDeletionRequest(
+                    user_id=user_id,
+                    status="scheduled",
+                    blocked_reasons=[],
+                    scheduled_for=datetime.now(UTC) - timedelta(hours=1),
+                    requested_at=datetime.now(UTC) - timedelta(days=14),
+                )
+            )
+            member_id = member.id
+            license_id = license_row.id
+
+    async with async_session_factory() as session:
+        blocked = await deletion_service.collect_blocked_reasons(
+            db=session,
+            user_id=user_id,
+        )
+    blocked_codes = {reason.code for reason in blocked}
+    assert "in_progress_project" not in blocked_codes
+    assert "held_escrow" not in blocked_codes
+    assert "pending_payout" not in blocked_codes
+
+    result = await gdpr_beat._process_account_deletions_impl(
+        redis=account_deletion_test_context["redis"]
+    )
+
+    async with async_session_factory() as session:
+        remaining_grants = list(
+            (
+                await session.execute(
+                    select(LicenseGrant).where(LicenseGrant.license_id == license_id)
+                )
+            ).scalars()
+        )
+        remaining_team_links = list(
+            (
+                await session.execute(
+                    select(OrgTeamMember).where(OrgTeamMember.member_id == member_id)
+                )
+            ).scalars()
+        )
+        user = await session.get(User, user_id)
+
+    assert result == {"processed_count": 1, "skipped_count": 0}
+    assert user is not None
+    assert user.deactivated_at is not None
+    assert [grant.member_id for grant in remaining_grants] == [None]
+    assert remaining_team_links == []
 
 
 async def test_request_account_deletion_requires_totp_when_enabled(

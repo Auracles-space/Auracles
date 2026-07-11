@@ -88,6 +88,27 @@ async def anonymise_user_records(
     user.totp_enabled = False
     user.deactivated_at = completed_at
 
+    # Remove any org-library access rows tied to this user's staffed memberships.
+    from app.modules.frameworks.models import LicenseGrant
+    from app.modules.organizations.models import OrgMember, OrgTeamMember
+
+    member_ids = list(
+        (
+            await db.execute(
+                select(OrgMember.id)
+                .where(OrgMember.user_id == user_id)
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    if member_ids:
+        await db.execute(
+            delete(LicenseGrant).where(LicenseGrant.member_id.in_(member_ids))
+        )
+        await db.execute(
+            delete(OrgTeamMember).where(OrgTeamMember.member_id.in_(member_ids))
+        )
+
     await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
     await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user_id))
     await db.execute(delete(KycDocument).where(KycDocument.user_id == user_id))

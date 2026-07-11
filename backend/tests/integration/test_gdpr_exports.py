@@ -22,7 +22,8 @@ from app.main import app
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Transaction
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, License, Review
+from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.modules.gdpr import export_service as gdpr_export_service
 from app.modules.gdpr.models import DataExportRequest
 from app.modules.organizations.models import (
@@ -150,6 +151,10 @@ async def export_test_context(
         await session.execute(delete(DataExportRequest))
         await session.execute(delete(AuditLog))
         await session.execute(delete(Transaction))
+        await session.execute(delete(ArtifactDownload))
+        await session.execute(delete(Review))
+        await session.execute(delete(License))
+        await session.execute(delete(Artifact))
         await session.execute(delete(Deliverable))
         await session.execute(delete(Milestone))
         await session.execute(delete(Proposal))
@@ -576,6 +581,133 @@ async def test_export_bundle_includes_org_contributor_activity_without_org_earni
         item.get("id") != str(framework.id)
         for item in bundle["frameworks"]
     )
+
+
+async def test_export_bundle_includes_org_operator_activity_without_org_billing(
+    migrated_database: None,
+    export_test_context: dict[str, Any],
+) -> None:
+    """Org-operator activity is exported as member history without org billing."""
+    del migrated_database, export_test_context
+    user_id = await create_verified_user(
+        f"export-org-operator-{uuid4().hex[:8]}@auracles.space"
+    )
+    contributor_id = await create_verified_user(
+        f"export-org-operator-seller-{uuid4().hex[:8]}@auracles.space"
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            organization = Organization(
+                slug=f"export-org-operator-{uuid4().hex[:6]}",
+                name="Operator Org",
+                country="GB",
+                created_by=user_id,
+            )
+            session.add(organization)
+            await session.flush()
+            member = OrgMember(org_id=organization.id, user_id=user_id, role="member")
+            session.add(member)
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Org Operator Export Framework",
+                description="Framework used for operator export coverage.",
+                version="1.0.0",
+                status="published",
+                category="framework",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["operator-export"],
+                tags_text="operator-export",
+                jurisdiction="gb",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("199.00"),
+                currency="USD",
+                license_types=["team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            artifact = Artifact(
+                framework_id=framework.id,
+                name="playbook.pdf",
+                file_key=f"frameworks/{framework.id}/artifacts/playbook.pdf",
+                file_size=2048,
+                mime_type="application/pdf",
+                scan_status="clean",
+                processing_status="processed",
+                current_for_framework=True,
+            )
+            session.add(artifact)
+            license_row = License(
+                framework_id=framework.id,
+                operator_id=None,
+                licensee_org_id=organization.id,
+                license_type="team",
+                status="active",
+                version_at_grant="1.0.0",
+                seats_used=1,
+                seats_total=10,
+            )
+            session.add(license_row)
+            await session.flush()
+            session.add(
+                ArtifactDownload(
+                    license_id=license_row.id,
+                    artifact_id=artifact.id,
+                    user_id=user_id,
+                )
+            )
+            project = Project(
+                operator_id=None,
+                operator_org_id=organization.id,
+                posting_member_id=member.id,
+                title="Operator Export Project",
+                description="Project posting provenance for export coverage.",
+                category="framework_customization",
+                required_deliverables=[
+                    {"name": "Memo", "description": "One operator memo"}
+                ],
+                budget_min=Decimal("900.00"),
+                budget_max=Decimal("1200.00"),
+                currency="USD",
+                deadline=datetime.now(UTC).date() + timedelta(days=30),
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+            session.add(project)
+            session.add(
+                Review(
+                    framework_id=framework.id,
+                    operator_id=None,
+                    reviewer_org_id=organization.id,
+                    reviewing_member_id=member.id,
+                    license_id=license_row.id,
+                    score=5,
+                    body="Strong operating model.",
+                )
+            )
+
+    async with async_session_factory() as session:
+        bundle = await gdpr_export_service.build_data_export_bundle(
+            db=session,
+            user_id=user_id,
+        )
+
+    org_activity = bundle["organization_operator_activity"]
+    assert len(org_activity["library_downloads"]) == 1
+    assert org_activity["library_downloads"][0]["artifact_id"] == str(artifact.id)
+    assert org_activity["library_downloads"][0]["downloaded_at"]
+    assert len(org_activity["project_postings"]) == 1
+    assert org_activity["project_postings"][0]["project_id"] == str(project.id)
+    assert org_activity["project_postings"][0]["created_at"]
+    assert len(org_activity["review_authorship"]) == 1
+    assert org_activity["review_authorship"][0]["framework_id"] == str(framework.id)
+    assert org_activity["review_authorship"][0]["created_at"]
+    assert bundle["financial"]["transactions"] == []
+    assert bundle["financial"]["licenses"] == []
 
 
 async def test_export_bundle_includes_nda_and_reviewing_assignments(
