@@ -66,6 +66,10 @@ class DriveFileTooLargeError(GoogleDriveError):
     """Raised when a Drive download exceeds the caller's byte budget."""
 
 
+class GoogleDriveNotFoundError(GoogleDriveError):
+    """Raised when a Drive file is missing or no longer accessible (404)."""
+
+
 @dataclass(frozen=True)
 class DriveTokens:
     """Access/refresh token pair returned by Google's token endpoint."""
@@ -256,6 +260,8 @@ def _raise_for_drive_response(response: httpx.Response, action: str) -> None:
     )
     if response.status_code in (401, 403):
         raise GoogleDriveAuthError("Google Drive authorization is no longer valid.")
+    if response.status_code == 404:
+        raise GoogleDriveNotFoundError("Google Drive file not found.")
     raise GoogleDriveError("Google Drive request failed.")
 
 

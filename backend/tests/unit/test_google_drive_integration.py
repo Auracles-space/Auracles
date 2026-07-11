@@ -300,3 +300,22 @@ async def test_fetch_account_email_returns_none_on_error_shape() -> None:
         return_value=httpx.Response(200, json={"error": "nope"})
     )
     assert await fetch_drive_account_email("at") is None
+
+
+def test_raise_for_drive_response_maps_404_to_not_found() -> None:
+    """A Drive 404 must raise the dedicated not-found error, not the generic one."""
+    from app.integrations.google_drive import (
+        GoogleDriveNotFoundError,
+        _raise_for_drive_response,
+    )
+
+    response = httpx.Response(status_code=404, request=httpx.Request("GET", "http://x"))
+    with pytest.raises(GoogleDriveNotFoundError):
+        _raise_for_drive_response(response, action="get_drive_file_metadata")
+
+    # 401/403 still map to the auth error, unchanged.
+    auth_response = httpx.Response(
+        status_code=403, request=httpx.Request("GET", "http://x")
+    )
+    with pytest.raises(GoogleDriveAuthError):
+        _raise_for_drive_response(auth_response, action="get_drive_file_metadata")
