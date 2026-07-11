@@ -406,6 +406,65 @@ async def test_org_funding_blocked_when_capability_suspended(
     assert getattr(exc_info.value, "status_code", None) == 403
 
 
+async def test_org_dispute_allowed_when_capability_suspended(
+    migrated_database: None,
+    money_path_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A suspended org can still dispute an in-flight funded milestone.
+
+    Suspension blocks new money-out actions, but disputing protects escrow
+    already committed; withholding it would let the funded milestone
+    auto-release with no recourse.
+    """
+    del migrated_database, money_path_state
+    _patch_notifications(monkeypatch)
+    org = await _seed_org(prefix="suspend-dispute", operator_status="suspended")
+    contributor_id = await _create_user("suspend-dispute-contrib", ["contributor"])
+    seed = await _seed_org_project(
+        org_id=org["org_id"],
+        contributor_id=contributor_id,
+        milestone_status="funded",
+        project_status="in_progress",
+        with_escrow=True,
+    )
+
+    async with async_session_factory() as db:
+        dispute = await dispute_service.create_org_dispute(
+            db=db,
+            org_id=org["org_id"],
+            actor_id=org["admin_id"],
+            project_id=seed["project_id"],
+            payload=DisputeCreateRequest(
+                milestone_id=seed["milestone_id"],
+                reason="Submitted work does not match the agreed scope here.",
+            ),
+        )
+    # The raiser side is recorded without exposing the acting member's id.
+    assert dispute.raised_by_side == "operator"
+
+    async with async_session_factory() as session:
+        message = await session.scalar(
+            select(WorkspaceMessage).where(
+                WorkspaceMessage.system_event == "dispute_raised"
+            )
+        )
+    assert message is not None
+    assert message.system_payload == {
+        "dispute_id": str(dispute.id),
+        "milestone_id": str(seed["milestone_id"]),
+        "raised_by_side": "operator",
+    }
+
+
+def test_dispute_response_hides_raiser_identity() -> None:
+    """The member-facing dispute schema exposes the side, not the raiser id."""
+    from app.modules.projects.schemas import DisputeResponse
+
+    assert "raised_by" not in DisputeResponse.model_fields
+    assert "raised_by_side" in DisputeResponse.model_fields
+
+
 async def test_org_funding_requires_org_stripe_customer(
     migrated_database: None,
     money_path_state: None,

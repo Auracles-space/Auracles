@@ -501,6 +501,10 @@ class Dispute(CreatedAtMixin, Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    # Which party opened the dispute ("operator" or "contributor"). Recorded so
+    # the counterparty-facing dispute view can show the acting side without
+    # exposing the specific org member's user id (raised_by stays for audit).
+    raised_by_side: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         DISPUTE_STATUS_ENUM,

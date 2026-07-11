@@ -12122,10 +12122,11 @@ components:
           type: string
           format: uuid
           title: Milestone Id
-        raised_by:
-          type: string
-          format: uuid
-          title: Raised By
+        raised_by_side:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Raised By Side
         reason:
           type: string
           title: Reason
@@ -12219,7 +12220,7 @@ components:
       - id
       - project_id
       - milestone_id
-      - raised_by
+      - raised_by_side
       - reason
       - status
       - resolution_type
@@ -16086,10 +16087,11 @@ components:
           type: string
           format: uuid
           title: Milestone Id
-        raised_by:
-          type: string
-          format: uuid
-          title: Raised By
+        raised_by_side:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Raised By Side
         reason:
           type: string
           title: Reason
@@ -16145,7 +16147,7 @@ components:
       - id
       - project_id
       - milestone_id
-      - raised_by
+      - raised_by_side
       - reason
       - status
       - resolution_type

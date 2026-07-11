@@ -459,7 +459,9 @@ async def approve_org_deliverable(
     summary="Raise a dispute on an organization Project",
     description=(
         "Raise a Milestone dispute on a Project operated by the organization as "
-        "an owner or admin while the operator capability is active."
+        "an owner or admin. Available even when the operator capability is "
+        "suspended: disputing protects escrow already committed on an in-flight "
+        "milestone, which a suspension must not withhold."
     ),
 )
 async def create_org_dispute(
@@ -467,7 +469,6 @@ async def create_org_dispute(
     project_id: UUID,
     payload: DisputeCreateRequest,
     context: OrgAdminContext,
-    _: Annotated[None, Depends(require_org_capability("operator"))],
     db: DatabaseSession,
 ) -> DisputeResponse:
     """Raise a Milestone dispute on an organization-operated Project."""

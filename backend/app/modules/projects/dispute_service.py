@@ -319,10 +319,17 @@ async def create_dispute(
         )
         await _reject_duplicate_active_dispute(db=db, milestone_id=milestone.id)
 
+        # The operator side reaches this path only as an individual operator;
+        # an operator org disputes through create_org_dispute. So the raiser is
+        # operator-side exactly when they are the individual project operator.
+        raised_by_side = (
+            "operator" if actor_id == project.operator_id else "contributor"
+        )
         dispute = Dispute(
             project_id=project.id,
             milestone_id=milestone.id,
             raised_by=actor_id,
+            raised_by_side=raised_by_side,
             reason=payload.reason.strip(),
         )
         db.add(dispute)
@@ -343,7 +350,7 @@ async def create_dispute(
                 system_payload={
                     "dispute_id": str(dispute.id),
                     "milestone_id": str(milestone.id),
-                    "raised_by": str(actor_id),
+                    "raised_by_side": raised_by_side,
                 },
             )
         )
@@ -403,17 +410,15 @@ async def create_org_dispute(
         The raised Dispute.
 
     Raises:
-        HTTPException(403): If the org Operator capability is not active.
         HTTPException(404): If the Project is not operated by this organization.
         HTTPException(409): If the Milestone is not disputable.
-    """
-    from app.modules.organizations.operator_service import operator_capability_active
 
-    if not await operator_capability_active(db, org_id=org_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error_code": "capability_suspended"},
-        )
+    Note:
+        This is intentionally NOT gated on an active operator capability. A
+        suspension blocks new money-out actions, but disputing protects escrow
+        already committed on an in-flight milestone; withholding it would let a
+        suspended org's funded milestone auto-release with no recourse.
+    """
     if db.in_transaction():
         await db.rollback()
 
@@ -441,6 +446,7 @@ async def create_org_dispute(
             project_id=project.id,
             milestone_id=milestone.id,
             raised_by=actor_id,
+            raised_by_side="operator",
             reason=payload.reason.strip(),
         )
         db.add(dispute)
@@ -464,7 +470,7 @@ async def create_org_dispute(
                 system_payload={
                     "dispute_id": str(dispute.id),
                     "milestone_id": str(milestone.id),
-                    "raised_by": str(actor_id),
+                    "raised_by_side": "operator",
                 },
             )
         )

@@ -295,7 +295,11 @@ class DisputeResponse(BaseModel):
     id: UUID
     project_id: UUID
     milestone_id: UUID
-    raised_by: UUID
+    # Which side opened the dispute ("operator"/"contributor"). The raiser's
+    # user id is deliberately not exposed: on org projects it would reveal the
+    # acting member to the counterparty. Admins get the raiser via
+    # AdminDisputeResponse.raised_by_name.
+    raised_by_side: str | None
     reason: str
     status: str
     resolution_type: str | None
