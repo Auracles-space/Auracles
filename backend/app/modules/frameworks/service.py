@@ -124,6 +124,15 @@ def _extension_for_filename(filename: str) -> str:
     return "".join(character for character in suffix if character.isalnum()) or "bin"
 
 
+def _reauth_conflict() -> HTTPException:
+    """Return the standard 409 telling the caller to reconnect the source."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"error_code": "reauth_required",
+                "message": "The connection is no longer authorized. Reconnect it."},
+    )
+
+
 def _bump_semver(version: str, change_type: str) -> str:
     """Return the next semantic version for a requested change type."""
     major, minor, patch = (int(part) for part in version.split("."))
@@ -1527,6 +1536,307 @@ async def get_source_preview(
         preview_url=preview_url,
         source_updated=source_updated,
         source_last_synced_at=artifact.source_last_synced_at,
+    )
+
+
+async def bind_and_sync(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+    *,
+    connection_id: UUID,
+    file_id: str,
+    allow_noop_skip: bool,
+) -> ArtifactResponse:
+    """Fork a new artifact row from the latest bytes of a connector source.
+
+    Serves re-sync (same source), attach (unbound → bound), and repoint
+    (different source). Bytes are write-once: this never overwrites an existing
+    row. The prior current row is deleted unless a published version references
+    it, in which case it is retained ``current_for_framework=False``.
+
+    Args:
+        db: Async database session.
+        contributor: The requesting owner.
+        framework_id: The owning Framework (must be editable).
+        artifact_id: The current artifact being replaced.
+        connection_id: The connection to pull from.
+        file_id: The provider file to pull.
+        allow_noop_skip: When True (re-sync), an unchanged source raises 409 and
+            an unchanged content hash short-circuits without forking.
+
+    Returns:
+        The forked artifact's status (or the same artifact on a content-skip).
+
+    Raises:
+        HTTPException(404): Framework/artifact not found or foreign.
+        HTTPException(409): reauth_required / rebind_required / source_unavailable
+            / artifact_processing / already_up_to_date.
+        HTTPException(413): Would exceed the size budget.
+        HTTPException(415): Unsupported effective MIME type.
+        HTTPException(502): Provider failure.
+    """
+    from app.integrations.google_drive import (
+        EXPORT_MIME_MAP,
+        DriveFileTooLargeError,
+        GoogleDriveAuthError,
+        GoogleDriveError,
+        GoogleDriveNotFoundError,
+        download_drive_file,
+        get_drive_file_metadata,
+    )
+    from app.modules.integrations.service import (
+        get_active_connection_with_fresh_token,
+    )
+
+    settings = get_settings()
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_editable_artifacts(framework)
+
+    artifact = await db.scalar(
+        select(Artifact)
+        .where(
+            Artifact.id == artifact_id,
+            Artifact.framework_id == framework.id,
+            Artifact.current_for_framework.is_(True),
+        )
+        .with_for_update()
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found."
+        )
+
+    # TTL-aware in-flight guard: a fresh processing lease blocks a competing
+    # sync; a stale lease falls through (the reaper will fail it).
+    if artifact.processing_status == "processing" and (
+        artifact.processing_started_at is not None
+        and artifact.processing_started_at
+        > datetime.now(UTC)
+        - timedelta(minutes=settings.artifact_processing_lease_minutes)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "artifact_processing",
+                    "message": "This artifact is still processing."},
+        )
+
+    log = logger.bind(
+        module="frameworks",
+        action="bind_and_sync",
+        user_id=str(contributor.id),
+        framework_id=str(framework.id),
+        artifact_id=str(artifact.id),
+    )
+
+    connection, access_token = await get_active_connection_with_fresh_token(
+        db, user_id=contributor.id, connection_id=connection_id
+    )
+
+    try:
+        metadata = await get_drive_file_metadata(
+            access_token=access_token, file_id=file_id
+        )
+    except GoogleDriveAuthError:
+        raise _reauth_conflict() from None
+    except GoogleDriveNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "source_unavailable",
+                    "message": "The source file is no longer available."},
+        ) from None
+    except GoogleDriveError as exc:
+        log.error("connector_metadata_failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The file provider is unavailable.",
+        ) from exc
+
+    modified_time = (
+        str(metadata.get("modifiedTime")) if metadata.get("modifiedTime") else None
+    )
+    if allow_noop_skip and modified_time == (artifact.source_synced_revision or None):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "already_up_to_date",
+                    "message": "The source has not changed."},
+        )
+
+    source_mime = str(metadata.get("mimeType", ""))
+    source_name = str(metadata.get("name", "")).strip() or "import"
+    export_mapping = EXPORT_MIME_MAP.get(source_mime)
+    if export_mapping is not None:
+        effective_mime, extension = export_mapping
+        export_mime: str | None = effective_mime
+        filename = f"{source_name}.{extension}"
+    else:
+        effective_mime = source_mime
+        export_mime = None
+        filename = source_name
+    if effective_mime not in ALLOWED_ARTIFACT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported artifact MIME type.",
+        )
+
+    metadata_size = metadata.get("size")
+    if metadata_size is not None:
+        await _reserve_artifact_budget(
+            db, framework.id, add_bytes=int(metadata_size), exclude_id=artifact.id
+        )
+
+    try:
+        body = await download_drive_file(
+            access_token=access_token,
+            file_id=file_id,
+            export_mime=export_mime,
+            max_bytes=ARTIFACT_MAX_TOTAL_SIZE,
+        )
+    except DriveFileTooLargeError:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        ) from None
+    except GoogleDriveAuthError:
+        raise _reauth_conflict() from None
+    except GoogleDriveNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "source_unavailable",
+                    "message": "The source file is no longer available."},
+        ) from None
+    except GoogleDriveError as exc:
+        log.error("connector_download_failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The file provider is unavailable.",
+        ) from exc
+
+    new_hash = hashlib.sha256(body).hexdigest()
+
+    # Content-skip (re-sync only): the file's modifiedTime moved but the bytes
+    # are identical — advance the markers, do not fork, do not re-run pipeline.
+    if allow_noop_skip and artifact.content_sha256 == new_hash:
+        artifact.source_last_synced_at = datetime.now(UTC)
+        artifact.source_synced_revision = modified_time
+        await write_audit(
+            db=db, actor_id=contributor.id, action="artifact_resynced",
+            target_type="artifact", target_id=artifact.id,
+            metadata={"framework_id": str(framework.id), "result": "content_unchanged"},
+        )
+        await db.commit()
+        log.info("artifact_resync_content_unchanged")
+        return _artifact_to_response(artifact)
+
+    old_file_key = artifact.file_key
+    old_preview_prefix = (
+        f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
+    )
+    new_artifact_id = uuid4()
+    new_file_key = (
+        f"frameworks/{framework.id}/artifacts/{new_artifact_id}."
+        f"{_extension_for_filename(filename)}"
+    )
+    new_artifact = Artifact(
+        id=new_artifact_id,
+        framework_id=framework.id,
+        name=filename,
+        file_key=new_file_key,
+        file_size=len(body),
+        mime_type=effective_mime,
+        content_sha256=new_hash,
+        processing_status="processing",
+        processing_started_at=datetime.now(UTC),
+        current_for_framework=True,
+        source_kind="google_drive",
+        source_external_id=file_id,
+        source_connection_id=connection.id,
+        source_last_synced_at=datetime.now(UTC),
+        source_synced_revision=modified_time,
+    )
+    db.add(new_artifact)
+
+    version_reference_count = await db.scalar(
+        select(func.count(FrameworkVersionArtifact.artifact_id)).where(
+            FrameworkVersionArtifact.artifact_id == artifact.id
+        )
+    )
+    old_row_deleted = int(version_reference_count or 0) == 0
+    if old_row_deleted:
+        await db.delete(artifact)
+    else:
+        artifact.current_for_framework = False
+
+    if framework.preview_artifact_id == artifact_id:
+        framework.preview_artifact_id = new_artifact_id
+
+    await db.flush()
+
+    s3.storage.upload_bytes(
+        bucket=settings.s3_artifacts_bucket,
+        key=new_file_key,
+        body=body,
+        mime_type=effective_mime,
+    )
+    await write_audit(
+        db=db, actor_id=contributor.id, action="artifact_resynced",
+        target_type="artifact", target_id=new_artifact_id,
+        metadata={"framework_id": str(framework.id),
+                  "replaced_artifact_id": str(artifact_id)},
+    )
+    await db.commit()
+
+    # Post-commit S3 cleanup: always purge the old preview cache; drop the old
+    # bytes only when the old row was deleted (retained rows keep their bytes).
+    s3.storage.delete_prefix(settings.s3_artifacts_bucket, old_preview_prefix)
+    if old_row_deleted:
+        s3.storage.delete_object(settings.s3_artifacts_bucket, old_file_key)
+
+    scan_artifact.delay(str(new_artifact_id))
+    log.bind(new_artifact_id=str(new_artifact_id)).info("artifact_resynced")
+    await db.refresh(new_artifact)
+    return _artifact_to_response(new_artifact)
+
+
+async def resync_artifact(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Pull the latest bytes of an artifact's own bound source into a new row.
+
+    Raises:
+        HTTPException(404): No connector source bound to this artifact.
+    """
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_editable_artifacts(framework)
+    artifact = await db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.framework_id == framework.id,
+            Artifact.current_for_framework.is_(True),
+        )
+    )
+    if (
+        artifact is None
+        or artifact.source_kind != "google_drive"
+        or artifact.source_connection_id is None
+        or artifact.source_external_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No connector source for this artifact.",
+        )
+    return await bind_and_sync(
+        db,
+        contributor,
+        framework_id,
+        artifact_id,
+        connection_id=artifact.source_connection_id,
+        file_id=artifact.source_external_id,
+        allow_noop_skip=True,
     )
 
 

@@ -747,6 +747,28 @@ async def get_artifact_source_preview(
     )
 
 
+@router.post(
+    "/{framework_id}/artifacts/{artifact_id}/resync",
+    response_model=ArtifactResponse,
+    summary="Re-sync a connector-bound artifact from its source",
+    description=(
+        "Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's "
+        "bound source into a new artifact version and re-runs the pipeline. "
+        "Returns a new artifact id on change; 409 already_up_to_date when the "
+        "source is unchanged. A 404 on the old id afterward means it was "
+        "superseded — refetch the artifact list."
+    ),
+)
+async def resync_artifact(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Pull the latest source bytes into a new artifact version."""
+    return await service.resync_artifact(db, contributor, framework_id, artifact_id)
+
+
 @router.post("/{framework_id}/artifacts/confirm", response_model=ArtifactResponse)
 async def confirm_artifact_upload(
     framework_id: UUID,

@@ -4926,6 +4926,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/resync:
+    post:
+      tags:
+      - Frameworks
+      summary: Re-sync a connector-bound artifact from its source
+      description: Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's
+        bound source into a new artifact version and re-runs the pipeline. Returns
+        a new artifact id on change; 409 already_up_to_date when the source is unchanged.
+        A 404 on the old id afterward means it was superseded — refetch the artifact
+        list.
+      operationId: resync_artifact_v1_frameworks__framework_id__artifacts__artifact_id__resync_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '404':
+          description: Framework or artifact not found, or the artifact has no
+            connector source bound.
+        '409':
+          description: reauth_required / source_unavailable / artifact_processing
+            / already_up_to_date, or the framework is no longer editable.
+        '413':
+          description: The re-synced file would exceed the artifact size budget.
+        '415':
+          description: Unsupported effective MIME type.
+        '502':
+          description: The file provider is unavailable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:
