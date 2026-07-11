@@ -1259,18 +1259,15 @@ async def import_artifact_from_connector(
             detail="Unsupported artifact MIME type.",
         )
 
-    existing_size = await db.scalar(
-        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(
-            Artifact.framework_id == framework.id
-        )
-    )
-    remaining = ARTIFACT_MAX_TOTAL_SIZE - int(existing_size or 0)
     metadata_size = metadata.get("size")
-    if metadata_size is not None and int(metadata_size) > remaining:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Framework artifacts exceed the 500MB limit.",
+    if metadata_size is not None:
+        await _reserve_artifact_budget(
+            db,
+            framework.id,
+            add_bytes=int(metadata_size),
+            exclude_id=None,
         )
+    remaining = ARTIFACT_MAX_TOTAL_SIZE
 
     try:
         body = await download_drive_file(
@@ -1367,17 +1364,12 @@ async def request_artifact_upload_url(
             detail="Unsupported artifact MIME type.",
         )
 
-    existing_size = await db.scalar(
-        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(
-            Artifact.framework_id == framework.id
-        )
+    await _reserve_artifact_budget(
+        db,
+        framework.id,
+        add_bytes=payload.file_size,
+        exclude_id=None,
     )
-    total_size = int(existing_size or 0) + payload.file_size
-    if total_size > ARTIFACT_MAX_TOTAL_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Framework artifacts exceed the 500MB limit.",
-        )
 
     artifact_id = uuid4()
     file_key = (
@@ -1579,6 +1571,45 @@ async def _load_owned_artifact(
             detail="Artifact not found.",
         )
     return artifact
+
+
+async def _reserve_artifact_budget(
+    db: AsyncSession,
+    framework_id: UUID,
+    *,
+    add_bytes: int,
+    exclude_id: UUID | None,
+) -> None:
+    """Serialize the 500MB framework artifact budget check under a row lock.
+
+    Locks the Framework row FOR UPDATE, then sums the current artifact bytes
+    (optionally excluding the artifact being replaced) and rejects if the new
+    bytes would exceed the cap. The lock makes the check-then-act atomic across
+    concurrent import/upload/re-sync on the same Framework.
+
+    Args:
+        db: Async database session (an open transaction is required for the lock).
+        framework_id: Framework whose budget is being reserved.
+        add_bytes: Bytes about to be added.
+        exclude_id: An artifact id to exclude from the sum (the row being replaced).
+
+    Raises:
+        HTTPException(413): If the reservation would exceed the size budget.
+    """
+    await db.execute(
+        select(Framework.id).where(Framework.id == framework_id).with_for_update()
+    )
+    conditions = [Artifact.framework_id == framework_id]
+    if exclude_id is not None:
+        conditions.append(Artifact.id != exclude_id)
+    existing = await db.scalar(
+        select(func.coalesce(func.sum(Artifact.file_size), 0)).where(*conditions)
+    )
+    if int(existing or 0) + add_bytes > ARTIFACT_MAX_TOTAL_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Framework artifacts exceed the 500MB limit.",
+        )
 
 
 async def confirm_artifact_upload(
