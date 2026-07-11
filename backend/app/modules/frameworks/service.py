@@ -1591,7 +1591,21 @@ async def bind_and_sync(
     )
 
     settings = get_settings()
-    framework = await _load_owned_framework(db, contributor, framework_id)
+    # Capture the contributor id as a primitive BEFORE fetching the token.
+    # get_active_connection_with_fresh_token rolls the session back when it
+    # refreshes an expiring token, expiring the ``contributor`` ORM object;
+    # dereferencing it afterward would trigger a sync lazy-load
+    # (MissingGreenlet). Use the id and the id-based loader throughout.
+    contributor_id = contributor.id
+    # Fetch/refresh the token before taking the artifact row lock so the
+    # helper's internal rollback cannot release a held FOR UPDATE lock and
+    # break the atomic check-then-fork.
+    connection, access_token = await get_active_connection_with_fresh_token(
+        db, user_id=contributor_id, connection_id=connection_id
+    )
+    framework = await _load_owned_framework_by_user_id(
+        db, contributor_id, framework_id
+    )
     _require_editable_artifacts(framework)
 
     artifact = await db.scalar(
@@ -1625,13 +1639,9 @@ async def bind_and_sync(
     log = logger.bind(
         module="frameworks",
         action="bind_and_sync",
-        user_id=str(contributor.id),
+        user_id=str(contributor_id),
         framework_id=str(framework.id),
         artifact_id=str(artifact.id),
-    )
-
-    connection, access_token = await get_active_connection_with_fresh_token(
-        db, user_id=contributor.id, connection_id=connection_id
     )
 
     try:
@@ -1721,7 +1731,7 @@ async def bind_and_sync(
         artifact.source_last_synced_at = datetime.now(UTC)
         artifact.source_synced_revision = modified_time
         await write_audit(
-            db=db, actor_id=contributor.id, action="artifact_resynced",
+            db=db, actor_id=contributor_id, action="artifact_resynced",
             target_type="artifact", target_id=artifact.id,
             metadata={"framework_id": str(framework.id), "result": "content_unchanged"},
         )
@@ -1780,7 +1790,7 @@ async def bind_and_sync(
         mime_type=effective_mime,
     )
     await write_audit(
-        db=db, actor_id=contributor.id, action="artifact_resynced",
+        db=db, actor_id=contributor_id, action="artifact_resynced",
         target_type="artifact", target_id=new_artifact_id,
         metadata={"framework_id": str(framework.id),
                   "replaced_artifact_id": str(artifact_id)},

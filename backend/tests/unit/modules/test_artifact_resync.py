@@ -330,3 +330,64 @@ async def test_resync_repoints_preview_pointer(
 
     await db.refresh(framework)
     assert framework.preview_artifact_id == result.id
+
+
+async def test_resync_forks_when_token_refresh_rolls_back_session(
+    monkeypatch: pytest.MonkeyPatch,
+    source_preview_ctx: tuple,  # noqa: F811
+):
+    """A token refresh that rolls the session back must not corrupt the fork.
+
+    ``get_active_connection_with_fresh_token`` rolls the caller's transaction
+    back when it refreshes an expiring token. Re-sync must fetch the token
+    before it locks the artifact, so that rollback cannot release a held row
+    lock mid check-then-fork. This reproduces the rollback and asserts the fork
+    still completes cleanly.
+    """
+    from app.integrations import google_drive
+    from app.modules.frameworks import service
+    from app.modules.frameworks.models_artifact import Artifact
+    from app.modules.integrations import service as integrations_service
+
+    db, contributor, framework, artifact = source_preview_ctx
+    artifact.processing_status = "processed"
+    artifact.content_sha256 = "OLD-HASH"
+    await db.commit()
+    old_id = artifact.id
+    new_body = b"REFRESHED-CONTENT"
+
+    _patch_common(monkeypatch, service, integrations_service, artifact)
+
+    async def _rollback_loader(db, *, user_id, connection_id):
+        # Mimic the real helper refreshing an expiring token: it rolls the
+        # caller's transaction back before returning the fresh token.
+        from app.modules.integrations.models import OAuthConnection
+        if db.in_transaction():
+            await db.rollback()
+        return (
+            OAuthConnection(id=connection_id, user_id=user_id,
+                            provider="google_drive", scopes="s", status="active"),
+            "token",
+        )
+
+    monkeypatch.setattr(
+        integrations_service,
+        "get_active_connection_with_fresh_token",
+        _rollback_loader,
+    )
+    _stub_drive(
+        monkeypatch, google_drive, size=len(new_body), modified_time="REV-REFRESH"
+    )
+
+    async def _download(*, access_token, file_id, export_mime, max_bytes):
+        return new_body
+
+    monkeypatch.setattr(google_drive, "download_drive_file", _download)
+
+    result = await service.resync_artifact(db, contributor, framework.id, old_id)
+
+    assert result.id != old_id
+    new_row = await db.get(Artifact, result.id)
+    assert new_row.current_for_framework is True
+    assert new_row.content_sha256 == hashlib.sha256(new_body).hexdigest()
+    assert await db.get(Artifact, old_id) is None
