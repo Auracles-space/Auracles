@@ -265,7 +265,7 @@ git commit -m "Map Google Drive 404 to a dedicated not-found error"
 - Test: `backend/tests/unit/modules/test_artifact_budget_reserve.py`
 
 **Interfaces:**
-- Produces: `async def _reserve_artifact_budget(db: AsyncSession, framework_id: UUID, *, add_bytes: int, exclude_id: UUID | None) -> None` — locks the framework row, sums current artifact bytes excluding `exclude_id`, raises `HTTPException(413)` if `sum + add_bytes > ARTIFACT_MAX_TOTAL_SIZE`. Consumed by Tasks 4, 5, 6.
+- Produces: `async def _reserve_artifact_budget(db: AsyncSession, framework_id: UUID, *, add_bytes: int, exclude_id: UUID | None) -> int` — locks the framework row, sums current artifact bytes excluding `exclude_id`, raises `HTTPException(413)` if `sum + add_bytes > ARTIFACT_MAX_TOTAL_SIZE`, and **returns the summed existing bytes** so callers can derive a real streaming cap (`remaining = ARTIFACT_MAX_TOTAL_SIZE - returned`). Consumed by Tasks 4, 5, 6. (Revised during Task 3 review — was `-> None`; callers that only need the lock+413 gate can still ignore the return.)
 
 - [ ] **Step 1: Write the failing test**
 
