@@ -26,6 +26,7 @@ from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.modules.invoicing.keys import invoice_pdf_key
 from app.modules.invoicing.models import Invoice, InvoiceCounter
+from app.modules.organizations.models import Organization
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import financials as financial_tasks
@@ -120,6 +121,7 @@ def financial_task_context(
             session.execute(delete(Invoice))
             session.execute(delete(InvoiceCounter))
             session.execute(delete(Transaction))
+            session.execute(delete(Organization))
             session.execute(delete(Framework))
             session.execute(delete(UserRole))
             session.execute(delete(User))
@@ -288,6 +290,126 @@ def issue_purchase_invoice(transaction_id: UUID) -> Invoice:
     return invoice
 
 
+def create_completed_org_purchase() -> tuple[UUID, str]:
+    """Create a completed org-payer purchase transaction (payer_id NULL).
+
+    Returns the transaction id and the buying organization's name.
+    """
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        contributor = User(
+            email=f"invoice-org-seller-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Invoice Org Seller",
+            email_verified=True,
+        )
+        owner = User(
+            email=f"invoice-org-owner-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Invoice Org Owner",
+            email_verified=True,
+        )
+        session.add_all([contributor, owner])
+        session.flush()
+        organization = Organization(
+            slug=f"invoice-org-{uuid4().hex[:6]}",
+            name="Invoice Buyer Org",
+            country="US",
+            created_by=owner.id,
+        )
+        session.add(organization)
+        session.flush()
+        framework = Framework(
+            contributor_id=contributor.id,
+            title="Invoice Framework",
+            description="Invoice Framework description.",
+            status="published",
+            category="operations",
+            tags=["invoice"],
+            tags_text="invoice",
+            price=Decimal("199.00"),
+            currency="USD",
+            license_types=["team"],
+        )
+        session.add(framework)
+        session.flush()
+        transaction = Transaction(
+            payer_id=None,
+            payer_org_id=organization.id,
+            payee_id=contributor.id,
+            amount=Decimal("199.00"),
+            currency="USD",
+            platform_commission=Decimal("0.00"),
+            net_amount=Decimal("199.00"),
+            transaction_type="purchase",
+            status="completed",
+            provider="stripe",
+            provider_ref="pi_invoice_org_123",
+            ref_id=framework.id,
+            ref_type="framework",
+        )
+        session.add(transaction)
+        session.flush()
+        session.add(
+            License(
+                framework_id=framework.id,
+                operator_id=None,
+                licensee_org_id=organization.id,
+                transaction_id=transaction.id,
+                license_type="team",
+                status="active",
+                version_at_grant=framework.version,
+                seats_used=1,
+                seats_total=10,
+            )
+        )
+        transaction_id = transaction.id
+        org_name = organization.name
+        session.commit()
+    sync_engine.dispose()
+    return transaction_id, org_name
+
+
+def issue_org_purchase_invoice(transaction_id: UUID, org_name: str) -> Invoice:
+    """Insert the issued invoice for an org-buyer purchase (org as buyer)."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        transaction = session.get(Transaction, transaction_id)
+        if transaction is None:
+            raise AssertionError("Expected purchase transaction to exist.")
+        invoice = Invoice(
+            series="AUR-INV",
+            sequence_year=2026,
+            sequence_number=1,
+            invoice_number="AUR-INV-2026-000001",
+            doc_type="sales_invoice",
+            currency=transaction.currency,
+            subtotal=transaction.amount,
+            tax_rate=Decimal("0.0000"),
+            tax_amount=Decimal("0.00"),
+            total=transaction.amount,
+            seller_name="Auracles Ltd",
+            seller_tax_id="TAX-1",
+            seller_address="1 Ledger Street",
+            buyer_name=org_name,
+            buyer_email="billing@invoice-buyer-org.example",
+            source_ref_type="transaction",
+            source_ref_id=transaction_id,
+            s3_key="",
+        )
+        session.add(invoice)
+        session.flush()
+        invoice.s3_key = invoice_pdf_key(invoice.doc_type, invoice.id)
+        session.commit()
+        session.refresh(invoice)
+    sync_engine.dispose()
+    return invoice
+
+
 def create_pending_payout() -> UUID:
     """Create a pending payout request for transfer processing."""
     settings = get_settings()
@@ -413,6 +535,40 @@ def test_generate_invoice_pdf_uploads_rendered_purchase_invoice(
     """Invoice task renders HTML to PDF and stores it in the reports bucket."""
     transaction_id = create_completed_purchase()
     invoice = issue_purchase_invoice(transaction_id)
+
+    result = financial_tasks.generate_invoice_pdf.apply(
+        args=[str(transaction_id)]
+    ).get()
+
+    storage: FakeInvoiceStorage = financial_task_context["storage"]
+    assert result == {
+        "transaction_id": str(transaction_id),
+        "invoice_key": invoice.s3_key,
+        "status": "invoice_generated",
+    }
+    assert storage.uploads == {
+        f"auracles-reports-dev/{invoice.s3_key}/application/pdf": b"%PDF-INVOICE%"
+    }
+    assert financial_task_context["render_calls"] == [
+        {
+            "invoice_number": "AUR-INV-2026-000001",
+            "line_item_label": "Invoice Framework",
+            "s3_key": invoice.s3_key,
+        }
+    ]
+
+
+def test_generate_invoice_pdf_renders_org_buyer_purchase_invoice(
+    migrated_database: None,
+    financial_task_context: dict[str, Any],
+) -> None:
+    """The invoice worker renders an org-payer purchase (payer_id is NULL).
+
+    The buyer is resolved from the frozen invoice row, not by joining
+    Transaction.payer_id, so an org-funded purchase (payer_org_id set) renders.
+    """
+    transaction_id, org_name = create_completed_org_purchase()
+    invoice = issue_org_purchase_invoice(transaction_id, org_name)
 
     result = financial_tasks.generate_invoice_pdf.apply(
         args=[str(transaction_id)]

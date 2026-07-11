@@ -11,9 +11,8 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.integrations import s3
-from app.modules.auth.models import User
 from app.modules.financials.models import Transaction
-from app.modules.frameworks.models import Framework, License
+from app.modules.frameworks.models import Framework
 from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.render import render_invoice_pdf
 from app.workers.async_runner import run_async
@@ -24,11 +23,12 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
     """Render a purchase invoice PDF and return its S3 key plus bytes."""
     parsed_transaction_id = UUID(transaction_id)
     async with async_session_factory() as db:
+        # The buyer (individual or org) is already frozen on the invoice row, so
+        # this only needs the framework for the line-item label. Do not join on
+        # Transaction.payer_id: it is NULL for org-funded purchases.
         row = await db.execute(
-            select(Transaction, Framework, License, User)
+            select(Transaction, Framework)
             .join(Framework, Framework.id == Transaction.ref_id)
-            .outerjoin(License, License.transaction_id == Transaction.id)
-            .join(User, User.id == Transaction.payer_id)
             .where(
                 Transaction.id == parsed_transaction_id,
                 Transaction.transaction_type == "purchase",
@@ -37,7 +37,7 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
         purchase = row.one_or_none()
         if purchase is None:
             raise ValueError("Purchase transaction not found.")
-        transaction, framework, license_row, operator = purchase
+        transaction, framework = purchase
         invoice = await invoicing_service.get_invoice(
             db,
             source_ref_type="transaction",
@@ -47,7 +47,6 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
         if invoice is None:
             raise ValueError("Issued invoice not found.")
 
-    del license_row, operator
     pdf_bytes = render_invoice_pdf(invoice, line_item_label=framework.title)
     return invoice.s3_key, pdf_bytes
 
