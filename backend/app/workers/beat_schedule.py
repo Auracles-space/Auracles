@@ -106,4 +106,8 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.organizations_beat.expire_pending_org_invitations",
         "schedule": crontab(hour=3, minute=20),
     },
+    "reap-stalled-artifacts-15min": {
+        "task": "app.workers.tasks.artifacts_beat.reap_stalled_artifacts",
+        "schedule": 900.0,
+    },
 }

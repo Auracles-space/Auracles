@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, cast
 
 from botocore.exceptions import (  # type: ignore[import-untyped]
@@ -168,6 +169,15 @@ class S3Storage:
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             for obj in page.get("Contents", []):
                 self._client.delete_object(Bucket=bucket, Key=obj["Key"])
+
+    def list_keys(self, bucket: str, prefix: str) -> list[tuple[datetime, str]]:
+        """Return (last_modified, key) for every private object under a prefix."""
+        entries: list[tuple[datetime, str]] = []
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                entries.append((obj["LastModified"], obj["Key"]))
+        return entries
 
     def presigned_get(
         self,
