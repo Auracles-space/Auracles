@@ -1229,7 +1229,7 @@ async def create_org_framework_purchase(
     if not await operator_capability_active(db, org_id=org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="capability_suspended",
+            detail={"error_code": "capability_suspended"},
         )
 
     framework = await db.scalar(

@@ -371,7 +371,7 @@ async def test_org_purchase_blocks_when_capability_suspended(
             )
 
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "capability_suspended"
+    assert exc_info.value.detail == {"error_code": "capability_suspended"}
 
 
 @pytest.mark.asyncio
