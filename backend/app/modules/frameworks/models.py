@@ -462,10 +462,21 @@ class Review(UpdatedAtMixin, Base):
     __tablename__ = "reviews"
     __table_args__ = (
         CheckConstraint("score BETWEEN 1 AND 5", name="ck_reviews_score_range"),
+        CheckConstraint(
+            "(operator_id IS NULL) != (reviewer_org_id IS NULL)",
+            name="ck_reviews_reviewer_xor",
+        ),
         UniqueConstraint(
             "framework_id",
             "operator_id",
             name="uq_reviews_framework_operator",
+        ),
+        Index(
+            "uq_reviews_framework_reviewer_org",
+            "framework_id",
+            "reviewer_org_id",
+            unique=True,
+            postgresql_where=text("reviewer_org_id IS NOT NULL"),
         ),
         Index("idx_reviews_framework", "framework_id"),
     )
@@ -480,10 +491,20 @@ class Review(UpdatedAtMixin, Base):
         ForeignKey("frameworks.id", ondelete="CASCADE"),
         nullable=False,
     )
-    operator_id: Mapped[UUID] = mapped_column(
+    operator_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+    )
+    reviewer_org_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=True,
+    )
+    reviewing_member_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_members.id", ondelete="SET NULL"),
+        nullable=True,
     )
     license_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

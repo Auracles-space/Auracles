@@ -7874,6 +7874,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/review:
+    post:
+      tags:
+      - Organizations
+      summary: Review a Framework as an organization
+      description: Write one public Framework review under the organization identity.
+        Requires org admin/owner access, an active operator capability, and an active
+        org-owned License for the Framework.
+      operationId: create_org_framework_review_v1_orgs__org_id__frameworks__framework_id__review_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrameworkReviewCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkReviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/contributors:
     get:
       tags:
@@ -17815,9 +17860,17 @@ components:
           format: uuid
           title: Framework Id
         operator_id:
-          type: string
-          format: uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
           title: Operator Id
+        reviewer_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Reviewer Org Id
         score:
           type: integer
           title: Score
@@ -17839,6 +17892,7 @@ components:
       - id
       - framework_id
       - operator_id
+      - reviewer_org_id
       - score
       - body
       - created_at

@@ -30,6 +30,11 @@ from app.modules.financials.schemas import (
     PurchaseRequest,
     PurchaseResponse,
 )
+from app.modules.frameworks import service as frameworks_service
+from app.modules.frameworks.schemas import (
+    FrameworkReviewCreate,
+    FrameworkReviewResponse,
+)
 from app.modules.library.schemas import ArtifactDownloadResponse
 from app.modules.organizations import (
     attestor_application_service,
@@ -1488,6 +1493,36 @@ async def create_org_framework_purchase(
         db,
         org_id=org_id,
         actor=context.user,
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{org_id}/frameworks/{framework_id}/review",
+    response_model=FrameworkReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Review a Framework as an organization",
+    description=(
+        "Write one public Framework review under the organization identity. "
+        "Requires org admin/owner access, an active operator capability, and "
+        "an active org-owned License for the Framework."
+    ),
+)
+async def create_org_framework_review(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: FrameworkReviewCreate,
+    context: OrgAdmin,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> FrameworkReviewResponse:
+    """Create one org-authored review for a licensed Framework."""
+    return await frameworks_service.create_org_framework_review(
+        db,
+        org_id=org_id,
+        actor=context.user,
+        reviewing_member_id=context.member.id,
         framework_id=framework_id,
         payload=payload,
     )

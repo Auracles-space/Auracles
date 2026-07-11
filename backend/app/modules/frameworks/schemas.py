@@ -345,7 +345,8 @@ class FrameworkReviewResponse(BaseModel):
 
     id: UUID
     framework_id: UUID
-    operator_id: UUID
+    operator_id: UUID | None
+    reviewer_org_id: UUID | None
     score: int
     body: str | None
     created_at: datetime

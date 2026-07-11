@@ -190,6 +190,7 @@ def _review_to_response(review: Review) -> FrameworkReviewResponse:
         id=review.id,
         framework_id=review.framework_id,
         operator_id=review.operator_id,
+        reviewer_org_id=review.reviewer_org_id,
         score=review.score,
         body=review.body,
         created_at=review.created_at,
@@ -225,6 +226,30 @@ async def _load_active_operator_license(
         select(License).where(
             License.framework_id == framework_id,
             License.operator_id == operator_id,
+            License.status == "active",
+            or_(License.expires_at.is_(None), License.expires_at > now),
+        )
+    )
+    if license_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An active License is required to review this Framework.",
+        )
+    return license_row
+
+
+async def _load_active_org_license(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    org_id: UUID,
+) -> License:
+    """Load an active org-owned License or raise 403."""
+    now = datetime.now(UTC)
+    license_row = await db.scalar(
+        select(License).where(
+            License.framework_id == framework_id,
+            License.licensee_org_id == org_id,
             License.status == "active",
             or_(License.expires_at.is_(None), License.expires_at > now),
         )
@@ -638,6 +663,80 @@ async def create_framework_review(
         action="create_framework_review",
         user_id=operator_id,
         framework_id=framework_id,
+    ).info("framework_review_created")
+    return _review_to_response(review)
+
+
+async def create_org_framework_review(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor: User,
+    reviewing_member_id: UUID,
+    framework_id: UUID,
+    payload: FrameworkReviewCreate,
+) -> FrameworkReviewResponse:
+    """Create one organization-authored review for an actively licensed Framework."""
+    actor_id = actor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        framework = await db.scalar(
+            select(Framework).where(Framework.id == framework_id)
+        )
+        if framework is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Framework not found.",
+            )
+        _require_reviewable_framework(framework)
+        license_row = await _load_active_org_license(
+            db,
+            framework_id=framework_id,
+            org_id=org_id,
+        )
+        existing_review = await db.scalar(
+            select(Review).where(
+                Review.framework_id == framework_id,
+                Review.reviewer_org_id == org_id,
+            )
+        )
+        if existing_review is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Organization has already reviewed this Framework.",
+            )
+        review = Review(
+            framework_id=framework_id,
+            operator_id=None,
+            reviewer_org_id=org_id,
+            reviewing_member_id=reviewing_member_id,
+            license_id=license_row.id,
+            score=payload.score,
+            body=payload.body,
+        )
+        db.add(review)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="framework_review_created",
+            target_type="framework",
+            target_id=framework_id,
+            metadata={
+                "review_id": str(review.id),
+                "score": payload.score,
+                "reviewer_org_id": str(org_id),
+            },
+        )
+    await db.refresh(review)
+    logger.bind(
+        module="frameworks",
+        action="create_org_framework_review",
+        user_id=actor_id,
+        framework_id=framework_id,
+        org_id=org_id,
     ).info("framework_review_created")
     return _review_to_response(review)
 
