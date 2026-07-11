@@ -263,6 +263,13 @@ class ArtifactFromConnectorRequest(BaseModel):
     file_id: str = Field(min_length=1, max_length=256)
 
 
+class BindSourceRequest(BaseModel):
+    """Owner request to bind (attach or repoint) an artifact to a connector file."""
+
+    connection_id: UUID
+    file_id: str = Field(min_length=1, max_length=256)
+
+
 class ArtifactResponse(BaseModel):
     """Contributor-facing Artifact processing status."""
 

@@ -36,6 +36,7 @@ from app.modules.frameworks.schemas import (
     ArtifactResponse,
     ArtifactUploadUrlRequest,
     ArtifactUploadUrlResponse,
+    BindSourceRequest,
     FrameworkCreate,
     FrameworkListItem,
     FrameworkMetadataUpdate,
@@ -1790,7 +1791,8 @@ async def bind_and_sync(
         mime_type=effective_mime,
     )
     await write_audit(
-        db=db, actor_id=contributor_id, action="artifact_resynced",
+        db=db, actor_id=contributor_id,
+        action="artifact_resynced" if allow_noop_skip else "artifact_source_bound",
         target_type="artifact", target_id=new_artifact_id,
         metadata={"framework_id": str(framework.id),
                   "replaced_artifact_id": str(artifact_id)},
@@ -1807,6 +1809,75 @@ async def bind_and_sync(
     log.bind(new_artifact_id=str(new_artifact_id)).info("artifact_resynced")
     await db.refresh(new_artifact)
     return _artifact_to_response(new_artifact)
+
+
+async def bind_artifact_source(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+    payload: BindSourceRequest,
+) -> ArtifactResponse:
+    """Attach or repoint an artifact's connector source, pulling its bytes.
+
+    Forks a new bound artifact row from the given file. Allowed for both
+    ``upload`` (attach) and ``google_drive`` (repoint) current artifacts.
+    """
+    return await bind_and_sync(
+        db,
+        contributor,
+        framework_id,
+        artifact_id,
+        connection_id=payload.connection_id,
+        file_id=payload.file_id,
+        allow_noop_skip=False,
+    )
+
+
+async def detach_artifact_source(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Drop an artifact's connector binding, keeping its owned bytes.
+
+    Reverts the current row to ``source_kind='upload'``, nulls the source
+    columns, and purges its draft source-preview cache. Metadata-only — no
+    bytes move, the artifact id is unchanged.
+
+    Raises:
+        HTTPException(404): Framework/artifact not found or foreign.
+        HTTPException(409): The artifact is not bound to a connector source.
+    """
+    framework = await _load_owned_framework(db, contributor, framework_id)
+    _require_editable_artifacts(framework)
+    artifact = await _load_owned_artifact(db, framework, artifact_id)
+    if artifact.source_kind != "google_drive":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "not_bound",
+                    "message": "This artifact has no connector source."},
+        )
+
+    artifact.source_kind = "upload"
+    artifact.source_external_id = None
+    artifact.source_connection_id = None
+    artifact.source_last_synced_at = None
+    artifact.source_synced_revision = None
+    await write_audit(
+        db=db, actor_id=contributor.id, action="artifact_source_detached",
+        target_type="artifact", target_id=artifact.id,
+        metadata={"framework_id": str(framework.id)},
+    )
+    await db.commit()
+    settings = get_settings()
+    s3.storage.delete_prefix(
+        settings.s3_artifacts_bucket,
+        f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/",
+    )
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
 
 
 async def resync_artifact(

@@ -4979,6 +4979,107 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/bind-source:
+    post:
+      tags:
+      - Frameworks
+      summary: Attach or repoint an artifact's connector source
+      description: Owner-only, pre-publish-only. Binds the artifact to the given
+        connector file and pulls its bytes into a new artifact version. Works on
+        an unbound (upload) artifact (attach) or an already-bound one (repoint).
+        Returns a new artifact id.
+      operationId: bind_artifact_source_v1_frameworks__framework_id__artifacts__artifact_id__bind_source_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindSourceRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '404':
+          description: Framework or artifact not found, or foreign.
+        '409':
+          description: reauth_required / source_unavailable / artifact_processing,
+            or the framework is no longer editable.
+        '413':
+          description: The bound file would exceed the artifact size budget.
+        '415':
+          description: Unsupported effective MIME type.
+        '502':
+          description: The file provider is unavailable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/source:
+    delete:
+      tags:
+      - Frameworks
+      summary: Detach an artifact's connector source
+      description: Owner-only, pre-publish-only. Drops the connector binding and
+        keeps the owned bytes as a plain upload. Metadata-only; the artifact id
+        is unchanged.
+      operationId: detach_artifact_source_v1_frameworks__framework_id__artifacts__artifact_id__source_delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '404':
+          description: Framework or artifact not found, or foreign.
+        '409':
+          description: not_bound — the artifact has no connector source, or the
+            framework is no longer editable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:
@@ -13483,6 +13584,24 @@ components:
       - file_id
       title: ArtifactFromConnectorRequest
       description: Import a connected-source file as a new draft Artifact.
+    BindSourceRequest:
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          title: Connection Id
+        file_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: File Id
+      type: object
+      required:
+      - connection_id
+      - file_id
+      title: BindSourceRequest
+      description: Owner request to bind (attach or repoint) an artifact to a connector
+        file.
     ArtifactResponse:
       properties:
         id:

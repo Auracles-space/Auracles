@@ -30,6 +30,7 @@ from app.modules.frameworks.schemas import (
     ArtifactResponse,
     ArtifactUploadUrlRequest,
     ArtifactUploadUrlResponse,
+    BindSourceRequest,
     FrameworkCreate,
     FrameworkListItem,
     FrameworkMetadataUpdate,
@@ -767,6 +768,52 @@ async def resync_artifact(
 ) -> ArtifactResponse:
     """Pull the latest source bytes into a new artifact version."""
     return await service.resync_artifact(db, contributor, framework_id, artifact_id)
+
+
+@router.post(
+    "/{framework_id}/artifacts/{artifact_id}/bind-source",
+    response_model=ArtifactResponse,
+    summary="Attach or repoint an artifact's connector source",
+    description=(
+        "Owner-only, pre-publish-only. Binds the artifact to the given "
+        "connector file and pulls its bytes into a new artifact version. "
+        "Works on an unbound (upload) artifact (attach) or an already-bound "
+        "one (repoint). Returns a new artifact id."
+    ),
+)
+async def bind_artifact_source(
+    framework_id: UUID,
+    artifact_id: UUID,
+    payload: BindSourceRequest,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Bind (attach/repoint) an artifact to a connector source and pull bytes."""
+    return await service.bind_artifact_source(
+        db, contributor, framework_id, artifact_id, payload
+    )
+
+
+@router.delete(
+    "/{framework_id}/artifacts/{artifact_id}/source",
+    response_model=ArtifactResponse,
+    summary="Detach an artifact's connector source",
+    description=(
+        "Owner-only, pre-publish-only. Drops the connector binding and keeps "
+        "the owned bytes as a plain upload. Metadata-only; the artifact id is "
+        "unchanged."
+    ),
+)
+async def detach_artifact_source(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Detach the artifact's connector source, keeping its bytes."""
+    return await service.detach_artifact_source(
+        db, contributor, framework_id, artifact_id
+    )
 
 
 @router.post("/{framework_id}/artifacts/confirm", response_model=ArtifactResponse)
