@@ -113,6 +113,14 @@ class Artifact(CreatedAtMixin, Base):
     source_synced_revision: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    # sha256 of the owned bytes. Lets re-sync skip forking an identical byte
+    # copy when the source's modifiedTime moved but the content did not.
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Wall-clock when the row entered ``processing``. Drives the stale-lease
+    # reaper and the TTL-aware re-sync in-flight guard.
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     scan_status: Mapped[str] = mapped_column(
         SCAN_STATUS_ENUM,
         nullable=False,

@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     s3_reports_bucket: str = Field(
         default="auracles-reports-dev", alias="S3_REPORTS_BUCKET"
     )
+    artifact_processing_lease_minutes: int = Field(
+        default=30, alias="ARTIFACT_PROCESSING_LEASE_MINUTES"
+    )
+    artifact_orphan_sweep_minutes: int = Field(
+        default=60, alias="ARTIFACT_ORPHAN_SWEEP_MINUTES"
+    )
     # Current platform NDA document version for org attestation work.
     # Bumping it invalidates member assignability until they re-sign.
     org_member_nda_version: str = Field(
