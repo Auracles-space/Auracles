@@ -6,6 +6,7 @@ entrypoint dispatched after a clean scan.
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from typing import Any
 from uuid import UUID
@@ -68,6 +69,7 @@ async def _set_scan_result(
     scan_status: str,
     processing_status: str,
     audit_action: str,
+    content_sha256: str | None = None,
 ) -> None:
     """Persist a scan state transition and audit record."""
     async with async_session_factory() as db:
@@ -76,6 +78,8 @@ async def _set_scan_result(
             return
         artifact.scan_status = scan_status
         artifact.processing_status = processing_status
+        if content_sha256 is not None and artifact.content_sha256 is None:
+            artifact.content_sha256 = content_sha256
         await write_audit(
             db=db,
             actor_id=None,
@@ -114,6 +118,8 @@ async def _scan_artifact_impl(
             local_file.name,
         )
         scan_status = resolved_scan_file(local_file.name)
+        with open(local_file.name, "rb") as scanned:
+            content_sha256 = hashlib.sha256(scanned.read()).hexdigest()
 
     if scan_status == "infected":
         await _set_scan_result(
@@ -129,6 +135,7 @@ async def _scan_artifact_impl(
         scan_status="clean",
         processing_status="processing",
         audit_action="artifact_scan_complete",
+        content_sha256=content_sha256,
     )
     resolved_process_task.delay(artifact_id)
     return "clean"

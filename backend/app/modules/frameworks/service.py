@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -1308,6 +1309,8 @@ async def import_artifact_from_connector(
         file_size=len(body),
         mime_type=effective_mime,
         processing_status="processing",
+        processing_started_at=datetime.now(UTC),
+        content_sha256=hashlib.sha256(body).hexdigest(),
         source_kind="google_drive",
         source_external_id=payload.file_id,
         source_connection_id=connection.id,
@@ -1636,6 +1639,7 @@ async def confirm_artifact_upload(
 
     if artifact.processing_status == "pending":
         artifact.processing_status = "processing"
+        artifact.processing_started_at = datetime.now(UTC)
         await write_audit(
             db=db,
             actor_id=owner.actor_id,
