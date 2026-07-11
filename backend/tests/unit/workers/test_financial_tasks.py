@@ -25,7 +25,7 @@ from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.modules.invoicing.keys import invoice_pdf_key
-from app.modules.invoicing.models import Invoice
+from app.modules.invoicing.models import Invoice, InvoiceCounter
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import financials as financial_tasks
@@ -117,6 +117,8 @@ def financial_task_context(
             session.execute(delete(License))
             session.execute(delete(Payout))
             session.execute(delete(PayoutAccount))
+            session.execute(delete(Invoice))
+            session.execute(delete(InvoiceCounter))
             session.execute(delete(Transaction))
             session.execute(delete(Framework))
             session.execute(delete(UserRole))
