@@ -65,9 +65,17 @@ async def _reap_stalled_artifacts_impl() -> dict[str, int]:
             )
             reaped = len(result.all())
 
-        live_keys = set(
-            (await db.execute(select(Artifact.file_key))).scalars().all()
-        )
+        # Live keys include BOTH the artifact bytes and the redacted PII-safe
+        # review copy (clean_file_key). Both live under the swept frameworks/
+        # prefix; omitting clean_file_key would delete every redacted copy.
+        key_rows = (
+            await db.execute(
+                select(Artifact.file_key, Artifact.clean_file_key)
+            )
+        ).all()
+        live_keys = {row[0] for row in key_rows} | {
+            row[1] for row in key_rows if row[1]
+        }
 
     sweep_cutoff = datetime.now(UTC) - timedelta(
         minutes=settings.artifact_orphan_sweep_minutes

@@ -1691,18 +1691,25 @@ async def bind_and_sync(
             detail="Unsupported artifact MIME type.",
         )
 
+    # Always lock + sum existing bytes (excluding the row being replaced) so the
+    # cumulative 500MB cap is enforced even for metadata-less sources (Google
+    # Workspace files report no size). Pre-check 413 when the size is known; cap
+    # the download stream at the true remaining budget in every case.
     metadata_size = metadata.get("size")
-    if metadata_size is not None:
-        await _reserve_artifact_budget(
-            db, framework.id, add_bytes=int(metadata_size), exclude_id=artifact.id
-        )
+    existing_bytes = await _reserve_artifact_budget(
+        db,
+        framework.id,
+        add_bytes=int(metadata_size) if metadata_size is not None else 0,
+        exclude_id=artifact.id,
+    )
+    remaining = ARTIFACT_MAX_TOTAL_SIZE - existing_bytes
 
     try:
         body = await download_drive_file(
             access_token=access_token,
             file_id=file_id,
             export_mime=export_mime,
-            max_bytes=ARTIFACT_MAX_TOTAL_SIZE,
+            max_bytes=remaining,
         )
     except DriveFileTooLargeError:
         raise HTTPException(

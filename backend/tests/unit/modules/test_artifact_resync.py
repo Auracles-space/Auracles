@@ -391,3 +391,57 @@ async def test_resync_forks_when_token_refresh_rolls_back_session(
     assert new_row.current_for_framework is True
     assert new_row.content_sha256 == hashlib.sha256(new_body).hexdigest()
     assert await db.get(Artifact, old_id) is None
+
+
+async def test_resync_metadata_less_caps_download_at_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    source_preview_ctx: tuple,  # noqa: F811
+):
+    """A metadata-less re-sync caps the download at the true remaining budget.
+
+    Google Workspace files export with no size, so the cumulative 500MB cap can
+    only be enforced via the download streaming cap. The reservation must run
+    regardless of metadata size and pass ``remaining`` (excluding the replaced
+    row) to the download.
+    """
+    from app.integrations import google_drive
+    from app.modules.frameworks import service
+    from app.modules.frameworks.models_artifact import Artifact
+    from app.modules.frameworks.service import ARTIFACT_MAX_TOTAL_SIZE
+    from app.modules.integrations import service as integrations_service
+
+    db, contributor, framework, artifact = source_preview_ctx
+    artifact.processing_status = "processed"
+    artifact.content_sha256 = "OLD-HASH"
+    artifact.source_synced_revision = "REV-OLD"
+    # A second artifact occupies 100MB of the framework's budget; it is NOT the
+    # row being replaced, so it must count toward the remaining computation.
+    other = Artifact(
+        framework_id=framework.id, name="other.pdf",
+        file_key="frameworks/x/artifacts/other.pdf",
+        file_size=100 * 1024 * 1024, mime_type="application/pdf",
+        processing_status="processed",
+    )
+    db.add(other)
+    await db.commit()
+    old_id = artifact.id
+
+    _patch_common(monkeypatch, service, integrations_service, artifact)
+
+    async def _meta(*, access_token, file_id):
+        # No "size" key — the metadata-less Google-native path.
+        return {"id": file_id, "name": "doc.pdf", "mimeType": "application/pdf",
+                "modifiedTime": "REV-NEW"}
+
+    captured: dict[str, int] = {}
+
+    async def _download(*, access_token, file_id, export_mime, max_bytes):
+        captured["max_bytes"] = max_bytes
+        return b"NEW-BODY"
+
+    monkeypatch.setattr(google_drive, "get_drive_file_metadata", _meta)
+    monkeypatch.setattr(google_drive, "download_drive_file", _download)
+
+    await service.resync_artifact(db, contributor, framework.id, old_id)
+
+    assert captured["max_bytes"] == ARTIFACT_MAX_TOTAL_SIZE - 100 * 1024 * 1024

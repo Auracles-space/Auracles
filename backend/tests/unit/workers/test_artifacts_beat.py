@@ -181,3 +181,58 @@ async def test_orphan_sweep_spares_recent_objects(monkeypatch):
     assert result["swept"] == 0
     await _truncate()
     await engine.dispose()
+
+
+async def test_orphan_sweep_spares_clean_file_key(monkeypatch):
+    """A redacted PII-safe copy (clean_file_key) must survive the sweep.
+
+    The redaction pipeline stores the redacted review copy under the same
+    frameworks/ prefix but tracks it in Artifact.clean_file_key, not file_key.
+    The orphan sweep must treat both as live or it deletes every redacted copy.
+    """
+    await engine.dispose()
+    await _truncate()
+    from app.workers.tasks import artifacts_beat
+
+    monkeypatch.setattr(
+        artifacts_beat, "get_settings",
+        lambda: SimpleNamespace(s3_artifacts_bucket="bucket",
+                                artifact_processing_lease_minutes=30,
+                                artifact_orphan_sweep_minutes=60),
+    )
+    old_timestamp = datetime.now(UTC) - timedelta(minutes=120)
+    redacted_key = "frameworks/x/artifacts/a/redacted/r.pdf"
+    monkeypatch.setattr(
+        artifacts_beat.s3.storage, "list_keys",
+        lambda bucket, prefix: [
+            (old_timestamp, "frameworks/x/artifacts/live.pdf"),
+            (old_timestamp, redacted_key),
+            (old_timestamp, "frameworks/x/artifacts/orphan.pdf"),
+        ],
+        raising=False,
+    )
+    deleted: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        artifacts_beat.s3.storage, "delete_object",
+        lambda bucket, key: deleted.append((bucket, key)),
+        raising=False,
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await _seed_framework(session)
+            live = Artifact(
+                framework_id=framework.id, name="live.pdf",
+                file_key="frameworks/x/artifacts/live.pdf", file_size=1,
+                mime_type="application/pdf", processing_status="processed",
+                clean_file_key=redacted_key,
+            )
+            session.add(live)
+
+    result = await artifacts_beat._reap_stalled_artifacts_impl()
+
+    # Only the true orphan is deleted; the redacted copy is spared.
+    assert deleted == [("bucket", "frameworks/x/artifacts/orphan.pdf")]
+    assert result["swept"] == 1
+    await _truncate()
+    await engine.dispose()
