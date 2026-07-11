@@ -654,6 +654,137 @@ async def get_framework_purchase_invoice(
     )
 
 
+async def _load_org_purchase(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    transaction_id: UUID,
+) -> Transaction:
+    """Load an org-owned Framework purchase transaction."""
+    transaction = await db.scalar(
+        select(Transaction)
+        .where(
+            Transaction.id == transaction_id,
+            Transaction.payer_org_id == org_id,
+            Transaction.transaction_type == "purchase",
+        )
+        .with_for_update()
+    )
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Purchase not found.",
+        )
+    return transaction
+
+
+async def _resolve_org_billing_email(db: AsyncSession, org: Organization) -> str:
+    """Resolve the invoice buyer email for an org, falling back to its owner."""
+    if org.billing_email:
+        return org.billing_email
+    owner = await db.get(User, org.created_by)
+    if owner is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Organization has no billing contact.",
+        )
+    return owner.email
+
+
+async def get_org_framework_purchase_invoice(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    transaction_id: UUID,
+) -> Response:
+    """Return a generated org purchase invoice URL or queue its generation.
+
+    Mirrors `get_framework_purchase_invoice` for an organization buyer: the
+    invoice is issued lazily under the org identity (buyer name = org name,
+    buyer email = the org billing contact, falling back to the owner) and
+    delivered via a presigned URL once its PDF exists. The caller's admin
+    access and org membership are enforced at the dependency layer; this method
+    additionally guards that the purchase belongs to the organization.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: UUID of the organization that made the purchase.
+        transaction_id: UUID of the org-payer purchase transaction.
+
+    Returns:
+        A 302 redirect to a presigned invoice URL when the PDF exists, else a
+        202 response after queueing generation.
+
+    Raises:
+        HTTPException(404): Purchase, organization, or framework not found.
+        HTTPException(409): Purchase is not settled, or the org has no billing
+            contact to address the invoice to.
+    """
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        )
+    transaction = await _load_org_purchase(
+        db=db,
+        org_id=org_id,
+        transaction_id=transaction_id,
+    )
+    if transaction.status not in {"completed", "refunded"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invoice is only available for settled purchases.",
+        )
+
+    framework = await db.get(Framework, transaction.ref_id)
+    if framework is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    invoice = await invoicing_service.issue_invoice(
+        db,
+        doc_type=invoicing_service.DOC_SALES_INVOICE,
+        series=invoicing_service.SERIES_SALES,
+        source_ref_type="transaction",
+        source_ref_id=transaction_id,
+        currency=transaction.currency,
+        subtotal=transaction.amount,
+        seller=await financials_invoices.framework_invoice_seller_identity(
+            db,
+            framework=framework,
+        ),
+        buyer_name=org.name,
+        buyer_email=await _resolve_org_billing_email(db, org),
+    )
+    await db.commit()
+
+    key = invoice.s3_key
+    settings = get_settings()
+    if s3.storage.object_exists(settings.s3_reports_bucket, key):
+        invoice_url = s3.storage.presigned_get(
+            settings.s3_reports_bucket,
+            key,
+            INVOICE_URL_TTL_SECONDS,
+        )
+        return RedirectResponse(url=invoice_url, status_code=status.HTTP_302_FOUND)
+
+    generate_invoice_pdf.delay(str(transaction_id))
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+        content=InvoiceGenerationResponse(
+            transaction_id=transaction_id,
+            status="generating",
+        ).model_dump(mode="json"),
+    )
+
+
 async def delete_payment_method(
     db: AsyncSession,
     redis: Redis,
@@ -1842,9 +1973,22 @@ async def list_org_invoices(
     org_attestation_ids = select(Attestation.id).where(
         Attestation.attestor_org_id == org_id
     )
-    org_transaction_ids = select(Transaction.id).where(
+    # Sales: the org earned (attestation, or a transaction it was paid for).
+    # Purchases: the org paid (a purchase transaction with payer_org_id).
+    org_sale_transaction_ids = select(Transaction.id).where(
         Transaction.payee_org_id == org_id
     )
+    org_purchase_transaction_ids = {
+        row
+        for row in (
+            await db.scalars(
+                select(Transaction.id).where(
+                    Transaction.payer_org_id == org_id,
+                    Transaction.transaction_type == "purchase",
+                )
+            )
+        )
+    }
     rows = (
         (
             await db.execute(
@@ -1857,7 +2001,11 @@ async def list_org_invoices(
                         ),
                         (
                             (Invoice.source_ref_type == "transaction")
-                            & Invoice.source_ref_id.in_(org_transaction_ids)
+                            & Invoice.source_ref_id.in_(org_sale_transaction_ids)
+                        ),
+                        (
+                            (Invoice.source_ref_type == "transaction")
+                            & Invoice.source_ref_id.in_(org_purchase_transaction_ids)
                         ),
                     )
                 )
@@ -1878,6 +2026,11 @@ async def list_org_invoices(
                 total=invoice.total,
                 source_ref_type=invoice.source_ref_type,
                 source_ref_id=invoice.source_ref_id,
+                direction=(
+                    "purchase"
+                    if invoice.source_ref_id in org_purchase_transaction_ids
+                    else "sales"
+                ),
             )
             for invoice in rows
         ]

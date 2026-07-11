@@ -98,6 +98,9 @@ class Organization(UpdatedAtMixin, Base):
     country: Mapped[str] = mapped_column(String(2), nullable=False)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Billing contact for purchase invoices where the org is the buyer. Falls
+    # back to the org owner's email at issue time when unset.
+    billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

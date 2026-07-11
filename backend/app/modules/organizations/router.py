@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1463,6 +1463,32 @@ async def list_org_invoices(
     """List issued invoices for the org's settled work."""
     del context
     return await financials_service.list_org_invoices(db, org_id=org_id)
+
+
+@router.get(
+    "/{org_id}/financials/purchases/{transaction_id}/invoice",
+    summary="Organization purchase invoice",
+    description=(
+        "Issue (lazily) and return the invoice for a Framework the organization "
+        "purchased, addressed to the organization as buyer. Redirects to a "
+        "presigned PDF URL once generated, otherwise queues generation. A "
+        "billing record, available to owner/admins regardless of operator "
+        "capability state."
+    ),
+)
+async def get_org_purchase_invoice(
+    org_id: UUID,
+    transaction_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> Response:
+    """Redirect to the org purchase invoice PDF or queue its generation."""
+    del context
+    return await financials_service.get_org_framework_purchase_invoice(
+        db,
+        org_id=org_id,
+        transaction_id=transaction_id,
+    )
 
 
 @router.post(

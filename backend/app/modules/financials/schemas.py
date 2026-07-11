@@ -240,6 +240,7 @@ class OrgInvoiceListItem(BaseModel):
     total: Decimal
     source_ref_type: str
     source_ref_id: UUID
+    direction: str
 
 
 class OrgInvoicesResponse(BaseModel):
