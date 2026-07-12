@@ -18,8 +18,8 @@ import {
 import { getStripeClient } from "@/lib/financials/stripe-client";
 import {
   createCollectionPurchase,
-  createFrameworkPurchase,
   getExploreCollectionDetail,
+  listMyOrganizationsV1OrgsMineGet,
 } from "@/lib/generated/sdk.gen";
 import type {
   ExploreCollectionDetail,
@@ -27,6 +27,8 @@ import type {
   PurchaseRequest,
 } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { type BuyerOption, buyerOptions, startPurchase } from "@/lib/marketplace/purchase-context";
+import { BuyerContextSelector } from "./buyer-context-selector";
 
 type CheckoutFormProps = {
   framework: ExploreFrameworkDetail;
@@ -66,26 +68,43 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const stripePromise = useMemo(() => getStripeClient(), []);
+  
+  const [buyers, setBuyers] = useState<BuyerOption[]>([{ kind: "self", label: "Myself" }]);
+  const [buyer, setBuyer] = useState<BuyerOption>(buyers[0]);
+
+  useEffect(() => {
+    async function fetchBuyers() {
+      configureBrowserClient();
+      const result = await listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() });
+      if (result.response.ok && result.data) {
+        const opts = buyerOptions(result.data);
+        setBuyers(opts);
+        setBuyer(opts[0]);
+      }
+    }
+    void fetchBuyers();
+  }, []);
 
   async function handleStartCheckout() {
     setError(null);
     setSubmitting(true);
     configureBrowserClient();
-    const result = await createFrameworkPurchase({
-      body: { license_type: licenseType },
+    const result = await startPurchase({
+      buyer,
+      frameworkId: framework.id,
+      licenseType,
       headers: getAccessTokenHeaders(),
-      path: { framework_id: framework.id },
     });
     setSubmitting(false);
 
-    if (!result.response.ok || !result.data) {
+    if ("error" in result) {
       setError(describeGeneratedError(result.error));
       return;
     }
 
     setSession({
-      clientSecret: result.data.client_secret,
-      transactionId: result.data.transaction_id,
+      clientSecret: result.clientSecret,
+      transactionId: result.transactionId,
     });
   }
 
@@ -102,6 +121,10 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
           Select a license, then complete payment through Stripe-hosted fields.
         </p>
       </div>
+
+      {buyers.length > 1 ? (
+        <BuyerContextSelector options={buyers} value={buyer} onChange={setBuyer} />
+      ) : null}
 
       <fieldset className="mt-6 grid gap-3" disabled={submitting || Boolean(session)}>
         <legend className="sr-only">License type</legend>
@@ -190,6 +213,9 @@ export function CollectionCheckoutForm({
   const alreadyOwnedCount =
     displayCollection.already_owned_member_ids?.length ?? 0;
 
+  const [buyers, setBuyers] = useState<BuyerOption[]>([{ kind: "self", label: "Myself" }]);
+  const [buyer, setBuyer] = useState<BuyerOption>(buyers[0]);
+
   useEffect(() => {
     async function refreshOwnedMembers() {
       configureBrowserClient();
@@ -201,14 +227,28 @@ export function CollectionCheckoutForm({
         setDisplayCollection(result.data);
       }
     }
+    
+    async function fetchBuyers() {
+      configureBrowserClient();
+      const result = await listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() });
+      if (result.response.ok && result.data) {
+        const opts = buyerOptions(result.data);
+        setBuyers(opts);
+        setBuyer(opts[0]);
+      }
+    }
 
     void refreshOwnedMembers();
+    void fetchBuyers();
   }, [collection.id]);
 
   async function handleStartCheckout() {
     setError(null);
     setSubmitting(true);
     configureBrowserClient();
+    
+    // We haven't implemented org collection purchase in backend yet
+    // Assume collection purchase is always self for now
     const result = await createCollectionPurchase({
       body: { license_type: licenseType },
       headers: getAccessTokenHeaders(),
