@@ -19,7 +19,6 @@ import {
   deleteOrgPaymentMethod,
   listOrgInvoices,
   listOrgPaymentMethods,
-  getOrgPurchaseInvoice,
 } from "@/lib/generated/sdk.gen";
 import type { OrgPaymentMethodResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
 import { formatLabel } from "@/lib/marketplace/format";
@@ -114,20 +113,6 @@ export function OrgBillingSection() {
     setMethods((current) => current.filter((method) => method.id !== methodId));
   }
 
-  async function downloadInvoice(transactionId: string) {
-    configureBrowserClient();
-    const result = await getOrgPurchaseInvoice({
-      headers: getAccessTokenHeaders(),
-      path: { org_id: orgId, transaction_id: transactionId },
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    // The backend does not currently generate invoices for org purchases.
-    // This is a placeholder since the generated type is unknown / {}.
-    setError("Invoices are not available for organization purchases at this time.");
-  }
 
   if (loading) {
     return <p className="text-sm text-foreground-muted">Loading billing information.</p>;
@@ -262,14 +247,6 @@ export function OrgBillingSection() {
                     {invoice.doc_type}
                   </p>
                 </div>
-                <button
-                  aria-label={`View invoice ${invoice.id}`}
-                  className="min-h-[44px] rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
-                  onClick={() => downloadInvoice(invoice.id)}
-                  type="button"
-                >
-                  View invoice
-                </button>
               </article>
             ))
           )}

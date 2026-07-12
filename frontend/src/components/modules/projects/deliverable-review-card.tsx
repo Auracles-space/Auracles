@@ -18,7 +18,6 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import {
-  approveDeliverable,
   downloadDeliverableFiles,
   listDeliverables,
   requestDeliverableRevision,

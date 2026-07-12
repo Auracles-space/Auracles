@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeliverableReviewCard } from "@/components/modules/projects/deliverable-review-card";
-import { approveDeliverable, approveOrgDeliverable, listDeliverables } from "@/lib/generated/sdk.gen";
+import { approveOrgDeliverable, listDeliverables } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/form-client")>("@/lib/auth/form-client");
@@ -21,7 +21,6 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   requestDeliverableRevision: vi.fn(),
 }));
 
-const approveDeliverableMock = vi.mocked(approveDeliverable);
 const approveOrgDeliverableMock = vi.mocked(approveOrgDeliverable);
 const listDeliverablesMock = vi.mocked(listDeliverables);
 

@@ -12,7 +12,6 @@ import { useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
-  getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";

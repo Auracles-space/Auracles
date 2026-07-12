@@ -161,6 +161,9 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
+  const modeKind = mode.kind;
+  const modeOrgId = mode.kind === "org" ? mode.orgId : undefined;
+
   useEffect(() => {
     let mounted = true;
     async function loadProjects() {
@@ -169,14 +172,14 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
       setError(null);
       const headers = getAccessTokenHeaders();
       const roles = authTokenStore.getState().roles;
-      const shouldLoadOperator = roles.length === 0 || roles.includes("operator") || mode.kind === "org";
+      const shouldLoadOperator = roles.length === 0 || roles.includes("operator") || modeKind === "org";
       const shouldLoadContributor =
-        mode.kind === "self" && (roles.length === 0 || roles.includes("contributor"));
+        modeKind === "self" && (roles.length === 0 || roles.includes("contributor"));
       const [operatorResult, contributorResult, assignedResult] =
         await Promise.all([
           shouldLoadOperator
-            ? mode.kind === "org"
-              ? listOrgProjects({ headers, path: { org_id: mode.orgId } })
+            ? modeKind === "org" && modeOrgId !== undefined
+              ? listOrgProjects({ headers, path: { org_id: modeOrgId } })
               : listProjects({ headers, query: { role: "operator" } })
             : Promise.resolve(null),
           shouldLoadContributor
@@ -223,7 +226,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [modeKind, modeOrgId]);
 
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:px-8">

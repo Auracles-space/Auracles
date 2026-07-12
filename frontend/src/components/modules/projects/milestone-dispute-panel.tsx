@@ -12,11 +12,7 @@
  */
 import { useState } from "react";
 
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
+import { describeGeneratedError } from "@/lib/auth/form-client";
 import type { DisputeResponse } from "@/lib/generated/types.gen";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 
