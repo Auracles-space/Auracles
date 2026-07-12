@@ -251,7 +251,8 @@ test.describe("Become an attestor front door", () => {
     const suffix = Date.now();
     await page.getByLabel(/Organization Name/i).fill("E2E Attestor Org");
     await page.getByLabel(/Slug/i).fill(`e2e-attestor-${suffix}`);
-    await page.getByRole("button", { name: /^Create Organization$/i }).click();
+    // Attestor-intent dialog submits with "Create & continue".
+    await page.getByRole("button", { name: /^Create & continue$/i }).click();
 
     await expect(page).toHaveURL(/\/dashboard\/organizations\/org-1\/attestor$/);
     await expect(page.getByText(/Attestor Application/i)).toBeVisible();

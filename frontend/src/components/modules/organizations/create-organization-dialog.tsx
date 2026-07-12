@@ -112,9 +112,21 @@ export function CreateOrganizationDialog({
         className="w-full rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-w-md sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="mb-4 font-heading text-xl font-bold text-foreground" id={titleId}>
-          Create Organization
+        <h2
+          className={`font-heading text-xl font-bold text-foreground ${
+            redirectIntent === "attestor" ? "" : "mb-4"
+          }`}
+          id={titleId}
+        >
+          {redirectIntent === "attestor"
+            ? "Create your attesting organization"
+            : "Create Organization"}
         </h2>
+        {redirectIntent === "attestor" && (
+          <p className="mb-4 mt-1 text-sm text-foreground-muted">
+            Next, you&apos;ll complete the attestor application to get verified.
+          </p>
+        )}
 
         {error && <p className="mb-4 text-sm text-error">{error}</p>}
 
@@ -197,7 +209,7 @@ export function CreateOrganizationDialog({
               Cancel
             </Button>
             <Button type="submit" loading={loading}>
-              Create Organization
+              {redirectIntent === "attestor" ? "Create & continue" : "Create Organization"}
             </Button>
           </div>
         </form>

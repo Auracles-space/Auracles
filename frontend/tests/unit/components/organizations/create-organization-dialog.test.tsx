@@ -26,7 +26,8 @@ async function fillAndSubmit() {
   fireEvent.change(screen.getByLabelText(/Slug/i), {
     target: { value: "acme" },
   });
-  fireEvent.click(screen.getByRole("button", { name: /^Create Organization$/i }));
+  // Submit label is "Create Organization" or "Create & continue" (attestor intent).
+  fireEvent.click(screen.getByRole("button", { name: /^Create (Organization|& continue)$/i }));
 }
 
 describe("CreateOrganizationDialog redirect intent", () => {
@@ -67,5 +68,20 @@ describe("CreateOrganizationDialog redirect intent", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.parentElement).toBe(document.body);
+  });
+
+  it("frames the dialog as the attestor path when redirectIntent is attestor", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} redirectIntent="attestor" />);
+
+    expect(await screen.findByText(/Create your attesting organization/i)).toBeInTheDocument();
+    expect(screen.getByText(/complete the attestor application/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create & continue/i })).toBeInTheDocument();
+  });
+
+  it("uses the plain title and button without redirectIntent", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    expect(await screen.findByRole("heading", { name: /^Create Organization$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/attesting organization/i)).not.toBeInTheDocument();
   });
 });
