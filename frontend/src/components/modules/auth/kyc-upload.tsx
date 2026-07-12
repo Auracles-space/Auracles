@@ -151,6 +151,24 @@ export function KycUpload() {
               We&apos;re confirming your identity with our verification partner. This usually takes a minute. We&apos;ll notify you the moment it&apos;s done.
             </p>
           </div>
+          {/* A dropped or abandoned hosted flow leaves the user pending until a
+              webhook that may never arrive — always offer a restart so they are
+              never locked out. Backend allows pending -> a fresh inquiry. */}
+          <div className="w-full max-w-md space-y-3 pt-1">
+            {error ? <FormMessage kind="error" message={error} /> : null}
+            <p className="text-xs text-foreground-muted">
+              Didn&apos;t finish, or taking too long?
+            </p>
+            <Button
+              className="w-full"
+              disabled={isStarting}
+              onClick={startVerification}
+              type="button"
+              variant="secondary"
+            >
+              {isStarting ? "Opening secure check…" : "Restart verification"}
+            </Button>
+          </div>
         </div>
       )}
 

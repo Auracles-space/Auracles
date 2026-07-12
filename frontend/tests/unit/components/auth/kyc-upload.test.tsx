@@ -91,6 +91,39 @@ describe("KycUpload", () => {
     });
   });
 
+  it("lets a stuck pending user restart the Persona flow", async () => {
+    // A user who abandoned or failed the hosted flow is left pending until a
+    // webhook that may never arrive. The panel must still offer a restart so
+    // they are not locked out. Backend allows pending -> new inquiry.
+    const assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign },
+    });
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
+      ok({ kyc_status: "pending", documents: [] }),
+    );
+    vi.mocked(startIdentityVerificationV1SettingsKycSessionPost).mockResolvedValue({
+      data: { hosted_url: "https://withpersona.com/verify?inquiry-id=inq_2", inquiry_id: "inq_2" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<KycUpload />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/verification pending/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /restart verification/i }));
+
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        "https://withpersona.com/verify?inquiry-id=inq_2",
+      );
+    });
+  });
+
   it("shows the verified state and hides the CTA when KYC is verified", async () => {
     vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
       ok({ kyc_status: "verified", documents: [] }),
