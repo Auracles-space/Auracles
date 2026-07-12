@@ -6420,6 +6420,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/logo/upload-url:
+    post:
+      tags:
+      - Organizations
+      summary: Request an organization logo upload URL
+      description: Return a presigned POST target for the organization logo. Image
+        type and size are validated before the target is issued. Org admin only.
+      operationId: request_org_logo_upload_url_v1_orgs__org_id__logo_upload_url_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoUploadUrlRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoUploadUrlResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/logo/confirm:
+    post:
+      tags:
+      - Organizations
+      summary: Confirm an organization logo upload
+      description: Confirm a completed logo upload and publish it on the organization.
+        The object must exist and the key must belong to the org. Admin only.
+      operationId: confirm_org_logo_upload_v1_orgs__org_id__logo_confirm_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoConfirmRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/members:
     get:
       tags:
@@ -20603,15 +20677,67 @@ components:
             maxLength: 2000
           - type: 'null'
           title: Description
-        logo_key:
-          anyOf:
-          - type: string
-            maxLength: 512
-          - type: 'null'
-          title: Logo Key
       type: object
       title: OrganizationUpdateRequest
-      description: Partial update of org profile fields (admin+).
+      description: Partial update of org profile fields (admin+). The logo is set
+        exclusively through the verified upload flow, never here.
+    LogoUploadUrlRequest:
+      properties:
+        mime_type:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Mime Type
+        file_size:
+          type: integer
+          exclusiveMinimum: 0
+          title: File Size
+      type: object
+      required:
+      - mime_type
+      - file_size
+      title: LogoUploadUrlRequest
+      description: Declared metadata for an organization logo upload target.
+    LogoUploadUrlResponse:
+      properties:
+        upload_url:
+          type: string
+          title: Upload Url
+        fields:
+          additionalProperties:
+            type: string
+          type: object
+          title: Fields
+        file_key:
+          type: string
+          title: File Key
+        max_size:
+          type: integer
+          title: Max Size
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - upload_url
+      - fields
+      - file_key
+      - max_size
+      - expires_in
+      title: LogoUploadUrlResponse
+      description: Presigned POST target for an organization logo upload.
+    LogoConfirmRequest:
+      properties:
+        file_key:
+          type: string
+          maxLength: 512
+          minLength: 1
+          title: File Key
+      type: object
+      required:
+      - file_key
+      title: LogoConfirmRequest
+      description: Confirm a completed organization logo upload by its object key.
     PartnerAttestationReportResponse:
       properties:
         id:

@@ -14,6 +14,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
+from app.integrations import s3
 from app.modules.auth.models import User
 from app.modules.organizations.models import (
     Organization,
@@ -565,3 +566,58 @@ async def test_ownership_transfer_swaps_roles(
     roles = {membership.user_id: membership.role for membership in memberships}
     assert roles[member_id] == "owner"
     assert roles[owner_id] == "admin"
+
+
+async def test_logo_upload_url_forbidden_for_member(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """A plain member cannot request a logo upload target (admin+ only)."""
+    owner_id = await create_user("logo-owner")
+    owner_token = create_access_token(str(owner_id), [])
+    org = await create_org(client, owner_token, "logo")
+
+    member_id = await create_user("logo-member")
+    await add_member(str(org["id"]), member_id, "member")
+    member_token = create_access_token(str(member_id), [])
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/logo/upload-url",
+        json={"mime_type": "image/png", "file_size": 2048},
+        headers=auth(member_token),
+    )
+    assert response.status_code == 403
+
+
+async def test_logo_upload_url_and_confirm_happy_for_admin(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An org admin can mint a logo target and confirm it, persisting logo_key."""
+    owner_id = await create_user("logo-admin")
+    owner_token = create_access_token(str(owner_id), [])
+    org = await create_org(client, owner_token, "logoadmin")
+
+    monkeypatch.setattr(
+        s3.storage,
+        "presigned_post",
+        lambda **kwargs: {"url": "https://s3.example/u", "fields": {"key": "v"}},
+    )
+    url_response = await client.post(
+        f"/v1/orgs/{org['id']}/logo/upload-url",
+        json={"mime_type": "image/png", "file_size": 2048},
+        headers=auth(owner_token),
+    )
+    assert url_response.status_code == 200
+    file_key = url_response.json()["file_key"]
+    assert file_key.startswith(f"org-logos/{org['id']}/")
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+    confirm_response = await client.post(
+        f"/v1/orgs/{org['id']}/logo/confirm",
+        json={"file_key": file_key},
+        headers=auth(owner_token),
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["logo_key"] == file_key

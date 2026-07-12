@@ -57,6 +57,9 @@ from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     ContributorOrgDirectoryEntry,
     ContributorOrgDirectoryResponse,
+    LogoConfirmRequest,
+    LogoUploadUrlRequest,
+    LogoUploadUrlResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
     OrgAcceptOfferRequest,
@@ -300,6 +303,45 @@ async def update_organization(
     """Update one organization's editable profile fields."""
     del org_id
     return await service.update_organization(db=db, context=context, payload=payload)
+
+
+@router.post(
+    "/{org_id}/logo/upload-url",
+    response_model=LogoUploadUrlResponse,
+    summary="Request an organization logo upload URL",
+    description=(
+        "Return a presigned POST target for the organization logo. Image type "
+        "and size are validated before the target is issued. Org admin only."
+    ),
+)
+async def request_org_logo_upload_url(
+    org_id: UUID,
+    payload: LogoUploadUrlRequest,
+    context: OrgAdmin,
+) -> LogoUploadUrlResponse:
+    """Return a presigned logo upload target for an org admin."""
+    del org_id
+    return service.request_org_logo_upload_url(context=context, payload=payload)
+
+
+@router.post(
+    "/{org_id}/logo/confirm",
+    response_model=OrganizationResponse,
+    summary="Confirm an organization logo upload",
+    description=(
+        "Confirm a completed logo upload and publish it on the organization. "
+        "The object must exist and the key must belong to the org. Admin only."
+    ),
+)
+async def confirm_org_logo_upload(
+    org_id: UUID,
+    payload: LogoConfirmRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrganizationResponse:
+    """Persist an organization logo after verifying the upload."""
+    del org_id
+    return await service.confirm_org_logo_upload(db, context=context, payload=payload)
 
 
 @router.delete(

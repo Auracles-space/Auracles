@@ -10,7 +10,7 @@ import secrets
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
@@ -21,8 +21,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
+from app.integrations import s3
 from app.modules.auth.models import User
 from app.modules.auth.service import verify_totp_for_sensitive_action
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
@@ -39,6 +41,9 @@ from app.modules.organizations.models import (
 from app.modules.organizations.schemas import (
     AdminOrgResponse,
     AdminOrgsResponse,
+    LogoConfirmRequest,
+    LogoUploadUrlRequest,
+    LogoUploadUrlResponse,
     MyOrganizationResponse,
     OrganizationCreateRequest,
     OrganizationResponse,
@@ -265,12 +270,152 @@ async def update_organization(
             select(Organization).where(Organization.id == org_id)
         )
         assert organization is not None
-        for field in ("name", "website", "description", "logo_key"):
+        for field in ("name", "website", "description"):
             value = getattr(payload, field)
             if value is not None:
                 setattr(organization, field, value)
 
     await db.refresh(organization)
+    return OrganizationResponse.model_validate(organization)
+
+
+LOGO_MAX_SIZE = 5 * 1024 * 1024
+LOGO_UPLOAD_URL_TTL_SECONDS = 900
+_LOGO_KEY_PREFIX = "org-logos"
+ALLOWED_LOGO_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
+
+
+def request_org_logo_upload_url(
+    *,
+    context: OrgContext,
+    payload: LogoUploadUrlRequest,
+) -> LogoUploadUrlResponse:
+    """Return a presigned POST target for an organization logo upload.
+
+    Validates the declared image type and size, then mints a target keyed under
+    the org's own namespace (``org-logos/{org_id}/{uuid}.{ext}``) in the public
+    avatars bucket. The key is issued server-side so the later confirm step can
+    trust the namespace as the ownership boundary.
+
+    Args:
+        context: Resolved org/member/user context (admin+ enforced at the dep).
+        payload: Declared MIME type and size in bytes.
+
+    Returns:
+        The presigned POST target plus the key and upload constraints.
+
+    Raises:
+        HTTPException(415): If the MIME type is not an allowed image type.
+        HTTPException(413): If the declared size exceeds the cap.
+    """
+    extension = ALLOWED_LOGO_MIME_TYPES.get(payload.mime_type)
+    if extension is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Logo must be a PNG, JPEG, or WebP image.",
+        )
+    if payload.file_size > LOGO_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Logo exceeds the 5MB limit.",
+        )
+
+    settings = get_settings()
+    file_key = f"{_LOGO_KEY_PREFIX}/{context.org.id}/{uuid4()}.{extension}"
+    target = s3.storage.presigned_post(
+        bucket=settings.s3_avatars_bucket,
+        key=file_key,
+        mime_type=payload.mime_type,
+        max_size=LOGO_MAX_SIZE,
+        expires_in=LOGO_UPLOAD_URL_TTL_SECONDS,
+    )
+    fields = {str(name): str(value) for name, value in target["fields"].items()}
+    logger.bind(
+        module="organizations",
+        action="request_org_logo_upload_url",
+        user_id=context.user.id,
+        org_id=context.org.id,
+    ).info("org_logo_upload_url_created")
+    return LogoUploadUrlResponse(
+        upload_url=str(target["url"]),
+        fields=fields,
+        file_key=file_key,
+        max_size=LOGO_MAX_SIZE,
+        expires_in=LOGO_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def confirm_org_logo_upload(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    payload: LogoConfirmRequest,
+) -> OrganizationResponse:
+    """Persist an organization logo once the uploaded object is verified.
+
+    Ownership is enforced by key namespace: the upload-url step only ever issues
+    keys under the caller org's id, so any other prefix is a cross-org write and
+    is rejected. The object must also exist, guarding against confirming a key
+    whose upload never completed.
+
+    Args:
+        db: Async database session.
+        context: Resolved org/member/user context (admin+ enforced at the dep).
+        payload: The confirmed object key.
+
+    Returns:
+        The organization response with the logo applied.
+
+    Raises:
+        HTTPException(403): If the key is not namespaced under the org's id.
+        HTTPException(409): If no object exists at the key (upload incomplete).
+    """
+    # Capture ids as primitives before any rollback: the RBAC dep loaded these
+    # ORM objects on this session, and rolling it back below would expire them,
+    # turning a later attribute read into lazy IO in the wrong context.
+    org_id = context.org.id
+    actor_id = context.user.id
+    if not payload.file_key.startswith(f"{_LOGO_KEY_PREFIX}/{org_id}/"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Logo key does not belong to this organization.",
+        )
+
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_avatars_bucket, payload.file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Logo upload not found. Complete the upload and retry.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        organization = await db.scalar(
+            select(Organization).where(Organization.id == org_id)
+        )
+        assert organization is not None
+        organization.logo_key = payload.file_key
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_logo_updated",
+            target_type="organization",
+            target_id=org_id,
+        )
+
+    await db.refresh(organization)
+    logger.bind(
+        module="organizations",
+        action="confirm_org_logo_upload",
+        user_id=actor_id,
+        org_id=org_id,
+    ).info("org_logo_updated")
     return OrganizationResponse.model_validate(organization)
 
 

@@ -122,18 +122,46 @@ class MyOrganizationsResponse(BaseModel):
 
 
 class OrganizationUpdateRequest(BaseModel):
-    """Partial update of org profile fields (admin+)."""
+    """Partial update of org profile fields (admin+).
+
+    The logo is intentionally NOT settable here: it is set exclusively through
+    the verified upload flow (``/logo/upload-url`` + ``/logo/confirm``) so the
+    persisted ``logo_key`` always points at an object the org actually uploaded
+    into its own namespace, never an arbitrary caller-supplied key.
+    """
 
     name: str | None = Field(default=None, min_length=2, max_length=120)
     website: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
-    logo_key: str | None = Field(default=None, max_length=512)
 
-    @field_validator("name", "website", "description", "logo_key")
+    @field_validator("name", "website", "description")
     @classmethod
     def strip_optional_value(cls, value: str | None) -> str | None:
         """Trim optional fields while preserving null values."""
         return value.strip() if value is not None else None
+
+
+class LogoUploadUrlRequest(BaseModel):
+    """Declared metadata for an organization logo upload target."""
+
+    mime_type: str = Field(min_length=1, max_length=128)
+    file_size: int = Field(gt=0)
+
+
+class LogoUploadUrlResponse(BaseModel):
+    """Presigned POST target for an organization logo upload."""
+
+    upload_url: str
+    fields: dict[str, str]
+    file_key: str
+    max_size: int
+    expires_in: int
+
+
+class LogoConfirmRequest(BaseModel):
+    """Confirm a completed organization logo upload by its object key."""
+
+    file_key: str = Field(min_length=1, max_length=512)
 
 
 class PublicOrganizationResponse(BaseModel):
