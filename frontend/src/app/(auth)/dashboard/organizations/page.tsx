@@ -117,12 +117,6 @@ export default function OrganizationsPage() {
             Create an organization to collaborate with your team, manage shared capabilities, and access the marketplace.
           </p>
           <Button onClick={() => setIsCreateOpen(true)}>Create Organization</Button>
-          <Link
-            href="/dashboard/organizations/become-attestor"
-            className="mt-3 inline-flex min-h-[44px] items-center justify-center text-sm font-medium text-accent hover:underline"
-          >
-            Become an Attestor
-          </Link>
         </div>
       )}
 

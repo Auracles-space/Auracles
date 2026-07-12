@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createOrganizationV1OrgsPost } from "@/lib/generated/sdk.gen";
 import type { OrganizationCreateRequest } from "@/lib/generated/types.gen";
@@ -48,7 +49,13 @@ export function CreateOrganizationDialog({
     description: "",
   });
 
-  if (!open) return null;
+  // Portal to <body> so the modal escapes the app-shell <main> stacking
+  // context (relative z-20) and can cover the sticky header (z-30). Mount gate
+  // keeps createPortal off the server render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  if (!open || !mounted) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,7 +100,7 @@ export function CreateOrganizationDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div
       aria-labelledby={titleId}
       aria-modal="true"
@@ -195,6 +202,7 @@ export function CreateOrganizationDialog({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

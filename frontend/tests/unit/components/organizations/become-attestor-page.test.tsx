@@ -105,4 +105,19 @@ describe("OrganizationsPage become-attestor CTA", () => {
       );
     });
   });
+
+  it("shows only one become-attestor link in the empty state (no duplicate CTA)", async () => {
+    vi.mocked(listMyOrganizationsV1OrgsMineGet).mockResolvedValue(
+      ok({ organizations: [] }) as never,
+    );
+
+    render(<OrganizationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/No organizations yet/i)).toBeInTheDocument();
+    });
+    expect(
+      screen.getAllByRole("link", { name: /Become an Attestor/i }),
+    ).toHaveLength(1);
+  });
 });

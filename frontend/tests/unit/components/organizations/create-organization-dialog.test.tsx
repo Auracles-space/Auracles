@@ -61,4 +61,11 @@ describe("CreateOrganizationDialog redirect intent", () => {
       expect(push).toHaveBeenCalledWith("/dashboard/organizations/org-9");
     });
   });
+
+  it("portals the modal to document.body so it escapes the app shell stacking context", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.parentElement).toBe(document.body);
+  });
 });
