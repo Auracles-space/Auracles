@@ -34,7 +34,7 @@ describe("CheckoutForm buyer context", () => {
 
   it("shows the buyer selector when an eligible org exists and routes the org purchase", async () => {
     vi.mocked(sdk.listMyOrganizationsV1OrgsMineGet).mockResolvedValue(
-      ok([{ org: { id: "org-1", name: "Acme" }, role: "admin", capabilities: { operator: "active" } }]) as never,
+      ok({ organizations: [{ org: { id: "org-1", name: "Acme" }, role: "admin", capabilities: { operator: "active" } }] }) as never,
     );
     vi.mocked(sdk.createOrgFrameworkPurchase).mockResolvedValue(ok({ client_secret: "cs", transaction_id: "tx" }) as never);
 
@@ -52,7 +52,7 @@ describe("CheckoutForm buyer context", () => {
   });
 
   it("hides the buyer selector when there are no eligible orgs", async () => {
-    vi.mocked(sdk.listMyOrganizationsV1OrgsMineGet).mockResolvedValue(ok([]) as never);
+    vi.mocked(sdk.listMyOrganizationsV1OrgsMineGet).mockResolvedValue(ok({ organizations: [] }) as never);
     render(<CheckoutForm framework={framework} />);
     await waitFor(() => expect(sdk.listMyOrganizationsV1OrgsMineGet).toHaveBeenCalled());
     expect(screen.queryByText(/purchase as/i)).toBeNull();

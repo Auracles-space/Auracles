@@ -86,15 +86,15 @@ describe("OrgLicenseGrantPanel", () => {
     // [0] is the grantType select, [1] is the grantTargetId select
     const targetSelect = comboboxes[1];
 
-    fireEvent.change(targetSelect, { target: { value: "user-1" } });
+    fireEvent.change(targetSelect, { target: { value: "m-1" } });
 
     vi.mocked(sdk.addOrgLicenseGrant).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: { ...mockGrant, id: "grant-2", user_id: "user-1" },
+      data: { ...mockGrant, id: "grant-2" },
     });
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [{ ...mockGrant, id: "grant-2", user_id: "user-1" }],
+      data: [{ ...mockGrant, id: "grant-2" }],
     });
 
     const addButton = screen.getByRole("button", { name: "Add Grant" });
@@ -102,7 +102,7 @@ describe("OrgLicenseGrantPanel", () => {
 
     expect(sdk.addOrgLicenseGrant).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: { user_id: "user-1" },
+        body: { member_id: "m-1" },
       }),
     );
     expect(await screen.findByText("Alice")).toBeInTheDocument();
