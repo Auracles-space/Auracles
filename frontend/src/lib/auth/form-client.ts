@@ -46,13 +46,27 @@ export function getAccessTokenHeaders(): Record<string, string> {
  * @param error - Unknown error shape from the generated client.
  */
 export function describeGeneratedError(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "detail" in error &&
-    typeof error.detail === "string"
-  ) {
-    return error.detail;
+  if (error && typeof error === "object" && "detail" in error) {
+    const { detail } = error as { detail: unknown };
+    // Handler-raised HTTPException: detail is a plain string.
+    if (typeof detail === "string") {
+      return detail;
+    }
+    // Pydantic 422: detail is an array of { msg, loc, ... } entries. Surface
+    // the messages so the user learns why the request was rejected instead of
+    // a generic fallback.
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((entry) =>
+          entry && typeof entry === "object" && "msg" in entry
+            ? String((entry as { msg: unknown }).msg)
+            : "",
+        )
+        .filter(Boolean);
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
   }
   return "The request could not be completed.";
 }

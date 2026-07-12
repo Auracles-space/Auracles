@@ -21,6 +21,22 @@ export function isPasswordLongEnough(value: string): boolean {
   return value.length >= 12;
 }
 
+/**
+ * True when the password satisfies the full backend policy.
+ *
+ * Mirrors `validate_password_strength` on the API: 12-128 characters with at
+ * least one letter and one digit. Gating on this prevents the submit button
+ * from firing a request the backend will reject with an opaque 422.
+ */
+export function meetsPasswordPolicy(value: string): boolean {
+  return (
+    value.length >= 12 &&
+    value.length <= 128 &&
+    /[a-zA-Z]/.test(value) &&
+    /\d/.test(value)
+  );
+}
+
 /** True when the value parses as an http(s) URL. */
 export function isHttpUrl(value: string): boolean {
   try {

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   allValid,
   isNonEmpty,
-  isPasswordLongEnough,
+  meetsPasswordPolicy,
   passwordsMatch,
 } from "@/lib/forms/validators";
 import {
@@ -47,7 +47,7 @@ export function ResetPasswordForm({
   const [token, setToken] = useState(initialToken);
   const canSubmit = allValid(
     isNonEmpty(token),
-    isPasswordLongEnough(newPassword),
+    meetsPasswordPolicy(newPassword),
     passwordsMatch(newPassword, confirmPassword),
   );
 
@@ -123,8 +123,8 @@ export function ResetPasswordForm({
         type="password"
         value={confirmPassword}
       />
-      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
-        {isSubmitting ? "Saving password" : "Save password"}
+      <Button className="w-full" disabled={!canSubmit} loading={isSubmitting} type="submit">
+        Save password
       </Button>
     </form>
   );

@@ -150,35 +150,25 @@ describe("RegisterForm", () => {
     expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
   });
 
-  it("clears other roles when Attestor is selected", () => {
+  it("does not offer Attestor as a self-selectable role", () => {
+    render(<RegisterForm />);
+
+    // Attestor is a derived role granted through an organization's active
+    // attestor capability; it can never be self-selected at registration.
+    expect(screen.queryByLabelText(/attestor/i)).not.toBeInTheDocument();
+  });
+
+  it("allows Operator and Contributor to be combined", () => {
     render(<RegisterForm />);
 
     fireEvent.click(screen.getByLabelText(/operator/i));
     fireEvent.click(screen.getByLabelText(/contributor/i));
-    fireEvent.click(screen.getByLabelText(/attestor/i));
 
     expect(
-      (screen.getByLabelText(/attestor/i) as HTMLInputElement).checked,
+      (screen.getByLabelText(/operator/i) as HTMLInputElement).checked,
     ).toBe(true);
     expect(
-      (screen.getByLabelText(/operator/i) as HTMLInputElement).checked,
-    ).toBe(false);
-    expect(
       (screen.getByLabelText(/contributor/i) as HTMLInputElement).checked,
-    ).toBe(false);
-  });
-
-  it("clears Attestor when Operator or Contributor is selected", () => {
-    render(<RegisterForm />);
-
-    fireEvent.click(screen.getByLabelText(/attestor/i));
-    fireEvent.click(screen.getByLabelText(/operator/i));
-
-    expect(
-      (screen.getByLabelText(/attestor/i) as HTMLInputElement).checked,
-    ).toBe(false);
-    expect(
-      (screen.getByLabelText(/operator/i) as HTMLInputElement).checked,
     ).toBe(true);
   });
 });

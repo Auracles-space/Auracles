@@ -94,8 +94,8 @@ export function VerifyEmailForm({
         required
         value={token}
       />
-      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
-        {isSubmitting ? "Verifying" : "Verify email"}
+      <Button className="w-full" disabled={!canSubmit} loading={isSubmitting} type="submit">
+        Verify email
       </Button>
 
       <div className="space-y-3 border-t border-border-default pt-5">

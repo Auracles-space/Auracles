@@ -20,7 +20,7 @@ import {
   allValid,
   isEmail,
   isNonEmpty,
-  isPasswordLongEnough,
+  meetsPasswordPolicy,
   passwordsMatch,
 } from "@/lib/forms/validators";
 import { FormField } from "./form-field";
@@ -28,7 +28,7 @@ import { FormMessage } from "./form-message";
 import { AuthDivider, GoogleSignInButton } from "./google-sign-in-button";
 import { ResendVerificationButton } from "./resend-verification-button";
 
-type AssignableRole = "attestor" | "contributor" | "operator";
+type AssignableRole = "contributor" | "operator";
 
 const roleOptions: Array<{ description: string; label: string; value: AssignableRole }> =
   [
@@ -41,11 +41,6 @@ const roleOptions: Array<{ description: string; label: string; value: Assignable
       description: "Purchase frameworks and manage implementation work.",
       label: "Operator",
       value: "operator",
-    },
-    {
-      description: "Verify framework quality after admin approval.",
-      label: "Attestor",
-      value: "attestor",
     },
   ];
 
@@ -68,19 +63,14 @@ export function RegisterForm() {
       if (current.includes(role)) {
         return current.filter((value) => value !== role);
       }
-      // Attestor is standalone: selecting it clears other roles, and selecting
-      // Operator/Contributor clears a previously selected Attestor.
-      if (role === "attestor") {
-        return ["attestor"];
-      }
-      return [...current.filter((value) => value !== "attestor"), role];
+      return [...current, role];
     });
   }
 
   const canSubmit = allValid(
     isNonEmpty(displayName),
     isEmail(email),
-    isPasswordLongEnough(password),
+    meetsPasswordPolicy(password),
     passwordsMatch(password, confirmPassword),
     roles.length > 0,
     agreedToTerms,
@@ -222,7 +212,7 @@ export function RegisterForm() {
         required
         type="password"
         value={password}
-        isValid={isPasswordLongEnough(password)}
+        isValid={meetsPasswordPolicy(password)}
       />
       <FormField
         autoComplete="new-password"
@@ -254,8 +244,8 @@ export function RegisterForm() {
           )}
         </legend>
         <p className="text-xs leading-5 text-foreground-muted">
-          Operator and Contributor can be combined. Attestor is a standalone
-          role and requires admin approval.
+          Operator and Contributor can be combined. Attestor access is granted
+          through an organization, not selected here.
         </p>
         {roleOptions.map((role) => {
           const isSelected = roles.includes(role.value);
@@ -327,18 +317,8 @@ export function RegisterForm() {
         <a className="text-sm font-medium text-accent hover:underline" href="/login">
           Already have an account? Log in
         </a>
-        <Button className="w-full sm:w-auto" disabled={isSubmitting || !canSubmit} type="submit">
-          {isSubmitting ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-background" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Creating account
-            </>
-          ) : (
-            "Create account"
-          )}
+        <Button className="w-full sm:w-auto" disabled={!canSubmit} loading={isSubmitting} type="submit">
+          Create account
         </Button>
       </div>
     </form>

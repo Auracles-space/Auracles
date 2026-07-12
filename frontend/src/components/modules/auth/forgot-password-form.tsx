@@ -70,8 +70,8 @@ export function ForgotPasswordForm() {
         type="email"
         value={email}
       />
-      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
-        {isSubmitting ? "Sending link" : "Send reset link"}
+      <Button className="w-full" disabled={!canSubmit} loading={isSubmitting} type="submit">
+        Send reset link
       </Button>
     </form>
   );

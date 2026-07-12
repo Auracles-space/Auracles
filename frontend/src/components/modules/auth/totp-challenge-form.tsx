@@ -120,8 +120,8 @@ export function TotpChallengeForm({
         />
         Use a backup code
       </label>
-      <Button className="w-full" disabled={isSubmitting || !canSubmit} type="submit">
-        {isSubmitting ? "Verifying" : "Verify login"}
+      <Button className="w-full" disabled={!canSubmit} loading={isSubmitting} type="submit">
+        Verify login
       </Button>
     </form>
   );

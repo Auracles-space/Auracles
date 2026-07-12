@@ -7,6 +7,7 @@ import {
   isLengthBetween,
   isNonEmpty,
   isPasswordLongEnough,
+  meetsPasswordPolicy,
   isPositiveNumber,
   passwordsMatch,
 } from "@/lib/forms/validators";
@@ -27,6 +28,18 @@ describe("form validators", () => {
   it("isPasswordLongEnough enforces 12 chars", () => {
     expect(isPasswordLongEnough("StrongerPass1")).toBe(true);
     expect(isPasswordLongEnough("short")).toBe(false);
+  });
+
+  it("meetsPasswordPolicy requires length, a letter, and a digit", () => {
+    expect(meetsPasswordPolicy("StrongerPass1")).toBe(true);
+    // Long enough but no digit — passes length gate, fails backend policy.
+    expect(meetsPasswordPolicy("alllettersnodigit")).toBe(false);
+    // Long enough but no letter.
+    expect(meetsPasswordPolicy("123456789012")).toBe(false);
+    // Too short.
+    expect(meetsPasswordPolicy("Short1")).toBe(false);
+    // Over the 128-character maximum.
+    expect(meetsPasswordPolicy(`${"a".repeat(128)}1`)).toBe(false);
   });
 
   it("isHttpUrl accepts http(s) only", () => {
