@@ -262,6 +262,7 @@ async def _store_refresh_token(
     ip: str | None,
     ua: str | None,
     totp_verified: bool = False,
+    remember_me: bool = False,
 ) -> None:
     """Store refresh-token metadata and index it by family."""
     now = datetime.now(UTC).isoformat()
@@ -274,6 +275,9 @@ async def _store_refresh_token(
         "ip": ip,
         "user_agent": ua,
         "totp_verified": totp_verified,
+        # Persisted so token rotation on /refresh can re-issue the cookie with
+        # the same lifetime the user originally chose.
+        "remember_me": remember_me,
     }
     await redis.setex(key, REFRESH_TOKEN_TTL_SECONDS, json.dumps(record))
     await cast(Awaitable[int], redis.sadd(_family_key(family_id), key))
@@ -632,8 +636,15 @@ async def login(
     password: str,
     ip: str | None = None,
     ua: str | None = None,
-) -> tuple[LoginResponse, str]:
-    """Authenticate a verified user and issue access plus refresh tokens."""
+    remember_me: bool = False,
+) -> tuple[LoginResponse, str, bool]:
+    """Authenticate a verified user and issue access plus refresh tokens.
+
+    Returns:
+        A tuple of the login response, the opaque refresh token (empty when a
+        2FA challenge is pending), and the resolved ``remember_me`` flag the
+        caller uses to decide cookie persistence.
+    """
     normalized_email = normalize_email(email)
     await LOGIN_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
     failure_key = _login_failure_key(normalized_email)
@@ -688,16 +699,18 @@ async def login(
     await _record_new_device_if_needed(db, redis, user, ip, ua)
     if user.totp_enabled:
         challenge_token = generate_opaque_token()
+        # Carry the remember_me choice server-side through the 2FA step so it
+        # cannot be tampered with between challenge and verification.
         await redis.setex(
             _totp_challenge_key(challenge_token),
             TOTP_CHALLENGE_TTL_SECONDS,
-            str(user.id),
+            json.dumps({"user_id": str(user.id), "remember_me": remember_me}),
         )
         await db.commit()
         return LoginResponse(
             requires_2fa=True,
             challenge_token=challenge_token,
-        ), ""
+        ), "", remember_me
 
     roles = await _load_active_roles(db, user.id)
     access_token = create_access_token(
@@ -715,6 +728,7 @@ async def login(
         ip,
         ua,
         totp_verified=False,
+        remember_me=remember_me,
     )
     await write_audit(
         db=db,
@@ -726,7 +740,7 @@ async def login(
         ua=ua,
     )
     await db.commit()
-    return LoginResponse(access_token=access_token), refresh_token
+    return LoginResponse(access_token=access_token), refresh_token, remember_me
 
 
 GOOGLE_PROVIDER = "google"
@@ -940,8 +954,13 @@ async def refresh(
     token: str | None,
     ip: str | None = None,
     ua: str | None = None,
-) -> tuple[LoginResponse, str]:
-    """Rotate a refresh token and issue a new access token."""
+) -> tuple[LoginResponse, str, bool]:
+    """Rotate a refresh token and issue a new access token.
+
+    Returns the login response, the rotated refresh token, and the stored
+    ``remember_me`` flag so the caller re-issues the cookie with the same
+    lifetime the user originally chose.
+    """
     if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -998,6 +1017,7 @@ async def refresh(
     record = json.loads(_redis_text(raw_record))
     user_id = UUID(record["user_id"])
     family_id = str(record["family_id"])
+    remember_me = bool(record.get("remember_me", False))
     user = await db.scalar(select(User).where(User.id == user_id))
     if user is None or user.deactivated_at is not None:
         raise HTTPException(
@@ -1029,6 +1049,7 @@ async def refresh(
         ip,
         ua,
         totp_verified=bool(record.get("totp_verified", False)),
+        remember_me=remember_me,
     )
     await write_audit(
         db=db,
@@ -1040,7 +1061,7 @@ async def refresh(
         ua=ua,
     )
     await db.commit()
-    return LoginResponse(access_token=access_token), new_refresh_token
+    return LoginResponse(access_token=access_token), new_refresh_token, remember_me
 
 
 async def logout(
@@ -1374,17 +1395,31 @@ async def verify_totp_login(
     code: str,
     ip: str | None = None,
     ua: str | None = None,
-) -> tuple[LoginResponse, str]:
-    """Complete a 2FA login challenge and issue browser session tokens."""
+) -> tuple[LoginResponse, str, bool]:
+    """Complete a 2FA login challenge and issue browser session tokens.
+
+    Returns the login response, the refresh token, and the ``remember_me`` flag
+    carried from the first login step so the caller sets cookie persistence.
+    """
     key = _totp_challenge_key(challenge_token)
-    raw_user_id = await redis.get(key)
-    if raw_user_id is None:
+    raw_challenge = await redis.get(key)
+    if raw_challenge is None:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="2FA challenge expired or already used.",
         )
 
-    user_id = UUID(str(raw_user_id))
+    # Challenges are stored as JSON carrying the remember_me choice. Fall back to
+    # a bare user-id string for challenges issued before this field existed (and
+    # for the Google 2FA path, which does not offer a remember_me checkbox).
+    challenge_text = _redis_text(raw_challenge)
+    remember_me = False
+    try:
+        challenge_data = json.loads(challenge_text)
+        user_id = UUID(str(challenge_data["user_id"]))
+        remember_me = bool(challenge_data.get("remember_me", False))
+    except (json.JSONDecodeError, KeyError, TypeError):
+        user_id = UUID(challenge_text)
     user = await db.scalar(select(User).where(User.id == user_id))
     if user is None or user.deactivated_at is not None or not user.totp_enabled:
         raise HTTPException(
@@ -1419,6 +1454,7 @@ async def verify_totp_login(
         ip,
         ua,
         totp_verified=True,
+        remember_me=remember_me,
     )
     await write_audit(
         db=db,
@@ -1431,4 +1467,4 @@ async def verify_totp_login(
         ua=ua,
     )
     await db.commit()
-    return LoginResponse(access_token=access_token), refresh_token
+    return LoginResponse(access_token=access_token), refresh_token, remember_me

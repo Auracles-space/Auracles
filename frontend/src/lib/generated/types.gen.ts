@@ -2300,6 +2300,10 @@ export type LibraryResponse = {
 export type LoginRequest = {
     email: string;
     password: string;
+    /**
+     * When true, the browser refresh and session-hint cookies persist for 30 days. When false (default), they are session-scoped and dropped on browser close.
+     */
+    remember_me?: boolean;
 };
 
 /**

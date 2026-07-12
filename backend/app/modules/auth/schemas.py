@@ -73,6 +73,10 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: SecretStr
+    # When True, the browser refresh + session-hint cookies persist for 30 days
+    # ("Remember me"). When False (default), they are session-scoped and dropped
+    # on browser close.
+    remember_me: bool = False
 
 
 class ForgotPasswordRequest(BaseModel):

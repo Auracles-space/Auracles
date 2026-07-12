@@ -252,6 +252,57 @@ async def test_totp_enabled_login_requires_challenge_before_session_tokens(
     assert audit_log is not None
 
 
+async def test_remember_me_carries_through_2fa_challenge(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """The remember_me choice made at step 1 governs the post-2FA cookie.
+
+    remember_me is captured before the TOTP challenge and stored server-side, so
+    the persistent cookie must appear only when the first step opted in.
+    """
+    user_id = await create_verified_user("remember-2fa@auracles.space", "CorrectHorse9")
+    setup_body = await setup_and_enable_totp(client, user_id)
+
+    def refresh_set_cookie(response: Any) -> str:
+        return next(
+            header
+            for header in response.headers.get_list("set-cookie")
+            if header.startswith("refresh_token=")
+        )
+
+    # Remembered login → persistent cookie after 2FA.
+    login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "remember-2fa@auracles.space",
+            "password": "CorrectHorse9",
+            "remember_me": True,
+        },
+    )
+    code = pyotp.TOTP(secret_from_uri(setup_body["provisioning_uri"])).now()
+    remembered = await client.post(
+        "/v1/auth/2fa/verify-login",
+        json={"challenge_token": login.json()["challenge_token"], "code": code},
+    )
+    assert remembered.status_code == 200
+    assert "max-age=2592000" in refresh_set_cookie(remembered).lower()
+
+    # Default login → session cookie after 2FA.
+    login_session = await client.post(
+        "/v1/auth/login",
+        json={"email": "remember-2fa@auracles.space", "password": "CorrectHorse9"},
+    )
+    code = pyotp.TOTP(secret_from_uri(setup_body["provisioning_uri"])).now()
+    session_scoped = await client.post(
+        "/v1/auth/2fa/verify-login",
+        json={"challenge_token": login_session.json()["challenge_token"], "code": code},
+    )
+    assert session_scoped.status_code == 200
+    assert "max-age" not in refresh_set_cookie(session_scoped).lower()
+
+
 async def test_backup_code_completes_login_once(
     client: AsyncClient,
     migrated_database: None,

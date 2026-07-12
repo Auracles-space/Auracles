@@ -46,6 +46,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const canSubmit = allValid(isEmail(email), isNonEmpty(password));
 
   function navigateTo(location: string): void {
@@ -79,6 +80,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
       body: {
         email: email.trim(),
         password,
+        remember_me: rememberMe,
       },
     });
     setIsSubmitting(false);
@@ -176,6 +178,20 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
         type="password"
         value={password}
       />
+
+      <label
+        className="flex min-h-11 cursor-pointer items-center gap-3 py-2 text-sm leading-5 text-foreground-muted"
+        htmlFor="remember-me"
+      >
+        <input
+          checked={rememberMe}
+          className="h-4 w-4 accent-accent"
+          id="remember-me"
+          onChange={(event) => setRememberMe(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Remember me on this device for 30 days</span>
+      </label>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">

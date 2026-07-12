@@ -203,14 +203,21 @@ async def google_start(
     return response
 
 
-def _set_session_hint_from_access_token(response: Response, access_token: str) -> None:
-    """Set the readable route-hint cookie from freshly issued access claims."""
+def _set_session_hint_from_access_token(
+    response: Response, access_token: str, *, persistent: bool = False
+) -> None:
+    """Set the readable route-hint cookie from freshly issued access claims.
+
+    ``persistent`` must match the refresh cookie's lifetime so the hint and the
+    refresh session expire together.
+    """
     payload = decode_access_token(access_token)
     set_session_hint_cookie(
         response=response,
         user_id=payload.sub,
         roles=payload.roles,
         totp_verified=payload.totp_verified,
+        persistent=persistent,
     )
 
 
@@ -513,18 +520,21 @@ async def login(
     redis: RedisClient,
 ) -> LoginResponse:
     """Authenticate a user and set the browser refresh cookie."""
-    login_response, refresh_token = await service.login(
+    login_response, refresh_token, remember_me = await service.login(
         db=db,
         redis=redis,
         email=str(payload.email),
         password=payload.password.get_secret_value(),
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
+        remember_me=payload.remember_me,
     )
     if refresh_token:
-        set_refresh_cookie(response, refresh_token)
+        set_refresh_cookie(response, refresh_token, persistent=remember_me)
         if login_response.access_token is not None:
-            _set_session_hint_from_access_token(response, login_response.access_token)
+            _set_session_hint_from_access_token(
+                response, login_response.access_token, persistent=remember_me
+            )
     return login_response
 
 
@@ -536,16 +546,18 @@ async def refresh(
     redis: RedisClient,
 ) -> LoginResponse:
     """Rotate the refresh cookie and return a new access token."""
-    login_response, refresh_token = await service.refresh(
+    login_response, refresh_token, remember_me = await service.refresh(
         db=db,
         redis=redis,
         token=request.cookies.get(REFRESH_COOKIE_NAME),
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
     )
-    set_refresh_cookie(response, refresh_token)
+    set_refresh_cookie(response, refresh_token, persistent=remember_me)
     if login_response.access_token is not None:
-        _set_session_hint_from_access_token(response, login_response.access_token)
+        _set_session_hint_from_access_token(
+            response, login_response.access_token, persistent=remember_me
+        )
     return login_response
 
 
@@ -709,7 +721,7 @@ async def verify_totp_login(
     redis: RedisClient,
 ) -> LoginResponse:
     """Trade a valid 2FA login challenge for browser session tokens."""
-    login_response, refresh_token = await service.verify_totp_login(
+    login_response, refresh_token, remember_me = await service.verify_totp_login(
         db=db,
         redis=redis,
         challenge_token=payload.challenge_token,
@@ -717,7 +729,9 @@ async def verify_totp_login(
         ip=_client_ip(request),
         ua=request.headers.get("user-agent"),
     )
-    set_refresh_cookie(response, refresh_token)
+    set_refresh_cookie(response, refresh_token, persistent=remember_me)
     if login_response.access_token is not None:
-        _set_session_hint_from_access_token(response, login_response.access_token)
+        _set_session_hint_from_access_token(
+            response, login_response.access_token, persistent=remember_me
+        )
     return login_response

@@ -46,6 +46,38 @@ describe("LoginForm", () => {
     expect(submit).toBeEnabled();
   });
 
+  it("defaults remember_me to false and sends true when the box is checked", async () => {
+    vi.mocked(login).mockResolvedValue({
+      data: undefined,
+      error: { detail: "Incorrect email or password." },
+      response: new Response(null, { status: 401 }),
+    });
+
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password/i), {
+      target: { value: "secret-pass" },
+    });
+
+    // Default: unchecked → remember_me false.
+    fireEvent.click(screen.getByRole("button", { name: /^log in$/i }));
+    await waitFor(() => expect(login).toHaveBeenCalled());
+    expect(vi.mocked(login).mock.calls[0][0]?.body).toMatchObject({
+      remember_me: false,
+    });
+
+    // Checked → remember_me true.
+    fireEvent.click(screen.getByLabelText(/remember me/i));
+    fireEvent.click(screen.getByRole("button", { name: /^log in$/i }));
+    await waitFor(() => expect(vi.mocked(login).mock.calls).toHaveLength(2));
+    expect(vi.mocked(login).mock.calls[1][0]?.body).toMatchObject({
+      remember_me: true,
+    });
+  });
+
   it("surfaces generated-client login errors without exposing internals", async () => {
     vi.mocked(login).mockResolvedValue({
       data: undefined,

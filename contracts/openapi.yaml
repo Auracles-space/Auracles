@@ -18595,6 +18595,14 @@ components:
           format: password
           title: Password
           writeOnly: true
+        remember_me:
+          type: boolean
+          title: Remember Me
+          default: false
+          description: >-
+            When true, the browser refresh and session-hint cookies persist for
+            30 days. When false (default), they are session-scoped and dropped
+            on browser close.
       type: object
       required:
       - email

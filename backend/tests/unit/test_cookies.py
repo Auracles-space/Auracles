@@ -148,3 +148,70 @@ def test_clear_session_hint_cookie_defaults_to_lax() -> None:
 
     header = _cookie_header(response, SESSION_HINT_COOKIE_NAME)
     assert "samesite=lax" in header.lower()
+
+
+def test_set_refresh_cookie_persistent_sets_max_age() -> None:
+    """`persistent=True` writes the 30-day Max-Age so the cookie survives restart.
+
+    This is the "Remember me" checked path.
+    """
+    settings = Settings(ENVIRONMENT="local")
+    response = Response()
+
+    set_refresh_cookie(response, "token-value", settings=settings, persistent=True)
+
+    header = _cookie_header(response, REFRESH_COOKIE_NAME)
+    assert "max-age=2592000" in header.lower()
+
+
+def test_set_refresh_cookie_session_scoped_omits_max_age() -> None:
+    """The default (Remember me unchecked) writes a session cookie: no Max-Age.
+
+    A session cookie is dropped by the browser on close, so the user must log in
+    again next launch.
+    """
+    settings = Settings(ENVIRONMENT="local")
+    response = Response()
+
+    set_refresh_cookie(response, "token-value", settings=settings, persistent=False)
+
+    header = _cookie_header(response, REFRESH_COOKIE_NAME)
+    assert "max-age" not in header.lower()
+    assert "expires" not in header.lower()
+
+
+def test_set_session_hint_cookie_matches_refresh_persistence() -> None:
+    """The readable hint must share the refresh cookie's lifetime.
+
+    If the hint outlived a session-scoped refresh cookie, the frontend guard
+    would believe a session exists after the refresh cookie was already dropped.
+    """
+    settings = Settings(ENVIRONMENT="local")
+    persistent_response = Response()
+    session_response = Response()
+
+    set_session_hint_cookie(
+        persistent_response,
+        user_id=uuid4(),
+        roles=["operator"],
+        totp_verified=False,
+        settings=settings,
+        persistent=True,
+    )
+    set_session_hint_cookie(
+        session_response,
+        user_id=uuid4(),
+        roles=["operator"],
+        totp_verified=False,
+        settings=settings,
+        persistent=False,
+    )
+
+    assert (
+        "max-age=2592000"
+        in _cookie_header(persistent_response, SESSION_HINT_COOKIE_NAME).lower()
+    )
+    assert (
+        "max-age"
+        not in _cookie_header(session_response, SESSION_HINT_COOKIE_NAME).lower()
+    )

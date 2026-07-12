@@ -194,6 +194,98 @@ async def test_login_sets_refresh_cookie_and_me_accepts_access_token(
     assert me_response.json()["has_password"] is True
 
 
+async def test_login_without_remember_me_sets_session_cookies(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """Default login (Remember me unchecked) issues session-scoped cookies.
+
+    Both the refresh and session-hint cookies must omit Max-Age so the browser
+    drops them on close.
+    """
+    await create_user("nopersist@auracles.space", "CorrectHorse9")
+
+    response = await client.post(
+        "/v1/auth/login",
+        json={"email": "nopersist@auracles.space", "password": "CorrectHorse9"},
+    )
+
+    assert response.status_code == 200
+    assert "max-age" not in cookie_header(response, "refresh_token").lower()
+    assert "max-age" not in cookie_header(response, "session_hint").lower()
+
+
+async def test_login_with_remember_me_sets_persistent_cookies(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """Login with remember_me=true issues 30-day persistent cookies."""
+    await create_user("persist@auracles.space", "CorrectHorse9")
+
+    response = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "persist@auracles.space",
+            "password": "CorrectHorse9",
+            "remember_me": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "max-age=2592000" in cookie_header(response, "refresh_token").lower()
+    assert "max-age=2592000" in cookie_header(response, "session_hint").lower()
+
+
+async def test_refresh_preserves_session_scope_when_not_remembered(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """Rotating a session-scoped login must not silently make it persistent.
+
+    Without carrying the remember_me flag through rotation, the refreshed cookie
+    would default to a 30-day Max-Age and defeat the unchecked choice.
+    """
+    await create_user("refresh-session@auracles.space", "CorrectHorse9")
+    login = await client.post(
+        "/v1/auth/login",
+        json={"email": "refresh-session@auracles.space", "password": "CorrectHorse9"},
+    )
+    client.cookies.set("refresh_token", login.cookies["refresh_token"])
+
+    refreshed = await client.post("/v1/auth/refresh")
+
+    assert refreshed.status_code == 200
+    assert "max-age" not in cookie_header(refreshed, "refresh_token").lower()
+    assert "max-age" not in cookie_header(refreshed, "session_hint").lower()
+
+
+async def test_refresh_preserves_persistent_scope_when_remembered(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """Rotating a remembered login keeps the persistent 30-day Max-Age."""
+    await create_user("refresh-persist@auracles.space", "CorrectHorse9")
+    login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "refresh-persist@auracles.space",
+            "password": "CorrectHorse9",
+            "remember_me": True,
+        },
+    )
+    client.cookies.set("refresh_token", login.cookies["refresh_token"])
+
+    refreshed = await client.post("/v1/auth/refresh")
+
+    assert refreshed.status_code == 200
+    assert "max-age=2592000" in cookie_header(refreshed, "refresh_token").lower()
+    assert "max-age=2592000" in cookie_header(refreshed, "session_hint").lower()
+
+
 async def test_me_exposes_pending_attestor_role(
     client: AsyncClient,
     migrated_database: None,
