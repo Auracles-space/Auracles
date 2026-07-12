@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { projectApi } from "@/lib/projects/project-api-mode";
+import { projectApi } from "../../../src/lib/projects/project-api-mode";
 import * as sdk from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
