@@ -18,7 +18,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_factory, engine
@@ -410,3 +410,79 @@ async def test_member_level_conflict_of_interest_regression(
             )
     assert getattr(exc_info.value, "status_code", None) == 422
     assert exc_info.value.detail == {"error_code": "self_deal_conflict"}
+
+
+async def test_create_org_project_enforces_active_project_cap(
+    migrated_database: None,
+    operator_ownership_state: None,
+) -> None:
+    """Posting a sixth active org Project is refused with 409.
+
+    The cap counts open Projects keyed on ``operator_org_id``; the sixth create
+    for the same org must hit the MAX_ACTIVE_PROJECTS ceiling.
+    """
+    del migrated_database, operator_ownership_state
+    owner = await _create_user("org-cap-owner")
+    org = await _create_org(owner, operator_active=True)
+    owner_member = await _member_of(org, owner)
+
+    for index in range(project_service.MAX_ACTIVE_PROJECTS):
+        async with async_session_factory() as session:
+            await project_service.create_org_project(
+                db=session,
+                org_id=org.id,
+                actor=owner,
+                posting_member_id=owner_member.id,
+                payload=_payload(title=f"Org Cap Project {index}"),
+            )
+
+    async with async_session_factory() as session:
+        with pytest.raises(Exception) as exc_info:
+            await project_service.create_org_project(
+                db=session,
+                org_id=org.id,
+                actor=owner,
+                posting_member_id=owner_member.id,
+                payload=_payload(title="Org Cap Project overflow"),
+            )
+    assert getattr(exc_info.value, "status_code", None) == 409
+
+    async with async_session_factory() as session:
+        active_count = await session.scalar(
+            select(func.count(Project.id)).where(Project.operator_org_id == org.id)
+        )
+    assert active_count == project_service.MAX_ACTIVE_PROJECTS
+
+
+async def test_org_project_cap_is_isolated_from_owner_individual_projects(
+    migrated_database: None,
+    operator_ownership_state: None,
+) -> None:
+    """An owner at their individual cap can still post org Projects.
+
+    Proves the cap is keyed on ``operator_org_id``, not the acting user: the
+    owner's own five active individual Projects do not count against the org.
+    """
+    del migrated_database, operator_ownership_state
+    owner = await _create_user("cap-isolation-owner")
+    org = await _create_org(owner, operator_active=True)
+    owner_member = await _member_of(org, owner)
+
+    for index in range(project_service.MAX_ACTIVE_PROJECTS):
+        async with async_session_factory() as session:
+            await project_service.create_project(
+                db=session,
+                operator=owner,
+                payload=_payload(title=f"Personal Project {index}"),
+            )
+
+    async with async_session_factory() as session:
+        response = await project_service.create_org_project(
+            db=session,
+            org_id=org.id,
+            actor=owner,
+            posting_member_id=owner_member.id,
+            payload=_payload(title="Org Project despite personal cap"),
+        )
+    assert response.operator_org_id == org.id
+    assert response.operator_id is None

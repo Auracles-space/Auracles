@@ -586,3 +586,265 @@ async def test_individual_purchase_and_webhook_path_unchanged(
     assert license_row is not None
     assert license_row.operator_id == operator.id
     assert license_row.licensee_org_id is None
+
+
+async def _insert_org_transaction(
+    *,
+    org_id: UUID,
+    payee_id: UUID,
+    framework_id: UUID,
+    provider_ref: str,
+) -> UUID:
+    """Insert one pending org-payer purchase Transaction and return its id.
+
+    Mirrors what `create_framework_purchase` persists for an org checkout:
+    `payer_id` NULL and `payer_org_id` set, so the webhook resolves the org
+    License branch.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = Transaction(
+                payer_id=None,
+                payer_org_id=org_id,
+                payee_id=payee_id,
+                amount=Decimal("249.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("249.00"),
+                transaction_type="purchase",
+                status="pending",
+                provider="stripe",
+                provider_ref=provider_ref,
+                ref_id=framework_id,
+                ref_type="framework",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id
+
+
+def _org_purchase_event(
+    *,
+    transaction_id: UUID,
+    framework_id: UUID,
+    org_id: UUID,
+    provider_ref: str,
+    license_type: str = "team",
+) -> dict[str, Any]:
+    """Build a Stripe `payment_intent.succeeded` event for an org purchase."""
+    return {
+        "id": f"evt_{provider_ref}",
+        "type": "payment_intent.succeeded",
+        "data": {
+            "object": {
+                "id": provider_ref,
+                "metadata": {
+                    "transaction_id": str(transaction_id),
+                    "kind": "purchase",
+                    "framework_id": str(framework_id),
+                    "license_type": license_type,
+                    "payer_org_id": str(org_id),
+                },
+            }
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_webhook_org_branch_is_idempotent_on_same_transaction_replay(
+    migrated_database: None,
+    org_purchase_state: None,
+) -> None:
+    """Replaying one org purchase event grants exactly one License.
+
+    Exercises the same-transaction rung of the org idempotency ladder
+    (`existing_license.transaction_id == transaction.id` -> no-op): a duplicate
+    Stripe delivery must not mint a second License or change the grant.
+    """
+    del migrated_database, org_purchase_state
+    contributor = await _create_user("org-idem-contributor")
+    owner = await _create_user("org-idem-owner")
+    org = await _create_org(owner)
+    framework = await _create_framework(
+        contributor_id=contributor.id,
+        contributor_org_id=None,
+    )
+    transaction_id = await _insert_org_transaction(
+        org_id=org.id,
+        payee_id=contributor.id,
+        framework_id=framework.id,
+        provider_ref="pi_org_idem_1",
+    )
+    event = _org_purchase_event(
+        transaction_id=transaction_id,
+        framework_id=framework.id,
+        org_id=org.id,
+        provider_ref="pi_org_idem_1",
+    )
+
+    for _ in range(2):
+        async with async_session_factory() as session:
+            async with session.begin():
+                await webhooks_service._handle_purchase_succeeded(session, event)
+
+    async with async_session_factory() as session:
+        licenses = (
+            await session.scalars(
+                select(License).where(License.framework_id == framework.id)
+            )
+        ).all()
+        stored_transaction = await session.get(Transaction, transaction_id)
+    assert len(licenses) == 1
+    assert licenses[0].licensee_org_id == org.id
+    assert licenses[0].transaction_id == transaction_id
+    assert stored_transaction is not None
+    assert stored_transaction.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_webhook_org_branch_reactivates_inactive_org_license(
+    migrated_database: None,
+    org_purchase_state: None,
+) -> None:
+    """A revoked org License is reactivated by a new completed purchase.
+
+    Exercises the reactivate rung (`existing_license.status != "active"`): the
+    row is re-pointed to the new transaction and its type/version/seats refreshed
+    rather than a duplicate License being inserted.
+    """
+    del migrated_database, org_purchase_state
+    contributor = await _create_user("org-react-contributor")
+    owner = await _create_user("org-react-owner")
+    org = await _create_org(owner)
+    framework = await _create_framework(
+        contributor_id=contributor.id,
+        contributor_org_id=None,
+    )
+    old_transaction_id = await _insert_org_transaction(
+        org_id=org.id,
+        payee_id=contributor.id,
+        framework_id=framework.id,
+        provider_ref="pi_org_react_old",
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                License(
+                    framework_id=framework.id,
+                    operator_id=None,
+                    licensee_org_id=org.id,
+                    transaction_id=old_transaction_id,
+                    license_type="single_user",
+                    status="revoked",
+                    version_at_grant="0.9.0",
+                    seats_used=1,
+                    seats_total=1,
+                )
+            )
+
+    new_transaction_id = await _insert_org_transaction(
+        org_id=org.id,
+        payee_id=contributor.id,
+        framework_id=framework.id,
+        provider_ref="pi_org_react_new",
+    )
+    event = _org_purchase_event(
+        transaction_id=new_transaction_id,
+        framework_id=framework.id,
+        org_id=org.id,
+        provider_ref="pi_org_react_new",
+        license_type="team",
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            await webhooks_service._handle_purchase_succeeded(session, event)
+
+    async with async_session_factory() as session:
+        licenses = (
+            await session.scalars(
+                select(License).where(License.framework_id == framework.id)
+            )
+        ).all()
+        framework_row = await session.get(Framework, framework.id)
+        new_transaction = await session.get(Transaction, new_transaction_id)
+    assert len(licenses) == 1
+    license_row = licenses[0]
+    assert license_row.status == "active"
+    assert license_row.transaction_id == new_transaction_id
+    assert license_row.license_type == "team"
+    assert framework_row is not None
+    assert license_row.version_at_grant == framework_row.version
+    assert license_row.seats_total == 10
+    assert new_transaction is not None
+    assert new_transaction.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_webhook_org_branch_rejects_active_license_from_other_transaction(
+    migrated_database: None,
+    org_purchase_state: None,
+) -> None:
+    """An active org License blocks a second grant via a different transaction.
+
+    Exercises the conflict rung (active License, mismatched transaction ->
+    `WebhookProcessingError`): the existing grant and the second transaction are
+    left untouched so the caller can investigate the double-charge.
+    """
+    del migrated_database, org_purchase_state
+    contributor = await _create_user("org-conflict-contributor")
+    owner = await _create_user("org-conflict-owner")
+    org = await _create_org(owner)
+    framework = await _create_framework(
+        contributor_id=contributor.id,
+        contributor_org_id=None,
+    )
+    first_transaction_id = await _insert_org_transaction(
+        org_id=org.id,
+        payee_id=contributor.id,
+        framework_id=framework.id,
+        provider_ref="pi_org_conflict_first",
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                License(
+                    framework_id=framework.id,
+                    operator_id=None,
+                    licensee_org_id=org.id,
+                    transaction_id=first_transaction_id,
+                    license_type="team",
+                    status="active",
+                    version_at_grant="1.0.0",
+                    seats_used=1,
+                    seats_total=10,
+                )
+            )
+
+    second_transaction_id = await _insert_org_transaction(
+        org_id=org.id,
+        payee_id=contributor.id,
+        framework_id=framework.id,
+        provider_ref="pi_org_conflict_second",
+    )
+    event = _org_purchase_event(
+        transaction_id=second_transaction_id,
+        framework_id=framework.id,
+        org_id=org.id,
+        provider_ref="pi_org_conflict_second",
+    )
+    async with async_session_factory() as session:
+        with pytest.raises(webhooks_service.WebhookProcessingError):
+            async with session.begin():
+                await webhooks_service._handle_purchase_succeeded(session, event)
+
+    async with async_session_factory() as session:
+        licenses = (
+            await session.scalars(
+                select(License).where(License.framework_id == framework.id)
+            )
+        ).all()
+        second_transaction = await session.get(Transaction, second_transaction_id)
+    assert len(licenses) == 1
+    assert licenses[0].transaction_id == first_transaction_id
+    assert second_transaction is not None
+    assert second_transaction.status == "pending"
