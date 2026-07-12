@@ -47,7 +47,15 @@ export default function OrganizationsPage() {
             Manage your organization memberships and capabilities.
           </p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)}>Create Organization</Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link
+            href="/dashboard/organizations/become-attestor"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-control border border-border-default bg-surface-1 px-4 text-sm font-medium text-foreground transition hover:border-accent/30"
+          >
+            Become an Attestor
+          </Link>
+          <Button onClick={() => setIsCreateOpen(true)}>Create Organization</Button>
+        </div>
       </div>
 
       {loading ? (
@@ -109,6 +117,12 @@ export default function OrganizationsPage() {
             Create an organization to collaborate with your team, manage shared capabilities, and access the marketplace.
           </p>
           <Button onClick={() => setIsCreateOpen(true)}>Create Organization</Button>
+          <Link
+            href="/dashboard/organizations/become-attestor"
+            className="mt-3 inline-flex min-h-[44px] items-center justify-center text-sm font-medium text-accent hover:underline"
+          >
+            Become an Attestor
+          </Link>
         </div>
       )}
 

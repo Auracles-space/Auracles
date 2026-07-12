@@ -173,7 +173,9 @@ export function AttestorApplicationTab() {
           Attestor Application
         </h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Complete the following checklist to become a verified Org Attestor on Auracles.
+          Complete the following checklist to become a verified Org Attestor on
+          Auracles. Start with <span className="font-semibold text-foreground">Apply</span>{" "}
+          below.
         </p>
       </header>
 

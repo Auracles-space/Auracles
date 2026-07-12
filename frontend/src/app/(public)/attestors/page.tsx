@@ -37,8 +37,8 @@ export default async function AttestorsPage() {
           </p>
         </div>
         <Link 
-          href="/dashboard/organizations"
-          className="inline-flex h-10 shrink-0 items-center justify-center rounded-control bg-foreground px-4 text-sm font-medium text-background transition hover:opacity-90"
+          href="/dashboard/organizations/become-attestor"
+          className="inline-flex h-11 shrink-0 items-center justify-center rounded-control bg-foreground px-4 text-sm font-medium text-background transition hover:opacity-90"
         >
           Become an Attestor
         </Link>

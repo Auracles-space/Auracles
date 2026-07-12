@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import OrganizationsPage from "@/app/(auth)/dashboard/organizations/page";
 import BecomeAttestorPage from "@/app/(auth)/dashboard/organizations/become-attestor/page";
 import { listMyOrganizationsV1OrgsMineGet } from "@/lib/generated/sdk.gen";
 
@@ -83,6 +84,25 @@ describe("BecomeAttestorPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Retry/i })).toBeInTheDocument();
+    });
+  });
+});
+
+describe("OrganizationsPage become-attestor CTA", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("links to the become-attestor entry route in the header", async () => {
+    vi.mocked(listMyOrganizationsV1OrgsMineGet).mockResolvedValue(
+      ok({ organizations: [org("a", "owner")] }) as never,
+    );
+
+    render(<OrganizationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Become an Attestor/i })).toHaveAttribute(
+        "href",
+        "/dashboard/organizations/become-attestor",
+      );
     });
   });
 });
