@@ -16,15 +16,15 @@ Every account kind needed to cover every feature. **Setup state** = one-time pre
 
 | Handle | Email | Password | Roles | Setup state | Covers |
 |--------|-------|----------|-------|-------------|--------|
-| Contributor | `contrib@auracles.test` | `Contrib-Pass-2026` | contributor | 2FA enrolled; KYC verified (via AD-3); Stripe Connect payout account; Google Drive connected (§6) | §2 profiles, §4 frameworks, §5 artifacts, §6 connectors, §9 payouts, §13 attestation requestor, §16 credentials, §17 reputation, §18 collections |
-| Operator | `operator@auracles.test` | `Operator-Pass-2026` | operator | 2FA enrolled; Stripe payment method saved | §3 explore, §7 purchases, §8 reviews (RV-1/3), §10 projects (operator side), §18 saved searches, §20–21 |
-| Operator 2 | `operator2@auracles.test` | `Operator2-Pass-26` | operator | none | negative cases: PU-7 no-license download, RV-2 review w/o license, PR-16 non-member workspace, PF-5 public-profile view, CR-4 unauthorized evidence |
-| Dual | `dual@auracles.test` | `Dual-Pass-2026!` | contributor + operator | 2FA enrolled | PU-11 self-deal block, §10 contributor side (proposals/deliverables), role-switch UX |
-| NG Operator | `ng.operator@auracles.test` | `Naija-Pass-2026` | operator, country **NG** | Paystack payment method | PU-4 Paystack routing, NGN currency display |
-| Developer | `developer@auracles.test` | `Developer-Pass-26` | operator | approved partner application (DV-2) | §19 developer platform (keys, webhooks, tier, partner payouts) |
-| Org Owner | `orgowner@auracles.test` | `OrgOwner-Pass-26` | operator | 2FA enrolled (org payment method setup is TOTP-gated) | §11 org core (owner/admin actions), §12 attestor application, §14–15 capability activation, org checkout/funding |
-| Org Member | `orgmember@auracles.test` | `OrgMember-Pass-26` | (none; joins via invitation) | none | OR-4/5 invitation accept, OO-5/6 grants + granted download, OR-12 member-RBAC 403s, OO-14 / GD-2 member exit |
-| Org Member 2 | `orgmember2@auracles.test` | `OrgMember2-Pass2026` | (none; joins via invitation) | NDA signed in `Acme Advisory` (OA-1) | OR-8 teams, OA-4 trial nominee, OA-9/10 reviewing-member workspace, promoted admin for OR-6/OR-9 transfer target |
+| Contributor | `contrib@auracles.dev` | `Contrib-Pass-2026` | contributor | 2FA enrolled; KYC verified (via AD-3); Stripe Connect payout account; Google Drive connected (§6) | §2 profiles, §4 frameworks, §5 artifacts, §6 connectors, §9 payouts, §13 attestation requestor, §16 credentials, §17 reputation, §18 collections |
+| Operator | `operator@auracles.dev` | `Operator-Pass-2026` | operator | 2FA enrolled; Stripe payment method saved | §3 explore, §7 purchases, §8 reviews (RV-1/3), §10 projects (operator side), §18 saved searches, §20–21 |
+| Operator 2 | `operator2@auracles.dev` | `Operator2-Pass-26` | operator | none | negative cases: PU-7 no-license download, RV-2 review w/o license, PR-16 non-member workspace, PF-5 public-profile view, CR-4 unauthorized evidence |
+| Dual | `dual@auracles.dev` | `Dual-Pass-2026!` | contributor + operator | 2FA enrolled | PU-11 self-deal block, §10 contributor side (proposals/deliverables), role-switch UX |
+| NG Operator | `ng.operator@auracles.dev` | `Naija-Pass-2026` | operator, country **NG** | Paystack payment method | PU-4 Paystack routing, NGN currency display |
+| Developer | `developer@auracles.dev` | `Developer-Pass-26` | operator | approved partner application (DV-2) | §19 developer platform (keys, webhooks, tier, partner payouts) |
+| Org Owner | `orgowner@auracles.dev` | `OrgOwner-Pass-26` | operator | 2FA enrolled (org payment method setup is TOTP-gated) | §11 org core (owner/admin actions), §12 attestor application, §14–15 capability activation, org checkout/funding |
+| Org Member | `orgmember@auracles.dev` | `OrgMember-Pass-26` | (none; joins via invitation) | none | OR-4/5 invitation accept, OO-5/6 grants + granted download, OR-12 member-RBAC 403s, OO-14 / GD-2 member exit |
+| Org Member 2 | `orgmember2@auracles.dev` | `OrgMember2-Pass2026` | (none; joins via invitation) | NDA signed in `Acme Advisory` (OA-1) | OR-8 teams, OA-4 trial nominee, OA-9/10 reviewing-member workspace, promoted admin for OR-6/OR-9 transfer target |
 | Admin | from `bootstrap_admin.py` | (`ADMIN_PASSWORD`) | admin | 2FA enrolled (RE-5 recompute is TOTP-gated) | §22 all admin, AD-* references inside other sections |
 | Google user | a real Google test account you control | (Google) | roleless at first login | none — stays passwordless until GA-6 | §1b Google auth, GA-7 passwordless re-auth, onboarding role step |
 
@@ -32,12 +32,14 @@ Throwaway accounts — register when the scenario needs them; each is consumed/m
 
 | Handle | Email | Password | Consumed by |
 |--------|-------|----------|-------------|
-| Unverified | `unverified@auracles.test` | `Unverified-Pass26` | AU-4 negative: registered but never verified → login blocked until verify; resend-verification. |
-| Suspend-me | `suspendme@auracles.test` | `SuspendMe-Pass-26` | AD-1 suspend/unsuspend (reversible, reusable after); AU-10 forgot/reset (its password may drift — fine, throwaway). |
-| Delete-me | `deleteme@auracles.test` | `DeleteMe-Pass-2026` | GD-2 account deletion (destroyed — register fresh per run). Give it: one org membership with a grant (OO-14), a Drive connection (CN-10) before deleting. |
+| Unverified | `unverified@auracles.dev` | `Unverified-Pass26` | AU-4 negative: registered but never verified → login blocked until verify; resend-verification. |
+| Suspend-me | `suspendme@auracles.dev` | `SuspendMe-Pass-26` | AD-1 suspend/unsuspend (reversible, reusable after); AU-10 forgot/reset (its password may drift — fine, throwaway). |
+| Delete-me | `deleteme@auracles.dev` | `DeleteMe-Pass-2026` | GD-2 account deletion (destroyed — register fresh per run). Give it: one org membership with a grant (OO-14), a Drive connection (CN-10) before deleting. |
 | Google-link | existing email/password account re-registered with matching Google email | — | GA-3 auto-link (needs a Google account whose email equals an existing password account — easiest: register `your.gmail@gmail.com` with a password first, then "Continue with Google"). |
 
 > Password policy = **≥ 12 chars**. Use a sub-12 value (`Short1`) to test rejection.
+>
+> **Email domains:** use `auracles.dev` (or any real TLD you control) — **not** `.test`, `.example`, `.invalid`, `.localhost`, or `example.com/.net/.org`. Those are RFC 2606 reserved/special-use names and `email-validator` rejects them at registration ("…special-use or reserved name that cannot be used with email"). No real inbox needed for the seeded accounts — email is captured in logs/test inbox per the Scope note.
 > Individual attestors no longer exist — attestation is organization-based. The old "apply as attestor" user is gone.
 > The **Google user** doing Drive-connector tests (§6) can be the same Google account — connector OAuth is per-user via Contributor's settings, independent of Google *login*.
 
@@ -98,14 +100,14 @@ Throwaway accounts — register when the scenario needs them; each is consumed/m
 | AU-2 | Password too short | — (new) | password `Short1` | Submit disabled / 422 "≥12 chars". |
 | AU-3 | Role combo | — (new: Dual) | roles = Contributor + Operator | Accepted (Attestor is no longer a self-serve individual role). |
 | AU-4 | Verify email | Contributor; negative: Unverified | token from captured email | Email verified; login allowed. Unverified account can't log in; resend-verification works. |
-| AU-5 | Login wrong pass | Operator | `operator@auracles.test` / `wrongpass1234` | 401 generic error. |
+| AU-5 | Login wrong pass | Operator | `operator@auracles.dev` / `wrongpass1234` | 401 generic error. |
 | AU-6 | Login OK | Operator | Operator row | Lands on role dashboard; refresh cookie set (HttpOnly); access token never in localStorage. |
 | AU-7 | 2FA setup | Dual | enroll authenticator, enter current code | 2FA enabled; backup codes shown **once**; regenerate replaces them. |
 | AU-8 | 2FA login | Dual | login then enter code at `/2fa-challenge` | Wrong `000000` → 401; valid code → in; backup code works once. |
 | AU-9 | 2FA disable | Dual (re-enroll after) | valid TOTP required | Disabled; next login has no challenge. Re-enroll to restore bank state. |
 | AU-10 | Forgot/reset | Suspend-me | email → reset link → new pass `Reset-Pass-2026` | Old pass fails, new works. |
 | AU-11 | Logout | Operator | — | Protected route redirects to `/login`; refresh token revoked (back button can't restore session). |
-| AU-12 | Rate limit | — | 6+ rapid failed logins on `operator@auracles.test` | Throttled response. |
+| AU-12 | Rate limit | — | 6+ rapid failed logins on `operator@auracles.dev` | Throttled response. |
 | AU-13 | Route guard | — (logged out) | hit `/dashboard/frameworks` | Redirect to `/login`. |
 | AU-14 | Token refresh | Operator | stay idle past 15 min, then act | Silent refresh; no logout, no error flash. |
 
@@ -262,7 +264,7 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 | OR-1 | Create org | Org Owner | create `Acme Advisory` (slug auto) | Org appears under `/dashboard/organizations`; creator = owner. |
 | OR-2 | Org shell tabs | Org Owner vs Org Member | open org | Tabs scale with role/capabilities: Profile, Members always; Invitations/Teams/Attestor + more for admin; Danger Zone owner-only. |
 | OR-3 | Logo upload | Org Owner | PNG < 5 MB via upload-url → confirm | Two-step verified upload; logo renders. Free-string logo keys via PATCH are impossible. |
-| OR-4 | Invite member | Org Owner | invite `orgmember@auracles.test` role member | Email with token link `/org-invitations/[token]`; pending listed. |
+| OR-4 | Invite member | Org Owner | invite `orgmember@auracles.dev` role member | Email with token link `/org-invitations/[token]`; pending listed. |
 | OR-5 | Accept invitation | Org Member | open token link logged in | Joins org; shows in Members. Expired/consumed token → clear error (SC-13 expires pending ones). |
 | OR-6 | Roles | Org Owner | promote Org Member 2 → admin (in `Acme Advisory`); demote test in `Scratch Org` | Admin tabs appear/disappear accordingly. |
 | OR-7 | Remove member | Org Owner | remove a member (use `Scratch Org`) | Gone; their org access (library grants etc.) severed. |
