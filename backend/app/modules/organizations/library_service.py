@@ -242,13 +242,39 @@ async def list_org_library(
             (license_row, framework) for license_row, framework in rows
         ]
     else:
-        for license_row, framework in rows:
-            if await member_has_license_access(
-                db,
-                license_id=license_row.id,
-                member_id=member.id,
-            ):
-                visible_rows.append((license_row, framework))
+        # Resolve the member's accessible Licenses in ONE grant query rather
+        # than a per-row member_has_license_access call (N+1). A License is
+        # visible if the member holds a direct grant or a grant to one of their
+        # teams.
+        all_license_ids = [license_row.id for license_row, _framework in rows]
+        accessible_ids: set[UUID] = set()
+        if all_license_ids:
+            accessible_ids = set(
+                (
+                    await db.execute(
+                        select(LicenseGrant.license_id)
+                        .where(
+                            LicenseGrant.license_id.in_(all_license_ids),
+                            or_(
+                                LicenseGrant.member_id == member.id,
+                                LicenseGrant.team_id.in_(
+                                    select(OrgTeamMember.team_id).where(
+                                        OrgTeamMember.member_id == member.id
+                                    )
+                                ),
+                            ),
+                        )
+                        .distinct()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        visible_rows = [
+            (license_row, framework)
+            for license_row, framework in rows
+            if license_row.id in accessible_ids
+        ]
 
     grant_counts: dict[UUID, int] = {}
     license_ids = [license_row.id for license_row, _framework in visible_rows]

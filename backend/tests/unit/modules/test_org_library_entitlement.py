@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, event
 
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
@@ -516,3 +516,62 @@ async def test_request_org_artifact_download_rejects_artifact_outside_license_sn
             )
 
     assert getattr(exc_info.value, "status_code", None) == 403
+
+
+@pytest.mark.asyncio
+async def test_list_org_library_query_count_independent_of_license_count(
+    org_library_state: None,
+) -> None:
+    """list_org_library must not issue a per-License entitlement query.
+
+    A non-admin member's visible set must be resolved with a single batched
+    grant lookup, so the number of SQL statements is independent of how many
+    org Licenses exist. Guards the N+1 regression where member_has_license_access
+    ran once per row.
+    """
+    owner = await _create_user("nplus1-owner")
+    org = await _create_org(owner, slug=f"nplus1-{uuid4().hex[:8]}")
+    member_user = await _create_user("nplus1-member")
+    member = await _add_member(org.id, member_user.id, role="member")
+
+    async def _seed_granted_licenses(count: int) -> None:
+        for _ in range(count):
+            contributor = await _create_user("nplus1-contrib")
+            framework = await _create_framework(contributor)
+            license_row = await _grant_org_license(framework.id, org.id)
+            async with async_session_factory() as session:
+                async with session.begin():
+                    session.add(
+                        LicenseGrant(
+                            license_id=license_row.id,
+                            member_id=member.id,
+                            granted_by=member.id,
+                        )
+                    )
+
+    async def _count_queries() -> tuple[int, int]:
+        count = 0
+
+        def _before(conn, cursor, statement, params, context, executemany):  # noqa: ANN001, ANN202
+            nonlocal count
+            count += 1
+
+        event.listen(engine.sync_engine, "before_cursor_execute", _before)
+        try:
+            async with async_session_factory() as session:
+                items = await library_service.list_org_library(
+                    session, org_id=org.id, member=member
+                )
+        finally:
+            event.remove(engine.sync_engine, "before_cursor_execute", _before)
+        return count, len(items)
+
+    await _seed_granted_licenses(2)
+    small_queries, small_items = await _count_queries()
+    await _seed_granted_licenses(3)  # 5 total now
+    large_queries, large_items = await _count_queries()
+
+    assert small_items == 2
+    assert large_items == 5
+    # Statement count must NOT grow with the number of Licenses (no N+1).
+    assert small_queries == large_queries
