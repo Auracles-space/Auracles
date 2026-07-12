@@ -35,6 +35,7 @@ const compatibilityAliases = {
   createMilestone: "createMilestoneV1ProjectsProjectIdMilestonesPost",
   createPaymentMethodSetup: "createPaymentMethodSetupV1FinancialsPaymentMethodsPost",
   createProject: "createProjectV1ProjectsPost",
+  listOrgProjects: "listOrgProjectsV1OrgsOrgIdProjectsGet",
   createWorkspaceMessage: "createWorkspaceMessageV1ProjectsProjectIdMessagesPost",
   createWorkspaceUploadSession: "createWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPost",
   deleteArtifact: "deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete",
@@ -181,7 +182,8 @@ const compatibilityAliases = {
   fundOrgMilestone: "fundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPost",
   approveOrgDeliverable: "approveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePost",
   createOrgDispute: "createOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPost",
-
+  listOrgMembers: "listMembersV1OrgsOrgIdMembersGet",
+  listOrgTeams: "listTeamsV1OrgsOrgIdTeamsGet",
 };
 
 const aliasBlock = [

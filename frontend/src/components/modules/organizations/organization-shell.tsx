@@ -69,8 +69,15 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const isOwner = role === "owner";
   const isAdmin = role === "admin" || isOwner;
 
+  const operatorCap = myOrg.capabilities?.["operator"];
+  const isOperator = operatorCap === "active";
+
   const attestorCap = myOrg.capabilities?.["attestor"];
   const needsNda = attestorCap === "active" || attestorCap === "pending";
+  const attestorActive = attestorCap === "active";
+
+  const contributorCap = myOrg.capabilities?.["contributor"];
+  const contributorActive = contributorCap === "active";
 
   const tabs = [
     { id: "", label: "Profile" },
@@ -79,11 +86,21 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   if (needsNda) {
     tabs.push({ id: "nda", label: "NDA" });
   }
+  
   if (isAdmin) {
     tabs.push({ id: "invitations", label: "Invitations" });
     tabs.push({ id: "teams", label: "Teams" });
     tabs.push({ id: "attestor", label: "Attestor" });
-    tabs.push({ id: "financials", label: "Financials" });
+    
+    if (isOperator) {
+      tabs.push({ id: "operator", label: "Operator" });
+      tabs.push({ id: "projects", label: "Projects" });
+    }
+    
+    if (isOperator || attestorActive || contributorActive) {
+      tabs.push({ id: "financials", label: "Financials" });
+    }
+    
     tabs.push({ id: "offers", label: "Offers" });
     tabs.push({ id: "queue", label: "Queue" });
   }
@@ -103,7 +120,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   }
 
   return (
-    <OrganizationProvider orgId={orgId} role={role} org={myOrg.org}>
+    <OrganizationProvider orgId={orgId} role={role} org={myOrg.org} capabilities={myOrg.capabilities}>
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">
         <div className="mb-6">
           <h1 className="font-heading text-3xl font-bold text-foreground">

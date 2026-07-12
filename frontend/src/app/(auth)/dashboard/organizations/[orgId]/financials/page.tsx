@@ -1,4 +1,4 @@
-import { OrgAttestorFinancialsTab } from "@/components/modules/organizations/attestor/org-attestor-financials-tab";
+import { OrgFinancialsTab } from "@/components/modules/organizations/operator/org-financials-tab";
 
 export default async function OrgFinancialsPage({
   params,
@@ -6,5 +6,5 @@ export default async function OrgFinancialsPage({
   params: Promise<{ orgId: string }>;
 }) {
   const resolvedParams = await params;
-  return <OrgAttestorFinancialsTab orgId={resolvedParams.orgId} />;
+  return <OrgFinancialsTab orgId={resolvedParams.orgId} />;
 }

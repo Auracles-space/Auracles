@@ -24,6 +24,7 @@ import {
   requestDeliverableRevision,
 } from "@/lib/generated/sdk.gen";
 import type { DeliverableResponse } from "@/lib/generated/types.gen";
+import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 
 const SCAN_LABEL: Record<string, string> = {
   pending_scan: "Scanning…",
@@ -39,6 +40,8 @@ type DeliverableReviewCardProps = {
   isOperator: boolean;
   /** Refresh the workspace after an approve / revision request. */
   onChanged: () => void;
+  /** Identity mode for the API call (default self). */
+  mode?: ProjectApiMode;
 };
 
 /**
@@ -50,6 +53,7 @@ export function DeliverableReviewCard({
   milestoneStatus,
   isOperator,
   onChanged,
+  mode = { kind: "self" },
 }: DeliverableReviewCardProps) {
   const [deliverable, setDeliverable] = useState<DeliverableResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,14 +111,11 @@ export function DeliverableReviewCard({
     }
     setBusy(true);
     setError(null);
-    const result = await approveDeliverable({
-      headers: getAccessTokenHeaders(),
-      path: {
-        deliverable_id: deliverable.id,
-        milestone_id: milestoneId,
-        project_id: projectId,
-      },
-    });
+    const result = await projectApi(mode).approveDeliverable(
+      projectId,
+      milestoneId,
+      deliverable.id,
+    );
     setBusy(false);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));

@@ -9,6 +9,7 @@ import {
   createCollectionPurchase,
   createFrameworkPurchase,
   getExploreCollectionDetail,
+  listMyOrganizationsV1OrgsMineGet,
 } from "@/lib/generated/sdk.gen";
 import type {
   ExploreCollectionDetail,
@@ -29,6 +30,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   createCollectionPurchase: vi.fn(),
   createFrameworkPurchase: vi.fn(),
   getExploreCollectionDetail: vi.fn(),
+  listMyOrganizationsV1OrgsMineGet: vi.fn(),
 }));
 
 vi.mock("@stripe/react-stripe-js", () => ({
@@ -131,6 +133,20 @@ describe("CheckoutForm", () => {
       request: new Request("http://testserver"),
       response: new Response(null, { status: 200 }),
     });
+    vi.mocked(listMyOrganizationsV1OrgsMineGet).mockResolvedValue({
+      data: {
+        organizations: [
+          {
+            org: { id: "00000000-0000-4000-8000-0000000000org", name: "Test Org", type: "company" },
+            role: "admin",
+            capabilities: { operator: "active" },
+          },
+        ],
+      },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
   });
 
   it("starts checkout for the selected self-serve license", async () => {
@@ -162,6 +178,16 @@ describe("CheckoutForm", () => {
     expect(
       screen.getByRole("button", { name: "Confirm payment" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders buyer options from a wrapper payload", async () => {
+    render(<CheckoutForm framework={framework} />);
+    
+    // The default option "Myself" should be present
+    expect(await screen.findByText("Myself")).toBeInTheDocument();
+    
+    // The "Test Org" from the mock listMyOrganizationsV1OrgsMineGet response should also be present
+    expect(await screen.findByText("Test Org")).toBeInTheDocument();
   });
 
   it("starts checkout for a collection bundle", async () => {

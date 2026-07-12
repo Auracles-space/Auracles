@@ -3946,3 +3946,6 @@ export const acceptOrgProposal = acceptOrgProposalV1OrgsOrgIdProjectsProjectIdPr
 export const fundOrgMilestone = fundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPost;
 export const approveOrgDeliverable = approveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePost;
 export const createOrgDispute = createOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPost;
+export const listOrgMembers = listMembersV1OrgsOrgIdMembersGet;
+export const listOrgTeams = listTeamsV1OrgsOrgIdTeamsGet;
+export const listOrgProjects = listOrgProjectsV1OrgsOrgIdProjectsGet;

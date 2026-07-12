@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MilestoneDisputePanel } from "@/components/modules/projects/milestone-dispute-panel";
-import { createDispute } from "@/lib/generated/sdk.gen";
+import { createDispute, createOrgDispute } from "@/lib/generated/sdk.gen";
 import type { DisputeResponse } from "@/lib/generated/types.gen";
 
 vi.mock("@/lib/auth/form-client", async () => {
@@ -18,9 +18,11 @@ vi.mock("@/lib/auth/form-client", async () => {
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   createDispute: vi.fn(),
+  createOrgDispute: vi.fn(),
 }));
 
 const createDisputeMock = vi.mocked(createDispute);
+const createOrgDisputeMock = vi.mocked(createOrgDispute);
 
 function dispute(overrides: Partial<DisputeResponse> = {}): DisputeResponse {
   return {
@@ -44,6 +46,7 @@ function dispute(overrides: Partial<DisputeResponse> = {}): DisputeResponse {
 
 beforeEach(() => {
   createDisputeMock.mockReset();
+  createOrgDisputeMock.mockReset();
 });
 
 describe("MilestoneDisputePanel", () => {
@@ -124,6 +127,44 @@ describe("MilestoneDisputePanel", () => {
       }),
     );
     await waitFor(() => expect(onRaised).toHaveBeenCalledTimes(1));
+  });
+
+  it("routes dispute creation through createOrgDispute in org mode", async () => {
+    createOrgDisputeMock.mockResolvedValue({
+      data: dispute(),
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    } as never);
+    const onRaised = vi.fn();
+
+    render(
+      <MilestoneDisputePanel
+        canRaise
+        dispute={null}
+        milestoneId="milestone-1"
+        milestoneStatus="funded"
+        onRaised={onRaised}
+        projectId="project-1"
+        mode={{ kind: "org", orgId: "org-1" }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /raise dispute/i }));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Deliverable does not match the agreed scope." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /submit dispute/i }));
+
+    await waitFor(() => expect(createOrgDisputeMock).toHaveBeenCalledTimes(1));
+    expect(createOrgDisputeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: {
+          milestone_id: "milestone-1",
+          reason: "Deliverable does not match the agreed scope.",
+        },
+        path: { org_id: "org-1", project_id: "project-1" },
+      }),
+    );
   });
 
   it("blocks a too-short reason without calling the API", () => {

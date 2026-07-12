@@ -77,7 +77,7 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
       configureBrowserClient();
       const result = await listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() });
       if (result.response.ok && result.data) {
-        const opts = buyerOptions(result.data);
+        const opts = buyerOptions(result.data.organizations);
         setBuyers(opts);
         setBuyer(opts[0]);
       }
@@ -213,9 +213,6 @@ export function CollectionCheckoutForm({
   const alreadyOwnedCount =
     displayCollection.already_owned_member_ids?.length ?? 0;
 
-  const [buyers, setBuyers] = useState<BuyerOption[]>([{ kind: "self", label: "Myself" }]);
-  const [buyer, setBuyer] = useState<BuyerOption>(buyers[0]);
-
   useEffect(() => {
     async function refreshOwnedMembers() {
       configureBrowserClient();
@@ -228,27 +225,14 @@ export function CollectionCheckoutForm({
       }
     }
     
-    async function fetchBuyers() {
-      configureBrowserClient();
-      const result = await listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() });
-      if (result.response.ok && result.data) {
-        const opts = buyerOptions(result.data);
-        setBuyers(opts);
-        setBuyer(opts[0]);
-      }
-    }
-
     void refreshOwnedMembers();
-    void fetchBuyers();
   }, [collection.id]);
 
   async function handleStartCheckout() {
     setError(null);
     setSubmitting(true);
     configureBrowserClient();
-    
-    // We haven't implemented org collection purchase in backend yet
-    // Assume collection purchase is always self for now
+
     const result = await createCollectionPurchase({
       body: { license_type: licenseType },
       headers: getAccessTokenHeaders(),
