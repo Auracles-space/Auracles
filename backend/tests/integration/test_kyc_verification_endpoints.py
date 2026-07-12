@@ -22,7 +22,7 @@ from sqlalchemy import create_engine, select
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
-from app.integrations.persona import PersonaInquiry
+from app.integrations.persona import PersonaInquiry, PersonaInquiryStatus
 from app.main import app
 from app.modules.auth.models import IdentityVerification, User, UserRole
 from app.modules.settings import service as settings_service
@@ -164,6 +164,144 @@ async def test_start_session_requires_authentication(
 ) -> None:
     """An unauthenticated session start is rejected with 401."""
     response = await client.post("/v1/settings/kyc/session")
+
+    assert response.status_code == 401
+
+
+async def _seed_inquiry(user_id: UUID, inquiry_id: str) -> None:
+    """Seed a pending identity-verification row as `session` start would."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            user.kyc_status = "pending"
+            session.add(
+                IdentityVerification(
+                    user_id=user_id,
+                    provider="persona",
+                    inquiry_id=inquiry_id,
+                    status="created",
+                )
+            )
+
+
+async def test_sync_applies_approved_inquiry_and_verifies_user(
+    client: AsyncClient,
+    migrated_database: None,
+    verification_context: None,
+) -> None:
+    """Syncing an approved inquiry flips the owner to verified.
+
+    Backs the on-return path: the app reads the verdict directly from Persona
+    so a completed check resolves without waiting for the inbound webhook.
+    """
+    user_id = await _create_user("sync@auracles.space", ["operator"])
+    await _seed_inquiry(user_id, "inq_sync1")
+
+    async def fake_fetch(*, inquiry_id: str, **_: Any) -> PersonaInquiryStatus:
+        return PersonaInquiryStatus(
+            inquiry_id=inquiry_id,
+            status="approved",
+            reference_id=str(user_id),
+        )
+
+    original = settings_service.persona.fetch_inquiry
+    settings_service.persona.fetch_inquiry = fake_fetch  # type: ignore[assignment]
+    try:
+        response = await client.post(
+            "/v1/settings/kyc/sync",
+            headers=_auth_headers(user_id, ["operator"]),
+            json={"inquiry_id": "inq_sync1"},
+        )
+    finally:
+        settings_service.persona.fetch_inquiry = original  # type: ignore[assignment]
+
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        inquiry = await session.scalar(
+            select(IdentityVerification).where(
+                IdentityVerification.inquiry_id == "inq_sync1"
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json()["kyc_status"] == "verified"
+    assert user is not None and user.kyc_status == "verified"
+    assert inquiry is not None and inquiry.status == "approved"
+
+
+async def test_sync_keeps_pending_when_inquiry_not_terminal(
+    client: AsyncClient,
+    migrated_database: None,
+    verification_context: None,
+) -> None:
+    """A still-pending inquiry leaves the user pending, no false verdict."""
+    user_id = await _create_user("waiting@auracles.space", ["operator"])
+    await _seed_inquiry(user_id, "inq_wait1")
+
+    async def fake_fetch(*, inquiry_id: str, **_: Any) -> PersonaInquiryStatus:
+        return PersonaInquiryStatus(
+            inquiry_id=inquiry_id, status="pending", reference_id=str(user_id)
+        )
+
+    original = settings_service.persona.fetch_inquiry
+    settings_service.persona.fetch_inquiry = fake_fetch  # type: ignore[assignment]
+    try:
+        response = await client.post(
+            "/v1/settings/kyc/sync",
+            headers=_auth_headers(user_id, ["operator"]),
+            json={"inquiry_id": "inq_wait1"},
+        )
+    finally:
+        settings_service.persona.fetch_inquiry = original  # type: ignore[assignment]
+
+    assert response.status_code == 200
+    assert response.json()["kyc_status"] == "pending"
+
+
+async def test_sync_rejects_inquiry_owned_by_another_user(
+    client: AsyncClient,
+    migrated_database: None,
+    verification_context: None,
+) -> None:
+    """Syncing another user's inquiry is a 404 — no cross-account writes."""
+    owner_id = await _create_user("owner@auracles.space", ["operator"])
+    attacker_id = await _create_user("attacker@auracles.space", ["operator"])
+    await _seed_inquiry(owner_id, "inq_owned")
+
+    async def fake_fetch(*, inquiry_id: str, **_: Any) -> PersonaInquiryStatus:
+        return PersonaInquiryStatus(
+            inquiry_id=inquiry_id, status="approved", reference_id=str(owner_id)
+        )
+
+    original = settings_service.persona.fetch_inquiry
+    settings_service.persona.fetch_inquiry = fake_fetch  # type: ignore[assignment]
+    try:
+        response = await client.post(
+            "/v1/settings/kyc/sync",
+            headers=_auth_headers(attacker_id, ["operator"]),
+            json={"inquiry_id": "inq_owned"},
+        )
+    finally:
+        settings_service.persona.fetch_inquiry = original  # type: ignore[assignment]
+
+    async with async_session_factory() as session:
+        owner = await session.get(User, owner_id)
+
+    assert response.status_code == 404
+    # The owner's status is untouched by the attacker's sync attempt.
+    assert owner is not None and owner.kyc_status == "pending"
+
+
+async def test_sync_requires_authentication(
+    client: AsyncClient,
+    migrated_database: None,
+    verification_context: None,
+) -> None:
+    """An unauthenticated sync is rejected with 401."""
+    response = await client.post(
+        "/v1/settings/kyc/sync", json={"inquiry_id": "inq_x"}
+    )
 
     assert response.status_code == 401
 

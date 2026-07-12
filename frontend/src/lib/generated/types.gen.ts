@@ -2252,6 +2252,13 @@ export type KycStatusResponse = {
 };
 
 /**
+ * Request to reconcile KYC state from a returned Persona inquiry.
+ */
+export type KycSyncRequest = {
+    inquiry_id: string;
+};
+
+/**
  * Hosted Persona verification link for the authenticated user.
  *
  * The frontend redirects the user to ``hosted_url`` to complete identity
@@ -7479,6 +7486,14 @@ export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
 export type GetKycStatusV1SettingsKycGetError = unknown;
+
+export type SyncKycFromReturnV1SettingsKycSyncPostData = {
+    body: KycSyncRequest;
+};
+
+export type SyncKycFromReturnV1SettingsKycSyncPostResponse = (KycStatusResponse);
+
+export type SyncKycFromReturnV1SettingsKycSyncPostError = (HTTPValidationError);
 
 export type ListSessionsV1SettingsSessionsGetResponse = (SessionsResponse);
 

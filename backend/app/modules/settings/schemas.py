@@ -40,6 +40,17 @@ class KycVerificationSessionResponse(BaseModel):
     inquiry_id: str
 
 
+class KycSyncRequest(BaseModel):
+    """Request to reconcile KYC state from a returned Persona inquiry.
+
+    Sent when the user lands back from the hosted flow. ``inquiry_id`` is the
+    ``inquiry-id`` Persona appends to the return URL; the backend reads that
+    inquiry's authoritative verdict and applies it (ownership-checked).
+    """
+
+    inquiry_id: str = Field(min_length=1, max_length=128)
+
+
 class SessionResponse(BaseModel):
     """Public metadata for one active refresh-token session."""
 

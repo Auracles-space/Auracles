@@ -123,6 +123,81 @@ async def start_identity_verification(
     )
 
 
+async def sync_kyc_from_return(
+    db: AsyncSession,
+    user: User,
+    inquiry_id: str,
+) -> KycStatusResponse:
+    """Reconcile KYC state by reading an inquiry's verdict straight from Persona.
+
+    Backs the on-return path (identity verification design, 2026-06-24): the
+    hosted-flow redirect carries no trusted decision and the inbound webhook may
+    be delayed or unreachable (e.g. local dev). On return the app reads the
+    authoritative status server-to-server and applies the same terminal-decision
+    logic the webhook uses — idempotent, and a no-op while the inquiry is still
+    pending.
+
+    Ownership is enforced against our own ``IdentityVerification`` row: a caller
+    may only sync an inquiry that belongs to them, so a leaked/guessed inquiry id
+    cannot move another account's KYC state.
+
+    Args:
+        db: Async DB session.
+        user: The authenticated user returning from the hosted flow.
+        inquiry_id: The Persona inquiry id from the return URL.
+
+    Returns:
+        The user's KYC status (and documents) after reconciliation.
+
+    Raises:
+        HTTPException(404): If the inquiry is unknown or owned by another user.
+        HTTPException(502): If Persona cannot be reached.
+    """
+    # Local import avoids a module-load cycle: webhooks.service pulls in several
+    # modules at import time; settings.service is one of the leaves.
+    from app.modules.webhooks.service import _apply_persona_decision
+
+    record = await db.scalar(
+        select(IdentityVerification).where(
+            IdentityVerification.inquiry_id == inquiry_id
+        )
+    )
+    if record is None or record.user_id != user.id:
+        # Deny by default; do not distinguish "unknown" from "not yours".
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verification inquiry not found.",
+        )
+
+    log = logger.bind(
+        module="kyc",
+        action="verification_synced",
+        user_id=user.id,
+        inquiry_id=inquiry_id,
+    )
+    try:
+        inquiry = await persona.fetch_inquiry(inquiry_id=inquiry_id)
+    except PersonaProviderError as exc:
+        log.error("persona_inquiry_fetch_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Identity verification provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        ingest_status = await _apply_persona_decision(
+            db,
+            inquiry_id=inquiry_id,
+            inquiry_status=inquiry.status,
+        )
+    log.info("verification_synced", ingest_status=ingest_status)
+
+    await db.refresh(user)
+    return await get_kyc_status(db=db, user=user)
+
+
 async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:
     """Return the current user's KYC status and document metadata."""
     documents = (

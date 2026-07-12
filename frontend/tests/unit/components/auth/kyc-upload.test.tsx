@@ -5,6 +5,7 @@ import { KycUpload } from "@/components/modules/auth/kyc-upload";
 import {
   getKycStatusV1SettingsKycGet,
   startIdentityVerificationV1SettingsKycSessionPost,
+  syncKycFromReturnV1SettingsKycSyncPost,
 } from "@/lib/generated/sdk.gen";
 import type { GetKycStatusV1SettingsKycGetResponse } from "@/lib/generated/types.gen";
 
@@ -25,6 +26,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   },
   getKycStatusV1SettingsKycGet: vi.fn(),
   startIdentityVerificationV1SettingsKycSessionPost: vi.fn(),
+  syncKycFromReturnV1SettingsKycSyncPost: vi.fn(),
 }));
 
 describe("KycUpload", () => {
@@ -39,9 +41,12 @@ describe("KycUpload", () => {
   beforeEach(() => {
     vi.mocked(startIdentityVerificationV1SettingsKycSessionPost).mockReset();
     vi.mocked(getKycStatusV1SettingsKycGet).mockReset();
+    vi.mocked(syncKycFromReturnV1SettingsKycSyncPost).mockReset();
     vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
       ok({ kyc_status: "unverified", documents: [] }),
     );
+    // Default: no inquiry-id on the URL (fresh visit, not a hosted-flow return).
+    window.history.replaceState({}, "", "/settings/kyc");
   });
 
   it("launches the Persona hosted flow when the user starts verification", async () => {
@@ -86,6 +91,38 @@ describe("KycUpload", () => {
 
     fireEvent.focus(window);
 
+    await waitFor(() => {
+      expect(screen.getByText(/identity verified/i)).toBeInTheDocument();
+    });
+  });
+
+  it("syncs the verdict from Persona when returning with an inquiry id", async () => {
+    // The hosted flow redirects back with ?inquiry-id=... The panel must read
+    // the authoritative verdict server-to-server instead of showing a stale
+    // pending state while waiting for the webhook.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        search: "?inquiry-id=inq_9",
+        pathname: "/settings/kyc",
+        assign: vi.fn(),
+      },
+    });
+    vi.mocked(getKycStatusV1SettingsKycGet).mockResolvedValue(
+      ok({ kyc_status: "pending", documents: [] }),
+    );
+    vi.mocked(syncKycFromReturnV1SettingsKycSyncPost).mockResolvedValue(
+      ok({ kyc_status: "verified", documents: [] }),
+    );
+
+    render(<KycUpload />);
+
+    await waitFor(() => {
+      expect(syncKycFromReturnV1SettingsKycSyncPost).toHaveBeenCalled();
+    });
+    expect(
+      vi.mocked(syncKycFromReturnV1SettingsKycSyncPost).mock.calls[0][0]?.body,
+    ).toMatchObject({ inquiry_id: "inq_9" });
     await waitFor(() => {
       expect(screen.getByText(/identity verified/i)).toBeInTheDocument();
     });

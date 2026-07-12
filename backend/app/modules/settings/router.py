@@ -26,6 +26,7 @@ from app.modules.settings.schemas import (
     EmailChangeConfirmRequest,
     EmailChangeRequest,
     KycStatusResponse,
+    KycSyncRequest,
     KycVerificationSessionResponse,
     SessionsResponse,
 )
@@ -57,6 +58,25 @@ async def get_kyc_status(
 ) -> KycStatusResponse:
     """Return the authenticated user's KYC status."""
     return await service.get_kyc_status(db=db, user=current_user)
+
+
+@router.post("/kyc/sync", response_model=KycStatusResponse)
+async def sync_kyc_from_return(
+    payload: KycSyncRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> KycStatusResponse:
+    """Reconcile KYC state from a returned Persona inquiry.
+
+    Reads the inquiry's verdict directly from Persona (server-to-server) and
+    applies it, so a completed check resolves on return without waiting for the
+    asynchronous webhook. Ownership-checked; idempotent.
+    """
+    return await service.sync_kyc_from_return(
+        db=db,
+        user=current_user,
+        inquiry_id=payload.inquiry_id,
+    )
 
 
 @router.get("/sessions", response_model=SessionsResponse)

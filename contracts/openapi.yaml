@@ -11297,6 +11297,35 @@ paths:
                 $ref: '#/components/schemas/KycStatusResponse'
       security:
       - HTTPBearer: []
+  /v1/settings/kyc/sync:
+    post:
+      tags:
+      - Settings
+      summary: Sync Kyc From Return
+      description: Reconcile KYC state from a returned Persona inquiry by reading its
+        verdict directly from Persona; ownership-checked and idempotent.
+      operationId: sync_kyc_from_return_v1_settings_kyc_sync_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KycSyncRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/settings/sessions:
     get:
       tags:
@@ -18454,6 +18483,18 @@ components:
       - documents
       title: KycStatusResponse
       description: Authenticated user's KYC status and document metadata.
+    KycSyncRequest:
+      properties:
+        inquiry_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Inquiry Id
+      type: object
+      required:
+      - inquiry_id
+      title: KycSyncRequest
+      description: Request to reconcile KYC state from a returned Persona inquiry.
     KycVerificationSessionResponse:
       properties:
         hosted_url:

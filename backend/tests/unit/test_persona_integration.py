@@ -20,6 +20,7 @@ from app.core.config import Settings
 from app.integrations.persona import (
     PersonaProviderError,
     create_inquiry,
+    fetch_inquiry,
     verify_webhook,
 )
 
@@ -94,6 +95,56 @@ async def test_create_inquiry_raises_on_provider_error() -> None:
             reference_id="11111111-1111-1111-1111-111111111111",
             settings=PERSONA_SETTINGS,
         )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_inquiry_returns_status_and_reference() -> None:
+    """Fetching an inquiry returns its authoritative status and reference id.
+
+    Backs the on-return sync path: the app reads the verdict directly from
+    Persona (server-to-server) instead of waiting for the inbound webhook.
+    """
+    route = respx.get(
+        "https://api.withpersona.com/api/v1/inquiries/inq_123"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "id": "inq_123",
+                    "type": "inquiry",
+                    "attributes": {
+                        "status": "approved",
+                        "reference-id": "11111111-1111-1111-1111-111111111111",
+                    },
+                }
+            },
+        )
+    )
+
+    result = await fetch_inquiry(
+        inquiry_id="inq_123",
+        settings=PERSONA_SETTINGS,
+    )
+
+    assert result.inquiry_id == "inq_123"
+    assert result.status == "approved"
+    assert result.reference_id == "11111111-1111-1111-1111-111111111111"
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer persona_test_key"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_inquiry_raises_on_provider_error() -> None:
+    """A non-2xx inquiry read surfaces as a typed provider error."""
+    respx.get("https://api.withpersona.com/api/v1/inquiries/inq_missing").mock(
+        return_value=httpx.Response(404, json={"errors": [{"title": "not found"}]})
+    )
+
+    with pytest.raises(PersonaProviderError):
+        await fetch_inquiry(inquiry_id="inq_missing", settings=PERSONA_SETTINGS)
 
 
 def _persona_signature(secret: str, timestamp: str, payload: bytes) -> str:

@@ -48,6 +48,22 @@ class PersonaInquiry:
     hosted_url: str
 
 
+@dataclass(frozen=True)
+class PersonaInquiryStatus:
+    """Authoritative status of a Persona inquiry read server-to-server.
+
+    Attributes:
+        inquiry_id: Persona inquiry id (``inq_...``).
+        status: Current inquiry status (``approved``/``declined``/``pending``…).
+        reference_id: The ``reference-id`` tagged on the inquiry (our user id),
+            used to confirm the caller owns the inquiry before applying it.
+    """
+
+    inquiry_id: str
+    status: str
+    reference_id: str | None
+
+
 def _require_api_key(settings: Settings) -> str:
     """Return the configured Persona API key or raise a provider error."""
     if settings.persona_api_key is None:
@@ -101,6 +117,89 @@ async def _post_json(
         return payload
     except httpx.HTTPError as exc:
         raise PersonaProviderError("Persona request failed.") from exc
+
+
+async def _get_json(
+    path: str,
+    *,
+    settings: Settings,
+    client: httpx.AsyncClient,
+) -> dict[str, Any]:
+    """GET JSON from Persona and return the parsed response object."""
+    headers = {
+        "Authorization": f"Bearer {_require_api_key(settings)}",
+        "Persona-Version": PERSONA_API_VERSION,
+        "Accept": "application/json",
+    }
+    try:
+        response = await client.get(
+            f"{PERSONA_API_BASE_URL}{path}",
+            headers=headers,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise PersonaProviderError(
+                f"Persona returned {response.status_code}."
+            ) from exc
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise PersonaProviderError("Persona response is not a JSON object.")
+        return payload
+    except httpx.HTTPError as exc:
+        raise PersonaProviderError("Persona request failed.") from exc
+
+
+async def fetch_inquiry(
+    *,
+    inquiry_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> PersonaInquiryStatus:
+    """Read an inquiry's authoritative status directly from Persona.
+
+    Backs the on-return sync path (identity verification design, 2026-06-24):
+    when the user returns from the hosted flow, the app pulls the verdict
+    server-to-server rather than waiting for the asynchronous webhook. The
+    ``reference-id`` is returned so the caller can confirm inquiry ownership
+    before applying any decision.
+
+    Args:
+        inquiry_id: Persona inquiry id (``inq_...``) to read.
+        settings: Optional settings override (defaults to process settings).
+        client: Optional injected httpx client (defaults to a new one).
+
+    Returns:
+        The inquiry id, current status, and tagged reference id.
+
+    Raises:
+        PersonaProviderError: On missing config or any provider failure.
+    """
+    resolved_settings = settings or get_settings()
+    owns_client = client is None
+    resolved_client = client or httpx.AsyncClient(timeout=PERSONA_TIMEOUT_SECONDS)
+    try:
+        payload = await _get_json(
+            f"/inquiries/{inquiry_id}",
+            settings=resolved_settings,
+            client=resolved_client,
+        )
+        data = payload.get("data")
+        attributes = data.get("attributes") if isinstance(data, dict) else None
+        if not isinstance(attributes, dict):
+            raise PersonaProviderError("Persona inquiry response missing attributes.")
+        status = attributes.get("status")
+        if not isinstance(status, str) or not status:
+            raise PersonaProviderError("Persona inquiry response missing status.")
+        reference_id = attributes.get("reference-id")
+        return PersonaInquiryStatus(
+            inquiry_id=inquiry_id,
+            status=status,
+            reference_id=reference_id if isinstance(reference_id, str) else None,
+        )
+    finally:
+        if owns_client:
+            await resolved_client.aclose()
 
 
 def _append_redirect(hosted_url: str, redirect_url: str | None) -> str:

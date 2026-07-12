@@ -23,6 +23,7 @@ import {
 import {
   getKycStatusV1SettingsKycGet as getKycStatus,
   startIdentityVerificationV1SettingsKycSessionPost as startVerificationSession,
+  syncKycFromReturnV1SettingsKycSyncPost as syncKycFromReturn,
 } from "@/lib/generated/sdk.gen";
 
 import { FormMessage } from "./form-message";
@@ -57,9 +58,48 @@ export function KycUpload() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
+  // On return from the hosted flow, Persona appends ?inquiry-id=... to the URL.
+  // The redirect carries no trusted verdict, so read the decision server-to-
+  // server (which applies it) instead of showing a stale pending state while
+  // waiting for the async webhook. Falls back to a plain status read.
+  const initStatus = useCallback(async () => {
+    const inquiryId = new URLSearchParams(window.location.search).get(
+      "inquiry-id",
+    );
+    if (!inquiryId) {
+      await fetchStatus();
+      return;
+    }
+    configureBrowserClient();
+    const hasToken = await ensureBrowserAccessToken();
+    if (!hasToken) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const response = await syncKycFromReturn({
+        headers: getAccessTokenHeaders(),
+        body: { inquiry_id: inquiryId },
+      });
+      if (response.response.ok && response.data) {
+        setKycStatus(response.data.kyc_status);
+      } else {
+        // Sync failed (e.g. unknown inquiry) — fall back to the current status
+        // so the panel still reflects server truth rather than a dead spinner.
+        await fetchStatus();
+      }
+    } catch {
+      await fetchStatus();
+    } finally {
+      // Strip the inquiry id so a refresh does not re-sync a consumed inquiry.
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsLoading(false);
+    }
   }, [fetchStatus]);
+
+  useEffect(() => {
+    initStatus();
+  }, [initStatus]);
 
   // The decision is asynchronous (Persona webhook -> kyc_status). The user
   // leaves to Persona and tabs back, so re-read on focus / visibility to show
