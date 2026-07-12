@@ -30,7 +30,7 @@ function dispute(overrides: Partial<DisputeResponse> = {}): DisputeResponse {
     id: "dispute-1",
     milestone_id: "milestone-1",
     project_id: "project-1",
-    raised_by: "operator-1",
+    raised_by_side: null,
     reason: "Deliverable does not match the agreed scope.",
     refund_amount: null,
     release_amount: null,
