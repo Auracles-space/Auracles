@@ -16,7 +16,7 @@ export type AppNavigationLink = {
  */
 export const appLinks: AppNavigationLink[] = [
   { href: "/explore", label: "Explore", roles: null },
-  { href: "/attestors", label: "Attestors Directory", roles: null },
+  { href: "/attestors", label: "Find Attestors", roles: null },
   { href: "/projects", label: "Projects", roles: ["operator", "contributor"] },
   { href: "/attestations", label: "Attestations", roles: ["attestor"] },
   { href: "/dashboard/organizations", label: "Organizations", roles: null },
