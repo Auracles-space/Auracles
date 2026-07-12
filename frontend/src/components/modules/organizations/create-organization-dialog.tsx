@@ -13,6 +13,8 @@ import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 type CreateOrganizationDialogProps = {
   open: boolean;
   onClose: () => void;
+  /** When set, successful creation redirects into that onboarding flow. */
+  redirectIntent?: "attestor";
 };
 
 // ISO 3166-1 alpha-2 countries (simplified list for example, would ideally be complete)
@@ -26,7 +28,11 @@ const COUNTRIES = [
   { code: "DE", name: "Germany" },
 ];
 
-export function CreateOrganizationDialog({ open, onClose }: CreateOrganizationDialogProps) {
+export function CreateOrganizationDialog({
+  open,
+  onClose,
+  redirectIntent,
+}: CreateOrganizationDialogProps) {
   const router = useRouter();
   const titleId = useId();
 
@@ -75,8 +81,12 @@ export function CreateOrganizationDialog({ open, onClose }: CreateOrganizationDi
         return;
       }
 
-      // Success
-      router.push(`/dashboard/organizations/${result.data?.id}`);
+      const orgId = result.data?.id;
+      router.push(
+        redirectIntent === "attestor"
+          ? `/dashboard/organizations/${orgId}/attestor`
+          : `/dashboard/organizations/${orgId}`,
+      );
     } catch {
       setError("An unexpected error occurred.");
       setLoading(false);
