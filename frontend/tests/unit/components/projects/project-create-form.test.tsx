@@ -20,6 +20,7 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/generated/sdk.gen", () => ({
   client: { setConfig: vi.fn() },
   createProject: vi.fn(),
+  createOrgProject: vi.fn(),
 }));
 
 function fillForm() {
@@ -130,5 +131,25 @@ describe("ProjectCreateForm", () => {
       await screen.findByText(/active project cap reached/i),
     ).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("creates an org project when mode is org", async () => {
+    const { createOrgProject } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(createOrgProject).mockResolvedValue({
+      data: { id: "proj-org-1" },
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    });
+
+    render(<ProjectCreateForm mode={{ kind: "org", orgId: "org-1" }} />);
+    fillForm();
+    fireEvent.click(screen.getByRole("button", { name: /post project/i }));
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith("/projects/proj-org-1");
+    });
+    expect(vi.mocked(createOrgProject)).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { org_id: "org-1" } })
+    );
   });
 });

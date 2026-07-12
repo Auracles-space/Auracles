@@ -20,8 +20,9 @@ import {
 import { authTokenStore } from "@/lib/auth/token-store";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
-import { listProjects } from "@/lib/generated/sdk.gen";
+import { listOrgProjects, listProjects } from "@/lib/generated/sdk.gen";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
+import type { ProjectApiMode } from "@/lib/projects/project-api-mode";
 
 /**
  * Render status text in a compact operational label.
@@ -117,7 +118,7 @@ function ProjectGrid({
 /**
  * Render the authenticated Projects landing page.
  */
-export function ProjectListShell() {
+export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectApiMode }) {
   const [operatorProjects, setOperatorProjects] = useState<ProjectResponse[]>([]);
   const [openProjects, setOpenProjects] = useState<ProjectResponse[]>([]);
   const [assignedProjects, setAssignedProjects] = useState<ProjectResponse[]>([]);
@@ -131,8 +132,8 @@ export function ProjectListShell() {
   // Roles are stable for the page lifetime; an empty list (token not yet hydrated)
   // falls back to showing every tab so nothing is hidden from a valid session.
   const [roles] = useState<string[]>(() => authTokenStore.getState().roles);
-  const showOperator = roles.length === 0 || roles.includes("operator");
-  const showContributor = roles.length === 0 || roles.includes("contributor");
+  const showOperator = roles.length === 0 || roles.includes("operator") || mode.kind === "org";
+  const showContributor = mode.kind === "self" && (roles.length === 0 || roles.includes("contributor"));
 
   const tabItems = useMemo<TabItem[]>(() => {
     const items: TabItem[] = [];
@@ -160,6 +161,9 @@ export function ProjectListShell() {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
+  const modeKind = mode.kind;
+  const modeOrgId = mode.kind === "org" ? mode.orgId : undefined;
+
   useEffect(() => {
     let mounted = true;
     async function loadProjects() {
@@ -168,13 +172,15 @@ export function ProjectListShell() {
       setError(null);
       const headers = getAccessTokenHeaders();
       const roles = authTokenStore.getState().roles;
-      const shouldLoadOperator = roles.length === 0 || roles.includes("operator");
+      const shouldLoadOperator = roles.length === 0 || roles.includes("operator") || modeKind === "org";
       const shouldLoadContributor =
-        roles.length === 0 || roles.includes("contributor");
+        modeKind === "self" && (roles.length === 0 || roles.includes("contributor"));
       const [operatorResult, contributorResult, assignedResult] =
         await Promise.all([
           shouldLoadOperator
-            ? listProjects({ headers, query: { role: "operator" } })
+            ? modeKind === "org" && modeOrgId !== undefined
+              ? listOrgProjects({ headers, path: { org_id: modeOrgId } })
+              : listProjects({ headers, query: { role: "operator" } })
             : Promise.resolve(null),
           shouldLoadContributor
             ? listProjects({
@@ -220,7 +226,7 @@ export function ProjectListShell() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [modeKind, modeOrgId]);
 
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:px-8">
@@ -248,12 +254,14 @@ export function ProjectListShell() {
       ) : null}
 
       <div className="grid gap-4">
-        <Tabs
-          activeId={activeTab}
-          label="Projects"
-          onChange={selectTab}
-          tabs={tabItems}
-        />
+        {tabItems.length > 1 ? (
+          <Tabs
+            activeId={activeTab}
+            label="Projects"
+            onChange={selectTab}
+            tabs={tabItems}
+          />
+        ) : null}
         <div
           aria-labelledby={tabId(activeTab)}
           className="outline-none"

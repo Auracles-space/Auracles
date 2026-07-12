@@ -12,10 +12,9 @@ import { useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
-  getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
-import { createProject } from "@/lib/generated/sdk.gen";
+import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 import type { ProjectCreateRequest } from "@/lib/generated/types.gen";
 import { FUNCTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 
@@ -82,7 +81,7 @@ function TextField({
 /**
  * Render the Project creation form.
  */
-export function ProjectCreateForm() {
+export function ProjectCreateForm({ mode = { kind: "self" } }: { mode?: ProjectApiMode }) {
   const router = useRouter();
   const [form, setForm] = useState<ProjectFormState>(initialState);
   const [error, setError] = useState<string | null>(null);
@@ -128,10 +127,7 @@ export function ProjectCreateForm() {
       title: form.title,
     };
 
-    const result = await createProject({
-      body,
-      headers: getAccessTokenHeaders(),
-    });
+    const result = await projectApi(mode).createProject(body);
     setSaving(false);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));

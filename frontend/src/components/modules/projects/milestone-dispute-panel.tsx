@@ -12,13 +12,9 @@
  */
 import { useState } from "react";
 
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
-import { createDispute } from "@/lib/generated/sdk.gen";
+import { describeGeneratedError } from "@/lib/auth/form-client";
 import type { DisputeResponse } from "@/lib/generated/types.gen";
+import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 
 /** Milestone states where Escrow is held and a dispute can still be raised. */
 const DISPUTABLE_MILESTONE_STATUSES = new Set([
@@ -52,6 +48,8 @@ type MilestoneDisputePanelProps = {
   canRaise: boolean;
   /** Refresh the workspace after a dispute is raised. */
   onRaised: () => void;
+  /** Identity mode for the API call (default self). */
+  mode?: ProjectApiMode;
 };
 
 /**
@@ -64,6 +62,7 @@ export function MilestoneDisputePanel({
   dispute,
   canRaise,
   onRaised,
+  mode = { kind: "self" },
 }: MilestoneDisputePanelProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -84,11 +83,9 @@ export function MilestoneDisputePanel({
     }
     setBusy(true);
     setError(null);
-    configureBrowserClient();
-    const result = await createDispute({
-      body: { milestone_id: milestoneId, reason: reason.trim() },
-      headers: getAccessTokenHeaders(),
-      path: { project_id: projectId },
+    const result = await projectApi(mode).createDispute(projectId, {
+      milestone_id: milestoneId,
+      reason: reason.trim(),
     });
     setBusy(false);
     if (!result.response.ok || !result.data) {

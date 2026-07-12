@@ -7,6 +7,7 @@ type OrganizationContextType = {
   orgId: string;
   role: string;
   org: MyOrganizationResponse["org"];
+  capabilities: MyOrganizationResponse["capabilities"];
   isSuspended: boolean;
   markSuspended: () => void;
 };
@@ -26,11 +27,13 @@ export function OrganizationProvider({
   orgId,
   role,
   org,
+  capabilities,
 }: {
   children: ReactNode;
   orgId: string;
   role: string;
   org: MyOrganizationResponse["org"];
+  capabilities: MyOrganizationResponse["capabilities"];
 }) {
   const [isSuspended, setIsSuspended] = useState(false);
 
@@ -40,6 +43,7 @@ export function OrganizationProvider({
         orgId,
         role,
         org,
+        capabilities,
         isSuspended,
         markSuspended: () => setIsSuspended(true),
       }}

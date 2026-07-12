@@ -35,6 +35,7 @@ const compatibilityAliases = {
   createMilestone: "createMilestoneV1ProjectsProjectIdMilestonesPost",
   createPaymentMethodSetup: "createPaymentMethodSetupV1FinancialsPaymentMethodsPost",
   createProject: "createProjectV1ProjectsPost",
+  listOrgProjects: "listOrgProjectsV1OrgsOrgIdProjectsGet",
   createWorkspaceMessage: "createWorkspaceMessageV1ProjectsProjectIdMessagesPost",
   createWorkspaceUploadSession: "createWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPost",
   deleteArtifact: "deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete",
@@ -166,7 +167,23 @@ const compatibilityAliases = {
   createAttestationClarification: "createAttestationClarificationV1AttestationsAttestationIdClarificationsPost",
   respondAttestationClarification: "respondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPost",
   createAttestationEvidenceUpload: "createAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPost",
-
+  createOrgFrameworkPurchase: "createOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePost",
+  listOrgLibrary: "listOrgLibraryV1OrgsOrgIdLibraryGet",
+  requestOrgLibraryArtifactDownload: "requestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPost",
+  listOrgLicenseGrants: "listOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGet",
+  addOrgLicenseGrant: "addOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPost",
+  revokeOrgLicenseGrant: "revokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDelete",
+  createOrgPaymentMethodSetup: "createOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPost",
+  listOrgPaymentMethods: "listOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGet",
+  deleteOrgPaymentMethod: "deleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDelete",
+  getOrgPurchaseInvoice: "getOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGet",
+  createOrgProject: "createOrgProjectV1OrgsOrgIdProjectsPost",
+  acceptOrgProposal: "acceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPost",
+  fundOrgMilestone: "fundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPost",
+  approveOrgDeliverable: "approveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePost",
+  createOrgDispute: "createOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPost",
+  listOrgMembers: "listMembersV1OrgsOrgIdMembersGet",
+  listOrgTeams: "listTeamsV1OrgsOrgIdTeamsGet",
 };
 
 const aliasBlock = [

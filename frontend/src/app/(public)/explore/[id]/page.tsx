@@ -130,7 +130,7 @@ export default async function ExploreDetailPage({
             </div>
             
             <FrameworkLicenseCta
-              contributorId={framework.contributor_id}
+              contributorId={framework.contributor_id ?? ""}
               frameworkId={framework.id}
             />
           </aside>

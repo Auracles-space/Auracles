@@ -254,7 +254,7 @@ export type AdminDisputeResponse = {
     id: string;
     project_id: string;
     milestone_id: string;
-    raised_by: string;
+    raised_by_side: (string | null);
     reason: string;
     status: string;
     resolution_type: (string | null);
@@ -271,7 +271,7 @@ export type AdminDisputeResponse = {
     currency: string;
     escrow_amount: (string | null);
     escrow_status: (string | null);
-    raised_by_name: string;
+    raised_by_name: (string | null);
     raised_by_role: string;
     operator_name: string;
     contributor_name: string;
@@ -1165,6 +1165,14 @@ export type BannerUploadUrlResponse = {
 };
 
 /**
+ * Owner request to bind (attach or repoint) an artifact to a connector file.
+ */
+export type BindSourceRequest = {
+    connection_id: string;
+    file_id: string;
+};
+
+/**
  * Request body for sending one attestation clarification question.
  */
 export type ClarificationCreateRequest = {
@@ -1363,6 +1371,30 @@ export type ConsentLogItem = {
 };
 
 /**
+ * Public contributor-organization directory row safe for anonymous reads.
+ */
+export type ContributorOrgDirectoryEntry = {
+    org_id: string;
+    name: string;
+    slug: string;
+    logo_key: (string | null);
+    country: string;
+    website: (string | null);
+    description: (string | null);
+    verification_level: number;
+    published_framework_count: number;
+    member_count: number;
+    reputation?: (string | null);
+};
+
+/**
+ * Public list response for contributor organizations.
+ */
+export type ContributorOrgDirectoryResponse = {
+    contributors: Array<ContributorOrgDirectoryEntry>;
+};
+
+/**
  * Request body for creating a user-owned Credential.
  */
 export type CredentialCreateRequest = {
@@ -1505,7 +1537,8 @@ export type DeliverableFileDownload = {
 export type DeliverableResponse = {
     id: string;
     milestone_id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     name: string;
     description: string;
     file_keys: Array<(string)>;
@@ -1675,7 +1708,7 @@ export type DisputeResponse = {
     id: string;
     project_id: string;
     milestone_id: string;
-    raised_by: string;
+    raised_by_side: (string | null);
     reason: string;
     status: string;
     resolution_type: (string | null);
@@ -1859,8 +1892,12 @@ export type ExploreContributorProfile = {
  */
 export type ExploreFrameworkCard = {
     id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_slug?: (string | null);
+    contributor_verification_level?: (number | null);
+    contributor_reputation_score?: (string | null);
     title: string;
     description: string;
     version: string;
@@ -1891,8 +1928,12 @@ export type ExploreFrameworkCard = {
  */
 export type ExploreFrameworkCatalogItem = {
     id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_slug?: (string | null);
+    contributor_verification_level?: (number | null);
+    contributor_reputation_score?: (string | null);
     title: string;
     description: string;
     version: string;
@@ -1924,8 +1965,12 @@ export type ExploreFrameworkCatalogItem = {
  */
 export type ExploreFrameworkDetail = {
     id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_slug?: (string | null);
+    contributor_verification_level?: (number | null);
+    contributor_reputation_score?: (string | null);
     title: string;
     description: string;
     version: string;
@@ -2036,6 +2081,23 @@ export type FrameworkListItem = {
 export type status4 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 /**
+ * Request body for editing Framework metadata without pricing changes.
+ */
+export type FrameworkMetadataUpdate = {
+    title?: (string | null);
+    description?: (string | null);
+    category?: ('framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program' | null);
+    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
+    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | null);
+    tags?: (Array<(string)> | null);
+    jurisdiction?: (string | null);
+    complexity?: (number | null);
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
+    lifecycle_stage?: (string | null);
+};
+
+/**
  * Framework draft prefill data derived from an approved Deliverable.
  */
 export type FrameworkPrefillResponse = {
@@ -2048,11 +2110,19 @@ export type FrameworkPrefillResponse = {
 };
 
 /**
+ * Request body for editing Framework pricing and licensing fields.
+ */
+export type FrameworkPricingUpdate = {
+    pricing: PricingConfig_Input;
+};
+
+/**
  * Contributor-facing Framework representation.
  */
 export type FrameworkResponse = {
     id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     source_project_id: (string | null);
     title: string;
     description: string;
@@ -2097,7 +2167,8 @@ export type FrameworkReviewListResponse = {
 export type FrameworkReviewResponse = {
     id: string;
     framework_id: string;
-    operator_id: string;
+    operator_id: (string | null);
+    reviewer_org_id: (string | null);
     score: number;
     body: (string | null);
     created_at: string;
@@ -2240,6 +2311,34 @@ export type LoginResponse = {
     expires_in?: number;
     requires_2fa?: (boolean | null);
     challenge_token?: (string | null);
+};
+
+/**
+ * Confirm a completed organization logo upload by its object key.
+ */
+export type LogoConfirmRequest = {
+    file_key: string;
+};
+
+/**
+ * Declared metadata for an organization logo upload target.
+ */
+export type LogoUploadUrlRequest = {
+    mime_type: string;
+    file_size: number;
+};
+
+/**
+ * Presigned POST target for an organization logo upload.
+ */
+export type LogoUploadUrlResponse = {
+    upload_url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    file_key: string;
+    max_size: number;
+    expires_in: number;
 };
 
 /**
@@ -2438,13 +2537,12 @@ export type OrganizationResponse = {
 };
 
 /**
- * Partial update of org profile fields (admin+).
+ * Partial update of org profile fields (admin+). The logo is set exclusively through the verified upload flow, never here.
  */
 export type OrganizationUpdateRequest = {
     name?: (string | null);
     website?: (string | null);
     description?: (string | null);
-    logo_key?: (string | null);
 };
 
 /**
@@ -2634,6 +2732,40 @@ export type OrgAttestorTaxDocumentRequest = {
 export type tax_document_type = 'w9' | 'w8ben' | 'other';
 
 /**
+ * One organization capability row.
+ */
+export type OrgCapabilityResponse = {
+    id: string;
+    org_id: string;
+    capability: string;
+    status: string;
+    activated_at: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * List of active organization delivery workspaces.
+ */
+export type OrgDeliveriesResponse = {
+    deliveries: Array<OrgDeliveryResponse>;
+};
+
+/**
+ * Organization-internal view of one accepted Project delivery workspace.
+ */
+export type OrgDeliveryResponse = {
+    proposal_id: string;
+    project_id: string;
+    project_title: string;
+    project_status: string;
+    milestone_plan_status: string;
+    delivering_member_id: (string | null);
+    accepted_at: (string | null);
+    created_at: string;
+};
+
+/**
  * Admin-scoped request to invite one email address into an organization.
  */
 export type OrgInvitationCreateRequest = {
@@ -2684,6 +2816,7 @@ export type OrgInvoiceListItem = {
     total: string;
     source_ref_type: string;
     source_ref_id: string;
+    direction: string;
 };
 
 /**
@@ -2691,6 +2824,90 @@ export type OrgInvoiceListItem = {
  */
 export type OrgInvoicesResponse = {
     invoices: Array<OrgInvoiceListItem>;
+};
+
+/**
+ * Owner-visible shared legal identity for one organization.
+ */
+export type OrgLegalProfileResponse = {
+    org_id: string;
+    legal_name: string;
+    registration_number: (string | null);
+    address: ({
+    [key: string]: unknown;
+} | null);
+    tax_document_type: (string | null);
+    tax_document_uploaded: boolean;
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Owner-scoped request body for the shared organization legal profile.
+ */
+export type OrgLegalProfileUpdateRequest = {
+    legal_name: string;
+    registration_number?: (string | null);
+    address?: ({
+    [key: string]: unknown;
+} | null);
+    totp_code: string;
+};
+
+/**
+ * One org-library item plus its aggregate grant count.
+ */
+export type OrgLibraryItem = {
+    license_id: string;
+    framework_id: string;
+    title: string;
+    version_at_grant: string;
+    current_version: string;
+    license_type: string;
+    source: string;
+    collection_id: (string | null);
+    status: string;
+    seats_used: number;
+    seats_total: (number | null);
+    price: string;
+    currency: string;
+    thumbnail_key: (string | null);
+    granted_at: string;
+    expires_at: (string | null);
+    grant_count: number;
+};
+
+/**
+ * List wrapper for the org shared library visible to one member.
+ */
+export type OrgLibraryResponse = {
+    items: Array<OrgLibraryItem>;
+};
+
+/**
+ * Admin-scoped request to allocate one org License to one target.
+ */
+export type OrgLicenseGrantRequest = {
+    team_id?: (string | null);
+    member_id?: (string | null);
+};
+
+/**
+ * One org License grant row exposed to org admins.
+ */
+export type OrgLicenseGrantResponse = {
+    id: string;
+    license_id: string;
+    team_id: (string | null);
+    member_id: (string | null);
+    created_at: string;
+};
+
+/**
+ * List wrapper for one org License's allocation rows.
+ */
+export type OrgLicenseGrantsResponse = {
+    grants: Array<OrgLicenseGrantResponse>;
 };
 
 /**
@@ -2745,6 +2962,58 @@ export type OrgOwnershipTransferRequest = {
 };
 
 /**
+ * Request body for removing a provider-held org payment method.
+ */
+export type OrgPaymentMethodDeleteRequest = {
+    totp_code: string;
+};
+
+/**
+ * Response body for a removed organization payment method.
+ */
+export type OrgPaymentMethodDeleteResponse = {
+    provider: "stripe";
+    payment_method_id: string;
+    removed: boolean;
+};
+
+/**
+ * Safe provider-held payment method metadata returned to org admins.
+ */
+export type OrgPaymentMethodResponse = {
+    id: string;
+    provider: "stripe";
+    type: string;
+    brand: (string | null);
+    last4: (string | null);
+    exp_month: (number | null);
+    exp_year: (number | null);
+};
+
+/**
+ * Request body for starting organization payment-method setup.
+ */
+export type OrgPaymentMethodSetupRequest = {
+    totp_code: string;
+};
+
+/**
+ * Stripe SetupIntent data needed to attach an org payment method.
+ */
+export type OrgPaymentMethodSetupResponse = {
+    provider: "stripe";
+    setup_intent_id: string;
+    client_secret: string;
+};
+
+/**
+ * Response body for listing an organization's saved payment methods.
+ */
+export type OrgPaymentMethodsResponse = {
+    payment_methods: Array<OrgPaymentMethodResponse>;
+};
+
+/**
  * Request body for onboarding an organization payout destination.
  *
  * The organization's registered ``country`` is authoritative for provider
@@ -2754,6 +3023,25 @@ export type OrgPayoutAccountOnboardRequest = {
     provider: "stripe";
     refresh_url: string;
     return_url: string;
+};
+
+/**
+ * Organization-admin request body for submitting an org Proposal.
+ */
+export type OrgProposalCreateRequest = {
+    scope: string;
+    budget: (number | string);
+    currency?: string;
+    timeline_days: number;
+    deliverables: Array<DeliverableSpec>;
+    delivering_member_id: string;
+};
+
+/**
+ * Organization-admin request body for reassigning staffed delivery.
+ */
+export type OrgProposalReassignRequest = {
+    delivering_member_id: string;
 };
 
 /**
@@ -3327,10 +3615,17 @@ export type ProjectCreateRequest = {
 
 /**
  * Project response returned by CRUD and assignment endpoints.
+ *
+ * ``operator_id`` is set for individually-operated Projects and ``None`` for
+ * organization-operated Projects, which instead carry ``operator_org_id``.
+ * ``operator_name`` resolves to the Operator's display name or, for an
+ * organization-operated Project, the Organization name. The internal
+ * ``posting_member_id`` provenance field is never exposed here.
  */
 export type ProjectResponse = {
     id: string;
-    operator_id: string;
+    operator_id?: (string | null);
+    operator_org_id?: (string | null);
     operator_name?: (string | null);
     title: string;
     description: string;
@@ -3393,7 +3688,8 @@ export type ProposalCreateRequest = {
 export type ProposalResponse = {
     id: string;
     project_id: string;
-    contributor_id: string;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     contributor_name?: (string | null);
     scope: string;
     budget: string;
@@ -5305,6 +5601,40 @@ export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSo
 
 export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetError = (HTTPValidationError);
 
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostResponse = (ArtifactResponse);
+
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostError = (unknown | HTTPValidationError);
+
+export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostData = {
+    body: BindSourceRequest;
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostResponse = (ArtifactResponse);
+
+export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostError = (unknown | HTTPValidationError);
+
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteResponse = (ArtifactResponse);
+
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteError = (unknown | HTTPValidationError);
+
 export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {
@@ -5359,6 +5689,131 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
 
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostData = {
+    body: FrameworkCreate;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostResponse = (FrameworkResponse);
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostError = (HTTPValidationError);
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetResponse = (Array<FrameworkListItem>);
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetError = (HTTPValidationError);
+
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetResponse = (FrameworkResponse);
+
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetError = (HTTPValidationError);
+
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchData = {
+    body: FrameworkMetadataUpdate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchResponse = (FrameworkResponse);
+
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchError = (HTTPValidationError);
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchData = {
+    body: FrameworkPricingUpdate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchResponse = (FrameworkResponse);
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchError = (HTTPValidationError);
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostData = {
+    body: FrameworkVersionCreate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostResponse = (FrameworkResponse);
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostError = (HTTPValidationError);
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostResponse = (FrameworkResponse);
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostError = (HTTPValidationError);
+
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostData = {
+    body: ArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
+
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
+    body: ArtifactConfirmRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
+
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
 
 export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
 
@@ -5563,6 +6018,28 @@ export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
 
 export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
 
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostData = {
+    body: LogoUploadUrlRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostResponse = (LogoUploadUrlResponse);
+
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostError = (HTTPValidationError);
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostData = {
+    body: LogoConfirmRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostResponse = (OrganizationResponse);
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostError = (HTTPValidationError);
+
 export type ListMembersV1OrgsOrgIdMembersGetData = {
     path: {
         org_id: string;
@@ -5572,6 +6049,83 @@ export type ListMembersV1OrgsOrgIdMembersGetData = {
 export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
 
 export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
+
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostResponse = (OrgCapabilityResponse);
+
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostError = (HTTPValidationError);
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostResponse = (OrgCapabilityResponse);
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostError = (HTTPValidationError);
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostData = {
+    body: OrgLicenseGrantRequest;
+    path: {
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostResponse = (OrgLicenseGrantResponse);
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostError = (HTTPValidationError);
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetData = {
+    path: {
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetResponse = (OrgLicenseGrantsResponse);
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetError = (HTTPValidationError);
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteData = {
+    path: {
+        grant_id: string;
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteResponse = (void);
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteError = (HTTPValidationError);
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetResponse = (OrgLibraryResponse);
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetError = (HTTPValidationError);
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostData = {
+    path: {
+        artifact_id: string;
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostResponse = (ArtifactDownloadResponse);
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostError = (HTTPValidationError);
 
 export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
     path: {
@@ -5857,6 +6411,38 @@ export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetResponse = (OrgAttestat
 
 export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetError = (HTTPValidationError);
 
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetResponse = (OrgLegalProfileResponse);
+
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetError = (HTTPValidationError);
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutData = {
+    body: OrgLegalProfileUpdateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutResponse = (OrgLegalProfileResponse);
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutError = (HTTPValidationError);
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostData = {
+    body: OrgAttestorTaxDocumentRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostError = (HTTPValidationError);
+
 export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
     path: {
         org_id: string;
@@ -5866,6 +6452,39 @@ export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
 export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (EarningsResponse);
 
 export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetError = (HTTPValidationError);
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostData = {
+    body: OrgPaymentMethodSetupRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostResponse = (OrgPaymentMethodSetupResponse);
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostError = (HTTPValidationError);
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetResponse = (OrgPaymentMethodsResponse);
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetError = (HTTPValidationError);
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteData = {
+    body: OrgPaymentMethodDeleteRequest;
+    path: {
+        org_id: string;
+        payment_method_id: string;
+    };
+};
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteResponse = (OrgPaymentMethodDeleteResponse);
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
 
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
     body: OrgPayoutAccountOnboardRequest;
@@ -5898,6 +6517,55 @@ export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetData = {
 export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetResponse = (OrgInvoicesResponse);
 
 export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetError = (HTTPValidationError);
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetData = {
+    path: {
+        org_id: string;
+        transaction_id: string;
+    };
+};
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetResponse = (unknown);
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetError = (HTTPValidationError);
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostData = {
+    body: PurchaseRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostResponse = (PurchaseResponse);
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostError = (HTTPValidationError);
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostData = {
+    body: FrameworkReviewCreate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostResponse = (FrameworkReviewResponse);
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostError = (HTTPValidationError);
+
+export type ListPublicContributorOrgsV1ContributorsGetResponse = (ContributorOrgDirectoryResponse);
+
+export type ListPublicContributorOrgsV1ContributorsGetError = unknown;
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetData = {
+    path: {
+        org_slug: string;
+    };
+};
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetResponse = (ContributorOrgDirectoryEntry);
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetError = (HTTPValidationError);
 
 export type PreviewInvitationV1OrgInvitationsTokenGetData = {
     path: {
@@ -5980,6 +6648,66 @@ export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevok
 export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostResponse = (void);
 
 export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostError = (HTTPValidationError);
 
 export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetData = {
     query?: {
@@ -6440,6 +7168,134 @@ export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostData = {
 export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
 
 export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostData = {
+    body: ProjectCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostResponse = (ProjectResponse);
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostError = (HTTPValidationError);
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetData = {
+    path: {
+        org_id: string;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetResponse = (ProjectsResponse);
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetError = (HTTPValidationError);
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostData = {
+    body: OrgProposalCreateRequest;
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostResponse = (ProposalResponse);
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostError = (HTTPValidationError);
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = {
+    body: OrgProposalReassignRequest;
+    path: {
+        org_id: string;
+        proposal_id: string;
+    };
+};
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostResponse = (ProposalResponse);
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostError = (HTTPValidationError);
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteData = {
+    path: {
+        org_id: string;
+        proposal_id: string;
+    };
+};
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteResponse = (ProposalResponse);
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteError = (HTTPValidationError);
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetResponse = (ProposalsResponse);
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetError = (HTTPValidationError);
+
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetResponse = (OrgDeliveriesResponse);
+
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetError = (HTTPValidationError);
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostData = {
+    path: {
+        org_id: string;
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostData = {
+    path: {
+        milestone_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostResponse = (MilestoneFundingResponse);
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostError = (HTTPValidationError);
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostData = {
+    path: {
+        deliverable_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostResponse = (DeliverableResponse);
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData = {
+    body: DisputeCreateRequest;
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostResponse = (DisputeResponse);
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostError = (HTTPValidationError);
 
 export type ListPartnerCatalogV1PartnerCatalogGetData = {
     headers?: {

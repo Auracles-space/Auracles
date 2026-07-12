@@ -27,13 +27,11 @@ import {
 } from "@/lib/auth/form-client";
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
-  acceptProposal,
   cancelAcceptance,
   createMilestone,
   createWorkspaceMessage,
   deleteMilestone,
   finalizeMilestonePlan,
-  fundMilestone,
   getProject,
   listDisputes,
   reopenMilestonePlan,
@@ -55,9 +53,11 @@ import type {
 } from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { useProjectRealtime } from "@/lib/projects/realtime";
+import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 
 type ProjectWorkspaceProps = {
   projectId: string;
+  mode?: ProjectApiMode;
 };
 
 type MilestoneFormState = {
@@ -93,7 +93,7 @@ function StatusBadge({ status }: { status: string }) {
 /**
  * Render the Project workspace.
  */
-export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
+export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: ProjectWorkspaceProps) {
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [operatorProposals, setOperatorProposals] = useState<ProposalResponse[]>([]);
@@ -381,10 +381,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   }
 
   async function acceptProjectProposal(proposalId: string) {
-    const result = await acceptProposal({
-      headers,
-      path: { project_id: projectId, proposal_id: proposalId },
-    });
+    const result = await projectApi(mode).acceptProposal(projectId, proposalId);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
@@ -527,10 +524,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
   async function fundProjectMilestone(milestoneId: string) {
     setError(null);
     setFundingInFlight(true);
-    const result = await fundMilestone({
-      headers,
-      path: { milestone_id: milestoneId, project_id: projectId },
-    });
+    const result = await projectApi(mode).fundMilestone(projectId, milestoneId, {});
     setFundingInFlight(false);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
@@ -1145,6 +1139,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                         isOperator={isProjectOwner}
                         milestoneId={milestone.id}
                         milestoneStatus={milestone.status}
+                        mode={mode}
                         onChanged={() => void loadWorkspace()}
                         projectId={projectId}
                       />
@@ -1154,6 +1149,7 @@ export function ProjectWorkspace({ projectId }: ProjectWorkspaceProps) {
                       dispute={disputeByMilestone.get(milestone.id) ?? null}
                       milestoneId={milestone.id}
                       milestoneStatus={milestone.status}
+                      mode={mode}
                       onRaised={() => void loadWorkspace()}
                       projectId={projectId}
                     />
