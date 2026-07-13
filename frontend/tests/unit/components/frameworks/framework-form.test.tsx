@@ -171,20 +171,20 @@ describe("FrameworkForm", () => {
     });
   });
 
-  it("hides the non-single-user license tiers while only single-user is supported", () => {
+  it("shows the organizational tier while keeping team and enterprise hidden", () => {
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
     expect(
       screen.getByRole("checkbox", { name: /single user/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: /team/i })).toBeNull();
     expect(
-      screen.queryByRole("checkbox", { name: /organizational/i }),
-    ).toBeNull();
+      screen.getByRole("checkbox", { name: /organizational/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /team/i })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: /enterprise/i })).toBeNull();
   });
 
-  it("disables submit when the single-user tier is deselected", () => {
+  it("keeps the single-user tier selected when clicked", () => {
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
     fireEvent.change(screen.getByLabelText(/framework title/i), {
@@ -196,9 +196,13 @@ describe("FrameworkForm", () => {
     const submit = screen.getByRole("button", { name: /save framework/i });
     expect(submit).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /single user/i }));
+    const singleUser = screen.getByRole("checkbox", { name: /single user/i });
+    expect(singleUser).toBeChecked();
 
-    expect(submit).toBeDisabled();
+    fireEvent.click(singleUser);
+
+    expect(singleUser).toBeChecked();
+    expect(submit).toBeEnabled();
   });
 
   it("constrains the price input to a two-decimal currency amount", () => {

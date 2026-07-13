@@ -32,15 +32,14 @@ type LicenseTypeValue = "single_user" | "team" | "organizational" | "enterprise"
  * Selectable license tiers, in canonical display + serialization order.
  *
  * The platform currently only supports single-user licensing. The team,
- * organizational, and enterprise tiers are intentionally commented out until
- * multi-seat licensing is ready — re-enable them here (and restore the
- * default selection in `coerceLicenseTypes`) to bring them back.
+ * team, and enterprise tiers are intentionally commented out until multi-seat
+ * licensing is ready.
  */
 const LICENSE_TYPE_OPTIONS: readonly { value: LicenseTypeValue; label: string }[] =
   [
     { value: "single_user", label: "Single user" },
+    { value: "organizational", label: "Organizational" },
     // { value: "team", label: "Team" },
-    // { value: "organizational", label: "Organizational" },
     // { value: "enterprise", label: "Enterprise" },
   ];
 
@@ -100,6 +99,7 @@ type FrameworkFormState = {
   licenseTypes: LicenseTypeValue[];
   lifecycleStage: string;
   orgSize: NonNullable<FrameworkCreate["org_size"]>;
+  orgPrice: string;
   price: string;
   sector: NonNullable<FrameworkCreate["sector"]>;
   tags: string[];
@@ -144,8 +144,7 @@ function coerceOptionalValue(
  * Normalize persisted license types into known tiers in canonical order.
  *
  * Falls back to single-user for new drafts so the pricing contract always has
- * at least one tier. Restore the multi-tier default when the other license
- * tiers are re-enabled in `LICENSE_TYPE_OPTIONS`.
+ * at least one tier.
  *
  * @param values - Persisted license types from an existing Framework.
  */
@@ -188,6 +187,10 @@ export function FrameworkForm({
       LIFECYCLE_STAGE_OPTIONS,
     ),
     orgSize: coerceTaxonomyValue(framework?.org_size, ORG_SIZE_OPTIONS),
+    orgPrice:
+      framework?.pricing.org_price != null
+        ? String(framework.pricing.org_price)
+        : "",
     price: framework?.pricing.price ?? "250",
     sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
     tags: (framework?.tags ?? prefill?.tags ?? []).slice(0, MAX_TAGS),
@@ -204,6 +207,9 @@ export function FrameworkForm({
   /** Toggle one license tier in the selection. */
   function toggleLicenseType(value: LicenseTypeValue): void {
     setForm((current) => {
+      if (value === "single_user" && current.licenseTypes.includes(value)) {
+        return current;
+      }
       const selected = new Set(current.licenseTypes);
       if (selected.has(value)) {
         selected.delete(value);
@@ -227,6 +233,10 @@ export function FrameworkForm({
     const pricing: PricingConfig = {
       currency: framework?.pricing.currency ?? "USD",
       license_types: form.licenseTypes,
+      org_price:
+        form.licenseTypes.includes("organizational") && form.orgPrice.trim() !== ""
+          ? form.orgPrice
+          : null,
       price: form.price,
     };
 
@@ -429,6 +439,39 @@ export function FrameworkForm({
           at checkout.
         </span>
       </fieldset>
+
+      {form.licenseTypes.includes("organizational") ? (
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+            Organization price
+          </span>
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+              <span className="text-sm font-medium">$</span>
+            </div>
+            <input
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="Same as single-user price"
+              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  orgPrice: sanitizePriceInput(event.target.value),
+                }))
+              }
+              value={form.orgPrice}
+            />
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+              <span className="text-xs uppercase">USD</span>
+            </div>
+          </div>
+          <span className="mt-1.5 block text-xs text-foreground-muted">
+            Leave blank to charge the same as the single-user price.
+          </span>
+        </label>
+      ) : null}
 
       <TagChipInput
         label="Tags"
