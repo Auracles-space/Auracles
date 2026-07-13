@@ -8200,6 +8200,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/received:
+    get:
+      tags:
+      - Organization Invitations
+      summary: List invitations addressed to me
+      description: List live pending invitations sent to the authenticated user's
+        email. Token-free; the invitee accepts or declines by invitation id.
+      operationId: list_received_invitations
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyInvitationsResponse'
+      security:
+      - HTTPBearer: []
   /v1/org-invitations/{token}:
     get:
       tags:
@@ -18944,6 +18961,52 @@ components:
       - milestones
       title: MilestonesResponse
       description: List response for Project Milestones.
+    MyInvitationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        org:
+          $ref: '#/components/schemas/OrganizationResponse'
+        role:
+          type: string
+          title: Role
+        invited_by_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Invited By Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - org
+      - role
+      - invited_by_name
+      - created_at
+      title: MyInvitationResponse
+      description: 'A pending invitation addressed to the authenticated user.
+
+
+        Token-free: the invitee acts on it by id via the received-invitations
+
+        endpoints, never by the raw token.'
+    MyInvitationsResponse:
+      properties:
+        invitations:
+          items:
+            $ref: '#/components/schemas/MyInvitationResponse'
+          type: array
+          title: Invitations
+      type: object
+      required:
+      - invitations
+      title: MyInvitationsResponse
+      description: List wrapper for invitations addressed to the current user.
     MyOrganizationResponse:
       properties:
         org:

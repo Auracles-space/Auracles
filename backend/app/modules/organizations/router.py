@@ -60,6 +60,7 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MyInvitationsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
     OrgAcceptOfferRequest,
@@ -1202,6 +1203,24 @@ invitation_router = APIRouter(
     prefix="/org-invitations",
     tags=["Organization Invitations"],
 )
+
+
+@invitation_router.get(
+    "/received",
+    response_model=MyInvitationsResponse,
+    operation_id="list_received_invitations",
+    summary="List invitations addressed to me",
+    description=(
+        "List live pending invitations sent to the authenticated user's "
+        "email. Token-free; the invitee accepts or declines by invitation id."
+    ),
+)
+async def list_received_invitations(
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> MyInvitationsResponse:
+    """List the authenticated user's pending invitations."""
+    return await service.list_received_invitations(db=db, user=user)
 
 
 @invitation_router.get(

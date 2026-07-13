@@ -400,6 +400,26 @@ class OrgInvitationPreviewResponse(BaseModel):
     expires_at: datetime
 
 
+class MyInvitationResponse(BaseModel):
+    """A pending invitation addressed to the authenticated user.
+
+    Token-free: the invitee acts on it by id via the received-invitations
+    endpoints, never by the raw token.
+    """
+
+    id: UUID
+    org: OrganizationResponse
+    role: str
+    invited_by_name: str | None
+    created_at: datetime
+
+
+class MyInvitationsResponse(BaseModel):
+    """List wrapper for invitations addressed to the current user."""
+
+    invitations: list[MyInvitationResponse]
+
+
 class OrgTeamCreateRequest(BaseModel):
     """Admin-scoped request to create a team in an organization."""
 

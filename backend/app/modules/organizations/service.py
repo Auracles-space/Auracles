@@ -44,6 +44,8 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MyInvitationResponse,
+    MyInvitationsResponse,
     MyOrganizationResponse,
     OrganizationCreateRequest,
     OrganizationResponse,
@@ -1047,6 +1049,50 @@ async def list_invitations(
         invitations=[
             OrgInvitationResponse.model_validate(invitation)
             for invitation in invitations
+        ]
+    )
+
+
+async def list_received_invitations(
+    db: AsyncSession,
+    *,
+    user: User,
+) -> MyInvitationsResponse:
+    """List live pending invitations addressed to the authenticated user.
+
+    Args:
+        db: Async database session.
+        user: The authenticated invitee.
+
+    Returns:
+        Pending invitations for the user's email, newest first.
+    """
+    rows = (
+        await db.execute(
+            select(OrgInvitation, Organization, User.display_name)
+            .join(Organization, Organization.id == OrgInvitation.org_id)
+            .join(User, User.id == OrgInvitation.invited_by, isouter=True)
+            .where(
+                OrgInvitation.status == "pending",
+                func.lower(OrgInvitation.email) == user.email.lower(),
+                Organization.deactivated_at.is_(None),
+                Organization.suspended_at.is_(None),
+                OrgInvitation.expires_at > datetime.now(UTC),
+            )
+            .order_by(OrgInvitation.created_at.desc(), OrgInvitation.id.desc())
+        )
+    ).all()
+
+    return MyInvitationsResponse(
+        invitations=[
+            MyInvitationResponse(
+                id=invitation.id,
+                org=OrganizationResponse.model_validate(organization),
+                role=invitation.role,
+                invited_by_name=inviter_name,
+                created_at=invitation.created_at,
+            )
+            for invitation, organization, inviter_name in rows
         ]
     )
 
