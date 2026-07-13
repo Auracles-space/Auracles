@@ -14,6 +14,7 @@ import {
 import { FrameworkLicenseCta } from "@/components/modules/explore/framework-license-cta";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
+import { RarityBadge } from "@/components/modules/frameworks/rarity-badge";
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
 import { BackButton } from "@/components/ui/back-button";
 import {
@@ -21,6 +22,7 @@ import {
   getRelatedExploreFrameworks,
 } from "@/lib/generated/sdk.gen";
 import type { ExploreFrameworkDetail } from "@/lib/generated/types.gen";
+import { rarityBadge } from "@/lib/rarity";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
@@ -120,10 +122,14 @@ export default async function ExploreDetailPage({
                 <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Complexity</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{framework.complexity ?? "Not set"}</p>
               </div>
-              <div className="rounded-xl border border-border-default bg-surface-1 p-3">
-                <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Rarity</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{framework.rarity_score ?? "Pending"}</p>
-              </div>
+              {rarityBadge(framework.rarity_score) ? (
+                <div className="rounded-xl border border-border-default bg-surface-1 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Rarity</p>
+                  <p className="mt-1">
+                    <RarityBadge score={framework.rarity_score} />
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-xl border border-border-default bg-surface-1 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-foreground-muted">Organization</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{formatLabel(framework.org_size)}</p>

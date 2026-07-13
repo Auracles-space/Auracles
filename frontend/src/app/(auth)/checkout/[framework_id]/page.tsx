@@ -8,9 +8,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CheckoutForm } from "@/components/modules/financials/checkout-form";
+import { RarityBadge } from "@/components/modules/frameworks/rarity-badge";
 import { getExploreFrameworkDetail } from "@/lib/generated/sdk.gen";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { rarityBadge } from "@/lib/rarity";
 
 type CheckoutPageProps = {
   params: Promise<{ framework_id: string }>;
@@ -74,14 +76,14 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
                 {formatLabel(framework.org_size)}
               </dd>
             </div>
-            <div className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <dt className="text-foreground-muted">Rarity</dt>
-              <dd className="mt-1 font-semibold text-foreground">
-                {framework.rarity_score !== null && framework.rarity_score !== undefined
-                  ? `${Math.round(Number(framework.rarity_score) * 100)}%`
-                  : "Pending"}
-              </dd>
-            </div>
+            {rarityBadge(framework.rarity_score) ? (
+              <div className="rounded-xl border border-border-default bg-surface-2 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <dt className="text-foreground-muted">Rarity</dt>
+                <dd className="mt-1">
+                  <RarityBadge score={framework.rarity_score} />
+                </dd>
+              </div>
+            ) : null}
           </dl>
         </section>
         <CheckoutForm framework={framework} />
