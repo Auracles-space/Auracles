@@ -117,7 +117,7 @@ export function AttestorApplicationTab() {
       if (!mounted) return;
       setLoading(false);
       if (res.error) {
-        if ((res.error as { status?: number })?.status === 404) {
+        if (res.response?.status === 404) {
           // No application exists yet; we render the default unstarted gates.
           setApp(null);
         } else {
@@ -144,7 +144,7 @@ export function AttestorApplicationTab() {
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-error/30 bg-error/10 p-6">
+      <div className="mx-auto max-w-5xl rounded-2xl border border-error/30 bg-error/10 p-6">
         <h3 className="font-bold text-error">Failed to load application</h3>
         <p className="mt-2 text-sm text-error/80">{error}</p>
       </div>
@@ -167,7 +167,7 @@ export function AttestorApplicationTab() {
   const activationStatus = app?.status === "approved" ? "complete" : "not_started";
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="mx-auto max-w-5xl space-y-6">
       <header>
         <h2 className="font-heading text-2xl font-extrabold text-foreground">
           Attestor Application

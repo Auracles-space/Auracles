@@ -20,6 +20,13 @@ const ok = <T,>(data: T) => ({
   request: new Request("http://t"), response: new Response(null, { status: 200 }),
 });
 
+const notFound = () => ({
+  data: undefined,
+  error: { detail: "Org attestor application not found." },
+  request: new Request("http://t"),
+  response: new Response(null, { status: 404 }),
+});
+
 describe("AttestorApplicationTab", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -34,5 +41,17 @@ describe("AttestorApplicationTab", () => {
     expect(screen.getByRole("heading", { name: /Activation/i })).toBeInTheDocument();
     // KYB gate shows verified
     expect(screen.getByText(/verified/i)).toBeInTheDocument();
+  });
+
+  it("renders the unstarted Apply gate when no application exists (404)", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue(notFound() as never);
+    render(<AttestorApplicationTab />);
+    // 404 = no application yet, not an error: show the gates so the owner can apply.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("heading", { name: /Failed to load application/i }),
+    ).not.toBeInTheDocument();
   });
 });
