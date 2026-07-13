@@ -9,6 +9,7 @@
  * Closes on Escape, backdrop click, or Cancel. Respects reduced motion.
  */
 import { ReactNode, useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 type ConfirmTone = "default" | "danger";
 
@@ -74,7 +75,7 @@ export function ConfirmDialog({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
-  if (!open) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
@@ -83,7 +84,10 @@ export function ConfirmDialog({
       ? "border border-error bg-error text-background hover:bg-error/90"
       : "bg-foreground text-background hover:bg-foreground/90";
 
-  return (
+  // Portal to the body so the fixed overlay escapes any ancestor stacking
+  // context (e.g. the app shell's `relative z-20` main), letting it cover the
+  // sticky header instead of rendering beneath it.
+  return createPortal(
     <div
       aria-labelledby={titleId}
       aria-modal="true"
@@ -131,6 +135,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
