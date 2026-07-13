@@ -7,6 +7,7 @@
  * components so this form remains a reusable UI unit.
  */
 import { ReactNode, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import type {
@@ -371,6 +372,45 @@ export function FrameworkForm({
           value={form.jurisdiction}
         />
 
+      </div>
+
+      <fieldset className="block">
+        <legend className="mb-1.5 block text-sm font-semibold text-foreground">
+          License types
+          <span aria-hidden="true" className="ml-1 text-accent">
+            *
+          </span>
+        </legend>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {LICENSE_TYPE_OPTIONS.map((option) => {
+            const checked = form.licenseTypes.includes(option.value);
+            return (
+              <label
+                key={option.value}
+                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
+                  checked
+                    ? "border-accent bg-accent/10 text-foreground"
+                    : "border-border-default bg-surface-1 text-foreground-muted hover:border-accent/50 hover:bg-surface-2"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0 accent-accent"
+                  checked={checked}
+                  onChange={() => toggleLicenseType(option.value)}
+                />
+                {option.label}
+              </label>
+            );
+          })}
+        </div>
+        <span className="mt-1.5 block text-xs text-foreground-muted">
+          Choose at least one tier operators can license. Pricing scales per tier
+          at checkout.
+        </span>
+      </fieldset>
+
+      <div className="grid gap-6 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1.5 block text-sm font-semibold text-foreground">
             Base Price
@@ -402,76 +442,40 @@ export function FrameworkForm({
             </div>
           </div>
         </label>
+
+        {form.licenseTypes.includes("organizational") ? (
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-foreground">
+              Organization price
+            </span>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+                <span className="text-sm font-medium">$</span>
+              </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="Same as single-user price"
+                className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    orgPrice: sanitizePriceInput(event.target.value),
+                  }))
+                }
+                value={form.orgPrice}
+              />
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+                <span className="text-xs uppercase">USD</span>
+              </div>
+            </div>
+            <span className="mt-1.5 block text-xs text-foreground-muted">
+              Leave blank to charge the same as the single-user price.
+            </span>
+          </label>
+        ) : null}
       </div>
-
-      <fieldset className="block">
-        <legend className="mb-1.5 block text-sm font-semibold text-foreground">
-          License types
-          <span aria-hidden="true" className="ml-1 text-accent">
-            *
-          </span>
-        </legend>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {LICENSE_TYPE_OPTIONS.map((option) => {
-            const checked = form.licenseTypes.includes(option.value);
-            return (
-              <label
-                key={option.value}
-                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
-                  checked
-                    ? "border-accent bg-accent/10 text-foreground"
-                    : "border-border-default bg-background text-foreground-muted hover:border-accent/50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 shrink-0 accent-accent"
-                  checked={checked}
-                  onChange={() => toggleLicenseType(option.value)}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-        <span className="mt-1.5 block text-xs text-foreground-muted">
-          Choose at least one tier operators can license. Pricing scales per tier
-          at checkout.
-        </span>
-      </fieldset>
-
-      {form.licenseTypes.includes("organizational") ? (
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
-            Organization price
-          </span>
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-              <span className="text-sm font-medium">$</span>
-            </div>
-            <input
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="Same as single-user price"
-              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  orgPrice: sanitizePriceInput(event.target.value),
-                }))
-              }
-              value={form.orgPrice}
-            />
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-              <span className="text-xs uppercase">USD</span>
-            </div>
-          </div>
-          <span className="mt-1.5 block text-xs text-foreground-muted">
-            Leave blank to charge the same as the single-user price.
-          </span>
-        </label>
-      ) : null}
 
       <TagChipInput
         label="Tags"
@@ -509,18 +513,18 @@ export function FrameworkForm({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {readOnly ? null : (
-            <button
-              className={[
-                "inline-flex min-h-12 items-center justify-center rounded-xl px-8 text-sm font-semibold shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed",
-                framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
-                  ? "border border-border-default bg-surface-1 text-foreground hover:bg-surface-2"
-                  : "bg-foreground text-background hover:bg-foreground/90"
-              ].join(" ")}
+            <Button
               disabled={saving || !canSubmit}
+              loading={saving}
               type="submit"
+              variant={
+                framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
+                  ? "secondary"
+                  : "primary"
+              }
             >
               {saving ? "Saving changes..." : submitLabel}
-            </button>
+            </Button>
           )}
           {children}
         </div>

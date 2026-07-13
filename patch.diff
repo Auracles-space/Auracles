@@ -1,0 +1,510 @@
+diff --git a/frontend/src/components/modules/frameworks/framework-form.tsx b/frontend/src/components/modules/frameworks/framework-form.tsx
+index 45816d6..45c1c62 100644
+--- a/frontend/src/components/modules/frameworks/framework-form.tsx
++++ b/frontend/src/components/modules/frameworks/framework-form.tsx
+@@ -8,6 +8,7 @@
+  */
+ import { ReactNode, useState } from "react";
+ 
++import { Button } from "@/components/ui/button";
+ import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+ import type {
+   FrameworkCreate,
+@@ -270,237 +271,257 @@ export function FrameworkForm({
+   }
+ 
+   return (
+-    <form className="grid gap-6" onSubmit={handleSubmit}>
++    <form className="space-y-8" onSubmit={handleSubmit}>
+       {/* `display: contents` keeps the grid gap intact while the disabled
+           fieldset cascades the locked state to every inner control. */}
+       <fieldset className="contents" disabled={readOnly}>
+-      <FormTextInput
+-        label="Framework Title"
+-        placeholder="e.g. Enterprise React Architecture Template"
+-        onChange={(value) => setForm((current) => ({ ...current, title: value }))}
+-        required
+-        value={form.title}
+-        helperText="A clear, specific title helps operators find exactly what they need."
+-      />
+-      
+-      <label className="block">
+-        <span className="mb-1.5 block text-sm font-semibold text-foreground">
+-          Description
+-        </span>
+-        <textarea
+-          placeholder="Describe what your framework includes, the problem it solves, and who it's for..."
+-          className="min-h-32 w-full rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 resize-y"
+-          onChange={(event) =>
+-            setForm((current) => ({
+-              ...current,
+-              description: event.target.value,
+-            }))
+-          }
+-          required
+-          value={form.description}
+-        />
+-      </label>
+-
+-      <div className="grid gap-6 sm:grid-cols-2">
+-        <FormSelectInput
+-          label="Sector"
+-          onChange={(value) => setForm((current) => ({ ...current, sector: value }))}
+-          options={SECTOR_OPTIONS}
+-          required
+-          value={form.sector}
+-        />
+-        <FormSelectInput
+-          label="Industry"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, industry: value }))
+-          }
+-          options={INDUSTRY_OPTIONS}
+-          required
+-          value={form.industry}
+-        />
+-        <FormSelectInput
+-          label="Function"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, function: value }))
+-          }
+-          options={FUNCTION_OPTIONS}
+-          required
+-          value={form.function}
+-        />
+-        <FormSelectInput
+-          label="Category"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, category: value }))
+-          }
+-          options={FRAMEWORK_CATEGORY_OPTIONS}
+-          required
+-          value={form.category}
+-        />
+-        <FormSelectInput
+-          label="Organization Size"
+-          onChange={(value) => setForm((current) => ({ ...current, orgSize: value }))}
+-          options={ORG_SIZE_OPTIONS}
+-          required
+-          value={form.orgSize}
+-        />
+-        <FormOptionalSelectInput
+-          label="Complexity"
+-          emptyLabel="Any complexity"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, complexity: value }))
+-          }
+-          options={COMPLEXITY_OPTIONS}
+-          value={form.complexity}
+-        />
+-        <FormOptionalSelectInput
+-          label="Lifecycle Stage"
+-          emptyLabel="Any stage"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, lifecycleStage: value }))
+-          }
+-          options={LIFECYCLE_STAGE_OPTIONS}
+-          value={form.lifecycleStage}
+-        />
+-        <FormOptionalSelectInput
+-          label="Jurisdiction"
+-          emptyLabel="Any jurisdiction"
+-          onChange={(value) =>
+-            setForm((current) => ({ ...current, jurisdiction: value }))
+-          }
+-          options={JURISDICTION_OPTIONS}
+-          value={form.jurisdiction}
+-        />
+-
+-        <label className="block">
+-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+-            Base Price
+-            <span aria-hidden="true" className="ml-1 text-accent">
+-              *
++        
++        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 sm:p-6 shadow-sm space-y-6">
++          <h2 className="text-lg font-heading font-bold text-foreground border-b border-border-default pb-3">
++            Basic Details
++          </h2>
++          <FormTextInput
++            label="Framework Title"
++            placeholder="e.g. Enterprise React Architecture Template"
++            onChange={(value) => setForm((current) => ({ ...current, title: value }))}
++            required
++            value={form.title}
++            helperText="A clear, specific title helps operators find exactly what they need."
++          />
++          
++          <label className="block">
++            <span className="mb-1.5 block text-sm font-semibold text-foreground">
++              Description
+             </span>
+-          </span>
+-          <div className="relative">
+-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+-              <span className="text-sm font-medium">$</span>
+-            </div>
+-            <input
+-              type="text"
+-              inputMode="decimal"
+-              autoComplete="off"
+-              placeholder="250.00"
+-              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
++            <textarea
++              placeholder="Describe what your framework includes, the problem it solves, and who it's for..."
++              className="min-h-32 w-full rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 resize-y"
+               onChange={(event) =>
+                 setForm((current) => ({
+                   ...current,
+-                  price: sanitizePriceInput(event.target.value),
++                  description: event.target.value,
+                 }))
+               }
+               required
+-              value={form.price}
++              value={form.description}
++            />
++          </label>
++
++          <TagChipInput
++            label="Tags"
++            max={MAX_TAGS}
++            onChange={(value) => setForm((current) => ({ ...current, tags: value }))}
++            value={form.tags}
++          />
++        </section>
++
++        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 sm:p-6 shadow-sm space-y-6">
++          <h2 className="text-lg font-heading font-bold text-foreground border-b border-border-default pb-3">
++            Categorization
++          </h2>
++          <div className="grid gap-6 sm:grid-cols-2">
++            <FormSelectInput
++              label="Sector"
++              onChange={(value) => setForm((current) => ({ ...current, sector: value }))}
++              options={SECTOR_OPTIONS}
++              required
++              value={form.sector}
++            />
++            <FormSelectInput
++              label="Industry"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, industry: value }))
++              }
++              options={INDUSTRY_OPTIONS}
++              required
++              value={form.industry}
++            />
++            <FormSelectInput
++              label="Function"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, function: value }))
++              }
++              options={FUNCTION_OPTIONS}
++              required
++              value={form.function}
++            />
++            <FormSelectInput
++              label="Category"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, category: value }))
++              }
++              options={FRAMEWORK_CATEGORY_OPTIONS}
++              required
++              value={form.category}
++            />
++            <FormSelectInput
++              label="Organization Size"
++              onChange={(value) => setForm((current) => ({ ...current, orgSize: value }))}
++              options={ORG_SIZE_OPTIONS}
++              required
++              value={form.orgSize}
++            />
++            <FormOptionalSelectInput
++              label="Complexity"
++              emptyLabel="Any complexity"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, complexity: value }))
++              }
++              options={COMPLEXITY_OPTIONS}
++              value={form.complexity}
++            />
++            <FormOptionalSelectInput
++              label="Lifecycle Stage"
++              emptyLabel="Any stage"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, lifecycleStage: value }))
++              }
++              options={LIFECYCLE_STAGE_OPTIONS}
++              value={form.lifecycleStage}
++            />
++            <FormOptionalSelectInput
++              label="Jurisdiction"
++              emptyLabel="Any jurisdiction"
++              onChange={(value) =>
++                setForm((current) => ({ ...current, jurisdiction: value }))
++              }
++              options={JURISDICTION_OPTIONS}
++              value={form.jurisdiction}
+             />
+-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+-              <span className="text-xs uppercase">USD</span>
+-            </div>
+           </div>
+-        </label>
+-      </div>
+-
+-      <fieldset className="block">
+-        <legend className="mb-1.5 block text-sm font-semibold text-foreground">
+-          License types
+-          <span aria-hidden="true" className="ml-1 text-accent">
+-            *
+-          </span>
+-        </legend>
+-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+-          {LICENSE_TYPE_OPTIONS.map((option) => {
+-            const checked = form.licenseTypes.includes(option.value);
+-            return (
+-              <label
+-                key={option.value}
+-                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
+-                  checked
+-                    ? "border-accent bg-accent/10 text-foreground"
+-                    : "border-border-default bg-background text-foreground-muted hover:border-accent/50"
+-                }`}
+-              >
++        </section>
++
++        <section className="rounded-2xl border border-border-default bg-surface-2 p-5 sm:p-6 shadow-sm space-y-6">
++          <h2 className="text-lg font-heading font-bold text-foreground border-b border-border-default pb-3">
++            Pricing & Licensing
++          </h2>
++          <div className="grid gap-6 sm:grid-cols-2">
++            <label className="block">
++              <span className="mb-1.5 block text-sm font-semibold text-foreground">
++                Base Price
++                <span aria-hidden="true" className="ml-1 text-accent">
++                  *
++                </span>
++              </span>
++              <div className="relative">
++                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
++                  <span className="text-sm font-medium">$</span>
++                </div>
+                 <input
+-                  type="checkbox"
+-                  className="h-4 w-4 shrink-0 accent-accent"
+-                  checked={checked}
+-                  onChange={() => toggleLicenseType(option.value)}
++                  type="text"
++                  inputMode="decimal"
++                  autoComplete="off"
++                  placeholder="250.00"
++                  className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
++                  onChange={(event) =>
++                    setForm((current) => ({
++                      ...current,
++                      price: sanitizePriceInput(event.target.value),
++                    }))
++                  }
++                  required
++                  value={form.price}
+                 />
+-                {option.label}
++                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
++                  <span className="text-xs uppercase">USD</span>
++                </div>
++              </div>
++            </label>
++            
++            {form.licenseTypes.includes("organizational") ? (
++              <label className="block">
++                <span className="mb-1.5 block text-sm font-semibold text-foreground">
++                  Organization price
++                </span>
++                <div className="relative">
++                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
++                    <span className="text-sm font-medium">$</span>
++                  </div>
++                  <input
++                    type="text"
++                    inputMode="decimal"
++                    autoComplete="off"
++                    placeholder="e.g. 500.00"
++                    className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
++                    onChange={(event) =>
++                      setForm((current) => ({
++                        ...current,
++                        orgPrice: sanitizePriceInput(event.target.value),
++                      }))
++                    }
++                    value={form.orgPrice}
++                  />
++                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
++                    <span className="text-xs uppercase">USD</span>
++                  </div>
++                </div>
++                <span className="mt-1.5 block text-xs text-foreground-muted">
++                  Leave blank to charge the same as the single-user price.
++                </span>
+               </label>
+-            );
+-          })}
+-        </div>
+-        <span className="mt-1.5 block text-xs text-foreground-muted">
+-          Choose at least one tier operators can license. Pricing scales per tier
+-          at checkout.
+-        </span>
+-      </fieldset>
++            ) : null}
++          </div>
+ 
+-      {form.licenseTypes.includes("organizational") ? (
+-        <label className="block">
+-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+-            Organization price
+-          </span>
+-          <div className="relative">
+-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+-              <span className="text-sm font-medium">$</span>
+-            </div>
+-            <input
+-              type="text"
+-              inputMode="decimal"
+-              autoComplete="off"
+-              placeholder="Same as single-user price"
+-              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+-              onChange={(event) =>
+-                setForm((current) => ({
+-                  ...current,
+-                  orgPrice: sanitizePriceInput(event.target.value),
+-                }))
+-              }
+-              value={form.orgPrice}
+-            />
+-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+-              <span className="text-xs uppercase">USD</span>
++          <fieldset className="block">
++            <legend className="mb-1.5 block text-sm font-semibold text-foreground">
++              License types
++              <span aria-hidden="true" className="ml-1 text-accent">
++                *
++              </span>
++            </legend>
++            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
++              {LICENSE_TYPE_OPTIONS.map((option) => {
++                const checked = form.licenseTypes.includes(option.value);
++                return (
++                  <label
++                    key={option.value}
++                    className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
++                      checked
++                        ? "border-accent bg-accent/10 text-foreground"
++                        : "border-border-default bg-background text-foreground-muted hover:border-accent/50"
++                    }`}
++                  >
++                    <input
++                      type="checkbox"
++                      className="h-4 w-4 shrink-0 accent-accent"
++                      checked={checked}
++                      onChange={() => toggleLicenseType(option.value)}
++                    />
++                    {option.label}
++                  </label>
++                );
++              })}
+             </div>
++            <span className="mt-1.5 block text-xs text-foreground-muted">
++              Choose at least one tier operators can license. Pricing scales per tier
++              at checkout.
++            </span>
++          </fieldset>
++        </section>
++
++        {prefill?.fileKeys?.length ? (
++          <section className="rounded-2xl border border-border-default bg-surface-2 p-5 sm:p-6 shadow-sm space-y-4">
++            <h2 className="text-lg font-heading font-bold text-foreground border-b border-border-default pb-3">
++              Source files
++            </h2>
++            <ul className="mt-2 grid gap-1 text-xs text-foreground-muted">
++              {prefill.fileKeys.map((fileKey) => (
++                <li className="truncate" key={fileKey}>
++                  {fileKey}
++                </li>
++              ))}
++            </ul>
++          </section>
++        ) : null}
++
++        {error ? (
++          <div className="rounded-xl bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
++            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
++              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
++            </svg>
++            {error}
+           </div>
+-          <span className="mt-1.5 block text-xs text-foreground-muted">
+-            Leave blank to charge the same as the single-user price.
+-          </span>
+-        </label>
+-      ) : null}
+-
+-      <TagChipInput
+-        label="Tags"
+-        max={MAX_TAGS}
+-        onChange={(value) => setForm((current) => ({ ...current, tags: value }))}
+-        value={form.tags}
+-      />
+-
+-      {prefill?.fileKeys?.length ? (
+-        <div className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground">
+-          <p className="font-semibold">Source files</p>
+-          <ul className="mt-2 grid gap-1 text-xs text-foreground-muted">
+-            {prefill.fileKeys.map((fileKey) => (
+-              <li className="truncate" key={fileKey}>
+-                {fileKey}
+-              </li>
+-            ))}
+-          </ul>
+-        </div>
+-      ) : null}
+-
+-      {error ? (
+-        <div className="rounded-xl bg-error/10 p-3 border border-error/20 flex items-center gap-2 text-sm text-error">
+-          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+-          </svg>
+-          {error}
+-        </div>
+-      ) : null}
++        ) : null}
+       </fieldset>
+ 
+       <div className="mt-4 pt-6 border-t border-border-default flex flex-wrap items-center justify-between gap-4">
+@@ -509,18 +530,18 @@ export function FrameworkForm({
+         </div>
+         <div className="flex flex-wrap items-center gap-3">
+           {readOnly ? null : (
+-            <button
+-              className={[
+-                "inline-flex min-h-12 items-center justify-center rounded-xl px-8 text-sm font-semibold shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed",
+-                framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
+-                  ? "border border-border-default bg-surface-1 text-foreground hover:bg-surface-2"
+-                  : "bg-foreground text-background hover:bg-foreground/90"
+-              ].join(" ")}
++            <Button
+               disabled={saving || !canSubmit}
++              loading={saving}
+               type="submit"
++              variant={
++                framework && (framework.status === "draft" || framework.status === "pipeline_passed" || framework.status === "pipeline_failed")
++                  ? "secondary"
++                  : "primary"
++              }
+             >
+               {saving ? "Saving changes..." : submitLabel}
+-            </button>
++            </Button>
+           )}
+           {children}
+         </div>
