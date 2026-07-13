@@ -47,7 +47,7 @@ type ReviewPanelState = {
  */
 export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps) {
   const [body, setBody] = useState("");
-  const [score, setScore] = useState(5);
+  const [score, setScore] = useState(0);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // Track hovered star index for dynamic preview highlight
@@ -96,7 +96,7 @@ export function FrameworkReviewPanel({ frameworkId }: FrameworkReviewPanelProps)
           (candidate: FrameworkReviewResponse) =>
             candidate.operator_id === userResult.data.id,
         ) ?? null;
-      setScore(review?.score ?? 5);
+      setScore(review?.score ?? 0);
       setBody(review?.body ?? "");
       setState({
         error: null,
