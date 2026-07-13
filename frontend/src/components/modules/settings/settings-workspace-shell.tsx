@@ -38,6 +38,11 @@ const settingsLinks: SettingsLink[] = [
     getSummary: () => "Choose which events trigger email or in-app alerts.",
   },
   {
+    href: "/settings/organizations",
+    label: "Organizations",
+    getSummary: () => "Your organizations and pending invitations.",
+  },
+  {
     href: "/settings/credentials",
     label: "Professional Credentials",
     getSummary: () => "Verify professional credentials for reviews.",

@@ -2425,6 +2425,27 @@ export type MilestoneUpdateRequest = {
 };
 
 /**
+ * A pending invitation addressed to the authenticated user.
+ *
+ * Token-free: the invitee acts on it by id via the received-invitations
+ * endpoints, never by the raw token.
+ */
+export type MyInvitationResponse = {
+    id: string;
+    org: OrganizationResponse;
+    role: string;
+    invited_by_name: (string | null);
+    created_at: string;
+};
+
+/**
+ * List wrapper for invitations addressed to the current user.
+ */
+export type MyInvitationsResponse = {
+    invitations: Array<MyInvitationResponse>;
+};
+
+/**
  * An organization membership visible to the current user.
  */
 export type MyOrganizationResponse = {
@@ -6598,6 +6619,30 @@ export type GetPublicContributorOrgV1ContributorsOrgSlugGetData = {
 export type GetPublicContributorOrgV1ContributorsOrgSlugGetResponse = (ContributorOrgDirectoryEntry);
 
 export type GetPublicContributorOrgV1ContributorsOrgSlugGetError = (HTTPValidationError);
+
+export type ListReceivedInvitationsResponse = (MyInvitationsResponse);
+
+export type ListReceivedInvitationsError = unknown;
+
+export type AcceptReceivedInvitationData = {
+    path: {
+        invitation_id: string;
+    };
+};
+
+export type AcceptReceivedInvitationResponse = (MyOrganizationResponse);
+
+export type AcceptReceivedInvitationError = (HTTPValidationError);
+
+export type DeclineReceivedInvitationData = {
+    path: {
+        invitation_id: string;
+    };
+};
+
+export type DeclineReceivedInvitationResponse = (void);
+
+export type DeclineReceivedInvitationError = (HTTPValidationError);
 
 export type PreviewInvitationV1OrgInvitationsTokenGetData = {
     path: {
