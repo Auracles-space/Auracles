@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, inspect
 
 from app.main import app
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.pricing import resolve_license_price
 from app.modules.frameworks.schemas import PricingConfig
 from app.modules.frameworks.service import _apply_framework_pricing_update
 
@@ -139,3 +140,27 @@ def test_apply_pricing_nulls_org_price_when_tier_removed() -> None:
     )
     assert framework.org_price is None
     assert framework.license_types == ["single_user"]
+
+
+def test_resolve_price_single_user_uses_base() -> None:
+    """single_user always charges the base price."""
+    framework = _framework(org_price=Decimal("900.00"))
+    assert resolve_license_price(framework, "single_user") == Decimal("250.00")
+
+
+def test_resolve_price_org_uses_org_price_when_set() -> None:
+    """organizational charges org_price when it is set."""
+    framework = _framework(
+        license_types=["single_user", "organizational"],
+        org_price=Decimal("900.00"),
+    )
+    assert resolve_license_price(framework, "organizational") == Decimal("900.00")
+
+
+def test_resolve_price_org_falls_back_to_base_on_reuse() -> None:
+    """organizational with a NULL org_price reuses the base price."""
+    framework = _framework(
+        license_types=["single_user", "organizational"],
+        org_price=None,
+    )
+    assert resolve_license_price(framework, "organizational") == Decimal("250.00")
