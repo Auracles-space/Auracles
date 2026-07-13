@@ -59,6 +59,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "amendment_expired": "project",
     "milestone_created": "project",
     "milestone_updated": "project",
+    "milestone_plan_finalized": "project",
     "milestone_funded": "financial",
     "deliverable_submitted": "project",
     "deliverable_approved": "project",

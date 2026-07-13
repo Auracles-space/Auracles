@@ -465,6 +465,87 @@ async def test_accepting_one_proposal_notifies_rejected_contributors(
     assert rejected_recipients == {str(loser_id)}
 
 
+async def test_milestone_plan_finalization_notifies_operator(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finalizing the Milestone plan notifies the Operator to fund escrow.
+
+    The Operator must fund the first Milestone before work can begin, so the
+    Contributor's finalize action is a counterparty event that fans out through
+    the same notification pipeline as every other Project milestone.
+    """
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        project_notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    operator_id = await create_user("mfinal-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "mfinal-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    project_id = (
+        await client.post(
+            "/v1/projects",
+            headers=operator_headers,
+            json=project_payload(),
+        )
+    ).json()["id"]
+    proposal_id = (
+        await client.post(
+            f"/v1/projects/{project_id}/proposals",
+            headers=contributor_headers,
+            json=proposal_payload(),
+        )
+    ).json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+
+    finalized = await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+
+    assert finalized.status_code == 200
+    finalize_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "milestone_plan_finalized"
+    ]
+    assert len(finalize_calls) == 1
+    assert finalize_calls[0]["user_id"] == str(operator_id)
+
+    async with async_session_factory() as session:
+        events = (
+            await session.scalars(
+                select(WorkspaceMessage.system_event).where(
+                    WorkspaceMessage.project_id == UUID(project_id)
+                )
+            )
+        ).all()
+    assert "milestone_plan_finalized" in events
+
+
 async def test_deliverable_submission_notifies_operator(
     client: AsyncClient,
     migrated_database: None,
@@ -2519,6 +2600,7 @@ async def test_deliverable_revision_approval_and_manual_project_close(
     assert escrow is not None
     assert escrow.status == "released"
     assert [message.system_event for message in messages] == [
+        "milestone_plan_finalized",
         "deliverable_submitted",
         "deliverable_revision_requested",
         "deliverable_submitted",
@@ -2969,6 +3051,7 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
         "dispute_resolved_split",
     ]
     assert [message.system_event for message in messages] == [
+        "milestone_plan_finalized",
         "dispute_raised",
         "dispute_resolved",
     ]

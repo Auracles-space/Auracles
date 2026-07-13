@@ -43,6 +43,7 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "amendment_expired",
     "milestone_created",
     "milestone_updated",
+    "milestone_plan_finalized",
     "milestone_funded",
     "deliverable_submitted",
     "deliverable_approved",

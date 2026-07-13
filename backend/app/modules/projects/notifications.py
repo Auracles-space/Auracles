@@ -33,7 +33,7 @@ def _dispatch(
     title: str,
     body: str,
     project_id: UUID,
-    dedupe_key: str,
+    dedupe_key: str | None,
     extra_payload: dict[str, str] | None = None,
 ) -> None:
     """Queue one durable Project notification with realtime and email fanout."""
@@ -123,6 +123,32 @@ def notify_proposal_accepted(*, contributor_id: UUID, proposal: Proposal) -> Non
         project_id=proposal.project_id,
         dedupe_key=f"proposal_accepted:{proposal.id}",
         extra_payload={"proposal_id": str(proposal.id)},
+    )
+
+
+def notify_milestone_plan_finalized(
+    *,
+    operator_id: UUID,
+    project_id: UUID,
+) -> None:
+    """Notify the Operator that the Contributor finalized the Milestone plan.
+
+    Finalization is the Contributor's signal that the budget breakdown is set
+    and the Operator can fund the first Milestone's escrow, so the counterparty
+    (the Operator, or every owner/admin of the operating org) must hear about
+    it to move the Project forward.
+    """
+    _dispatch(
+        user_id=operator_id,
+        notification_type="milestone_plan_finalized",
+        title="Milestone plan finalized",
+        body="A Contributor finalized the Milestone plan. Fund the first "
+        "Milestone to start the work.",
+        project_id=project_id,
+        # No dedupe key: a plan can be reopened and finalized again, and each
+        # genuine finalization must re-notify. The finalize service is state
+        # guarded (draft-only), so a single transition fires exactly one notice.
+        dedupe_key=None,
     )
 
 

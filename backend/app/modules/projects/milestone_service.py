@@ -996,6 +996,13 @@ async def finalize_milestone_plan(
                 ),
             )
         project.milestone_plan_status = "finalized"
+        db.add(
+            _workspace_system_message(
+                project_id=project.id,
+                system_event="milestone_plan_finalized",
+                payload={"finalized_by": str(contributor_id)},
+            )
+        )
         await write_audit(
             db=db,
             actor_id=contributor_id,
@@ -1007,8 +1014,20 @@ async def finalize_milestone_plan(
                 "budget": f"{proposal.budget:.2f}",
             },
         )
+        # Resolve the Operator-side recipients inside the transaction: the
+        # individual Operator, or every owner/admin of the operating org.
+        operator_recipient_ids = await resolve_operator_recipient_user_ids(
+            db, project=project
+        )
         await db.flush()
         await db.refresh(project)
+    # Notify after commit so recipients only hear about a durably finalized plan
+    # and know escrow funding is the next step.
+    for operator_id in operator_recipient_ids:
+        project_notifications.notify_milestone_plan_finalized(
+            operator_id=operator_id,
+            project_id=project_id,
+        )
     return project
 
 

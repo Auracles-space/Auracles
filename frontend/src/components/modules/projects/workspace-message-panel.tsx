@@ -26,6 +26,7 @@ const SYSTEM_EVENT_LABELS: Record<string, string> = {
   dispute_raised: "Dispute raised",
   dispute_resolved: "Dispute resolved",
   milestone_funded: "Milestone funded",
+  milestone_plan_finalized: "Milestone plan finalized",
   milestone_plan_reopened: "Milestone plan reopened",
 };
 
