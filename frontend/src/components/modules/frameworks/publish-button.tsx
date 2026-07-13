@@ -15,6 +15,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { useToast } from "@/components/ui/toast";
 
 type PublishButtonProps = {
   disabled?: boolean;
@@ -39,6 +40,7 @@ export function PublishButton({
   onCompleted,
 }: PublishButtonProps) {
   const router = useRouter();
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,6 +58,10 @@ export function PublishButton({
       setError(describeGeneratedError(result.error));
       return;
     }
+    // Publishing flips the status banner at the top of a long editor and
+    // unmounts this button, so a toast is the only feedback the Contributor
+    // reliably sees where their cursor is.
+    toast.success("Framework published.");
     onCompleted?.();
     router.refresh();
   }

@@ -37,6 +37,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { useToast } from "@/components/ui/toast";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
 
 type FrameworkEditorProps = {
@@ -57,6 +58,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [framework, setFramework] = useState<FrameworkResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
   // Reload framework + artifacts. `quiet` skips the loading skeleton so the
   // background poll never flashes the spinner over a populated workspace.
@@ -141,11 +143,15 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
+    // This action lives at the bottom of a long form; route the outcome to a
+    // toast rather than a page-level error that would replace the whole editor
+    // off-screen from the button.
     if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
     setFramework(result.data);
+    toast.success("Publishing checks started.");
   }
 
   async function handleCreateVersion() {
@@ -164,10 +170,11 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       path: { framework_id: frameworkId },
     });
     if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
     setFramework(result.data);
+    toast.success("Draft version started.");
   }
 
   async function handleRemoveArtifact(artifactId: string) {
@@ -176,8 +183,10 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
       headers: getAccessTokenHeaders(),
       path: { artifact_id: artifactId, framework_id: frameworkId },
     });
+    // A failed delete used to blank the whole editor; keep the workspace and
+    // report the failure in a toast instead.
     if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
     setArtifacts((current) =>

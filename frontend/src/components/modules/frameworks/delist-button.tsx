@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { unpublishFramework } from "@/lib/generated/sdk.gen";
 import {
   configureBrowserClient,
@@ -32,6 +33,7 @@ type DelistButtonProps = {
  */
 export function DelistButton({ frameworkId, onCompleted }: DelistButtonProps) {
   const router = useRouter();
+  const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,9 @@ export function DelistButton({ frameworkId, onCompleted }: DelistButtonProps) {
     }
     setBusy(false);
     setConfirming(false);
+    // The modal closes and the status banner flips at the top of the page, so
+    // confirm the outcome with a toast that stays in the Contributor's view.
+    toast.success("Framework delisted.");
     onCompleted?.();
     router.refresh();
   }

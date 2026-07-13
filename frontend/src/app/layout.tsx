@@ -43,6 +43,7 @@ export const metadata: Metadata = {
 import { IncompleteUserListener } from "@/components/incomplete-user-listener";
 import { SessionTerminatedListener } from "@/components/session-terminated-listener";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default function RootLayout({
   children,
@@ -58,9 +59,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <IncompleteUserListener />
-          <SessionTerminatedListener />
-          {children}
+          <ToastProvider>
+            <IncompleteUserListener />
+            <SessionTerminatedListener />
+            {children}
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

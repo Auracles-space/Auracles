@@ -1,14 +1,27 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  type RenderResult,
+} from "@testing-library/react";
+import { type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DelistButton } from "@/components/modules/frameworks/delist-button";
 import { RelistButton } from "@/components/modules/frameworks/relist-button";
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
+import { ToastProvider } from "@/components/ui/toast";
 import {
   publishFramework,
   relistFramework,
   unpublishFramework,
 } from "@/lib/generated/sdk.gen";
+
+/** Render a component beneath the toast provider it now depends on. */
+function renderWithToast(ui: ReactElement): RenderResult {
+  return render(<ToastProvider>{ui}</ToastProvider>);
+}
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
 
@@ -43,10 +56,13 @@ describe("PublishButton", () => {
       response: new Response(null, { status: 200 }),
     });
 
-    render(<PublishButton frameworkId="fw-1" />);
+    renderWithToast(<PublishButton frameworkId="fw-1" />);
     fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(
+      await screen.findByText(/framework published/i),
+    ).toBeInTheDocument();
   });
 
   it("shows the gate error when publish is blocked", async () => {
@@ -56,7 +72,7 @@ describe("PublishButton", () => {
       response: new Response(null, { status: 409 }),
     });
 
-    render(<PublishButton frameworkId="fw-1" />);
+    renderWithToast(<PublishButton frameworkId="fw-1" />);
     fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
 
     expect(
@@ -79,7 +95,7 @@ describe("DelistButton", () => {
       response: new Response(null, { status: 200 }),
     });
 
-    render(<DelistButton frameworkId="fw-1" />);
+    renderWithToast(<DelistButton frameworkId="fw-1" />);
     // No request fires until the modal confirm is clicked.
     fireEvent.click(
       screen.getByRole("button", { name: /delist from marketplace/i }),
@@ -90,6 +106,7 @@ describe("DelistButton", () => {
     fireEvent.click(screen.getByRole("button", { name: /delist framework/i }));
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(await screen.findByText(/framework delisted/i)).toBeInTheDocument();
   });
 
   it("surfaces a delist error", async () => {
@@ -99,7 +116,7 @@ describe("DelistButton", () => {
       response: new Response(null, { status: 409 }),
     });
 
-    render(<DelistButton frameworkId="fw-1" />);
+    renderWithToast(<DelistButton frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /delist from marketplace/i }),
     );
@@ -125,7 +142,7 @@ describe("RelistButton", () => {
       response: new Response(null, { status: 200 }),
     });
 
-    render(<RelistButton frameworkId="fw-1" />);
+    renderWithToast(<RelistButton frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /relist on marketplace/i }),
     );
@@ -135,6 +152,7 @@ describe("RelistButton", () => {
     fireEvent.click(screen.getByRole("button", { name: /relist framework/i }));
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(await screen.findByText(/framework relisted/i)).toBeInTheDocument();
   });
 
   it("surfaces a relist error", async () => {
@@ -144,7 +162,7 @@ describe("RelistButton", () => {
       response: new Response(null, { status: 409 }),
     });
 
-    render(<RelistButton frameworkId="fw-1" />);
+    renderWithToast(<RelistButton frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /relist on marketplace/i }),
     );

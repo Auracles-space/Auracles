@@ -1,7 +1,15 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  type RenderResult,
+} from "@testing-library/react";
+import { type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FrameworkEditor } from "@/components/modules/frameworks/framework-editor";
+import { ToastProvider } from "@/components/ui/toast";
 import {
   deleteArtifact,
   getContributorFramework,
@@ -38,6 +46,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   unpublishFramework: vi.fn(),
   relistFramework: vi.fn(),
 }));
+
+/** Render the editor beneath the toast provider its actions depend on. */
+function renderWithToast(ui: ReactElement): RenderResult {
+  return render(<ToastProvider>{ui}</ToastProvider>);
+}
 
 function makeFramework(
   overrides: Partial<FrameworkResponse> = {},
@@ -113,7 +126,7 @@ describe("FrameworkEditor", () => {
   it("hides the new-version action for an unpublished draft", async () => {
     mockLoad(makeFramework({ status: "draft" }));
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Test Framework");
     expect(
@@ -124,7 +137,7 @@ describe("FrameworkEditor", () => {
   it("shows the new-version action once the framework is published", async () => {
     mockLoad(makeFramework({ status: "published" }));
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Test Framework");
     expect(
@@ -135,7 +148,7 @@ describe("FrameworkEditor", () => {
   it("lets a delisted framework edit metadata, relist, or start a new version", async () => {
     mockLoad(makeFramework({ status: "unpublished" }));
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Test Framework");
     // Metadata edits save in place; relist and new version are also offered.
@@ -152,7 +165,7 @@ describe("FrameworkEditor", () => {
 
   it("keeps metadata editable on a live framework but locks it mid-pipeline", async () => {
     mockLoad(makeFramework({ status: "published" }));
-    const { unmount } = render(<FrameworkEditor frameworkId="fw_1" />);
+    const { unmount } = renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
     await screen.findByText("Test Framework");
     expect(
       screen.getByRole("button", { name: /save changes/i }),
@@ -160,7 +173,7 @@ describe("FrameworkEditor", () => {
     unmount();
 
     mockLoad(makeFramework({ status: "submitted" }));
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
     await screen.findByText("Test Framework");
     expect(
       screen.queryByRole("button", { name: /save changes/i }),
@@ -177,7 +190,7 @@ describe("FrameworkEditor", () => {
       response: new Response(null, { status: 204 }),
     } as never);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Operating Model.pdf");
     fireEvent.click(
@@ -204,7 +217,7 @@ describe("FrameworkEditor", () => {
       }),
     ]);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Operating Model.pdf");
     expect(
@@ -215,7 +228,7 @@ describe("FrameworkEditor", () => {
   it("disables Run publishing checks when no artifact is attached", async () => {
     mockLoad(makeFramework({ status: "draft" }), []);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     const button = await screen.findByRole("button", {
       name: /run publishing checks/i,
@@ -228,7 +241,7 @@ describe("FrameworkEditor", () => {
       makeArtifact({ id: "art_1", processing_status: "processed" }),
     ]);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     const button = await screen.findByRole("button", {
       name: /run publishing checks/i,
@@ -246,7 +259,7 @@ describe("FrameworkEditor", () => {
       }),
     ]);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     expect(
       await screen.findByRole("button", {
@@ -266,7 +279,7 @@ describe("FrameworkEditor", () => {
         }),
       ]);
 
-      render(<FrameworkEditor frameworkId="fw_1" />);
+      renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
       await screen.findByText("Test Framework");
 
       // Worker finishes: artifact gets PII-flagged, framework fails the gate.
@@ -294,7 +307,7 @@ describe("FrameworkEditor", () => {
       makeArtifact({ id: "art_1", name: "Operating Model.pdf" }),
     ]);
 
-    render(<FrameworkEditor frameworkId="fw_1" />);
+    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
 
     await screen.findByText("Operating Model.pdf");
     expect(
