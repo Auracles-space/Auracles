@@ -98,6 +98,10 @@ class Framework(UpdatedAtMixin, Base):
     __table_args__ = (
         CheckConstraint("price > 0", name="ck_frameworks_price_positive"),
         CheckConstraint(
+            "org_price IS NULL OR org_price > 0",
+            name="ck_frameworks_org_price_positive",
+        ),
+        CheckConstraint(
             "complexity IS NULL OR complexity BETWEEN 1 AND 5",
             name="ck_frameworks_complexity_range",
         ),
@@ -180,6 +184,7 @@ class Framework(UpdatedAtMixin, Base):
     org_size: Mapped[str | None] = mapped_column(ORG_SIZE_ENUM, nullable=True)
     lifecycle_stage: Mapped[str | None] = mapped_column(String(100), nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    org_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(
         String(3),
         nullable=False,
