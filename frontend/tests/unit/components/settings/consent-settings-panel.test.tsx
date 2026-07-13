@@ -8,10 +8,20 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConsentSettingsPanel } from "@/components/modules/settings/consent-settings-panel";
+import { ToastProvider } from "@/components/ui/toast";
 import {
   acceptCurrentConsentV1GdprConsentPost,
   listConsentHistoryV1GdprConsentGet,
 } from "@/lib/generated/sdk.gen";
+
+/** Render the panel beneath the toast provider its accept action depends on. */
+function renderPanel(): void {
+  render(
+    <ToastProvider>
+      <ConsentSettingsPanel />
+    </ToastProvider>,
+  );
+}
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -56,7 +66,7 @@ describe("ConsentSettingsPanel", () => {
   });
 
   it("loads missing current consent versions and the consent history", async () => {
-    render(<ConsentSettingsPanel />);
+    renderPanel();
 
     const consentSection = await screen.findByRole("region", {
       name: /legal consent/i,
@@ -101,7 +111,7 @@ describe("ConsentSettingsPanel", () => {
       response: new Response(null, { status: 200 }),
     });
 
-    render(<ConsentSettingsPanel />);
+    renderPanel();
 
     const consentSection = await screen.findByRole("region", {
       name: /legal consent/i,
@@ -121,12 +131,11 @@ describe("ConsentSettingsPanel", () => {
       });
     });
 
+    // The confirmation now surfaces in a toast (the live region) rather than a
+    // banner inside the section.
+    const toastRegion = await screen.findByRole("status");
     expect(
-      (
-        await within(consentSection).findAllByText(
-          /you are up to date on legal consent/i,
-        )
-      ).length,
-    ).toBeGreaterThan(0);
+      within(toastRegion).getByText(/you are up to date on legal consent/i),
+    ).toBeInTheDocument();
   });
 });

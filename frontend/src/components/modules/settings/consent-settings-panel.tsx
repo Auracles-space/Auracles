@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -61,7 +62,7 @@ export function ConsentSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ConsentHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     let mounted = true;
@@ -99,8 +100,6 @@ export function ConsentSettingsPanel() {
 
   async function submitCurrentConsent(): Promise<void> {
     setAccepting(true);
-    setError(null);
-    setMessage(null);
     configureBrowserClient();
 
     const result = await acceptCurrentConsentV1GdprConsentPost({
@@ -112,13 +111,15 @@ export function ConsentSettingsPanel() {
     });
     setAccepting(false);
 
+    // The accept button sits below the consent history list; a toast keeps the
+    // outcome in view rather than at the top of a scrolled section.
     if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
 
     setHistory(result.data);
-    setMessage("You are up to date on legal consent.");
+    toast.success("You are up to date on legal consent.");
   }
 
   return (
@@ -150,7 +151,6 @@ export function ConsentSettingsPanel() {
       ) : null}
 
       {error ? <FormMessage kind="error" message={error} /> : null}
-      {message ? <FormMessage kind="success" message={message} /> : null}
 
       {history ? (
         <>

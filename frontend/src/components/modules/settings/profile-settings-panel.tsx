@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -105,8 +106,8 @@ export function ProfileSettingsPanel() {
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     let mounted = true;
@@ -143,20 +144,20 @@ export function ProfileSettingsPanel() {
     }
 
     setResending(true);
-    setError(null);
-    setMessage(null);
     configureBrowserClient();
     const result = await resendVerificationV1AuthResendVerificationPost({
       body: { email: currentUser.email },
     });
     setResending(false);
 
+    // The resend control sits below the profile summary; a toast surfaces the
+    // outcome in view instead of a banner pinned to the top of the panel.
     if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
 
-    setMessage(result.data?.message ?? "Verification email sent.");
+    toast.success(result.data?.message ?? "Verification email sent.");
   }
 
   if (loading) {
@@ -170,7 +171,6 @@ export function ProfileSettingsPanel() {
   return (
     <div className="space-y-6">
       {error ? <FormMessage kind="error" message={error} /> : null}
-      {message ? <FormMessage kind="success" message={message} /> : null}
 
       {currentUser ? (
         <>

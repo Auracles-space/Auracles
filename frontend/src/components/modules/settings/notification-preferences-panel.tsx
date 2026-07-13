@@ -15,6 +15,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { useToast } from "@/components/ui/toast";
 import {
   getNotificationPreferencesV1SettingsNotificationPreferencesGet,
   updateNotificationPreferencesV1SettingsNotificationPreferencesPatch,
@@ -44,7 +45,7 @@ export function NotificationPreferencesPanel() {
   const [loading, setLoading] = useState(true);
   const [matrix, setMatrix] = useState<NotificationPreferencesResponse | null>(null);
   const [pendingToggle, setPendingToggle] = useState<PendingToggleKey>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     let mounted = true;
@@ -84,8 +85,6 @@ export function NotificationPreferencesPanel() {
   ): Promise<void> {
     const pendingKey = `${notificationType}:${channel}` as const;
     setPendingToggle(pendingKey);
-    setError(null);
-    setSuccessMessage(null);
     configureBrowserClient();
 
     const result = await updateNotificationPreferencesV1SettingsNotificationPreferencesPatch(
@@ -104,13 +103,15 @@ export function NotificationPreferencesPanel() {
     );
     setPendingToggle(null);
 
+    // A toggle can sit far down the category list; route its outcome to a toast
+    // so the confirmation is not stranded in the banner at the top of the page.
     if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+      toast.error(describeGeneratedError(result.error));
       return;
     }
 
     setMatrix(result.data);
-    setSuccessMessage("Preferences updated.");
+    toast.success("Preferences updated.");
   }
 
   if (loading) {
@@ -125,14 +126,6 @@ export function NotificationPreferencesPanel() {
           role="alert"
         >
           {error}
-        </p>
-      ) : null}
-      {successMessage ? (
-        <p
-          className="rounded-xl border border-success/30 bg-success/10 p-3 text-sm text-success"
-          role="status"
-        >
-          {successMessage}
         </p>
       ) : null}
 

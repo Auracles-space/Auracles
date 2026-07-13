@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProfileSettingsPanel } from "@/components/modules/settings/profile-settings-panel";
+import { ToastProvider } from "@/components/ui/toast";
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
   getCurrentUser,
@@ -56,7 +57,11 @@ describe("ProfileSettingsPanel", () => {
   });
 
   it("renders identity, status summaries, and resends verification for unverified email", async () => {
-    render(<ProfileSettingsPanel />);
+    render(
+      <ToastProvider>
+        <ProfileSettingsPanel />
+      </ToastProvider>,
+    );
 
     expect(await screen.findByRole("heading", { name: /private profile/i })).toBeVisible();
     expect(screen.getByText("Ada Markets")).toBeInTheDocument();
@@ -76,6 +81,11 @@ describe("ProfileSettingsPanel", () => {
         body: { email: "ada@example.com" },
       });
     });
+
+    // The resend outcome now surfaces in a toast.
+    expect(
+      await screen.findByText(/verification sent/i),
+    ).toBeInTheDocument();
 
     const kycSection = screen.getByRole("region", { name: /kyc status/i });
     expect(within(kycSection).getByText(/pending review/i)).toBeInTheDocument();

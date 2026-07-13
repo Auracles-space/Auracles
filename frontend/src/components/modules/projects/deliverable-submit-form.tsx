@@ -17,6 +17,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { useToast } from "@/components/ui/toast";
 import {
   createWorkspaceUploadSession,
   submitDeliverable,
@@ -51,6 +52,7 @@ export function DeliverableSubmitForm({
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -114,6 +116,9 @@ export function DeliverableSubmitForm({
         setError(describeGeneratedError(result.error));
         return;
       }
+      // On success this form unmounts and the Deliverable appears in the
+      // milestone timeline elsewhere on the page; a toast confirms it landed.
+      toast.success("Deliverable submitted.");
       onSubmitted(result.data);
     } catch (submitError) {
       setError(

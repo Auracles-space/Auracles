@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NotificationPreferencesPanel } from "@/components/modules/settings/notification-preferences-panel";
+import { ToastProvider } from "@/components/ui/toast";
 import {
   getNotificationPreferencesV1SettingsNotificationPreferencesGet,
   updateNotificationPreferencesV1SettingsNotificationPreferencesPatch,
@@ -104,7 +105,11 @@ describe("NotificationPreferencesPanel", () => {
       response: new Response(null, { status: 200 }),
     });
 
-    render(<NotificationPreferencesPanel />);
+    render(
+      <ToastProvider>
+        <NotificationPreferencesPanel />
+      </ToastProvider>,
+    );
 
     const discoveryRegion = await screen.findByRole("region", {
       name: /discovery notifications/i,
@@ -142,6 +147,10 @@ describe("NotificationPreferencesPanel", () => {
     await waitFor(() => {
       expect(savedSearchEmailToggle).not.toBeChecked();
     });
+
+    expect(
+      await screen.findByText(/preferences updated/i),
+    ).toBeInTheDocument();
 
     const financialRegion = await screen.findByRole("region", {
       name: /financial notifications/i,
