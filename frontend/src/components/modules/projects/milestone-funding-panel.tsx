@@ -28,6 +28,8 @@ type MilestoneFundingPanelProps = {
   transactionId: string;
   /** Project id the Milestone belongs to. */
   projectId: string;
+  /** Milestone id being funded, echoed back so the return page can poll it. */
+  milestoneId: string;
   /** Dismiss the panel without paying. */
   onCancel: () => void;
 };
@@ -39,6 +41,7 @@ export function MilestoneFundingPanel({
   clientSecret,
   transactionId,
   projectId,
+  milestoneId,
   onCancel,
 }: MilestoneFundingPanelProps) {
   const stripePromise = useMemo(() => getStripeClient(), []);
@@ -51,6 +54,7 @@ export function MilestoneFundingPanel({
       <div className="mt-4">
         <Elements options={{ clientSecret }} stripe={stripePromise}>
           <MilestonePaymentConfirmation
+            milestoneId={milestoneId}
             onCancel={onCancel}
             projectId={projectId}
             transactionId={transactionId}
@@ -64,6 +68,7 @@ export function MilestoneFundingPanel({
 type MilestonePaymentConfirmationProps = {
   transactionId: string;
   projectId: string;
+  milestoneId: string;
   onCancel: () => void;
 };
 
@@ -73,6 +78,7 @@ type MilestonePaymentConfirmationProps = {
 function MilestonePaymentConfirmation({
   transactionId,
   projectId,
+  milestoneId,
   onCancel,
 }: MilestonePaymentConfirmationProps) {
   const stripe = useStripe();
@@ -90,7 +96,7 @@ function MilestonePaymentConfirmation({
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/projects/${projectId}?funded=${transactionId}`,
+        return_url: `${window.location.origin}/projects/${projectId}?funded=${transactionId}&funded_milestone=${milestoneId}`,
       },
     });
     setSubmitting(false);

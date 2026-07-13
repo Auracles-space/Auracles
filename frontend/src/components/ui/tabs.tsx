@@ -15,7 +15,20 @@ export type TabItem = {
   id: string;
   /** Visible, human-readable tab label. */
   label: string;
+  /**
+   * Optional item count. A badge renders only when this is greater than 0,
+   * shown compact (e.g. "1.2K") with the exact value available on hover.
+   */
+  count?: number;
 };
+
+/** Format a tab count compactly for the badge (e.g. 1234 → "1.2K"). */
+function formatTabCount(count: number): string {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(count);
+}
 
 type TabsProps = {
   /** Tabs to render, in display order. */
@@ -96,6 +109,19 @@ export function Tabs({ tabs, activeId, onChange, label }: TabsProps) {
             type="button"
           >
             {tab.label}
+            {tab.count !== undefined && tab.count > 0 ? (
+              <span
+                className={[
+                  "ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                  selected
+                    ? "bg-accent/10 text-accent"
+                    : "bg-surface-3 text-foreground-muted",
+                ].join(" ")}
+                title={tab.count.toLocaleString("en-US")}
+              >
+                {formatTabCount(tab.count)}
+              </span>
+            ) : null}
           </button>
         );
       })}

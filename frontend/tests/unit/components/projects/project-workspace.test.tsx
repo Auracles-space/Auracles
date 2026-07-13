@@ -31,10 +31,15 @@ vi.mock("@/lib/projects/realtime", () => ({
   useProjectRealtime: () => ({ connected: false, lastEvent: null }),
 }));
 
+const nav = vi.hoisted(() => ({
+  searchParams: new URLSearchParams(""),
+  replace: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/projects/test",
-  useRouter: () => ({ replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(""),
+  useRouter: () => ({ replace: nav.replace }),
+  useSearchParams: () => nav.searchParams,
 }));
 
 vi.mock("@/lib/auth/form-client", async () => {
@@ -97,6 +102,8 @@ describe("ProjectWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAuthToken();
+    nav.searchParams = new URLSearchParams("");
+    nav.replace.mockReset();
   });
 
   it("loads owner workspace data even when roles are not hydrated yet", async () => {
@@ -167,5 +174,88 @@ describe("ProjectWorkspace", () => {
 
     expect(listProjectProposals).toHaveBeenCalledTimes(1);
     expect(listWorkspaceMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the funding query params after returning funded from Stripe", async () => {
+    // Reproduces the stale-button bug: Stripe redirects back with
+    // `?funded_milestone=<id>` and the page must poll until the Milestone reads
+    // funded, then strip the params — without a second manual refresh.
+    nav.searchParams = new URLSearchParams(
+      "funded=txn-1&funded_milestone=milestone-1",
+    );
+    vi.mocked(loadCurrentUserSession).mockResolvedValue({
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Operator User",
+      email: "operator@example.com",
+      email_verified: true,
+      id: "operator-1",
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: ["operator"],
+    });
+    vi.mocked(getProject).mockResolvedValue({
+      data: { ...projectResponse(), milestone_plan_status: "finalized" },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listProjectProposals).mockResolvedValue({
+      data: { proposals: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listMyProjectProposals).mockResolvedValue({
+      data: undefined,
+      error: { detail: "Forbidden" },
+      response: forbiddenResponse,
+    });
+    vi.mocked(listMilestones).mockResolvedValue({
+      data: {
+        milestones: [
+          {
+            approved_at: null,
+            budget: "1500.00",
+            created_at: "2026-06-20T11:00:00Z",
+            currency: "USD",
+            description: "Build the model.",
+            due_date: null,
+            escrow_id: "escrow-1",
+            funded_at: "2026-06-21T09:00:00Z",
+            id: "milestone-1",
+            name: "Implementation",
+            project_id: "project-1",
+            sequence: 1,
+            status: "funded",
+            submitted_at: null,
+          },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listWorkspaceMessages).mockResolvedValue({
+      data: { messages: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listDisputes).mockResolvedValue({
+      data: { disputes: [] },
+      error: undefined,
+      response: okResponse,
+    });
+
+    render(<ProjectWorkspace projectId="project-1" />);
+
+    await waitFor(() => {
+      expect(nav.replace).toHaveBeenCalled();
+    });
+    // The funding params are gone from the URL it navigated to...
+    const target = nav.replace.mock.calls[0][0] as string;
+    expect(target).not.toContain("funded_milestone");
+    expect(target).not.toContain("funded=");
+    // ...and no stale "Fund milestone" button lingers for the funded Milestone.
+    expect(
+      screen.queryByRole("button", { name: /fund milestone/i }),
+    ).not.toBeInTheDocument();
   });
 });

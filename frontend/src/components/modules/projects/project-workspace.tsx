@@ -52,6 +52,7 @@ import type {
   WorkspaceMessageResponse,
 } from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import { formatMoney } from "@/lib/marketplace/format";
 import { useProjectRealtime } from "@/lib/projects/realtime";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 
@@ -138,12 +139,19 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     dueDate: string;
     name: string;
   }>({ budget: "", description: "", dueDate: "", name: "" });
-  const [fundingInFlight, setFundingInFlight] = useState(false);
+  // Track *which* Milestone is being funded, not a shared boolean, so only the
+  // clicked button shows its in-flight state while the others stay idle.
+  const [fundingMilestoneId, setFundingMilestoneId] = useState<string | null>(
+    null,
+  );
   const [fundingSession, setFundingSession] = useState<{
     milestoneId: string;
     clientSecret: string;
     transactionId: string;
   } | null>(null);
+  // True while polling for the escrow webhook to fund a Milestone after the
+  // Stripe redirect back to this page.
+  const [confirmingFunding, setConfirmingFunding] = useState(false);
   const [deliverableFormMilestoneId, setDeliverableFormMilestoneId] = useState<
     string | null
   >(null);
@@ -247,14 +255,14 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async (): Promise<MilestoneResponse[]> => {
     configureBrowserClient();
     setError(null);
 
     const sessionUser = await loadCurrentUserSession();
     if (sessionUser === null) {
       setError("Please sign in again.");
-      return;
+      return [];
     }
     setCurrentUser(sessionUser);
 
@@ -270,7 +278,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     });
     if (!projectResult.response.ok || !projectResult.data) {
       setError(describeGeneratedError(projectResult.error));
-      return;
+      return [];
     }
 
     const currentProject = projectResult.data;
@@ -337,8 +345,10 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
         : Promise.resolve({ response: new Response(), data: { disputes: [] }, error: undefined }),
     ]);
 
+    let nextMilestones: MilestoneResponse[] = [];
     if (milestonesResult.response.ok && milestonesResult.data) {
-      setMilestones(milestonesResult.data.milestones);
+      nextMilestones = milestonesResult.data.milestones;
+      setMilestones(nextMilestones);
     }
     if (messagesResult.response.ok && messagesResult.data) {
       setMessages(messagesResult.data.messages);
@@ -346,11 +356,51 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     if (disputesResult.response.ok && disputesResult.data) {
       setDisputes(disputesResult.data.disputes);
     }
+    return nextMilestones;
   }, [projectId]);
 
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace, realtime.lastEvent]);
+
+  // Returning from Stripe with `?funded_milestone=<id>`: escrow is funded by an
+  // async webhook that can lag the redirect, so the Milestone may still read
+  // `pending` on first load (button stubbornly shows "Fund"). Poll the workspace
+  // until the Milestone leaves `pending`, then strip the funding query params.
+  const fundedMilestoneId = searchParams.get("funded_milestone");
+  useEffect(() => {
+    if (!fundedMilestoneId) {
+      return;
+    }
+    let cancelled = false;
+    setConfirmingFunding(true);
+
+    async function pollUntilFunded(): Promise<void> {
+      const maxAttempts = 10;
+      for (let attempt = 0; attempt < maxAttempts && !cancelled; attempt += 1) {
+        const latest = await loadWorkspace();
+        const target = latest.find((item) => item.id === fundedMilestoneId);
+        if (target && target.status !== "pending") {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (cancelled) {
+        return;
+      }
+      setConfirmingFunding(false);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("funded");
+      params.delete("funded_milestone");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    }
+
+    void pollUntilFunded();
+    return () => {
+      cancelled = true;
+    };
+  }, [fundedMilestoneId, loadWorkspace, pathname, router, searchParams]);
 
   async function submitProjectProposal(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -523,9 +573,9 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
 
   async function fundProjectMilestone(milestoneId: string) {
     setError(null);
-    setFundingInFlight(true);
+    setFundingMilestoneId(milestoneId);
     const result = await projectApi(mode).fundMilestone(projectId, milestoneId, {});
-    setFundingInFlight(false);
+    setFundingMilestoneId(null);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
@@ -762,7 +812,8 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                         {proposal.contributor_name ?? "Contributor"}
                       </p>
                       <p className="text-xs text-foreground-muted">
-                        ${proposal.budget} · {proposal.timeline_days} days
+                        {formatMoney(proposal.budget, proposal.currency)} ·{" "}
+                        {proposal.timeline_days} days
                       </p>
                     </div>
                     <StatusBadge status={proposal.status} />
@@ -964,7 +1015,8 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="font-semibold text-foreground">
-                        {milestone.sequence}. {milestone.name} · ${milestone.budget}
+                        {milestone.sequence}. {milestone.name} ·{" "}
+                        {formatMoney(milestone.budget, milestone.currency)}
                       </p>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={milestone.status} />
@@ -1078,11 +1130,20 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                       fundingSession?.milestoneId !== milestone.id ? (
                         <button
                           className="min-h-12 rounded-xl bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={fundingInFlight || fundingSession !== null}
+                          disabled={
+                            fundingMilestoneId !== null ||
+                            fundingSession !== null ||
+                            confirmingFunding
+                          }
                           onClick={() => void fundProjectMilestone(milestone.id)}
                           type="button"
                         >
-                          {fundingInFlight ? "Preparing payment" : "Fund milestone"}
+                          {fundingMilestoneId === milestone.id
+                            ? "Preparing payment"
+                            : confirmingFunding &&
+                                fundedMilestoneId === milestone.id
+                              ? "Confirming payment"
+                              : "Fund milestone"}
                         </button>
                       ) : null}
                       {isAssignedContributor &&
@@ -1119,6 +1180,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                     {fundingSession?.milestoneId === milestone.id ? (
                       <MilestoneFundingPanel
                         clientSecret={fundingSession.clientSecret}
+                        milestoneId={fundingSession.milestoneId}
                         onCancel={() => setFundingSession(null)}
                         projectId={projectId}
                         transactionId={fundingSession.transactionId}

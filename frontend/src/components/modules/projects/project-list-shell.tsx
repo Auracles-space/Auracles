@@ -138,16 +138,26 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
   const tabItems = useMemo<TabItem[]>(() => {
     const items: TabItem[] = [];
     if (showContributor) {
-      items.push({ id: "open", label: "Open" });
+      items.push({ id: "open", label: "Open", count: openProjects.length });
     }
     if (showOperator) {
-      items.push({ id: "posted", label: "Posted" });
+      items.push({ id: "posted", label: "Posted", count: operatorProjects.length });
     }
     if (showContributor) {
-      items.push({ id: "engagements", label: "My engagements" });
+      items.push({
+        id: "engagements",
+        label: "My engagements",
+        count: assignedProjects.length,
+      });
     }
     return items;
-  }, [showContributor, showOperator]);
+  }, [
+    showContributor,
+    showOperator,
+    openProjects.length,
+    operatorProjects.length,
+    assignedProjects.length,
+  ]);
 
   const requestedTab = searchParams.get("tab");
   const activeTab =
