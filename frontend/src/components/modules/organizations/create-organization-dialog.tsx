@@ -124,7 +124,7 @@ export function CreateOrganizationDialog({
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label htmlFor="name" className="mb-1 block text-sm font-semibold text-foreground">
-              Organization Name *
+              Organization Name <span className="text-error">*</span>
             </label>
             <Input
               id="name"
@@ -137,7 +137,7 @@ export function CreateOrganizationDialog({
 
           <div>
             <label htmlFor="slug" className="mb-1 block text-sm font-semibold text-foreground">
-              Slug *
+              Slug <span className="text-error">*</span>
             </label>
             <Input
               id="slug"
@@ -154,7 +154,7 @@ export function CreateOrganizationDialog({
 
           <div>
             <label htmlFor="country" className="mb-1 block text-sm font-semibold text-foreground">
-              Country *
+              Country <span className="text-error">*</span>
             </label>
             <Select
               id="country"

@@ -131,19 +131,27 @@ function ToastViewport({
     >
       {toasts.map((toast) => (
         <div
-          className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-surface-1 px-4 py-3 shadow-xl motion-safe:animate-[fade-in_120ms_ease-out] ${
-            toast.tone === "error" ? "border-error" : "border-accent"
+          className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border px-4 py-3.5 shadow-xl motion-safe:animate-[fade-in_120ms_ease-out] ${
+            toast.tone === "error"
+              ? "border-error/30 bg-error/10 text-error"
+              : "border-success/30 bg-success/10 text-success"
           }`}
           data-tone={toast.tone}
           key={toast.id}
         >
-          <span
-            aria-hidden="true"
-            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-              toast.tone === "error" ? "bg-error" : "bg-accent"
-            }`}
-          />
-          <p className="min-w-0 flex-1 break-words text-sm text-foreground">
+          {toast.tone === "error" ? (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-5 w-5 shrink-0 text-error">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-5 w-5 shrink-0 text-success">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          )}
+          <p className="min-w-0 flex-1 break-words text-sm font-medium text-foreground">
             {toast.message}
           </p>
           <button
