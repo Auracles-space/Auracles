@@ -21,6 +21,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password, hash_token
 from app.main import app
 from app.modules.auth.models import User
+from app.modules.notifications.models import Notification
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,
@@ -49,6 +50,7 @@ async def clean_nda_state() -> AsyncIterator[FakeRedis]:
     async def cleanup() -> None:
         """Delete NDA/org rows between tests."""
         async with async_session_factory() as session:
+            await session.execute(delete(Notification))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgInvitation))

@@ -19,6 +19,7 @@ from pydantic import (
     Field,
     computed_field,
     field_validator,
+    model_validator,
 )
 
 from app.core.config import get_settings
@@ -360,16 +361,26 @@ class OrgOwnershipTransferRequest(BaseModel):
 
 
 class OrgInvitationCreateRequest(BaseModel):
-    """Admin-scoped request to invite one email address into an organization."""
+    """Admin-scoped request to invite one email address or existing user."""
 
-    email: EmailStr
+    email: EmailStr | None = None
+    user_id: UUID | None = None
     role: Literal["admin", "member"]
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
+    def normalize_email(cls, value: EmailStr | None) -> str | None:
         """Normalize invitation emails to lowercase for unique matching."""
+        if value is None:
+            return None
         return str(value).strip().lower()
+
+    @model_validator(mode="after")
+    def exactly_one_target(self) -> OrgInvitationCreateRequest:
+        """Require exactly one invitation target: email or user id."""
+        if (self.email is None) == (self.user_id is None):
+            raise ValueError("Provide exactly one of email or user_id.")
+        return self
 
 
 class OrgInvitationResponse(BaseModel):
@@ -391,6 +402,21 @@ class OrgInvitationsResponse(BaseModel):
     invitations: list[OrgInvitationResponse]
 
 
+class MemberSearchResult(BaseModel):
+    """One masked invite-typeahead suggestion for an organization admin."""
+
+    user_id: UUID
+    display_name: str
+    avatar_url: str | None
+    masked_email: str
+
+
+class MemberSearchResponse(BaseModel):
+    """Capped masked suggestions for the organization invite typeahead."""
+
+    results: list[MemberSearchResult]
+
+
 class OrgInvitationPreviewResponse(BaseModel):
     """Invitation preview: what the invitee sees before accepting."""
 
@@ -398,6 +424,26 @@ class OrgInvitationPreviewResponse(BaseModel):
     org_slug: str
     role: str
     expires_at: datetime
+
+
+class MyInvitationResponse(BaseModel):
+    """A pending invitation addressed to the authenticated user.
+
+    Token-free: the invitee acts on it by id via the received-invitations
+    endpoints, never by the raw token.
+    """
+
+    id: UUID
+    org: OrganizationResponse
+    role: str
+    invited_by_name: str | None
+    created_at: datetime
+
+
+class MyInvitationsResponse(BaseModel):
+    """List wrapper for invitations addressed to the current user."""
+
+    invitations: list[MyInvitationResponse]
 
 
 class OrgTeamCreateRequest(BaseModel):

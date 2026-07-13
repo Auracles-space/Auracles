@@ -44,6 +44,10 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MemberSearchResponse,
+    MemberSearchResult,
+    MyInvitationResponse,
+    MyInvitationsResponse,
     MyOrganizationResponse,
     OrganizationCreateRequest,
     OrganizationResponse,
@@ -64,11 +68,26 @@ from app.workers.tasks.org_notifications import send_org_invitation
 
 INVITATION_TTL_DAYS = 7
 INVITE_RATE_LIMITER = RateLimiter(namespace="org_invite", limit=20, window=3600)
+MEMBER_SEARCH_RATE_LIMITER = RateLimiter(
+    namespace="org_member_search", limit=30, window=60
+)
 _DERIVED_ROLE_MAP = {
     "attestor": "attestor",
     "contributor": "contributor",
     "operator": "operator",
 }
+
+
+def _mask_email(email: str) -> str:
+    """Mask an email for typeahead results without exposing the full address."""
+    local, _, domain = email.partition("@")
+    prefix = local[:1] if len(local) > 1 else ""
+    return f"{prefix}•••@{domain}"
+
+
+def _escape_like_prefix(value: str) -> str:
+    """Escape SQL LIKE metacharacters before prefix matching user input."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def create_organization(
@@ -953,12 +972,25 @@ async def create_invitation(
     org_id = context.org.id
     actor_id = context.user.id
     org_name = context.org.name
+    invited_via_user_id = payload.user_id is not None
     await INVITE_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
     if db.in_transaction():
         await db.rollback()
 
     raw_token = secrets.token_urlsafe(32)
-    email = payload.email
+    if invited_via_user_id:
+        target_user = await db.scalar(select(User).where(User.id == payload.user_id))
+        if target_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        email = target_user.email.lower()
+    else:
+        assert payload.email is not None
+        email = payload.email
+    if db.in_transaction():
+        await db.rollback()
     try:
         async with db.begin():
             existing_member = await db.scalar(
@@ -1009,6 +1041,8 @@ async def create_invitation(
                     dedupe_key=f"org-invitation-received:{invitation.id}",
                 )
             response = OrgInvitationResponse.model_validate(invitation)
+            if invited_via_user_id:
+                response.email = _mask_email(email)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1017,6 +1051,74 @@ async def create_invitation(
 
     send_org_invitation.delay(email, org_name, payload.role, raw_token)
     return response
+
+
+async def search_members(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    context: OrgContext,
+    q: str,
+) -> MemberSearchResponse:
+    """Return masked invite suggestions for one organization admin."""
+    cleaned = q.strip().lower()
+    await MEMBER_SEARCH_RATE_LIMITER.check(
+        cast(RedisCounter, redis),
+        str(context.user.id),
+    )
+    if len(cleaned) < 3:
+        return MemberSearchResponse(results=[])
+
+    pattern = f"{_escape_like_prefix(cleaned)}%"
+    member_subquery = select(OrgMember.user_id).where(
+        OrgMember.org_id == context.org.id
+    )
+    pending_invitation_exists = (
+        select(OrgInvitation.id)
+        .where(
+            OrgInvitation.org_id == context.org.id,
+            OrgInvitation.status == "pending",
+            func.lower(OrgInvitation.email) == func.lower(User.email),
+        )
+        .exists()
+    )
+    rows = (
+        await db.execute(
+            select(User.id, User.display_name, User.avatar_url, User.email)
+            .where(
+                or_(
+                    func.lower(User.email).like(pattern, escape="\\"),
+                    func.lower(User.display_name).like(pattern, escape="\\"),
+                ),
+                User.id.not_in(member_subquery),
+                ~pending_invitation_exists,
+            )
+            .order_by(User.display_name.asc(), User.id.asc())
+            .limit(10)
+        )
+    ).all()
+
+    await write_audit(
+        db=db,
+        actor_id=context.user.id,
+        action="org_member_searched",
+        target_type="organization",
+        target_id=context.org.id,
+        metadata={"query_length": len(cleaned)},
+    )
+    await db.commit()
+
+    return MemberSearchResponse(
+        results=[
+            MemberSearchResult(
+                user_id=user_id,
+                display_name=display_name,
+                avatar_url=avatar_url,
+                masked_email=_mask_email(email),
+            )
+            for user_id, display_name, avatar_url, email in rows
+        ]
+    )
 
 
 async def list_invitations(
@@ -1047,6 +1149,50 @@ async def list_invitations(
         invitations=[
             OrgInvitationResponse.model_validate(invitation)
             for invitation in invitations
+        ]
+    )
+
+
+async def list_received_invitations(
+    db: AsyncSession,
+    *,
+    user: User,
+) -> MyInvitationsResponse:
+    """List live pending invitations addressed to the authenticated user.
+
+    Args:
+        db: Async database session.
+        user: The authenticated invitee.
+
+    Returns:
+        Pending invitations for the user's email, newest first.
+    """
+    rows = (
+        await db.execute(
+            select(OrgInvitation, Organization, User.display_name)
+            .join(Organization, Organization.id == OrgInvitation.org_id)
+            .join(User, User.id == OrgInvitation.invited_by, isouter=True)
+            .where(
+                OrgInvitation.status == "pending",
+                func.lower(OrgInvitation.email) == user.email.lower(),
+                Organization.deactivated_at.is_(None),
+                Organization.suspended_at.is_(None),
+                OrgInvitation.expires_at > datetime.now(UTC),
+            )
+            .order_by(OrgInvitation.created_at.desc(), OrgInvitation.id.desc())
+        )
+    ).all()
+
+    return MyInvitationsResponse(
+        invitations=[
+            MyInvitationResponse(
+                id=invitation.id,
+                org=OrganizationResponse.model_validate(organization),
+                role=invitation.role,
+                invited_by_name=inviter_name,
+                created_at=invitation.created_at,
+            )
+            for invitation, organization, inviter_name in rows
         ]
     )
 
@@ -1147,6 +1293,58 @@ async def _get_live_invitation(
     return invitation, organization
 
 
+async def _get_live_invitation_by_id(
+    db: AsyncSession,
+    *,
+    invitation_id: UUID,
+) -> tuple[OrgInvitation, Organization]:
+    """Resolve a pending invitation and its active org by id.
+
+    Args:
+        db: Async database session.
+        invitation_id: Invitation id from the received-invitations inbox.
+
+    Returns:
+        The pending invitation and its active organization.
+
+    Raises:
+        HTTPException(404): Unknown id or dead org.
+        HTTPException(409): Invitation is not pending.
+        HTTPException(410): Pending invitation is expired.
+    """
+    invitation = await db.scalar(
+        select(OrgInvitation).where(OrgInvitation.id == invitation_id)
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation not found.",
+        )
+    if invitation.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invitation is not available.",
+        )
+    organization = await db.scalar(
+        select(Organization).where(
+            Organization.id == invitation.org_id,
+            Organization.deactivated_at.is_(None),
+            Organization.suspended_at.is_(None),
+        )
+    )
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation is not available.",
+        )
+    if invitation.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Invitation has expired.",
+        )
+    return invitation, organization
+
+
 async def preview_invitation(
     db: AsyncSession,
     *,
@@ -1173,34 +1371,14 @@ async def preview_invitation(
     )
 
 
-async def accept_invitation(
+async def _finalize_accept(
     db: AsyncSession,
     *,
     user: User,
-    token: str,
+    invitation: OrgInvitation,
+    organization: Organization,
 ) -> MyOrganizationResponse:
-    """Accept an invitation and join the organization.
-
-    Args:
-        db: Async database session.
-        user: Authenticated user accepting the invitation.
-        token: Raw invitation token from the URL path.
-
-    Returns:
-        The new membership in the MyOrganizationResponse shape.
-
-    Raises:
-        HTTPException(403): Authenticated user's email does not match the invite.
-        HTTPException(404/409/410): Delegated from _get_live_invitation.
-    """
-    invitation, organization = await _get_live_invitation(db, token=token)
-    if user.email.lower() != invitation.email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This invitation was sent to a different email address.",
-        )
-
-    # Extract all primitive values before rollback/begin expires them
+    """Accept a resolved, email-matched invitation."""
     invitation_id = invitation.id
     invited_role = invitation.role
     invited_by = invitation.invited_by
@@ -1214,7 +1392,6 @@ async def accept_invitation(
 
     try:
         async with db.begin():
-            # Re-load under lock to prevent double-accept races
             locked_invitation = await db.scalar(
                 select(OrgInvitation)
                 .where(OrgInvitation.id == invitation_id)
@@ -1253,8 +1430,6 @@ async def accept_invitation(
                 dedupe_key=f"org-invite-accepted:{invitation_id}",
             )
     except IntegrityError as exc:
-        # Invitee is already a member (e.g. email changed after joining
-        # another way) — surface the unique-membership violation as 409.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You are already a member of this organization.",
@@ -1262,7 +1437,6 @@ async def accept_invitation(
 
     await sync_derived_roles(db, user_id=user_id)
 
-    # Build the MyOrganizationResponse shape
     capabilities: dict[str, str] = {}
     cap_rows = (
         await db.scalars(select(OrgCapability).where(OrgCapability.org_id == org_id))
@@ -1270,7 +1444,6 @@ async def accept_invitation(
     for cap in cap_rows:
         capabilities[cap.capability] = cap.status
 
-    # Reload the organization from the DB after the transaction is complete
     org_obj = await db.scalar(select(Organization).where(Organization.id == org_id))
     if org_obj is None:
         raise HTTPException(
@@ -1282,36 +1455,18 @@ async def accept_invitation(
         org=OrganizationResponse.model_validate(org_obj),
         role=invited_role,
         capabilities=capabilities,
-        # Signal for the frontend to chain straight into NDA signing.
         nda_required=capabilities.get("attestor") in ("pending", "active"),
     )
 
 
-async def decline_invitation(
+async def _finalize_decline(
     db: AsyncSession,
     *,
     user: User,
-    token: str,
+    invitation: OrgInvitation,
+    organization: Organization,
 ) -> None:
-    """Decline an invitation without joining.
-
-    Args:
-        db: Async database session.
-        user: Authenticated user declining the invitation.
-        token: Raw invitation token from the URL path.
-
-    Raises:
-        HTTPException(403): Authenticated user's email does not match the invite.
-        HTTPException(404/409/410): Delegated from _get_live_invitation.
-    """
-    invitation, organization = await _get_live_invitation(db, token=token)
-    if user.email.lower() != invitation.email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This invitation was sent to a different email address.",
-        )
-
-    # Extract all primitive values before rollback/begin expires them
+    """Decline a resolved, email-matched invitation."""
     invitation_id = invitation.id
     invited_by = invitation.invited_by
     org_id = organization.id
@@ -1345,6 +1500,120 @@ async def decline_invitation(
             payload={"org_id": str(org_id)},
             dedupe_key=f"org-invite-declined:{invitation_id}",
         )
+
+
+async def accept_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> MyOrganizationResponse:
+    """Accept an invitation and join the organization.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user accepting the invitation.
+        token: Raw invitation token from the URL path.
+
+    Returns:
+        The new membership in the MyOrganizationResponse shape.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    return await _finalize_accept(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+
+async def decline_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> None:
+    """Decline an invitation without joining.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user declining the invitation.
+        token: Raw invitation token from the URL path.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    await _finalize_decline(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+ 
+
+async def accept_invitation_by_id(
+    db: AsyncSession,
+    *,
+    user: User,
+    invitation_id: UUID,
+) -> MyOrganizationResponse:
+    """Accept an invitation the invitee found in their inbox."""
+    invitation, organization = await _get_live_invitation_by_id(
+        db,
+        invitation_id=invitation_id,
+    )
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    return await _finalize_accept(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+
+async def decline_invitation_by_id(
+    db: AsyncSession,
+    *,
+    user: User,
+    invitation_id: UUID,
+) -> None:
+    """Decline an invitation the invitee found in their inbox."""
+    invitation, organization = await _get_live_invitation_by_id(
+        db,
+        invitation_id=invitation_id,
+    )
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    await _finalize_decline(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
 
 
 async def create_team(

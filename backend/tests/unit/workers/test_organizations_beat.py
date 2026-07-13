@@ -24,6 +24,7 @@ from app.core.database import async_session_factory, engine
 from app.core.security import hash_password, hash_token
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.notifications.models import Notification
 from app.modules.organizations.models import (
     Organization,
     OrgInvitation,
@@ -52,6 +53,7 @@ async def clean_org_state() -> AsyncIterator[None]:
 
     async def cleanup() -> None:
         async with async_session_factory() as session:
+            await session.execute(delete(Notification))
             await session.execute(delete(AuditLog))
             await session.execute(delete(OrgInvitation))
             await session.execute(delete(OrgMember))

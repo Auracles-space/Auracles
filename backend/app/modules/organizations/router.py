@@ -60,6 +60,8 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MemberSearchResponse,
+    MyInvitationsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
     OrgAcceptOfferRequest,
@@ -676,6 +678,28 @@ async def create_invitation(
 
 
 @router.get(
+    "/{org_id}/member-search",
+    response_model=MemberSearchResponse,
+    operation_id="search_org_members",
+    summary="Search existing users to invite",
+    description=(
+        "Admin-only invite typeahead. Prefix-matches existing users by email "
+        "or display name and returns masked emails only."
+    ),
+)
+async def search_org_members(
+    org_id: UUID,
+    q: str,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> MemberSearchResponse:
+    """Return masked invite suggestions for an organization admin."""
+    del org_id
+    return await service.search_members(db=db, redis=redis, context=context, q=q)
+
+
+@router.get(
     "/{org_id}/invitations",
     response_model=OrgInvitationsResponse,
     summary="List pending organization invitations",
@@ -1202,6 +1226,70 @@ invitation_router = APIRouter(
     prefix="/org-invitations",
     tags=["Organization Invitations"],
 )
+
+
+@invitation_router.get(
+    "/received",
+    response_model=MyInvitationsResponse,
+    operation_id="list_received_invitations",
+    summary="List invitations addressed to me",
+    description=(
+        "List live pending invitations sent to the authenticated user's "
+        "email. Token-free; the invitee accepts or declines by invitation id."
+    ),
+)
+async def list_received_invitations(
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> MyInvitationsResponse:
+    """List the authenticated user's pending invitations."""
+    return await service.list_received_invitations(db=db, user=user)
+
+
+@invitation_router.post(
+    "/received/{invitation_id}/accept",
+    response_model=MyOrganizationResponse,
+    operation_id="accept_received_invitation",
+    summary="Accept an invitation from my inbox",
+    description=(
+        "Accept a pending invitation by id. The caller's email must match "
+        "the invitation."
+    ),
+)
+async def accept_received_invitation(
+    invitation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> MyOrganizationResponse:
+    """Accept an invitation addressed to the authenticated user by id."""
+    return await service.accept_invitation_by_id(
+        db=db,
+        user=user,
+        invitation_id=invitation_id,
+    )
+
+
+@invitation_router.post(
+    "/received/{invitation_id}/decline",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="decline_received_invitation",
+    summary="Decline an invitation from my inbox",
+    description=(
+        "Decline a pending invitation by id. The caller's email must match "
+        "the invitation."
+    ),
+)
+async def decline_received_invitation(
+    invitation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> None:
+    """Decline an invitation addressed to the authenticated user by id."""
+    await service.decline_invitation_by_id(
+        db=db,
+        user=user,
+        invitation_id=invitation_id,
+    )
 
 
 @invitation_router.get(

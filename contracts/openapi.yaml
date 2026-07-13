@@ -6930,6 +6930,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/member-search:
+    get:
+      tags:
+      - Organizations
+      summary: Search existing users to invite
+      description: Admin-only invite typeahead. Prefix-matches existing users by email
+        or display name and returns masked emails only.
+      operationId: search_org_members
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Q
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/invitations/{invitation_id}:
     delete:
       tags:
@@ -8194,6 +8231,81 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContributorOrgDirectoryEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/received:
+    get:
+      tags:
+      - Organization Invitations
+      summary: List invitations addressed to me
+      description: List live pending invitations sent to the authenticated user's
+        email. Token-free; the invitee accepts or declines by invitation id.
+      operationId: list_received_invitations
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyInvitationsResponse'
+      security:
+      - HTTPBearer: []
+  /v1/org-invitations/received/{invitation_id}/accept:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Accept an invitation from my inbox
+      description: Accept a pending invitation by id. The caller's email must match
+        the invitation.
+      operationId: accept_received_invitation
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/received/{invitation_id}/decline:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Decline an invitation from my inbox
+      description: Decline a pending invitation by id. The caller's email must match
+        the invitation.
+      operationId: decline_received_invitation
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '204':
+          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -18747,6 +18859,43 @@ components:
       - updated_count
       title: MarkAllReadResponse
       description: Count of notifications changed by a read-all request.
+    MemberSearchResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/MemberSearchResult'
+          type: array
+          title: Results
+      type: object
+      required:
+      - results
+      title: MemberSearchResponse
+      description: Capped masked suggestions for the organization invite typeahead.
+    MemberSearchResult:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        display_name:
+          type: string
+          title: Display Name
+        avatar_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Avatar Url
+        masked_email:
+          type: string
+          title: Masked Email
+      type: object
+      required:
+      - user_id
+      - display_name
+      - avatar_url
+      - masked_email
+      title: MemberSearchResult
+      description: One masked invite-typeahead suggestion for an organization admin.
     MilestoneCreateRequest:
       properties:
         sequence:
@@ -18944,6 +19093,52 @@ components:
       - milestones
       title: MilestonesResponse
       description: List response for Project Milestones.
+    MyInvitationResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        org:
+          $ref: '#/components/schemas/OrganizationResponse'
+        role:
+          type: string
+          title: Role
+        invited_by_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Invited By Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - org
+      - role
+      - invited_by_name
+      - created_at
+      title: MyInvitationResponse
+      description: 'A pending invitation addressed to the authenticated user.
+
+
+        Token-free: the invitee acts on it by id via the received-invitations
+
+        endpoints, never by the raw token.'
+    MyInvitationsResponse:
+      properties:
+        invitations:
+          items:
+            $ref: '#/components/schemas/MyInvitationResponse'
+          type: array
+          title: Invitations
+      type: object
+      required:
+      - invitations
+      title: MyInvitationsResponse
+      description: List wrapper for invitations addressed to the current user.
     MyOrganizationResponse:
       properties:
         org:
@@ -19881,9 +20076,17 @@ components:
     OrgInvitationCreateRequest:
       properties:
         email:
-          type: string
-          format: email
+          anyOf:
+          - type: string
+            format: email
+          - type: 'null'
           title: Email
+        user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: User Id
         role:
           type: string
           enum:
@@ -19892,10 +20095,9 @@ components:
           title: Role
       type: object
       required:
-      - email
       - role
       title: OrgInvitationCreateRequest
-      description: Admin-scoped request to invite one email address into an organization.
+      description: Admin-scoped request to invite one email address or existing user.
     OrgInvitationPreviewResponse:
       properties:
         org_name:

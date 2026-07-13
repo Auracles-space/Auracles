@@ -477,7 +477,12 @@ def send_org_invitation_email(
     role: str,
     token: str,
 ) -> None:
-    """Send an organization invitation email without logging the raw token.
+    """Send an organization invitation email.
+
+    In local/dev (``EMAIL_SEND_ENABLED`` false) the accept link is logged
+    instead of sent, mirroring the password-reset flow so an invite can be
+    completed without an inbox. Production leaves the flag ``True`` and never
+    logs the link.
 
     Args:
         email: Invitation recipient address.
@@ -487,10 +492,9 @@ def send_org_invitation_email(
     """
     settings = get_settings()
     accept_url = f"{_frontend_base_url()}/org-invitations/{quote(token, safe='')}"
-    if not settings.email_send_enabled:
-        logger.bind(module="organizations", action="send_org_invitation_email").info(
-            "email_delivery_disabled"
-        )
+    if _delivery_disabled(
+        "organizations", "send_org_invitation_email", email, link=accept_url
+    ):
         return
     if settings.resend_api_key is None:
         logger.bind(module="organizations", action="send_org_invitation_email").info(
