@@ -170,6 +170,7 @@ def framework_to_response(framework: Framework) -> FrameworkResponse:
             price=framework.price,
             currency=framework.currency,
             license_types=framework.license_types,
+            org_price=framework.org_price,
             commercial_rights=framework.commercial_rights,
             usage_restrictions=framework.usage_restrictions,
         ),
@@ -412,10 +413,17 @@ def _apply_framework_pricing_update(
     framework: Framework,
     pricing: PricingConfig,
 ) -> None:
-    """Apply pricing and licensing fields to a Framework row."""
+    """Apply pricing and licensing fields to a Framework row.
+
+    When the organizational tier is not selected, any persisted org_price is
+    cleared so the framework cannot retain an orphan organizational price.
+    """
     framework.price = pricing.price
     framework.currency = pricing.currency
     framework.license_types = list(pricing.license_types)
+    framework.org_price = (
+        pricing.org_price if "organizational" in pricing.license_types else None
+    )
     framework.commercial_rights = pricing.commercial_rights
     framework.usage_restrictions = pricing.usage_restrictions
 
@@ -512,6 +520,9 @@ async def create_framework(
             price=pricing.price,
             currency=pricing.currency,
             license_types=list(pricing.license_types),
+            org_price=(
+                pricing.org_price if "organizational" in pricing.license_types else None
+            ),
             commercial_rights=pricing.commercial_rights,
             usage_restrictions=pricing.usage_restrictions,
         )

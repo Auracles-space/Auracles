@@ -17,7 +17,9 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 
 from app.main import app
+from app.modules.frameworks.models import Framework
 from app.modules.frameworks.schemas import PricingConfig
+from app.modules.frameworks.service import _apply_framework_pricing_update
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -94,3 +96,46 @@ def test_pricing_config_allows_org_price_below_base() -> None:
         org_price=Decimal("100.00"),
     )
     assert cfg.org_price == Decimal("100.00")
+
+
+def _framework(**kwargs: object) -> Framework:
+    """Build an in-memory Framework with pricing defaults for unit assertions."""
+    defaults: dict[str, object] = {
+        "price": Decimal("250.00"),
+        "currency": "USD",
+        "license_types": ["single_user"],
+        "org_price": None,
+        "commercial_rights": None,
+        "usage_restrictions": None,
+    }
+    defaults.update(kwargs)
+    return Framework(**defaults)
+
+
+def test_apply_pricing_sets_org_price() -> None:
+    """Applying pricing with the org tier persists org_price."""
+    framework = _framework()
+    _apply_framework_pricing_update(
+        framework,
+        PricingConfig(
+            price=Decimal("250.00"),
+            license_types=["single_user", "organizational"],
+            org_price=Decimal("900.00"),
+        ),
+    )
+    assert framework.org_price == Decimal("900.00")
+    assert framework.license_types == ["single_user", "organizational"]
+
+
+def test_apply_pricing_nulls_org_price_when_tier_removed() -> None:
+    """Removing the org tier on edit nulls org_price to keep the orphan invariant."""
+    framework = _framework(
+        license_types=["single_user", "organizational"],
+        org_price=Decimal("900.00"),
+    )
+    _apply_framework_pricing_update(
+        framework,
+        PricingConfig(price=Decimal("250.00"), license_types=["single_user"]),
+    )
+    assert framework.org_price is None
+    assert framework.license_types == ["single_user"]
