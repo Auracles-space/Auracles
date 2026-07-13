@@ -7,13 +7,17 @@ docs/superpowers/specs/2026-07-13-per-org-framework-pricing-design.md.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 
 from app.main import app
+from app.modules.frameworks.schemas import PricingConfig
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -41,3 +45,52 @@ def test_migration_adds_org_price_column_and_downgrades() -> None:
 
     command.upgrade(cfg, "head")
     sync_engine.dispose()
+
+
+def test_pricing_config_accepts_org_tier_with_price() -> None:
+    """Org tier plus an explicit org_price validates."""
+    cfg = PricingConfig(
+        price=Decimal("250.00"),
+        license_types=["single_user", "organizational"],
+        org_price=Decimal("900.00"),
+    )
+    assert cfg.org_price == Decimal("900.00")
+
+
+def test_pricing_config_org_tier_without_price_means_reuse() -> None:
+    """Org tier with org_price omitted is valid and left as None (reuse base)."""
+    cfg = PricingConfig(
+        price=Decimal("250.00"),
+        license_types=["single_user", "organizational"],
+    )
+    assert cfg.org_price is None
+
+
+def test_pricing_config_rejects_orphan_org_price() -> None:
+    """org_price without the organizational tier is a 422-worthy error."""
+    with pytest.raises(ValidationError):
+        PricingConfig(
+            price=Decimal("250.00"),
+            license_types=["single_user"],
+            org_price=Decimal("900.00"),
+        )
+
+
+def test_pricing_config_requires_single_user_tier() -> None:
+    """single_user is mandatory on every framework."""
+    with pytest.raises(ValidationError):
+        PricingConfig(
+            price=Decimal("250.00"),
+            license_types=["organizational"],
+            org_price=Decimal("900.00"),
+        )
+
+
+def test_pricing_config_allows_org_price_below_base() -> None:
+    """A seller may price the org tier below the single-user price."""
+    cfg = PricingConfig(
+        price=Decimal("250.00"),
+        license_types=["single_user", "organizational"],
+        org_price=Decimal("100.00"),
+    )
+    assert cfg.org_price == Decimal("100.00")

@@ -43,6 +43,12 @@ class PricingConfig(BaseModel):
     price: Decimal = Field(gt=0, decimal_places=2, max_digits=12)
     currency: str = Field(default="USD", min_length=3, max_length=3)
     license_types: list[LicenseType] = Field(min_length=1)
+    org_price: Decimal | None = Field(
+        default=None,
+        gt=0,
+        decimal_places=2,
+        max_digits=12,
+    )
     commercial_rights: str | None = None
     usage_restrictions: str | None = None
 
@@ -54,6 +60,17 @@ class PricingConfig(BaseModel):
         if currency != "USD":
             raise ValueError("Only USD Framework pricing is supported.")
         return currency
+
+    @model_validator(mode="after")
+    def validate_org_pricing(self) -> "PricingConfig":
+        """Enforce mandatory base tier and orphan org-price rejection rules."""
+        if "single_user" not in self.license_types:
+            raise ValueError("The single_user license tier is required.")
+        if self.org_price is not None and "organizational" not in self.license_types:
+            raise ValueError(
+                "org_price requires the organizational license tier to be offered."
+            )
+        return self
 
 
 class FrameworkCreate(BaseModel):
