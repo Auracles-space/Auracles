@@ -9,12 +9,7 @@
 import { useEffect } from "react";
 
 import { useToast } from "@/components/ui/toast";
-import {
-  configureBrowserClient,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
-import { listReceivedInvitations } from "@/lib/generated/sdk.gen";
-import type { MyInvitationResponse } from "@/lib/generated/types.gen";
+import { loadReceivedInvitations } from "@/lib/organizations/received-invitations";
 
 const PENDING_INVITES_SEEN_KEY = "pending-invites-seen";
 
@@ -29,18 +24,13 @@ export function PendingInvitationsToast() {
 
     async function loadPendingInvitations(): Promise<void> {
       try {
-        configureBrowserClient();
-        const result = await listReceivedInvitations({
-          headers: getAccessTokenHeaders(),
-        });
+        const invitations = await loadReceivedInvitations();
 
-        if (!mounted || !result.response.ok || !result.data) {
+        if (!mounted || invitations === null) {
           return;
         }
 
-        const invitationIds = result.data.invitations
-          .map((invitation: MyInvitationResponse) => invitation.id)
-          .sort();
+        const invitationIds = invitations.map((invitation) => invitation.id).sort();
         if (invitationIds.length === 0) {
           return;
         }

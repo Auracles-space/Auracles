@@ -6,8 +6,8 @@ import {
   acceptReceivedInvitation,
   declineReceivedInvitation,
   listMyOrganizationsV1OrgsMineGet,
-  listReceivedInvitations,
 } from "@/lib/generated/sdk.gen";
+import { loadReceivedInvitations } from "@/lib/organizations/received-invitations";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -23,7 +23,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   acceptReceivedInvitation: vi.fn(),
   declineReceivedInvitation: vi.fn(),
   listMyOrganizationsV1OrgsMineGet: vi.fn(),
-  listReceivedInvitations: vi.fn(),
+}));
+
+vi.mock("@/lib/organizations/received-invitations", () => ({
+  loadReceivedInvitations: vi.fn(),
+  invalidateReceivedInvitations: vi.fn(),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -45,24 +49,20 @@ describe("OrganizationsPanel", () => {
   });
 
   it("renders a pending invitation and accepts it", async () => {
-    vi.mocked(listReceivedInvitations).mockResolvedValue(
-      ok({
-        invitations: [
-          {
-            created_at: "2026-07-13T00:00:00Z",
-            id: "inv-1",
-            invited_by_name: "Ada",
-            org: {
-              id: "o1",
-              logo_url: null,
-              name: "Meridian",
-              slug: "meridian",
-            },
-            role: "member",
-          },
-        ],
-      }) as never,
-    );
+    vi.mocked(loadReceivedInvitations).mockResolvedValue([
+      {
+        created_at: "2026-07-13T00:00:00Z",
+        id: "inv-1",
+        invited_by_name: "Ada",
+        org: {
+          id: "o1",
+          logo_url: null,
+          name: "Meridian",
+          slug: "meridian",
+        },
+        role: "member",
+      },
+    ] as never);
     vi.mocked(acceptReceivedInvitation).mockResolvedValue(
       ok({ role: "member" }) as never,
     );
@@ -80,9 +80,7 @@ describe("OrganizationsPanel", () => {
   });
 
   it("shows an empty state when there are no invitations", async () => {
-    vi.mocked(listReceivedInvitations).mockResolvedValue(
-      ok({ invitations: [] }) as never,
-    );
+    vi.mocked(loadReceivedInvitations).mockResolvedValue([]);
 
     render(<OrganizationsPanel />);
 

@@ -21,12 +21,15 @@ import {
   acceptReceivedInvitation,
   declineReceivedInvitation,
   listMyOrganizationsV1OrgsMineGet,
-  listReceivedInvitations,
 } from "@/lib/generated/sdk.gen";
 import type {
   MyInvitationResponse,
   MyOrganizationResponse,
 } from "@/lib/generated/types.gen";
+import {
+  invalidateReceivedInvitations,
+  loadReceivedInvitations,
+} from "@/lib/organizations/received-invitations";
 
 /**
  * Render organizations the user belongs to and invitations they can resolve.
@@ -37,17 +40,21 @@ export function OrganizationsPanel() {
   const [loading, setLoading] = useState(true);
   const [organizations, setOrganizations] = useState<MyOrganizationResponse[]>([]);
   const [invitations, setInvitations] = useState<MyInvitationResponse[]>([]);
-  const [pendingInvitationId, setPendingInvitationId] = useState<string | null>(null);
+  // Which invitation + action is in flight, so only the clicked button spins
+  // while both buttons on that row are disabled.
+  const [pending, setPending] = useState<{
+    id: string;
+    action: "accept" | "decline";
+  } | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
     async function loadData(): Promise<void> {
       configureBrowserClient();
-      const headers = getAccessTokenHeaders();
-      const [organizationsResult, invitationsResult] = await Promise.all([
-        listMyOrganizationsV1OrgsMineGet({ headers }),
-        listReceivedInvitations({ headers }),
+      const [organizationsResult, invitationsData] = await Promise.all([
+        listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() }),
+        loadReceivedInvitations(),
       ]);
 
       if (!mounted) {
@@ -58,20 +65,19 @@ export function OrganizationsPanel() {
       if (
         !organizationsResult.response.ok ||
         !organizationsResult.data ||
-        !invitationsResult.response.ok ||
-        !invitationsResult.data
+        invitationsData === null
       ) {
         setError(
-          describeGeneratedError(
-            organizationsResult.error ?? invitationsResult.error,
-          ),
+          organizationsResult.data
+            ? "We could not load your invitations. Try again."
+            : describeGeneratedError(organizationsResult.error),
         );
         return;
       }
 
       setError(null);
       setOrganizations(organizationsResult.data.organizations);
-      setInvitations(invitationsResult.data.invitations);
+      setInvitations(invitationsData);
     }
 
     void loadData();
@@ -81,13 +87,13 @@ export function OrganizationsPanel() {
   }, []);
 
   async function handleAccept(invitation: MyInvitationResponse): Promise<void> {
-    setPendingInvitationId(invitation.id);
+    setPending({ id: invitation.id, action: "accept" });
     configureBrowserClient();
     const result = await acceptReceivedInvitation({
       headers: getAccessTokenHeaders(),
       path: { invitation_id: invitation.id },
     });
-    setPendingInvitationId(null);
+    setPending(null);
 
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
@@ -95,18 +101,18 @@ export function OrganizationsPanel() {
     }
 
     setInvitations((current) => current.filter((item) => item.id !== invitation.id));
-    router.refresh();
+    invalidateReceivedInvitations();
     router.push(`/dashboard/organizations/${invitation.org.id}`);
   }
 
   async function handleDecline(invitationId: string): Promise<void> {
-    setPendingInvitationId(invitationId);
+    setPending({ id: invitationId, action: "decline" });
     configureBrowserClient();
     const result = await declineReceivedInvitation({
       headers: getAccessTokenHeaders(),
       path: { invitation_id: invitationId },
     });
-    setPendingInvitationId(null);
+    setPending(null);
 
     if (!result.response.ok) {
       setError(describeGeneratedError(result.error));
@@ -114,6 +120,7 @@ export function OrganizationsPanel() {
     }
 
     setInvitations((current) => current.filter((item) => item.id !== invitationId));
+    invalidateReceivedInvitations();
   }
 
   return (
@@ -193,7 +200,7 @@ export function OrganizationsPanel() {
         ) : (
           <div className="grid gap-3">
             {invitations.map((invitation) => {
-              const busy = pendingInvitationId === invitation.id;
+              const rowBusy = pending?.id === invitation.id;
               return (
                 <article
                   className="rounded-xl border border-border-default bg-surface-2 p-4"
@@ -217,14 +224,16 @@ export function OrganizationsPanel() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Button
-                        loading={busy}
+                        disabled={rowBusy}
+                        loading={rowBusy && pending?.action === "accept"}
                         onClick={() => void handleAccept(invitation)}
                       >
                         Accept
                       </Button>
                       <Button
                         className="w-full"
-                        loading={busy}
+                        disabled={rowBusy}
+                        loading={rowBusy && pending?.action === "decline"}
                         onClick={() => void handleDecline(invitation.id)}
                         variant="secondary"
                       >

@@ -11,8 +11,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { configureBrowserClient, getAccessTokenHeaders } from "@/lib/auth/form-client";
-import { listReceivedInvitations } from "@/lib/generated/sdk.gen";
+import { loadReceivedInvitations } from "@/lib/organizations/received-invitations";
 
 type SettingsWorkspaceShellProps = {
   children: ReactNode;
@@ -84,18 +83,11 @@ export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps
     let mounted = true;
 
     async function loadPendingInvitationCount(): Promise<void> {
-      try {
-        configureBrowserClient();
-        const result = await listReceivedInvitations({
-          headers: getAccessTokenHeaders(),
-        });
-        if (!mounted || !result.response.ok || !result.data) {
-          return;
-        }
-        setPendingInvitationCount(result.data.invitations.length);
-      } catch {
-        // The settings nav still works without the count badge.
+      const invitations = await loadReceivedInvitations();
+      if (!mounted || invitations === null) {
+        return;
       }
+      setPendingInvitationCount(invitations.length);
     }
 
     void loadPendingInvitationCount();
