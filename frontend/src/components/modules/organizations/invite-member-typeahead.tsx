@@ -226,6 +226,7 @@ export function InviteMemberTypeahead({
                     type="button"
                   >
                     {result.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         alt=""
                         className="h-10 w-10 rounded-xl border border-border-default object-cover"
