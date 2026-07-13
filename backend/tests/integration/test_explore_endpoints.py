@@ -270,7 +270,10 @@ async def test_framework_detail_exposes_org_price(
 ) -> None:
     """The public detail response includes org_price when the org tier is offered."""
     del migrated_database, explore_test_context
-    contributor_id = await create_user("org-price-detail@auracles.space", ["contributor"])
+    contributor_id = await create_user(
+        "org-price-detail@auracles.space",
+        ["contributor"],
+    )
     framework_id, _ = await create_framework(
         contributor_id,
         title="Org Tier Detail Framework",

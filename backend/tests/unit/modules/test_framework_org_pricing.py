@@ -10,9 +10,9 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
-import pytest
 from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect
 
@@ -34,10 +34,15 @@ def _alembic_config() -> Config:
 
 def test_migration_adds_org_price_column_and_downgrades() -> None:
     """org_price exists at head and the migration downgrades one step cleanly."""
-    sync_engine = create_engine(app.state.settings.sync_database_url, pool_pre_ping=True)
+    sync_engine = create_engine(
+        app.state.settings.sync_database_url,
+        pool_pre_ping=True,
+    )
     cfg = _alembic_config()
     command.upgrade(cfg, "head")
-    columns = {column["name"] for column in inspect(sync_engine).get_columns("frameworks")}
+    columns = {
+        column["name"] for column in inspect(sync_engine).get_columns("frameworks")
+    }
     assert "org_price" in columns
 
     command.downgrade(cfg, "2026_07_11_0079")

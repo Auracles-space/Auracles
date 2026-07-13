@@ -62,7 +62,7 @@ class PricingConfig(BaseModel):
         return currency
 
     @model_validator(mode="after")
-    def validate_org_pricing(self) -> "PricingConfig":
+    def validate_org_pricing(self) -> PricingConfig:
         """Enforce mandatory base tier and orphan org-price rejection rules."""
         if "single_user" not in self.license_types:
             raise ValueError("The single_user license tier is required.")

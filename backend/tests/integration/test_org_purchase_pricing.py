@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -23,9 +22,16 @@ from tests.unit.modules.test_org_framework_purchase import (
     _create_org,
     _create_user,
     _patch_payment_intent,
-    migrated_database,
-    org_purchase_state,
 )
+from tests.unit.modules.test_org_framework_purchase import (
+    migrated_database as _migrated_database_fixture,
+)
+from tests.unit.modules.test_org_framework_purchase import (
+    org_purchase_state as _org_purchase_state_fixture,
+)
+
+migrated_database = _migrated_database_fixture
+org_purchase_state = _org_purchase_state_fixture
 
 
 @pytest.fixture
