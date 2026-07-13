@@ -181,21 +181,76 @@ export function PipelineStatusPanel({
           {formatFrameworkStatus(frameworkStatus)}
         </span>
       </div>
-      <div className="grid gap-4">
-        {checks.map((check) => (
-          <div
-            className="rounded-2xl border border-border-default bg-background p-5 transition-all hover:bg-surface-2 shadow-sm"
-            key={check.label}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-semibold text-foreground">{check.label}</p>
-              <span className={badgeClass(check.state)}>{check.value}</span>
+      <div className="relative mt-2 flex flex-col pt-2">
+        {checks.map((check, index) => {
+          const isLast = index === checks.length - 1;
+          const isPass = check.state === "pass";
+          const isPending = check.state === "pending";
+          const isFail = check.state === "fail";
+          const isNotice = check.state === "notice";
+
+          let nodeColor = "bg-surface-2 border-border-default text-foreground-muted";
+          let icon = <span className="h-2 w-2 rounded-full bg-current" />;
+          
+          if (isPass) {
+            nodeColor = "bg-success/10 border-success/30 text-success";
+            icon = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="20 6 9 17 4 12"></polyline></svg>;
+          } else if (isFail) {
+            nodeColor = "bg-error/10 border-error/30 text-error";
+            icon = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+          } else if (isNotice) {
+            nodeColor = "bg-info/10 border-info/30 text-info";
+            icon = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>;
+          } else if (isPending) {
+            nodeColor = "bg-warning/10 border-warning/30 text-warning";
+            icon = <span className="h-2.5 w-2.5 animate-ping rounded-full bg-warning opacity-75" />;
+          }
+
+          const lineColor = isPass ? "bg-success/30" : "bg-border-default/60";
+          const cardClass = isPass 
+            ? "border-success/10 bg-success/5" 
+            : isPending 
+              ? "border-warning/20 bg-warning/5 ring-1 ring-warning/10" 
+              : "border-border-default bg-background hover:bg-surface-2";
+
+          return (
+            <div className="relative flex gap-5 pb-8 last:pb-0" key={check.label}>
+              {/* Timeline graphics */}
+              <div className="relative flex flex-col items-center">
+                {/* Node */}
+                <div
+                  className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 shadow-sm transition-colors duration-500 ${nodeColor}`}
+                >
+                  {isPending && (
+                    <span className="absolute inline-flex h-2.5 w-2.5 rounded-full bg-warning" />
+                  )}
+                  {icon}
+                </div>
+                {/* Connecting Line */}
+                {!isLast && (
+                  <div
+                    className={`absolute bottom-[-2rem] top-10 w-[2px] rounded-full transition-colors duration-500 ${lineColor}`}
+                  />
+                )}
+              </div>
+
+              {/* Content Card */}
+              <div className="flex-1">
+                <div
+                  className={`rounded-2xl border p-5 shadow-sm transition-all duration-300 ${cardClass}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-foreground">{check.label}</p>
+                    <span className={badgeClass(check.state)}>{check.value}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
+                    {check.description}
+                  </p>
+                </div>
+              </div>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
-              {check.description}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {notices.length > 0 ? (
         <div className="mt-5 rounded-2xl border border-info/30 bg-info/10 p-4 shadow-sm">
