@@ -110,6 +110,14 @@ export function ArtifactManifest({
           before purchasing.
         </p>
       ) : null}
+      {canSetPreview &&
+      previewArtifactId === null &&
+      artifacts.some(canBePreview) ? (
+        <p className="mt-2 rounded-xl border border-border-default bg-surface-3 px-3 py-2 text-xs text-foreground-muted">
+          No preview selected. Buyers won&apos;t see a sample file — set one
+          below.
+        </p>
+      ) : null}
       {artifacts.length === 0 ? (
         <p className="mt-3 text-sm text-foreground-muted">
           No artifacts yet. Upload at least one file above.

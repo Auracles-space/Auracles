@@ -141,3 +141,77 @@ describe("ArtifactManifest preview controls", () => {
     expect(screen.queryByText(/^preview$/i)).not.toBeInTheDocument();
   });
 });
+
+describe("ArtifactManifest no-preview nudge", () => {
+  it("nudges when a draft has an eligible file but no preview set", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+      />,
+    );
+
+    expect(
+      screen.getByText(/buyers won't see a sample/i),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the nudge once a preview is set", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId="artifact-1"
+      />,
+    );
+
+    expect(
+      screen.queryByText(/buyers won't see a sample/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when no file is eligible to be a preview yet", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact({ processing_status: "processing" })]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/buyers won't see a sample/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when the framework is not a draft", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove={false}
+        frameworkId="framework-1"
+        frameworkStatus="pipeline_passed"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/buyers won't see a sample/i),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -36,8 +36,8 @@ export function PreviewArtifactBlock({ framework }: PreviewArtifactBlockProps) {
           Open preview artifact
         </a>
       ) : (
-        <p className="mt-4 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
-          Preview artifact is not available.
+        <p className="mt-4 rounded-xl border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground-muted">
+          No public preview — purchase a license to access the files.
         </p>
       )}
       <div className="mt-5 divide-y divide-border-default">
