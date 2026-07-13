@@ -91,18 +91,18 @@ export type FrameworkDraftPrefill = {
 };
 
 type FrameworkFormState = {
-  category: FrameworkCreate["category"];
+  category: FrameworkCreate["category"] | "";
   complexity: string;
   description: string;
-  function: NonNullable<FrameworkCreate["function"]>;
-  industry: NonNullable<FrameworkCreate["industry"]>;
+  function: NonNullable<FrameworkCreate["function"]> | "";
+  industry: NonNullable<FrameworkCreate["industry"]> | "";
   jurisdiction: string;
   licenseTypes: LicenseTypeValue[];
   lifecycleStage: string;
-  orgSize: NonNullable<FrameworkCreate["org_size"]>;
+  orgSize: NonNullable<FrameworkCreate["org_size"]> | "";
   orgPrice: string;
   price: string;
-  sector: NonNullable<FrameworkCreate["sector"]>;
+  sector: NonNullable<FrameworkCreate["sector"]> | "";
   tags: string[];
   title: string;
 };
@@ -119,9 +119,9 @@ const MAX_TAGS = 5;
 function coerceTaxonomyValue<TValue extends string>(
   value: string | null | undefined,
   options: readonly MarketplaceOption<TValue>[],
-): TValue {
+): TValue | "" {
   const match = options.find((option) => option.value === value);
-  return match?.value ?? options[0].value;
+  return match?.value ?? "";
 }
 
 /**
@@ -152,7 +152,7 @@ function coerceOptionalValue(
 function coerceLicenseTypes(
   values: string[] | null | undefined,
 ): LicenseTypeValue[] {
-  const selected = new Set(values ?? ["single_user"]);
+  const selected = new Set(values ?? []);
   return LICENSE_TYPE_OPTIONS.map((option) => option.value).filter((value) =>
     selected.has(value),
   );
@@ -192,7 +192,7 @@ export function FrameworkForm({
       framework?.pricing.org_price != null
         ? String(framework.pricing.org_price)
         : "",
-    price: framework?.pricing.price ?? "250",
+    price: framework?.pricing.price ?? "",
     sector: coerceTaxonomyValue(framework?.sector, SECTOR_OPTIONS),
     tags: (framework?.tags ?? prefill?.tags ?? []).slice(0, MAX_TAGS),
     title: framework?.title ?? prefill?.title ?? "",
@@ -203,14 +203,16 @@ export function FrameworkForm({
     isNonEmpty(form.description),
     isPositiveNumber(form.price),
     form.licenseTypes.length > 0,
+    isNonEmpty(form.category),
+    isNonEmpty(form.function),
+    isNonEmpty(form.industry),
+    isNonEmpty(form.sector),
+    isNonEmpty(form.orgSize),
   );
 
   /** Toggle one license tier in the selection. */
   function toggleLicenseType(value: LicenseTypeValue): void {
     setForm((current) => {
-      if (value === "single_user" && current.licenseTypes.includes(value)) {
-        return current;
-      }
       const selected = new Set(current.licenseTypes);
       if (selected.has(value)) {
         selected.delete(value);
@@ -243,13 +245,13 @@ export function FrameworkForm({
 
     try {
       await onSubmit({
-        category: form.category,
+        category: form.category as FrameworkCreate["category"],
         description: form.description,
-        function: form.function,
-        industry: form.industry,
-        org_size: form.orgSize,
+        function: form.function as NonNullable<FrameworkCreate["function"]>,
+        industry: form.industry as NonNullable<FrameworkCreate["industry"]>,
+        org_size: form.orgSize as NonNullable<FrameworkCreate["org_size"]>,
         pricing,
-        sector: form.sector,
+        sector: form.sector as NonNullable<FrameworkCreate["sector"]>,
         tags: form.tags.map((tag) => tag.trim()).filter(Boolean),
         title: form.title,
         // Optional metadata is only sent when chosen so unset selects stay null.
@@ -305,6 +307,7 @@ export function FrameworkForm({
       <div className="grid gap-6 sm:grid-cols-2">
         <FormSelectInput
           label="Sector"
+          emptyLabel="Select sector"
           onChange={(value) => setForm((current) => ({ ...current, sector: value }))}
           options={SECTOR_OPTIONS}
           required
@@ -312,6 +315,7 @@ export function FrameworkForm({
         />
         <FormSelectInput
           label="Industry"
+          emptyLabel="Select industry"
           onChange={(value) =>
             setForm((current) => ({ ...current, industry: value }))
           }
@@ -321,6 +325,7 @@ export function FrameworkForm({
         />
         <FormSelectInput
           label="Function"
+          emptyLabel="Select function"
           onChange={(value) =>
             setForm((current) => ({ ...current, function: value }))
           }
@@ -330,6 +335,7 @@ export function FrameworkForm({
         />
         <FormSelectInput
           label="Category"
+          emptyLabel="Select category"
           onChange={(value) =>
             setForm((current) => ({ ...current, category: value }))
           }
@@ -339,6 +345,7 @@ export function FrameworkForm({
         />
         <FormSelectInput
           label="Organization Size"
+          emptyLabel="Select organization size"
           onChange={(value) => setForm((current) => ({ ...current, orgSize: value }))}
           options={ORG_SIZE_OPTIONS}
           required
@@ -535,10 +542,11 @@ export function FrameworkForm({
 
 type FormSelectInputProps<TValue extends string> = {
   label: string;
+  emptyLabel?: string;
   onChange: (value: TValue) => void;
   options: readonly MarketplaceOption<TValue>[];
   required?: boolean;
-  value: TValue;
+  value: TValue | "";
 };
 
 /**
@@ -548,6 +556,7 @@ type FormSelectInputProps<TValue extends string> = {
  */
 function FormSelectInput<TValue extends string>({
   label,
+  emptyLabel,
   onChange,
   options,
   required = false,
@@ -576,6 +585,11 @@ function FormSelectInput<TValue extends string>({
           required={required}
           value={value}
         >
+          {emptyLabel && (
+            <option value="" disabled hidden={required}>
+              {emptyLabel}
+            </option>
+          )}
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
