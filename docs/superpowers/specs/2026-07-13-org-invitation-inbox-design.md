@@ -23,9 +23,16 @@ An in-app "Pending invitations" inbox at `/settings/organizations` where an invi
 
 ## Backend
 
+> **Route naming (supersedes the paths below):** the id-based endpoints live under a
+> literal `/received` segment — `GET /org-invitations/received`,
+> `POST /org-invitations/received/{invitation_id}/accept|decline` — and MUST be registered
+> before the existing `/{token}` routes. Reason: `/org-invitations/{invitation_id}/...` is the
+> same path shape as the existing `/org-invitations/{token}/...`, so they collide in Starlette;
+> `GET /mine` would likewise bind as `token="mine"`. See the implementation plan.
+
 ### New endpoint: list my pending invitations
 
-`GET /org-invitations/mine` — authenticated; no token.
+`GET /org-invitations/received` — authenticated; no token.
 
 - Query `OrgInvitation` where `status == "pending"` and `func.lower(email) == user.email.lower()`, joined to the org (must be an active org).
 - Response: list of `MyInvitationResponse`:
@@ -39,8 +46,8 @@ An in-app "Pending invitations" inbox at `/settings/organizations` where an invi
 
 ### New endpoints: accept / decline by id
 
-`POST /org-invitations/{invitation_id}/accept`
-`POST /org-invitations/{invitation_id}/decline`
+`POST /org-invitations/received/{invitation_id}/accept`
+`POST /org-invitations/received/{invitation_id}/decline`
 
 - Authenticated; email-match enforced exactly like the token path: load invitation by id, if `user.email.lower() != invitation.email` → `HTTPException(403)` "This invitation was sent to a different email address."
 - 404 if invitation id unknown or its org is dead.
