@@ -1994,6 +1994,7 @@ export type ExploreFrameworkDetail = {
     reputation?: (ReputationSummary | null);
     owned?: boolean;
     published_at: (string | null);
+    org_price?: (string | null);
     preview_artifact_id: (string | null);
     preview_url: (string | null);
     artifacts: Array<ExploreArtifactSummary>;
@@ -2253,6 +2254,10 @@ export type KycStatusResponse = {
 
 /**
  * Request to reconcile KYC state from a returned Persona inquiry.
+ *
+ * Sent when the user lands back from the hosted flow. ``inquiry_id`` is the
+ * ``inquiry-id`` Persona appends to the return URL; the backend reads that
+ * inquiry's authoritative verdict and applies it (ownership-checked).
  */
 export type KycSyncRequest = {
     inquiry_id: string;
@@ -2307,9 +2312,6 @@ export type LibraryResponse = {
 export type LoginRequest = {
     email: string;
     password: string;
-    /**
-     * When true, the browser refresh and session-hint cookies persist for 30 days. When false (default), they are session-scoped and dropped on browser close.
-     */
     remember_me?: boolean;
 };
 
@@ -2548,7 +2550,12 @@ export type OrganizationResponse = {
 };
 
 /**
- * Partial update of org profile fields (admin+). The logo is set exclusively through the verified upload flow, never here.
+ * Partial update of org profile fields (admin+).
+ *
+ * The logo is intentionally NOT settable here: it is set exclusively through
+ * the verified upload flow (``/logo/upload-url`` + ``/logo/confirm``) so the
+ * persisted ``logo_key`` always points at an object the org actually uploaded
+ * into its own namespace, never an arbitrary caller-supplied key.
  */
 export type OrganizationUpdateRequest = {
     name?: (string | null);
@@ -3455,6 +3462,7 @@ export type PricingConfig_Input = {
     price: (number | string);
     currency?: string;
     license_types: Array<('single_user' | 'team' | 'organizational' | 'enterprise')>;
+    org_price?: (number | string | null);
     commercial_rights?: (string | null);
     usage_restrictions?: (string | null);
 };
@@ -3466,6 +3474,7 @@ export type PricingConfig_Output = {
     price: string;
     currency?: string;
     license_types: Array<('single_user' | 'team' | 'organizational' | 'enterprise')>;
+    org_price?: (string | null);
     commercial_rights?: (string | null);
     usage_restrictions?: (string | null);
 };
@@ -5621,7 +5630,7 @@ export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostDa
 
 export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostResponse = (ArtifactResponse);
 
-export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostError = (unknown | HTTPValidationError);
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostError = (HTTPValidationError);
 
 export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostData = {
     body: BindSourceRequest;
@@ -5633,7 +5642,7 @@ export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSour
 
 export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostResponse = (ArtifactResponse);
 
-export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostError = (unknown | HTTPValidationError);
+export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostError = (HTTPValidationError);
 
 export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteData = {
     path: {
@@ -5644,7 +5653,7 @@ export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSource
 
 export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteResponse = (ArtifactResponse);
 
-export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteError = (unknown | HTTPValidationError);
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteError = (HTTPValidationError);
 
 export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;

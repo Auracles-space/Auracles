@@ -195,6 +195,7 @@ class ExploreArtifactSummary(BaseModel):
 class ExploreFrameworkDetail(ExploreFrameworkCard):
     """Public Framework detail payload."""
 
+    org_price: Decimal | None = None
     preview_artifact_id: UUID | None
     preview_url: str | None
     artifacts: list[ExploreArtifactSummary]

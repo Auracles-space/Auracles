@@ -3433,7 +3433,7 @@ export const approveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDelive
 
 /**
  * Raise a dispute on an organization Project
- * Raise a Milestone dispute on a Project operated by the organization as an owner or admin while the operator capability is active.
+ * Raise a Milestone dispute on a Project operated by the organization as an owner or admin. Available even when the operator capability is suspended: disputing protects escrow already committed on an in-flight milestone, which a suspension must not withhold.
  */
 export const createOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostResponse, CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostError, ThrowOnError>({
@@ -3624,7 +3624,11 @@ export const getKycStatusV1SettingsKycGet = <ThrowOnError extends boolean = fals
 
 /**
  * Sync Kyc From Return
- * Reconcile KYC state from a returned Persona inquiry by reading its verdict directly from Persona; ownership-checked and idempotent.
+ * Reconcile KYC state from a returned Persona inquiry.
+ *
+ * Reads the inquiry's verdict directly from Persona (server-to-server) and
+ * applies it, so a completed check resolves on return without waiting for the
+ * asynchronous webhook. Ownership-checked; idempotent.
  */
 export const syncKycFromReturnV1SettingsKycSyncPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<SyncKycFromReturnV1SettingsKycSyncPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<SyncKycFromReturnV1SettingsKycSyncPostResponse, SyncKycFromReturnV1SettingsKycSyncPostError, ThrowOnError>({

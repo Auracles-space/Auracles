@@ -1261,6 +1261,7 @@ async def get_detail(
     card.owned = has_active_license
     return ExploreFrameworkDetail(
         **card.model_dump(),
+        org_price=framework.org_price,
         preview_artifact_id=framework.preview_artifact_id,
         preview_url=await _preview_url(redis, framework, preview_artifact, client_ip),
         artifacts=[

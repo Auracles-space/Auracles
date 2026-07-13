@@ -4961,18 +4961,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArtifactResponse'
-        '404':
-          description: Framework or artifact not found, or the artifact has no
-            connector source bound.
-        '409':
-          description: reauth_required / source_unavailable / artifact_processing
-            / already_up_to_date, or the framework is no longer editable.
-        '413':
-          description: The re-synced file would exceed the artifact size budget.
-        '415':
-          description: Unsupported effective MIME type.
-        '502':
-          description: The file provider is unavailable.
         '422':
           description: Validation Error
           content:
@@ -4984,10 +4972,10 @@ paths:
       tags:
       - Frameworks
       summary: Attach or repoint an artifact's connector source
-      description: Owner-only, pre-publish-only. Binds the artifact to the given
-        connector file and pulls its bytes into a new artifact version. Works on
-        an unbound (upload) artifact (attach) or an already-bound one (repoint).
-        Returns a new artifact id.
+      description: Owner-only, pre-publish-only. Binds the artifact to the given connector
+        file and pulls its bytes into a new artifact version. Works on an unbound
+        (upload) artifact (attach) or an already-bound one (repoint). Returns a new
+        artifact id.
       operationId: bind_artifact_source_v1_frameworks__framework_id__artifacts__artifact_id__bind_source_post
       security:
       - HTTPBearer: []
@@ -5019,17 +5007,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArtifactResponse'
-        '404':
-          description: Framework or artifact not found, or foreign.
-        '409':
-          description: reauth_required / source_unavailable / artifact_processing,
-            or the framework is no longer editable.
-        '413':
-          description: The bound file would exceed the artifact size budget.
-        '415':
-          description: Unsupported effective MIME type.
-        '502':
-          description: The file provider is unavailable.
         '422':
           description: Validation Error
           content:
@@ -5041,9 +5018,8 @@ paths:
       tags:
       - Frameworks
       summary: Detach an artifact's connector source
-      description: Owner-only, pre-publish-only. Drops the connector binding and
-        keeps the owned bytes as a plain upload. Metadata-only; the artifact id
-        is unchanged.
+      description: Owner-only, pre-publish-only. Drops the connector binding and keeps
+        the owned bytes as a plain upload. Metadata-only; the artifact id is unchanged.
       operationId: detach_artifact_source_v1_frameworks__framework_id__artifacts__artifact_id__source_delete
       security:
       - HTTPBearer: []
@@ -5069,11 +5045,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArtifactResponse'
-        '404':
-          description: Framework or artifact not found, or foreign.
-        '409':
-          description: not_bound — the artifact has no connector source, or the
-            framework is no longer editable.
         '422':
           description: Validation Error
           content:
@@ -10623,8 +10594,10 @@ paths:
       tags:
       - Projects
       summary: Raise a dispute on an organization Project
-      description: Raise a Milestone dispute on a Project operated by the organization
-        as an owner or admin while the operator capability is active.
+      description: 'Raise a Milestone dispute on a Project operated by the organization
+        as an owner or admin. Available even when the operator capability is suspended:
+        disputing protects escrow already committed on an in-flight milestone, which
+        a suspension must not withhold.'
       operationId: create_org_dispute_v1_orgs__org_id__projects__project_id__disputes_post
       security:
       - HTTPBearer: []
@@ -11302,15 +11275,21 @@ paths:
       tags:
       - Settings
       summary: Sync Kyc From Return
-      description: Reconcile KYC state from a returned Persona inquiry by reading its
-        verdict directly from Persona; ownership-checked and idempotent.
+      description: 'Reconcile KYC state from a returned Persona inquiry.
+
+
+        Reads the inquiry''s verdict directly from Persona (server-to-server) and
+
+        applies it, so a completed check resolves on return without waiting for the
+
+        asynchronous webhook. Ownership-checked; idempotent.'
       operationId: sync_kyc_from_return_v1_settings_kyc_sync_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/KycSyncRequest'
+        required: true
       responses:
         '200':
           description: Successful Response
@@ -13687,24 +13666,6 @@ components:
       - file_id
       title: ArtifactFromConnectorRequest
       description: Import a connected-source file as a new draft Artifact.
-    BindSourceRequest:
-      properties:
-        connection_id:
-          type: string
-          format: uuid
-          title: Connection Id
-        file_id:
-          type: string
-          maxLength: 256
-          minLength: 1
-          title: File Id
-      type: object
-      required:
-      - connection_id
-      - file_id
-      title: BindSourceRequest
-      description: Owner request to bind (attach or repoint) an artifact to a connector
-        file.
     ArtifactResponse:
       properties:
         id:
@@ -14680,10 +14641,15 @@ components:
       - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: "Public attestor-organization directory row safe for anonymous\
-        \ browsing.\n\nLists the organization's public matching profile, completed-attestation\n\
-        count, member count, and certification mark. Never exposes individual member\n\
-        identities \u2014 attestation is credited to the organization, not its reviewers."
+      description: 'Public attestor-organization directory row safe for anonymous
+        browsing.
+
+
+        Lists the organization''s public matching profile, completed-attestation
+
+        count, member count, and certification mark. Never exposes individual member
+
+        identities — attestation is credited to the organization, not its reviewers.'
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -14852,6 +14818,24 @@ components:
         \ object will be served at once uploaded.\n    max_size: Maximum allowed size\
         \ in bytes (also enforced by S3).\n    expires_in: Seconds until the presigned\
         \ target expires."
+    BindSourceRequest:
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          title: Connection Id
+        file_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: File Id
+      type: object
+      required:
+      - connection_id
+      - file_id
+      title: BindSourceRequest
+      description: Owner request to bind (attach or repoint) an artifact to a connector
+        file.
     ClarificationCreateRequest:
       properties:
         question:
@@ -17431,6 +17415,12 @@ components:
             format: date-time
           - type: 'null'
           title: Published At
+        org_price:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Org Price
         preview_artifact_id:
           anyOf:
           - type: string
@@ -18494,7 +18484,14 @@ components:
       required:
       - inquiry_id
       title: KycSyncRequest
-      description: Request to reconcile KYC state from a returned Persona inquiry.
+      description: 'Request to reconcile KYC state from a returned Persona inquiry.
+
+
+        Sent when the user lands back from the hosted flow. ``inquiry_id`` is the
+
+        ``inquiry-id`` Persona appends to the return URL; the backend reads that
+
+        inquiry''s authoritative verdict and applies it (ownership-checked).'
     KycVerificationSessionResponse:
       properties:
         hosted_url:
@@ -18640,10 +18637,6 @@ components:
           type: boolean
           title: Remember Me
           default: false
-          description: >-
-            When true, the browser refresh and session-hint cookies persist for
-            30 days. When false (default), they are session-scoped and dropped
-            on browser close.
       type: object
       required:
       - email
@@ -18679,6 +18672,63 @@ components:
       type: object
       title: LoginResponse
       description: Browser login response; refresh token travels via HttpOnly cookie.
+    LogoConfirmRequest:
+      properties:
+        file_key:
+          type: string
+          maxLength: 512
+          minLength: 1
+          title: File Key
+      type: object
+      required:
+      - file_key
+      title: LogoConfirmRequest
+      description: Confirm a completed organization logo upload by its object key.
+    LogoUploadUrlRequest:
+      properties:
+        mime_type:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Mime Type
+        file_size:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: File Size
+      type: object
+      required:
+      - mime_type
+      - file_size
+      title: LogoUploadUrlRequest
+      description: Declared metadata for an organization logo upload target.
+    LogoUploadUrlResponse:
+      properties:
+        upload_url:
+          type: string
+          title: Upload Url
+        fields:
+          additionalProperties:
+            type: string
+          type: object
+          title: Fields
+        file_key:
+          type: string
+          title: File Key
+        max_size:
+          type: integer
+          title: Max Size
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - upload_url
+      - fields
+      - file_key
+      - max_size
+      - expires_in
+      title: LogoUploadUrlResponse
+      description: Presigned POST target for an organization logo upload.
     MarkAllReadResponse:
       properties:
         updated_count:
@@ -20461,10 +20511,12 @@ components:
       - refresh_url
       - return_url
       title: OrgPayoutAccountOnboardRequest
-      description: "Request body for onboarding an organization payout destination.\n\
-        \nThe organization's registered ``country`` is authoritative for provider\n\
-        routing, so \u2014 unlike the individual request \u2014 no country is accepted\
-        \ here."
+      description: 'Request body for onboarding an organization payout destination.
+
+
+        The organization''s registered ``country`` is authoritative for provider
+
+        routing, so — unlike the individual request — no country is accepted here.'
     OrgProposalCreateRequest:
       properties:
         scope:
@@ -20728,65 +20780,16 @@ components:
           title: Description
       type: object
       title: OrganizationUpdateRequest
-      description: Partial update of org profile fields (admin+). The logo is set
-        exclusively through the verified upload flow, never here.
-    LogoUploadUrlRequest:
-      properties:
-        mime_type:
-          type: string
-          maxLength: 128
-          minLength: 1
-          title: Mime Type
-        file_size:
-          type: integer
-          exclusiveMinimum: 0
-          title: File Size
-      type: object
-      required:
-      - mime_type
-      - file_size
-      title: LogoUploadUrlRequest
-      description: Declared metadata for an organization logo upload target.
-    LogoUploadUrlResponse:
-      properties:
-        upload_url:
-          type: string
-          title: Upload Url
-        fields:
-          additionalProperties:
-            type: string
-          type: object
-          title: Fields
-        file_key:
-          type: string
-          title: File Key
-        max_size:
-          type: integer
-          title: Max Size
-        expires_in:
-          type: integer
-          title: Expires In
-      type: object
-      required:
-      - upload_url
-      - fields
-      - file_key
-      - max_size
-      - expires_in
-      title: LogoUploadUrlResponse
-      description: Presigned POST target for an organization logo upload.
-    LogoConfirmRequest:
-      properties:
-        file_key:
-          type: string
-          maxLength: 512
-          minLength: 1
-          title: File Key
-      type: object
-      required:
-      - file_key
-      title: LogoConfirmRequest
-      description: Confirm a completed organization logo upload by its object key.
+      description: 'Partial update of org profile fields (admin+).
+
+
+        The logo is intentionally NOT settable here: it is set exclusively through
+
+        the verified upload flow (``/logo/upload-url`` + ``/logo/confirm``) so the
+
+        persisted ``logo_key`` always points at an object the org actually uploaded
+
+        into its own namespace, never an arbitrary caller-supplied key.'
     PartnerAttestationReportResponse:
       properties:
         id:
@@ -21756,6 +21759,14 @@ components:
           type: array
           minItems: 1
           title: License Types
+        org_price:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+          - type: 'null'
+          title: Org Price
         commercial_rights:
           anyOf:
           - type: string
@@ -21795,6 +21806,12 @@ components:
           type: array
           minItems: 1
           title: License Types
+        org_price:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+          - type: 'null'
+          title: Org Price
         commercial_rights:
           anyOf:
           - type: string
@@ -22530,9 +22547,12 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: "Verified Credential fields safe for public profile display.\n\n\
-        Never exposes evidence keys, verification URL, reference number, or review\n\
-        metadata \u2014 anti-gaming and PII protection."
+      description: 'Verified Credential fields safe for public profile display.
+
+
+        Never exposes evidence keys, verification URL, reference number, or review
+
+        metadata — anti-gaming and PII protection.'
     PublicOrganizationResponse:
       properties:
         slug:

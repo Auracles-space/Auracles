@@ -209,6 +209,8 @@ async def create_framework(
     org_size: str = "mid_market",
     lifecycle_stage: str = "scale",
     price: Decimal = Decimal("499.00"),
+    org_price: Decimal | None = None,
+    license_types: list[str] | None = None,
     thumbnail_key: str | None = None,
     with_preview: bool = False,
 ) -> tuple[UUID, UUID | None]:
@@ -232,8 +234,9 @@ async def create_framework(
             org_size=org_size,
             lifecycle_stage=lifecycle_stage,
             price=price,
+            org_price=org_price,
             currency="USD",
-            license_types=["single_user", "team"],
+            license_types=license_types or ["single_user", "team"],
             thumbnail_key=thumbnail_key,
             published_at=datetime.now(UTC) if status == "published" else None,
         )
@@ -258,6 +261,30 @@ async def create_framework(
             preview_artifact_id = artifact.id
         await session.commit()
         return framework.id, preview_artifact_id
+
+
+async def test_framework_detail_exposes_org_price(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """The public detail response includes org_price when the org tier is offered."""
+    del migrated_database, explore_test_context
+    contributor_id = await create_user("org-price-detail@auracles.space", ["contributor"])
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Org Tier Detail Framework",
+        price=Decimal("250.00"),
+        org_price=Decimal("900.00"),
+        license_types=["single_user", "organizational"],
+    )
+
+    response = await client.get(f"/v1/explore/frameworks/{framework_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["org_price"] == "900.00"
+    assert "organizational" in body["license_types"]
 
 
 async def create_collection(
