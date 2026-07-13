@@ -100,6 +100,16 @@ export default async function ExploreDetailPage({
             <p className="mt-1 font-heading text-4xl font-bold text-foreground">
               {formatMoney(framework.price, framework.currency)}
             </p>
+            {framework.license_types.includes("organizational") ? (
+              <div className="mt-3">
+                <p className="text-sm text-foreground-muted">Organizational</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {framework.org_price != null
+                    ? formatMoney(framework.org_price, framework.currency)
+                    : `${formatMoney(framework.price, framework.currency)} — same as single user`}
+                </p>
+              </div>
+            ) : null}
             
             <div className="mt-6 grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-border-default bg-surface-1 p-3">
