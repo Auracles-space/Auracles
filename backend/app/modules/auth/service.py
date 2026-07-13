@@ -446,6 +446,31 @@ async def register_user(
                         approved_at=None if role == "attestor" else datetime.now(UTC),
                     )
                 )
+            from app.modules.notifications.service import create_notification
+            from app.modules.organizations.models import OrgInvitation
+
+            pending_invites = (
+                await db.scalars(
+                    select(OrgInvitation).where(
+                        func.lower(OrgInvitation.email) == email,
+                        OrgInvitation.status == "pending",
+                    )
+                )
+            ).all()
+            for invite in pending_invites:
+                await create_notification(
+                    db=db,
+                    user_id=user.id,
+                    notification_type="org_invitation_received",
+                    title="You have a pending organization invitation",
+                    body=(
+                        "An organization invited you to join. Review it in "
+                        "your settings."
+                    ),
+                    link="/settings/organizations",
+                    payload={"org_id": str(invite.org_id)},
+                    dedupe_key=f"org-invitation-received:{invite.id}",
+                )
             await write_audit(
                 db=db,
                 actor_id=user.id,
