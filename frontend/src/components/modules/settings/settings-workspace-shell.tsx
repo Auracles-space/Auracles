@@ -9,7 +9,10 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { configureBrowserClient, getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { listReceivedInvitations } from "@/lib/generated/sdk.gen";
 
 type SettingsWorkspaceShellProps = {
   children: ReactNode;
@@ -71,10 +74,53 @@ const settingsLinks: SettingsLink[] = [
 
 export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
+  const [pendingInvitationCount, setPendingInvitationCount] = useState(0);
 
   const visibleLinks = useMemo(() => {
     return settingsLinks;
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPendingInvitationCount(): Promise<void> {
+      try {
+        configureBrowserClient();
+        const result = await listReceivedInvitations({
+          headers: getAccessTokenHeaders(),
+        });
+        if (!mounted || !result.response.ok || !result.data) {
+          return;
+        }
+        setPendingInvitationCount(result.data.invitations.length);
+      } catch {
+        // The settings nav still works without the count badge.
+      }
+    }
+
+    void loadPendingInvitationCount();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  function renderLinkLabel(label: string, href: string): ReactNode {
+    if (href !== "/settings/organizations" || pendingInvitationCount <= 0) {
+      return label;
+    }
+
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span>{label}</span>
+        <span
+          className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-accent/10 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-accent"
+          title={pendingInvitationCount.toLocaleString("en-US")}
+        >
+          {pendingInvitationCount}
+        </span>
+      </span>
+    );
+  }
 
   return (
     <section className="px-4 py-6 text-foreground md:px-8 md:py-8">
@@ -110,7 +156,9 @@ export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps
                   href={link.href}
                   key={link.href}
                 >
-                  <p className="text-sm font-semibold">{link.label}</p>
+                  <p className="text-sm font-semibold">
+                    {renderLinkLabel(link.label, link.href)}
+                  </p>
                   <p className="mt-1 text-xs leading-5 text-foreground-muted">
                     {link.getSummary()}
                   </p>
@@ -136,7 +184,7 @@ export function SettingsWorkspaceShell({ children }: SettingsWorkspaceShellProps
                       : "text-foreground-muted bg-surface-1 border-border-default hover:bg-surface-2",
                   ].join(" ")}
                 >
-                  {link.label}
+                  {renderLinkLabel(link.label, link.href)}
                 </Link>
               );
             })}

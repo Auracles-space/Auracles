@@ -17,6 +17,7 @@ import { NotificationDropdown } from "@/components/modules/layout/notification-d
 import { appLinks, visibleNavLinks } from "@/components/modules/layout/app-navigation";
 import { BrowserSessionGate } from "@/components/modules/layout/browser-session-gate";
 import { HeaderSearch } from "@/components/modules/layout/header-search";
+import { PendingInvitationsToast } from "@/components/modules/settings/pending-invitations-toast";
 
 
 type AuthenticatedAppShellProps = {
@@ -118,6 +119,7 @@ export function AuthenticatedAppShell({
 
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden">
+      <PendingInvitationsToast />
       {/* Sidebar */}
       <aside className="hidden bg-background md:fixed md:inset-y-0 md:left-0 md:flex md:w-[260px] md:flex-col z-10">
         <div className="flex h-[72px] items-center px-6">
