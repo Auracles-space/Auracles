@@ -148,8 +148,11 @@ export function OrganizationMembers() {
       )}
 
       <ul className="divide-y divide-border-default">
-        {members.map((member) => (
-          <li key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 hover:bg-surface-2 transition-colors">
+        {(!members || members.length === 0) ? (
+          <li className="p-6 text-center text-foreground-muted">No members found.</li>
+        ) : (
+          members.map((member) => (
+            <li key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 hover:bg-surface-2 transition-colors">
             <div>
               <p className="font-semibold text-foreground">{member.display_name}</p>
               {member.email && <p className="text-sm text-foreground-muted">{member.email}</p>}
@@ -189,7 +192,7 @@ export function OrganizationMembers() {
               )}
             </div>
           </li>
-        ))}
+        )))}
       </ul>
 
       <ConfirmDialog

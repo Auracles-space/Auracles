@@ -43,7 +43,7 @@ type ToastApi = {
 };
 
 /** How long a toast stays before auto-dismissing, in milliseconds. */
-const AUTO_DISMISS_MS = 4000;
+const AUTO_DISMISS_MS = 4500;
 
 const ToastContext = createContext<ToastApi | null>(null);
 
@@ -68,7 +68,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = nextId.current;
       nextId.current += 1;
       setToasts((current) => [...current, { id, message, tone }]);
-      // Auto-dismiss; the manual control can still remove it earlier.
+      // Auto-dismiss; the manual close button can remove it earlier.
       setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
     },
     [dismiss],
@@ -129,41 +129,105 @@ function ToastViewport({
       className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end"
       role="status"
     >
-      {toasts.map((toast) => (
-        <div
-          className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border px-4 py-3.5 shadow-xl motion-safe:animate-[fade-in_120ms_ease-out] ${
-            toast.tone === "error"
-              ? "border-error/30 bg-error/10 text-error"
-              : "border-success/30 bg-success/10 text-success"
-          }`}
-          data-tone={toast.tone}
-          key={toast.id}
-        >
-          {toast.tone === "error" ? (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-5 w-5 shrink-0 text-error">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-5 w-5 shrink-0 text-success">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-          )}
-          <p className="min-w-0 flex-1 break-words text-sm font-medium text-foreground">
-            {toast.message}
-          </p>
-          <button
-            aria-label="Dismiss notification"
-            className="-mr-1 -mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
-            onClick={() => onDismiss(toast.id)}
-            type="button"
+      {toasts.map((toast) => {
+        const isError = toast.tone === "error";
+        return (
+          <div
+            key={toast.id}
+            data-tone={toast.tone}
+            className={[
+              "pointer-events-auto flex w-full max-w-sm overflow-hidden rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] motion-safe:animate-[fade-in_140ms_ease-out]",
+              // Dark pill regardless of app color scheme — intentionally opaque for legibility
+              isError
+                ? "bg-[#1c0a0a] border border-red-900/50"
+                : "bg-[#061410] border border-emerald-900/40",
+            ].join(" ")}
           >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-      ))}
+            {/* Colored left accent stripe */}
+            <div
+              className={[
+                "w-[3px] shrink-0",
+                isError ? "bg-red-500" : "bg-emerald-500",
+              ].join(" ")}
+            />
+
+            {/* Icon badge */}
+            <div className="flex shrink-0 items-center px-4 py-4">
+              {isError ? (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/15">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 text-red-400"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="15" y1="9" x2="9" y2="15" />
+                    <line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/15">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4 text-emerald-400"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            {/* Text: label + message */}
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-4 pr-2">
+              <p
+                className={[
+                  "text-[10px] font-bold uppercase tracking-widest",
+                  isError ? "text-red-400" : "text-emerald-400",
+                ].join(" ")}
+              >
+                {isError ? "Error" : "Success"}
+              </p>
+              <p className="min-w-0 break-words text-sm font-medium leading-snug text-white/85">
+                {toast.message}
+              </p>
+            </div>
+
+            {/* Dismiss button */}
+            <button
+              aria-label="Dismiss notification"
+              className="inline-flex h-full shrink-0 items-center justify-center px-4 text-white/25 transition-colors hover:text-white/60 focus-visible:outline-none"
+              onClick={() => onDismiss(toast.id)}
+              type="button"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-3.5 w-3.5"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

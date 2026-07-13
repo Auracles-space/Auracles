@@ -30,9 +30,11 @@ export function OrganizationProfile() {
     description: org.description,
   });
 
+  const isDirty = formData.name !== org.name || formData.website !== org.website || formData.description !== org.description;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isAdminOrOwner || isSuspended) return;
+    if (!isAdminOrOwner || isSuspended || !isDirty) return;
 
     setLoading(true);
 
@@ -128,7 +130,7 @@ export function OrganizationProfile() {
 
         {isAdminOrOwner && (
           <div className="mt-2 flex justify-end border-t border-border-default pt-6">
-            <Button type="submit" loading={loading} disabled={isSuspended} className="min-h-12 w-full sm:w-auto rounded-xl shadow-sm text-current">
+            <Button type="submit" loading={loading} disabled={isSuspended || !isDirty} className="min-h-12 w-full sm:w-auto rounded-xl shadow-sm">
               Save Changes
             </Button>
           </div>

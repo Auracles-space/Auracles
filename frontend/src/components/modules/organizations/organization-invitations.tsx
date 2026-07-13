@@ -206,7 +206,7 @@ export function OrganizationInvitations() {
         )}
 
         <ul className="divide-y divide-border-default">
-          {invitations.length === 0 ? (
+          {(!invitations || invitations.length === 0) ? (
             <li className="p-6 text-center text-foreground-muted">No pending invitations.</li>
           ) : (
             invitations.map((invitation) => (
