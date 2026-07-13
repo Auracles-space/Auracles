@@ -7,7 +7,7 @@ Maps to the org-invitation-inbox design.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -22,10 +22,14 @@ from app.core.security import create_access_token
 from app.main import app
 from app.modules.auth.models import User
 from app.modules.notifications.models import Notification
-from app.modules.organizations.models import OrgInvitation, Organization
+from app.modules.organizations.models import Organization, OrgInvitation
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_invitations_endpoints import _mute_email
-from tests.integration.test_organizations_endpoints import auth, create_org, create_user
+from tests.integration.test_organizations_endpoints import (
+    auth,
+    create_org,
+    create_user,
+)
 from tests.support.db_cleanup import clear_identity_state_async
 
 

@@ -49,7 +49,9 @@ def migrated_database() -> Iterator[None]:
 
 
 @pytest.fixture
-async def auth_register_state(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[FakeRedis]:
+async def auth_register_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[FakeRedis]:
     """Reset auth/org rows and replace verification dispatch with a recorder."""
     fake_redis = FakeRedis()
     sent_emails = SentVerificationEmails()
