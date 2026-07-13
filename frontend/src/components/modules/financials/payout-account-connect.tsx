@@ -19,6 +19,8 @@ import {
   onboardPayoutAccount,
 } from "@/lib/generated/sdk.gen";
 import type { PayoutAccountResponse } from "@/lib/generated/types.gen";
+import { Select } from "@/components/ui/select";
+import { STRIPE_CONNECT_COUNTRIES } from "@/lib/marketplace/countries";
 import { formatLabel } from "@/lib/marketplace/format";
 
 /**
@@ -29,6 +31,9 @@ export function PayoutAccountConnect() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // Country the payout account is registered in. Determines which Stripe
+  // onboarding form the contributor gets; defaults to the US.
+  const [country, setCountry] = useState("US");
 
   useEffect(() => {
     async function loadAccounts() {
@@ -55,7 +60,7 @@ export function PayoutAccountConnect() {
     const origin = window.location.origin;
     const result = await onboardPayoutAccount({
       body: {
-        country: "US",
+        country,
         provider: "stripe",
         refresh_url: `${origin}/settings/payout-accounts?refresh=1`,
         return_url: `${origin}/settings/payout-accounts?connected=1`,
@@ -117,6 +122,29 @@ export function PayoutAccountConnect() {
           Bank details stay inside Stripe Connect.
         </p>
         {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
+        <div className="mt-5 max-w-xs">
+          <label
+            htmlFor="payout-country"
+            className="mb-1 block text-sm font-semibold text-foreground"
+          >
+            Country
+          </label>
+          <Select
+            id="payout-country"
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+          >
+            {STRIPE_CONNECT_COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-foreground-muted">
+            Where your payout account is registered. Stripe tailors onboarding
+            to this country.
+          </p>
+        </div>
         <button
           className="mt-5 inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
           disabled={submitting}

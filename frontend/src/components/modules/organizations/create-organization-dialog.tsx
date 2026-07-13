@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { STRIPE_CONNECT_COUNTRIES } from "@/lib/marketplace/countries";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 
 type CreateOrganizationDialogProps = {
@@ -18,16 +19,6 @@ type CreateOrganizationDialogProps = {
   redirectIntent?: "attestor";
 };
 
-// ISO 3166-1 alpha-2 countries (simplified list for example, would ideally be complete)
-const COUNTRIES = [
-  { code: "US", name: "United States" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "CA", name: "Canada" },
-  { code: "AU", name: "Australia" },
-  { code: "NG", name: "Nigeria" },
-  { code: "FR", name: "France" },
-  { code: "DE", name: "Germany" },
-];
 
 export function CreateOrganizationDialog({
   open,
@@ -171,7 +162,7 @@ export function CreateOrganizationDialog({
               value={formData.country}
               onChange={(e) => setFormData({ ...formData, country: e.target.value })}
             >
-              {COUNTRIES.map((c) => (
+              {STRIPE_CONNECT_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name}
                 </option>

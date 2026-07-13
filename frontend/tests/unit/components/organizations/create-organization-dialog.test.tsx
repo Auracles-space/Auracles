@@ -84,4 +84,16 @@ describe("CreateOrganizationDialog redirect intent", () => {
     expect(await screen.findByRole("heading", { name: /^Create Organization$/i })).toBeInTheDocument();
     expect(screen.queryByText(/attesting organization/i)).not.toBeInTheDocument();
   });
+
+  it("offers the full Stripe Connect country list", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    const country = (await screen.findByLabelText(/Country/i)) as HTMLSelectElement;
+    // Beyond the original 7-country stub — e.g. Japan must now be selectable.
+    expect(
+      screen.getByRole("option", { name: "Japan" }),
+    ).toBeInTheDocument();
+    fireEvent.change(country, { target: { value: "JP" } });
+    expect(country.value).toBe("JP");
+  });
 });

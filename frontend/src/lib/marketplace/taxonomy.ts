@@ -127,14 +127,31 @@ export const LIFECYCLE_STAGE_OPTIONS = [
  * canonical list rather than free text (faceted filtering, FR-EXP-004).
  */
 export const JURISDICTION_OPTIONS = [
+  // Cross-border scopes first, then individual jurisdictions alphabetically.
+  // Values are stable slugs matched exactly against stored `jurisdiction`
+  // values — never rename an existing slug, only append.
   { label: "Global", value: "global" },
-  { label: "United States", value: "united_states" },
   { label: "European Union", value: "european_union" },
-  { label: "United Kingdom", value: "united_kingdom" },
-  { label: "Nigeria", value: "nigeria" },
-  { label: "Canada", value: "canada" },
   { label: "Australia", value: "australia" },
+  { label: "Brazil", value: "brazil" },
+  { label: "Canada", value: "canada" },
+  { label: "China", value: "china" },
+  { label: "France", value: "france" },
+  { label: "Germany", value: "germany" },
+  { label: "Hong Kong", value: "hong_kong" },
+  { label: "India", value: "india" },
+  { label: "Ireland", value: "ireland" },
+  { label: "Japan", value: "japan" },
+  { label: "Kenya", value: "kenya" },
+  { label: "Mexico", value: "mexico" },
+  { label: "Netherlands", value: "netherlands" },
+  { label: "New Zealand", value: "new_zealand" },
+  { label: "Nigeria", value: "nigeria" },
+  { label: "Saudi Arabia", value: "saudi_arabia" },
   { label: "Singapore", value: "singapore" },
-  { label: "United Arab Emirates", value: "united_arab_emirates" },
   { label: "South Africa", value: "south_africa" },
+  { label: "Switzerland", value: "switzerland" },
+  { label: "United Arab Emirates", value: "united_arab_emirates" },
+  { label: "United Kingdom", value: "united_kingdom" },
+  { label: "United States", value: "united_states" },
 ] as const satisfies readonly MarketplaceOption[];

@@ -98,4 +98,51 @@ describe("PayoutAccountConnect", () => {
       "https://connect.stripe.test/onboard",
     );
   });
+
+  it("onboards with the selected country instead of a hardcoded US", async () => {
+    vi.mocked(listPayoutAccounts).mockResolvedValue({
+      data: { payout_accounts: [] },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(onboardPayoutAccount).mockResolvedValue({
+      data: {
+        onboarding_url: "https://connect.stripe.test/onboard",
+        payout_account: {
+          account_type: "express",
+          created_at: "2026-06-09T00:00:00Z",
+          id: "00000000-0000-4000-8000-000000000022",
+          is_default: true,
+          provider: "stripe",
+          provider_account_ref: "****gb",
+          verified_at: null,
+        },
+        provider: "stripe",
+      },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<PayoutAccountConnect />);
+
+    const country = (await screen.findByLabelText(
+      /Country/i,
+    )) as HTMLSelectElement;
+    fireEvent.change(country, { target: { value: "GB" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect Stripe" }));
+
+    await waitFor(() => {
+      expect(onboardPayoutAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            country: "GB",
+            provider: "stripe",
+          }),
+        }),
+      );
+    });
+  });
 });

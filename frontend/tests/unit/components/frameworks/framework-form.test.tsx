@@ -130,6 +130,24 @@ describe("FrameworkForm", () => {
     });
   });
 
+  it("offers expanded jurisdiction options beyond the original stub", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fillRequiredFields(fireEvent, screen);
+    // Japan was not in the original jurisdiction list — must now be selectable.
+    fireEvent.change(screen.getByLabelText(/jurisdiction/i), {
+      target: { value: "japan" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ jurisdiction: "japan" }),
+      );
+    });
+  });
+
   it("omits optional complexity, lifecycle, and jurisdiction when left unset", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
