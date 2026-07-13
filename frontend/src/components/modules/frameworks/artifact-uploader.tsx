@@ -232,16 +232,44 @@ export function ArtifactUploader({
           type="file"
         />
       </label>
-      <div className="mt-4 flex flex-col gap-2">
-        <Button
-          variant="secondary"
-          onClick={() => setShowDrivePicker(!showDrivePicker)}
-          className="w-full sm:w-auto self-start"
-        >
-          {showDrivePicker ? "Cancel Import" : "Import from Google Drive"}
-        </Button>
-        {showDrivePicker && (
-          <div className="mt-2">
+      {!showDrivePicker && (
+        <>
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border-default" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase font-semibold tracking-wider">
+              <span className="bg-surface-2 px-3 text-foreground-muted">Or</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowDrivePicker(true)}
+            className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-border-strong bg-background px-4 text-sm font-semibold text-foreground shadow-sm outline-none transition-all hover:bg-surface-3 hover:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 87.3 78" className="h-5 w-5 shrink-0">
+              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+            </svg>
+            Import from Google Drive
+          </button>
+        </>
+      )}
+
+      {showDrivePicker && (
+        <div className="mt-5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="mb-3 flex items-center justify-between rounded-xl bg-surface-3 p-3 pl-4 border border-border-default">
+            <span className="text-sm font-semibold text-foreground">Importing from Google Drive</span>
+            <Button variant="secondary" onClick={() => setShowDrivePicker(false)} className="min-h-8 h-8 px-3 text-xs">
+              Cancel
+            </Button>
+          </div>
+          <div className="rounded-xl border border-border-default bg-background p-1 shadow-sm">
             <GoogleDrivePicker
               frameworkId={frameworkId}
               onArtifactCreated={(artifact) => {
@@ -251,8 +279,8 @@ export function ArtifactUploader({
               }}
             />
           </div>
-        )}
-      </div>
+        </div>
+      )}
       {message ? <p className="mt-3 text-sm text-foreground-muted">{message}</p> : null}
     </section>
   );
