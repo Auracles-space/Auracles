@@ -17,16 +17,20 @@ describe("eligibleOrgBuyers", () => {
       org("b", "member", "active"),
       org("c", "owner", "suspended"),
       org("d", "owner", "active"),
-    ]);
+    ], true);
     expect(result.map((o) => (o.kind === "org" ? o.orgId : "self"))).toEqual(["a", "d"]);
+  });
+
+  it("returns no org buyers when the framework does not offer the org tier", () => {
+    expect(eligibleOrgBuyers([org("a", "admin", "active")], false)).toHaveLength(0);
   });
 });
 
 describe("buyerOptions", () => {
   it("prepends a self option", () => {
-    const result = buyerOptions([org("a", "admin", "active")]);
+    const result = buyerOptions([org("a", "admin", "active")], false);
     expect(result[0]).toEqual({ kind: "self", label: "Myself" });
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
   });
 });
 

@@ -12,16 +12,25 @@ export type BuyerOption =
   | { kind: "self"; label: string }
   | { kind: "org"; orgId: string; label: string };
 
-/** Orgs the caller may purchase on behalf of (admin/owner + active operator capability). */
-export function eligibleOrgBuyers(orgs: MyOrganizationResponse[]): BuyerOption[] {
+/** Orgs the caller may purchase on behalf of when the framework offers an org tier. */
+export function eligibleOrgBuyers(
+  orgs: MyOrganizationResponse[],
+  offersOrgTier: boolean,
+): BuyerOption[] {
+  if (!offersOrgTier) {
+    return [];
+  }
   return orgs
     .filter((o) => (o.role === "admin" || o.role === "owner") && o.capabilities?.operator === "active")
     .map((o) => ({ kind: "org", orgId: o.org.id, label: o.org.name }));
 }
 
 /** Self option followed by eligible org buyers. */
-export function buyerOptions(orgs: MyOrganizationResponse[]): BuyerOption[] {
-  return [{ kind: "self", label: "Myself" }, ...eligibleOrgBuyers(orgs)];
+export function buyerOptions(
+  orgs: MyOrganizationResponse[],
+  offersOrgTier: boolean,
+): BuyerOption[] {
+  return [{ kind: "self", label: "Myself" }, ...eligibleOrgBuyers(orgs, offersOrgTier)];
 }
 
 type StartPurchaseArgs = {

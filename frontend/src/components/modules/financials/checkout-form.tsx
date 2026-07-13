@@ -55,35 +55,36 @@ const licenseDescriptions: Record<PurchaseRequest["license_type"], string> = {
  * @param props - Framework detail from the marketplace API.
  */
 export function CheckoutForm({ framework }: CheckoutFormProps) {
-  const availableLicenses = framework.license_types.filter(
-    (licenseType): licenseType is PurchaseRequest["license_type"] =>
-      licenseType === "single_user" ||
-      licenseType === "team" ||
-      licenseType === "organizational",
-  );
-  const [licenseType, setLicenseType] = useState<PurchaseRequest["license_type"]>(
-    availableLicenses[0] ?? "single_user",
-  );
   const [session, setSession] = useState<CheckoutSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const stripePromise = useMemo(() => getStripeClient(), []);
-  
+  const offersOrgTier = framework.license_types.includes("organizational");
   const [buyers, setBuyers] = useState<BuyerOption[]>([{ kind: "self", label: "Myself" }]);
-  const [buyer, setBuyer] = useState<BuyerOption>(buyers[0]);
+  const [buyer, setBuyer] = useState<BuyerOption>({ kind: "self", label: "Myself" });
+  const licenseType: PurchaseRequest["license_type"] =
+    buyer.kind === "org" ? "organizational" : "single_user";
+  const displayPrice =
+    buyer.kind === "org" && framework.org_price != null
+      ? framework.org_price
+      : framework.price;
+  const priceHint =
+    buyer.kind === "org" && framework.org_price == null
+      ? "Same as single user"
+      : null;
 
   useEffect(() => {
     async function fetchBuyers() {
       configureBrowserClient();
       const result = await listMyOrganizationsV1OrgsMineGet({ headers: getAccessTokenHeaders() });
       if (result.response.ok && result.data) {
-        const opts = buyerOptions(result.data.organizations);
+        const opts = buyerOptions(result.data.organizations, offersOrgTier);
         setBuyers(opts);
         setBuyer(opts[0]);
       }
     }
     void fetchBuyers();
-  }, []);
+  }, [offersOrgTier]);
 
   async function handleStartCheckout() {
     setError(null);
@@ -118,7 +119,7 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
           License this Framework
         </h2>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">
-          Select a license, then complete payment through Stripe-hosted fields.
+          Choose who is purchasing, then complete payment through Stripe-hosted fields.
         </p>
       </div>
 
@@ -126,50 +127,35 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
         <BuyerContextSelector options={buyers} value={buyer} onChange={setBuyer} />
       ) : null}
 
-      <fieldset className="mt-6 grid gap-3" disabled={submitting || Boolean(session)}>
-        <legend className="sr-only">License type</legend>
-        {availableLicenses.map((option) => (
-          <label
-            className={[
-              "block cursor-pointer rounded-xl border p-5 transition-all duration-200",
-              licenseType === option
-                ? "border-accent bg-accent/5 ring-1 ring-accent shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
-                : "border-border-default bg-surface-1 hover:border-border-strong hover:bg-surface-2",
-            ].join(" ")}
-            key={option}
-          >
-            <input
-              aria-label={formatLabel(option)}
-              checked={licenseType === option}
-              className="sr-only"
-              name="license_type"
-              onChange={() => setLicenseType(option)}
-              type="radio"
-              value={option}
-            />
-            <span className="flex items-start justify-between gap-4">
-              <span>
-                <span className="block text-sm font-semibold text-foreground">
-                  {formatLabel(option)}
-                </span>
-                <span className="mt-1 block text-sm leading-6 text-foreground-muted">
-                  {licenseDescriptions[option]}
-                </span>
-              </span>
-              <span className="text-sm font-semibold text-foreground">
-                {formatMoney(framework.price, framework.currency)}
-              </span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      <div className="mt-6 rounded-xl border border-border-default bg-surface-2 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {formatLabel(licenseType)}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-foreground-muted">
+              {licenseDescriptions[licenseType]}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-semibold text-foreground">
+              {formatMoney(displayPrice, framework.currency)}
+            </p>
+            {priceHint ? (
+              <p className="mt-1 text-xs uppercase tracking-[0.05em] text-foreground-muted">
+                {priceHint}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
 
       {!session ? (
         <button
           className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={submitting || availableLicenses.length === 0}
+          disabled={submitting}
           onClick={handleStartCheckout}
           type="button"
         >

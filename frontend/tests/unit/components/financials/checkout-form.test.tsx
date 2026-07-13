@@ -149,7 +149,7 @@ describe("CheckoutForm", () => {
     });
   });
 
-  it("starts checkout for the selected self-serve license", async () => {
+  it("starts checkout for the default self purchase license", async () => {
     vi.mocked(createFrameworkPurchase).mockResolvedValue({
       data: {
         client_secret: "pi_secret_checkout",
@@ -163,13 +163,12 @@ describe("CheckoutForm", () => {
 
     render(<CheckoutForm framework={framework} />);
 
-    fireEvent.click(screen.getByLabelText("Team"));
     fireEvent.click(screen.getByRole("button", { name: "Start checkout" }));
 
     await waitFor(() => {
       expect(createFrameworkPurchase).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { license_type: "team" },
+          body: { license_type: "single_user" },
           path: { framework_id: framework.id },
         }),
       );
