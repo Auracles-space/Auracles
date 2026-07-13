@@ -19,6 +19,7 @@ from pydantic import (
     Field,
     computed_field,
     field_validator,
+    model_validator,
 )
 
 from app.core.config import get_settings
@@ -360,16 +361,26 @@ class OrgOwnershipTransferRequest(BaseModel):
 
 
 class OrgInvitationCreateRequest(BaseModel):
-    """Admin-scoped request to invite one email address into an organization."""
+    """Admin-scoped request to invite one email address or existing user."""
 
-    email: EmailStr
+    email: EmailStr | None = None
+    user_id: UUID | None = None
     role: Literal["admin", "member"]
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
+    def normalize_email(cls, value: EmailStr | None) -> str | None:
         """Normalize invitation emails to lowercase for unique matching."""
+        if value is None:
+            return None
         return str(value).strip().lower()
+
+    @model_validator(mode="after")
+    def exactly_one_target(self) -> OrgInvitationCreateRequest:
+        """Require exactly one invitation target: email or user id."""
+        if (self.email is None) == (self.user_id is None):
+            raise ValueError("Provide exactly one of email or user_id.")
+        return self
 
 
 class OrgInvitationResponse(BaseModel):

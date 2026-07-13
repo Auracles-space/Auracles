@@ -20076,9 +20076,17 @@ components:
     OrgInvitationCreateRequest:
       properties:
         email:
-          type: string
-          format: email
+          anyOf:
+          - type: string
+            format: email
+          - type: 'null'
           title: Email
+        user_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: User Id
         role:
           type: string
           enum:
@@ -20087,10 +20095,9 @@ components:
           title: Role
       type: object
       required:
-      - email
       - role
       title: OrgInvitationCreateRequest
-      description: Admin-scoped request to invite one email address into an organization.
+      description: Admin-scoped request to invite one email address or existing user.
     OrgInvitationPreviewResponse:
       properties:
         org_name:

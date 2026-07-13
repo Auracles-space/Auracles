@@ -972,12 +972,25 @@ async def create_invitation(
     org_id = context.org.id
     actor_id = context.user.id
     org_name = context.org.name
+    invited_via_user_id = payload.user_id is not None
     await INVITE_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
     if db.in_transaction():
         await db.rollback()
 
     raw_token = secrets.token_urlsafe(32)
-    email = payload.email
+    if invited_via_user_id:
+        target_user = await db.scalar(select(User).where(User.id == payload.user_id))
+        if target_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        email = target_user.email.lower()
+    else:
+        assert payload.email is not None
+        email = payload.email
+    if db.in_transaction():
+        await db.rollback()
     try:
         async with db.begin():
             existing_member = await db.scalar(
@@ -1028,6 +1041,8 @@ async def create_invitation(
                     dedupe_key=f"org-invitation-received:{invitation.id}",
                 )
             response = OrgInvitationResponse.model_validate(invitation)
+            if invited_via_user_id:
+                response.email = _mask_email(email)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

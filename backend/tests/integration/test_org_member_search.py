@@ -114,6 +114,17 @@ async def _create_pending_invitation(
             )
 
 
+def _mute_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Disable invitation email dispatch for tests that inspect only API behavior."""
+    from app.workers.tasks import org_notifications
+
+    monkeypatch.setattr(
+        org_notifications.send_org_invitation,
+        "delay",
+        lambda *args: None,
+    )
+
+
 async def test_search_returns_masked_matches_for_admin(
     client: AsyncClient,
     migrated_database: None,
@@ -258,3 +269,154 @@ async def test_search_rate_limit_returns_429(
     )
 
     assert response.status_code == 429
+
+
+async def test_invite_by_user_id_masks_email(
+    client: AsyncClient,
+    migrated_database: None,
+    member_search_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inviting a searched member by user id returns only the masked email."""
+    del migrated_database, member_search_test_context
+    _mute_email(monkeypatch)
+    owner_id = await create_user("member-search-invite-id-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "member-search-invite-id")
+    await _create_user_with_profile(
+        email="joanna@example.com",
+        display_name="Joanna Reed",
+    )
+    search = await client.get(
+        f"/v1/orgs/{org['id']}/member-search",
+        params={"q": "joa"},
+        headers=auth(owner_token),
+    )
+    user_id = search.json()["results"][0]["user_id"]
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"user_id": user_id, "role": "member"},
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "j•••@example.com"
+
+
+async def test_invite_requires_exactly_one_target(
+    client: AsyncClient,
+    migrated_database: None,
+    member_search_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invite creation rejects both-target and no-target payloads."""
+    del migrated_database, member_search_test_context
+    _mute_email(monkeypatch)
+    owner_id = await create_user("member-search-invite-target-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "member-search-invite-target")
+
+    both = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={
+            "email": "outside@example.com",
+            "user_id": "00000000-0000-0000-0000-000000000000",
+            "role": "member",
+        },
+        headers=auth(owner_token),
+    )
+    neither = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"role": "member"},
+        headers=auth(owner_token),
+    )
+
+    assert both.status_code == 422
+    assert neither.status_code == 422
+
+
+async def test_invite_unknown_user_id_is_404(
+    client: AsyncClient,
+    migrated_database: None,
+    member_search_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invite creation returns 404 when the selected user no longer exists."""
+    del migrated_database, member_search_test_context
+    _mute_email(monkeypatch)
+    owner_id = await create_user("member-search-invite-missing-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "member-search-invite-missing")
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={
+            "user_id": "00000000-0000-0000-0000-000000000000",
+            "role": "member",
+        },
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_invite_by_email_still_returns_full_email(
+    client: AsyncClient,
+    migrated_database: None,
+    member_search_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The manual outsider-email path still returns the full email unchanged."""
+    del migrated_database, member_search_test_context
+    _mute_email(monkeypatch)
+    owner_id = await create_user("member-search-invite-email-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "member-search-invite-email")
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"email": "outsider@example.com", "role": "member"},
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "outsider@example.com"
+
+
+async def test_invite_by_user_id_duplicate_pending_is_409(
+    client: AsyncClient,
+    migrated_database: None,
+    member_search_test_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second pending invite for the same selected user returns 409."""
+    del migrated_database, member_search_test_context
+    _mute_email(monkeypatch)
+    owner_id = await create_user("member-search-invite-dup-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "member-search-invite-dup")
+    await _create_user_with_profile(
+        email="joanna@example.com",
+        display_name="Joanna Reed",
+    )
+    search = await client.get(
+        f"/v1/orgs/{org['id']}/member-search",
+        params={"q": "joa"},
+        headers=auth(owner_token),
+    )
+    user_id = search.json()["results"][0]["user_id"]
+
+    first = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"user_id": user_id, "role": "member"},
+        headers=auth(owner_token),
+    )
+    second = await client.post(
+        f"/v1/orgs/{org['id']}/invitations",
+        json={"user_id": user_id, "role": "member"},
+        headers=auth(owner_token),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 409
