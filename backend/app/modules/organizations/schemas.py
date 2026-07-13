@@ -391,6 +391,21 @@ class OrgInvitationsResponse(BaseModel):
     invitations: list[OrgInvitationResponse]
 
 
+class MemberSearchResult(BaseModel):
+    """One masked invite-typeahead suggestion for an organization admin."""
+
+    user_id: UUID
+    display_name: str
+    avatar_url: str | None
+    masked_email: str
+
+
+class MemberSearchResponse(BaseModel):
+    """Capped masked suggestions for the organization invite typeahead."""
+
+    results: list[MemberSearchResult]
+
+
 class OrgInvitationPreviewResponse(BaseModel):
     """Invitation preview: what the invitee sees before accepting."""
 

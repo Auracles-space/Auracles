@@ -44,6 +44,8 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MemberSearchResponse,
+    MemberSearchResult,
     MyInvitationResponse,
     MyInvitationsResponse,
     MyOrganizationResponse,
@@ -66,11 +68,26 @@ from app.workers.tasks.org_notifications import send_org_invitation
 
 INVITATION_TTL_DAYS = 7
 INVITE_RATE_LIMITER = RateLimiter(namespace="org_invite", limit=20, window=3600)
+MEMBER_SEARCH_RATE_LIMITER = RateLimiter(
+    namespace="org_member_search", limit=30, window=60
+)
 _DERIVED_ROLE_MAP = {
     "attestor": "attestor",
     "contributor": "contributor",
     "operator": "operator",
 }
+
+
+def _mask_email(email: str) -> str:
+    """Mask an email for typeahead results without exposing the full address."""
+    local, _, domain = email.partition("@")
+    prefix = local[:1] if len(local) > 1 else ""
+    return f"{prefix}•••@{domain}"
+
+
+def _escape_like_prefix(value: str) -> str:
+    """Escape SQL LIKE metacharacters before prefix matching user input."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def create_organization(
@@ -1019,6 +1036,74 @@ async def create_invitation(
 
     send_org_invitation.delay(email, org_name, payload.role, raw_token)
     return response
+
+
+async def search_members(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    context: OrgContext,
+    q: str,
+) -> MemberSearchResponse:
+    """Return masked invite suggestions for one organization admin."""
+    cleaned = q.strip().lower()
+    await MEMBER_SEARCH_RATE_LIMITER.check(
+        cast(RedisCounter, redis),
+        str(context.user.id),
+    )
+    if len(cleaned) < 3:
+        return MemberSearchResponse(results=[])
+
+    pattern = f"{_escape_like_prefix(cleaned)}%"
+    member_subquery = select(OrgMember.user_id).where(
+        OrgMember.org_id == context.org.id
+    )
+    pending_invitation_exists = (
+        select(OrgInvitation.id)
+        .where(
+            OrgInvitation.org_id == context.org.id,
+            OrgInvitation.status == "pending",
+            func.lower(OrgInvitation.email) == func.lower(User.email),
+        )
+        .exists()
+    )
+    rows = (
+        await db.execute(
+            select(User.id, User.display_name, User.avatar_url, User.email)
+            .where(
+                or_(
+                    func.lower(User.email).like(pattern, escape="\\"),
+                    func.lower(User.display_name).like(pattern, escape="\\"),
+                ),
+                User.id.not_in(member_subquery),
+                ~pending_invitation_exists,
+            )
+            .order_by(User.display_name.asc(), User.id.asc())
+            .limit(10)
+        )
+    ).all()
+
+    await write_audit(
+        db=db,
+        actor_id=context.user.id,
+        action="org_member_searched",
+        target_type="organization",
+        target_id=context.org.id,
+        metadata={"query_length": len(cleaned)},
+    )
+    await db.commit()
+
+    return MemberSearchResponse(
+        results=[
+            MemberSearchResult(
+                user_id=user_id,
+                display_name=display_name,
+                avatar_url=avatar_url,
+                masked_email=_mask_email(email),
+            )
+            for user_id, display_name, avatar_url, email in rows
+        ]
+    )
 
 
 async def list_invitations(

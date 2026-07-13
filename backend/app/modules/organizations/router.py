@@ -60,6 +60,7 @@ from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
+    MemberSearchResponse,
     MyInvitationsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
@@ -674,6 +675,28 @@ async def create_invitation(
         context=context,
         payload=payload,
     )
+
+
+@router.get(
+    "/{org_id}/member-search",
+    response_model=MemberSearchResponse,
+    operation_id="search_org_members",
+    summary="Search existing users to invite",
+    description=(
+        "Admin-only invite typeahead. Prefix-matches existing users by email "
+        "or display name and returns masked emails only."
+    ),
+)
+async def search_org_members(
+    org_id: UUID,
+    q: str,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> MemberSearchResponse:
+    """Return masked invite suggestions for an organization admin."""
+    del org_id
+    return await service.search_members(db=db, redis=redis, context=context, q=q)
 
 
 @router.get(

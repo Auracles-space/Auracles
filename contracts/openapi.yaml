@@ -6930,6 +6930,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/member-search:
+    get:
+      tags:
+      - Organizations
+      summary: Search existing users to invite
+      description: Admin-only invite typeahead. Prefix-matches existing users by email
+        or display name and returns masked emails only.
+      operationId: search_org_members
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Q
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/invitations/{invitation_id}:
     delete:
       tags:
@@ -18822,6 +18859,43 @@ components:
       - updated_count
       title: MarkAllReadResponse
       description: Count of notifications changed by a read-all request.
+    MemberSearchResponse:
+      properties:
+        results:
+          items:
+            $ref: '#/components/schemas/MemberSearchResult'
+          type: array
+          title: Results
+      type: object
+      required:
+      - results
+      title: MemberSearchResponse
+      description: Capped masked suggestions for the organization invite typeahead.
+    MemberSearchResult:
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        display_name:
+          type: string
+          title: Display Name
+        avatar_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Avatar Url
+        masked_email:
+          type: string
+          title: Masked Email
+      type: object
+      required:
+      - user_id
+      - display_name
+      - avatar_url
+      - masked_email
+      title: MemberSearchResult
+      description: One masked invite-typeahead suggestion for an organization admin.
     MilestoneCreateRequest:
       properties:
         sequence:
