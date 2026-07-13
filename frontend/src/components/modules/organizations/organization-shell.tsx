@@ -122,13 +122,16 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   return (
     <OrganizationProvider orgId={orgId} role={role} org={myOrg.org} capabilities={myOrg.capabilities}>
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">
-        <div className="mb-6">
-          <h1 className="font-heading text-3xl font-bold text-foreground">
-            {myOrg.org.name}
-          </h1>
-          <p className="text-sm text-foreground-muted">
-            Manage organization settings and members. Your role: <span className="font-semibold text-foreground capitalize">{role}</span>
-          </p>
+        <div className="relative mb-8 overflow-hidden rounded-3xl border border-border-default bg-surface-1 p-8 shadow-sm">
+          <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
+          <div className="relative">
+            <h1 className="font-heading text-3xl font-bold text-foreground tracking-tight">
+              {myOrg.org.name}
+            </h1>
+            <p className="mt-2 text-foreground-muted">
+              Manage organization settings and members. Your role: <span className="font-semibold text-foreground capitalize">{role}</span>
+            </p>
+          </div>
         </div>
 
         <OrganizationSuspendedBanner />
@@ -142,7 +145,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
           />
         </div>
         
-        <div className="min-h-[400px]">
+        <div className="min-h-[400px] motion-safe:animate-[fade-in_200ms_ease-out]">
           {children}
         </div>
       </div>

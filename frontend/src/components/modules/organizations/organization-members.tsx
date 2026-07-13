@@ -39,7 +39,7 @@ export function OrganizationMembers() {
         headers: getAccessTokenHeaders(),
       });
       if (result.response.ok && result.data) {
-        setMembers(result.data);
+        setMembers(result.data.members);
       } else {
         setError("Failed to load members.");
       }
@@ -108,7 +108,7 @@ export function OrganizationMembers() {
         if (res.response.status === 403) {
           router.push("/dashboard/organizations");
         } else if (res.data) {
-          setMembers(res.data);
+          setMembers(res.data.members);
         }
       }
     } catch {

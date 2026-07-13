@@ -47,7 +47,7 @@ export function OrganizationInvitations() {
         headers: getAccessTokenHeaders(),
       });
       if (result.response.ok && result.data) {
-        setInvitations(result.data);
+        setInvitations(result.data.invitations);
       } else {
         setError("Failed to load invitations.");
       }

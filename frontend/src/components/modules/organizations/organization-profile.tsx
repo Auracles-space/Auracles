@@ -9,16 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useOrganization } from "./organization-context";
+import { useToast } from "@/components/ui/toast";
 
 export function OrganizationProfile() {
   const { orgId, org, role, isSuspended } = useOrganization();
   const router = useRouter();
+  const toast = useToast();
 
   const isAdminOrOwner = role === "admin" || role === "owner";
 
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<OrganizationUpdateRequest>({
     name: org.name,
@@ -31,8 +31,6 @@ export function OrganizationProfile() {
     if (!isAdminOrOwner || isSuspended) return;
 
     setLoading(true);
-    setError(null);
-    setSuccess(false);
 
     try {
       const result = await updateOrganizationV1OrgsOrgIdPatch({
@@ -42,31 +40,33 @@ export function OrganizationProfile() {
       });
 
       if (!result.response.ok) {
-        setError(result.error?.detail?.error_code || "Failed to update profile");
+        toast.error(result.error?.detail?.error_code || "Failed to update profile");
       } else {
-        setSuccess(true);
+        toast.success("Profile updated successfully.");
         router.refresh(); // Refresh page data to reflect the changes everywhere
       }
     } catch {
-      setError("An unexpected error occurred.");
+      toast.error("An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="max-w-2xl rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-      <h2 className="mb-4 font-heading text-xl font-bold text-foreground">
-        Organization Profile
-      </h2>
+    <div className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
+      <div className="border-b border-border-default bg-surface-2/50 px-8 py-6">
+        <h2 className="font-heading text-xl font-bold text-foreground tracking-tight">
+          Organization Profile
+        </h2>
+        <p className="mt-1 text-sm text-foreground-muted">
+          Manage your organization's public details.
+        </p>
+      </div>
 
-      {error && <p className="mb-4 text-sm text-error">{error}</p>}
-      {success && <p className="mb-4 text-sm text-success">Profile updated successfully.</p>}
-
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-6 px-8 py-8">
         <div>
-          <label htmlFor="name" className="mb-1 block text-sm font-semibold text-foreground">
-            Organization Name
+          <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-foreground">
+            Organization Name <span className="text-error">*</span>
           </label>
           <Input
             id="name"
@@ -74,11 +74,12 @@ export function OrganizationProfile() {
             disabled={!isAdminOrOwner || isSuspended}
             value={formData.name || ""}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="rounded-xl bg-background shadow-sm"
           />
         </div>
 
         <div>
-          <label htmlFor="website" className="mb-1 block text-sm font-semibold text-foreground">
+          <label htmlFor="website" className="mb-1.5 block text-sm font-semibold text-foreground">
             Website
           </label>
           <Input
@@ -88,11 +89,12 @@ export function OrganizationProfile() {
             value={formData.website || ""}
             onChange={(e) => setFormData({ ...formData, website: e.target.value })}
             placeholder="https://..."
+            className="rounded-xl bg-background shadow-sm"
           />
         </div>
 
         <div>
-          <label htmlFor="description" className="mb-1 block text-sm font-semibold text-foreground">
+          <label htmlFor="description" className="mb-1.5 block text-sm font-semibold text-foreground">
             Description
           </label>
           <Textarea
@@ -100,12 +102,13 @@ export function OrganizationProfile() {
             disabled={!isAdminOrOwner || isSuspended}
             value={formData.description || ""}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            className="min-h-32 rounded-xl bg-background shadow-sm"
           />
         </div>
 
         {isAdminOrOwner && (
-          <div className="mt-4 flex justify-end">
-            <Button type="submit" loading={loading} disabled={isSuspended}>
+          <div className="mt-2 flex justify-end border-t border-border-default pt-6">
+            <Button type="submit" loading={loading} disabled={isSuspended} className="min-h-12 w-full sm:w-auto rounded-xl shadow-sm text-current">
               Save Changes
             </Button>
           </div>
