@@ -68,6 +68,39 @@ describe("InviteMemberTypeahead", () => {
     vi.useRealTimers();
   });
 
+  it("hints the manual email invite when a full email matches nobody", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(searchOrgMembers).mockResolvedValue({
+      data: { results: [] },
+      error: undefined,
+      request: new Request("http://test.local"),
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(
+      <InviteMemberTypeahead
+        orgId="org-1"
+        value=""
+        onSelect={vi.fn()}
+        onEmailChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/invite by email/i), {
+      target: { value: "outsider@example.com" },
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/press invite to email an invitation/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No matching members.")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("does not search below 3 chars", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
 

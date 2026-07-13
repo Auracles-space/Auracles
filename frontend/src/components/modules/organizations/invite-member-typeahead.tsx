@@ -207,7 +207,9 @@ export function InviteMemberTypeahead({
         >
           {results.length === 0 ? (
             <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-foreground-muted">
-              No matching members.
+              {/.+@.+\..+/.test(query.trim())
+                ? "No member matches — press Invite to email an invitation to this address."
+                : "No matching members."}
             </p>
           ) : (
             <div className="grid gap-2">
