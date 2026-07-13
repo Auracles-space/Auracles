@@ -82,6 +82,26 @@ def verify_object_storage(
     )
 
 
+def public_object_url(settings: Settings, bucket: str, key: str) -> str:
+    """Build the deterministic public URL an object in a public bucket serves at.
+
+    Public-read buckets (avatars, org logos) expose a stable URL derived from the
+    key, so no presigning is needed to display them. A configured endpoint
+    (LocalStack) is path-style; AWS is virtual-host style.
+
+    Args:
+        settings: Application settings holding region and optional endpoint.
+        bucket: The public bucket name.
+        key: The object key.
+
+    Returns:
+        The public URL for the object.
+    """
+    if settings.aws_endpoint_url is not None:
+        return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{key}"
+    return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{key}"
+
+
 class S3Storage:
     """Small wrapper around S3 operations used by request services."""
 

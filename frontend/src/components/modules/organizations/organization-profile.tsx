@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useOrganization } from "./organization-context";
+import { OrganizationLogoUploader } from "./organization-logo-uploader";
 import { useToast } from "@/components/ui/toast";
 
 export function OrganizationProfile() {
@@ -19,6 +20,9 @@ export function OrganizationProfile() {
   const isAdminOrOwner = role === "admin" || role === "owner";
 
   const [loading, setLoading] = useState(false);
+  // Seed from the loaded org so a fresh upload shows immediately without a
+  // full page reload; router.refresh() then re-syncs server-derived data.
+  const [logoUrl, setLogoUrl] = useState<string | null>(org.logo_url);
 
   const [formData, setFormData] = useState<OrganizationUpdateRequest>({
     name: org.name,
@@ -59,11 +63,27 @@ export function OrganizationProfile() {
           Organization Profile
         </h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Manage your organization's public details.
+          Manage your organization&apos;s public details.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 px-8 py-8">
+        <div>
+          <span className="mb-1.5 block text-sm font-semibold text-foreground">
+            Logo
+          </span>
+          <OrganizationLogoUploader
+            orgId={orgId}
+            logoUrl={logoUrl}
+            name={org.name}
+            canEdit={isAdminOrOwner && !isSuspended}
+            onUploaded={(url) => {
+              setLogoUrl(url);
+              router.refresh();
+            }}
+          />
+        </div>
+
         <div>
           <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-foreground">
             Organization Name <span className="text-error">*</span>

@@ -15371,6 +15371,13 @@ components:
             pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
           - type: 'null'
           title: Reputation
+        logo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Url
+          description: Public URL the org logo is served at, or ``None`` when unset.
+          readOnly: true
       type: object
       required:
       - org_id
@@ -15383,6 +15390,7 @@ components:
       - verification_level
       - published_framework_count
       - member_count
+      - logo_url
       title: ContributorOrgDirectoryEntry
       description: Public contributor-organization directory row safe for anonymous
         reads.
@@ -20745,6 +20753,13 @@ components:
           type: string
           format: date-time
           title: Created At
+        logo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Url
+          description: Public URL the org logo is served at, or ``None`` when unset.
+          readOnly: true
       type: object
       required:
       - id
@@ -20755,6 +20770,7 @@ components:
       - website
       - description
       - created_at
+      - logo_url
       title: OrganizationResponse
       description: Public-safe organization fields.
     OrganizationUpdateRequest:
@@ -22591,6 +22607,13 @@ components:
           type: string
           format: date-time
           title: Created At
+        logo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Url
+          description: Public URL the org logo is served at, or ``None`` when unset.
+          readOnly: true
       type: object
       required:
       - slug
@@ -22602,6 +22625,7 @@ components:
       - active_capabilities
       - member_count
       - created_at
+      - logo_url
       title: PublicOrganizationResponse
       description: 'Public org profile: no member identities, no PII.'
     PublicProfileResponse:

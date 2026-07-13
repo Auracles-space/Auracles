@@ -1,0 +1,134 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { OrganizationLogoUploader } from "@/components/modules/organizations/organization-logo-uploader";
+import {
+  confirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPost,
+  requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost,
+} from "@/lib/generated/sdk.gen";
+
+vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
+  describeGeneratedError: vi.fn(() => "The request could not be completed."),
+  getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer test-token" })),
+}));
+
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost: vi.fn(),
+  confirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPost: vi.fn(),
+}));
+
+function pngFile(sizeBytes = 1024): File {
+  const file = new File(["x"], "logo.png", { type: "image/png" });
+  Object.defineProperty(file, "size", { value: sizeBytes });
+  return file;
+}
+
+describe("OrganizationLogoUploader", () => {
+  beforeEach(() => {
+    vi.mocked(requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost).mockReset();
+    vi.mocked(confirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPost).mockReset();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("runs the presigned upload flow and reports the new logo URL", async () => {
+    vi.mocked(
+      requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost,
+    ).mockResolvedValue({
+      data: {
+        upload_url: "https://s3.test/upload",
+        fields: { key: "org-logos/org-1/abc.png", policy: "p" },
+        file_key: "org-logos/org-1/abc.png",
+        max_size: 5 * 1024 * 1024,
+        expires_in: 900,
+      },
+      error: undefined,
+      request: new Request("http://t"),
+      response: new Response(null, { status: 200 }),
+    } as never);
+    vi.mocked(
+      confirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPost,
+    ).mockResolvedValue({
+      data: { logo_key: "org-logos/org-1/abc.png", logo_url: "https://cdn.test/abc.png" },
+      error: undefined,
+      request: new Request("http://t"),
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    const onUploaded = vi.fn();
+    render(
+      <OrganizationLogoUploader
+        orgId="org-1"
+        logoUrl={null}
+        name="Acme"
+        canEdit
+        onUploaded={onUploaded}
+      />,
+    );
+
+    const input = screen.getByLabelText(/upload logo/i);
+    fireEvent.change(input, { target: { files: [pngFile()] } });
+
+    await waitFor(() => {
+      expect(onUploaded).toHaveBeenCalledWith("https://cdn.test/abc.png");
+    });
+    // Presigned POST includes the S3 policy fields plus the file.
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://s3.test/upload",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(
+      confirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { org_id: "org-1" },
+        body: { file_key: "org-logos/org-1/abc.png" },
+      }),
+    );
+  });
+
+  it("rejects a non-image file before requesting a target", async () => {
+    const onUploaded = vi.fn();
+    render(
+      <OrganizationLogoUploader
+        orgId="org-1"
+        logoUrl={null}
+        name="Acme"
+        canEdit
+        onUploaded={onUploaded}
+      />,
+    );
+
+    const pdf = new File(["x"], "doc.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText(/upload logo/i), {
+      target: { files: [pdf] },
+    });
+
+    await screen.findByText(/Choose a PNG, JPEG, or WebP image/i);
+    expect(
+      requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost,
+    ).not.toHaveBeenCalled();
+    expect(onUploaded).not.toHaveBeenCalled();
+  });
+
+  it("hides the upload control when the member cannot edit", () => {
+    render(
+      <OrganizationLogoUploader
+        orgId="org-1"
+        logoUrl="https://cdn.test/current.png"
+        name="Acme"
+        canEdit={false}
+        onUploaded={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/upload logo/i)).not.toBeInTheDocument();
+  });
+});

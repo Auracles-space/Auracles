@@ -1385,6 +1385,10 @@ export type ContributorOrgDirectoryEntry = {
     published_framework_count: number;
     member_count: number;
     reputation?: (string | null);
+    /**
+     * Public URL the org logo is served at, or ``None`` when unset.
+     */
+    readonly logo_url: (string | null);
 };
 
 /**
@@ -2547,6 +2551,10 @@ export type OrganizationResponse = {
     website: (string | null);
     description: (string | null);
     created_at: string;
+    /**
+     * Public URL the org logo is served at, or ``None`` when unset.
+     */
+    readonly logo_url: (string | null);
 };
 
 /**
@@ -3759,6 +3767,10 @@ export type PublicOrganizationResponse = {
     active_capabilities: Array<(string)>;
     member_count: number;
     created_at: string;
+    /**
+     * Public URL the org logo is served at, or ``None`` when unset.
+     */
+    readonly logo_url: (string | null);
 };
 
 /**

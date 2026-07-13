@@ -29,6 +29,7 @@ from app.modules.organizations.models import Organization, OrgMember
 from app.modules.organizations.schemas import (
     LogoConfirmRequest,
     LogoUploadUrlRequest,
+    OrganizationResponse,
     OrganizationUpdateRequest,
 )
 from tests.support.db_cleanup import clear_identity_state_async
@@ -225,6 +226,56 @@ async def test_confirm_logo_upload_persists_logo_key(
         stored = await session.get(Organization, org.id)
         assert stored is not None
         assert stored.logo_key == key
+
+
+def _expected_avatars_public_url(key: str) -> str:
+    """Build the public URL the avatars bucket serves ``key`` at (test-local)."""
+    settings = app.state.settings
+    bucket = settings.s3_avatars_bucket
+    if settings.aws_endpoint_url is not None:
+        return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{key}"
+    return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{key}"
+
+
+@pytest.mark.asyncio
+async def test_confirm_logo_upload_returns_public_logo_url(
+    org_logo_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The confirm response exposes a resolved public ``logo_url`` for the key.
+
+    Clients cannot serve the raw ``logo_key``; the response must carry the
+    deterministic public URL so the logo renders without client-side S3 logic.
+    """
+    context, _user, org = await _create_owner_context()
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+    key = f"org-logos/{org.id}/{uuid4()}.png"
+
+    async with async_session_factory() as session:
+        response = await service.confirm_org_logo_upload(
+            session,
+            context=context,
+            payload=LogoConfirmRequest(file_key=key),
+        )
+
+    assert response.logo_url == _expected_avatars_public_url(key)
+
+
+def test_organization_response_logo_url_is_none_without_key() -> None:
+    """An org with no ``logo_key`` reports ``logo_url`` as ``None``."""
+    response = OrganizationResponse.model_validate(
+        {
+            "id": uuid4(),
+            "slug": "no-logo-org",
+            "name": "No Logo Org",
+            "logo_key": None,
+            "country": "GB",
+            "website": None,
+            "description": None,
+            "created_at": __import__("datetime").datetime(2026, 7, 13),
+        }
+    )
+    assert response.logo_url is None
 
 
 @pytest.mark.asyncio

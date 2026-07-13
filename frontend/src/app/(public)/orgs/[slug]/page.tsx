@@ -51,10 +51,14 @@ export default async function PublicOrganizationPage({ params }: Props) {
           <div className="h-32 sm:h-48 bg-accent/10 relative">
             {/* Logo Avatar */}
             <div className="absolute -bottom-12 left-6 sm:left-8">
-              <div className="flex h-24 w-24 sm:h-28 sm:w-28 items-center justify-center rounded-2xl border-4 border-surface-1 bg-surface-2 text-3xl font-heading font-bold text-foreground shadow-sm">
-                {org.logo_key ? (
-                  // If we had an image component: <img src={org.logo_key} alt={org.name} className="h-full w-full rounded-xl object-cover" />
-                  org.name.charAt(0).toUpperCase()
+              <div className="flex h-24 w-24 sm:h-28 sm:w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-surface-1 bg-surface-2 text-3xl font-heading font-bold text-foreground shadow-sm">
+                {org.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={org.logo_url}
+                    alt={`${org.name} logo`}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   org.name.charAt(0).toUpperCase()
                 )}

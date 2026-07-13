@@ -12,13 +12,40 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+)
 
+from app.core.config import get_settings
+from app.integrations import s3
 from app.modules.attestation.schemas import CoiEntry
 from app.modules.attestation.taxonomy import validate_categories, validate_sectors
 from app.modules.library.schemas import LibraryItem
 
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x1f\x7f]")
+
+
+def _logo_public_url(logo_key: str | None) -> str | None:
+    """Resolve an org ``logo_key`` to the public URL its logo is served at.
+
+    Org logos live in the public avatars bucket, so the URL is deterministic
+    from the key. Returns ``None`` when the org has no logo.
+
+    Args:
+        logo_key: The stored logo object key, or ``None``.
+
+    Returns:
+        The public logo URL, or ``None`` when no logo is set.
+    """
+    if logo_key is None:
+        return None
+    settings = get_settings()
+    return s3.public_object_url(settings, settings.s3_avatars_bucket, logo_key)
 
 
 def _ensure_safe_prose(value: str) -> str:
@@ -88,6 +115,12 @@ class OrganizationResponse(BaseModel):
     website: str | None
     description: str | None
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def logo_url(self) -> str | None:
+        """Public URL the org logo is served at, or ``None`` when unset."""
+        return _logo_public_url(self.logo_key)
 
 
 class OrgCapabilityResponse(BaseModel):
@@ -179,6 +212,12 @@ class PublicOrganizationResponse(BaseModel):
     member_count: int
     created_at: datetime
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def logo_url(self) -> str | None:
+        """Public URL the org logo is served at, or ``None`` when unset."""
+        return _logo_public_url(self.logo_key)
+
 
 class ContributorOrgDirectoryEntry(BaseModel):
     """Public contributor-organization directory row safe for anonymous reads."""
@@ -194,6 +233,12 @@ class ContributorOrgDirectoryEntry(BaseModel):
     published_framework_count: int
     member_count: int
     reputation: Decimal | None = Field(default=None, decimal_places=2)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def logo_url(self) -> str | None:
+        """Public URL the org logo is served at, or ``None`` when unset."""
+        return _logo_public_url(self.logo_key)
 
 
 class ContributorOrgDirectoryResponse(BaseModel):
