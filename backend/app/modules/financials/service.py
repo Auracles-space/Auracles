@@ -62,6 +62,7 @@ from app.modules.financials.schemas import (
     RefundResponse,
 )
 from app.modules.frameworks.models import Framework, License
+from app.modules.frameworks.pricing import resolve_license_price
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.models import Invoice
@@ -1092,7 +1093,7 @@ async def create_framework_purchase(
             detail="Selected license type is not available for this Framework.",
         )
 
-    amount = _normalise_money(framework.price)
+    amount = _normalise_money(resolve_license_price(framework, payload.license_type))
     currency = framework.currency.upper()
     if currency != "USD":
         raise HTTPException(
@@ -1297,7 +1298,7 @@ async def create_org_framework_purchase(
             detail="Selected license type is not available for this Framework.",
         )
 
-    amount = _normalise_money(framework.price)
+    amount = _normalise_money(resolve_license_price(framework, payload.license_type))
     currency = framework.currency.upper()
     if currency != "USD":
         raise HTTPException(
