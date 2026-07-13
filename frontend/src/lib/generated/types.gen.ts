@@ -2366,6 +2366,23 @@ export type MarkAllReadResponse = {
 };
 
 /**
+ * Capped masked suggestions for the organization invite typeahead.
+ */
+export type MemberSearchResponse = {
+    results: Array<MemberSearchResult>;
+};
+
+/**
+ * One masked invite-typeahead suggestion for an organization admin.
+ */
+export type MemberSearchResult = {
+    user_id: string;
+    display_name: string;
+    avatar_url: (string | null);
+    masked_email: string;
+};
+
+/**
  * Accepted Contributor request body for drafting a Project Milestone.
  */
 export type MilestoneCreateRequest = {
@@ -2813,10 +2830,11 @@ export type OrgDeliveryResponse = {
 };
 
 /**
- * Admin-scoped request to invite one email address into an organization.
+ * Admin-scoped request to invite one email address or existing user.
  */
 export type OrgInvitationCreateRequest = {
-    email: string;
+    email?: (string | null);
+    user_id?: (string | null);
     role: 'admin' | 'member';
 };
 
@@ -6234,6 +6252,19 @@ export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
 export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
 
 export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
+
+export type SearchOrgMembersData = {
+    path: {
+        org_id: string;
+    };
+    query: {
+        q: string;
+    };
+};
+
+export type SearchOrgMembersResponse = (MemberSearchResponse);
+
+export type SearchOrgMembersError = (HTTPValidationError);
 
 export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
     path: {

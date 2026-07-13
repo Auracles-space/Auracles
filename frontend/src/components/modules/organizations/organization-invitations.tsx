@@ -1,21 +1,31 @@
 "use client";
 
+/**
+ * Organization invitation management panel for org admins.
+ *
+ * Lists pending invitations and provides the invite form with masked member
+ * search for existing users plus the manual outsider-email fallback.
+ */
 import { useEffect, useState } from "react";
-import { 
-  listInvitationsV1OrgsOrgIdInvitationsGet, 
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Select } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import {
   createInvitationV1OrgsOrgIdInvitationsPost,
+  listInvitationsV1OrgsOrgIdInvitationsGet,
   revokeInvitationV1OrgsOrgIdInvitationsInvitationIdDelete
 } from "@/lib/generated/sdk.gen";
 import type { OrgInvitationResponse, OrgInvitationCreateRequest } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { InviteMemberTypeahead } from "./invite-member-typeahead";
 import { useOrganization } from "./organization-context";
-import { Badge } from "@/components/ui/badge";
 
+/**
+ * Render the organization invite form and pending invitation list.
+ */
 export function OrganizationInvitations() {
   const { orgId, role, isSuspended } = useOrganization();
   const isAdmin = role === "admin" || role === "owner";
@@ -26,6 +36,7 @@ export function OrganizationInvitations() {
 
   // Invite Form State
   const [inviteEmail, setInviteEmail] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -66,12 +77,18 @@ export function OrganizationInvitations() {
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!isAdmin || isSuspended) return;
+    if (!selectedUserId && inviteEmail.trim() === "") {
+      setInviteError("Enter an email address or choose a suggested member.");
+      return;
+    }
 
     setInviteLoading(true);
     setInviteError(null);
 
     try {
-      const body: OrgInvitationCreateRequest = { email: inviteEmail, role: inviteRole };
+      const body: OrgInvitationCreateRequest = selectedUserId
+        ? { user_id: selectedUserId, role: inviteRole }
+        : { email: inviteEmail, role: inviteRole };
       const result = await createInvitationV1OrgsOrgIdInvitationsPost({
         path: { org_id: orgId },
         body,
@@ -82,6 +99,7 @@ export function OrganizationInvitations() {
         setInviteError(result.error?.detail?.error_code || "Failed to invite user");
       } else {
         setInviteEmail("");
+        setSelectedUserId(null);
         setInviteRole("member");
         await loadInvitations();
       }
@@ -150,17 +168,18 @@ export function OrganizationInvitations() {
         )}
         <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-4 items-end">
           <div className="flex-grow w-full sm:w-auto">
-            <label htmlFor="email" className="mb-1 block text-sm font-semibold text-foreground">
-              Email Address
-            </label>
-            <Input
-              id="email"
-              type="email"
-              required
+            <InviteMemberTypeahead
               disabled={isSuspended}
+              orgId={orgId}
               value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="colleague@example.com"
+              onEmailChange={(nextValue) => {
+                setInviteEmail(nextValue);
+                setSelectedUserId(null);
+              }}
+              onSelect={(userId) => {
+                setSelectedUserId(userId);
+                setInviteError(null);
+              }}
             />
           </div>
           <div className="w-full sm:w-40 shrink-0">
