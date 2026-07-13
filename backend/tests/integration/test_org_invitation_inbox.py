@@ -132,6 +132,22 @@ async def other_user_org_with_invite(
     return {"invitation_id": matching.json()["id"]}
 
 
+@pytest.fixture
+async def authed_client_other(
+    client: AsyncClient,
+    migrated_database: None,
+    invitation_test_context: FakeRedis,
+) -> tuple[AsyncClient, User, str]:
+    """Return a second authenticated client whose email does not match the invite."""
+    del migrated_database, invitation_test_context
+    user_id = await create_user("outsider")
+    token = create_access_token(user_id, [])
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        return client, user, token
+
+
 @pytest.mark.asyncio
 async def test_received_lists_only_my_pending_invitations(
     authed_client: tuple[AsyncClient, User, str],
@@ -166,3 +182,87 @@ async def test_received_requires_auth(
     resp = await client.get("/v1/org-invitations/received")
 
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_creates_membership(
+    authed_client: tuple[AsyncClient, User, str],
+    other_user_org_with_invite: dict[str, str],
+) -> None:
+    """POST /received/{id}/accept joins the org and clears the invite."""
+    del other_user_org_with_invite
+    client, _, token = authed_client
+
+    listed = await client.get("/v1/org-invitations/received", headers=auth(token))
+    inv_id = listed.json()["invitations"][0]["id"]
+
+    resp = await client.post(
+        f"/v1/org-invitations/received/{inv_id}/accept",
+        headers=auth(token),
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "member"
+    after = await client.get("/v1/org-invitations/received", headers=auth(token))
+    assert after.json()["invitations"] == []
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_rejects_email_mismatch(
+    authed_client_other: tuple[AsyncClient, User, str],
+    other_user_org_with_invite: dict[str, str],
+) -> None:
+    """A logged-in user whose email does not match the invite gets 403."""
+    client, _, token = authed_client_other
+    inv_id = other_user_org_with_invite["invitation_id"]
+
+    resp = await client.post(
+        f"/v1/org-invitations/received/{inv_id}/accept",
+        headers=auth(token),
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_duplicate_is_409(
+    authed_client: tuple[AsyncClient, User, str],
+    other_user_org_with_invite: dict[str, str],
+) -> None:
+    """Accepting an already-accepted invite returns 409, never 500."""
+    del other_user_org_with_invite
+    client, _, token = authed_client
+
+    listed = await client.get("/v1/org-invitations/received", headers=auth(token))
+    inv_id = listed.json()["invitations"][0]["id"]
+
+    first = await client.post(
+        f"/v1/org-invitations/received/{inv_id}/accept",
+        headers=auth(token),
+    )
+    second = await client.post(
+        f"/v1/org-invitations/received/{inv_id}/accept",
+        headers=auth(token),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_decline_by_id_marks_declined(
+    authed_client: tuple[AsyncClient, User, str],
+    other_user_org_with_invite: dict[str, str],
+) -> None:
+    """POST /received/{id}/decline removes the invite from my inbox."""
+    client, _, token = authed_client
+    inv_id = other_user_org_with_invite["invitation_id"]
+
+    resp = await client.post(
+        f"/v1/org-invitations/received/{inv_id}/decline",
+        headers=auth(token),
+    )
+
+    assert resp.status_code == 204
+    after = await client.get("/v1/org-invitations/received", headers=auth(token))
+    assert after.json()["invitations"] == []

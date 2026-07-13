@@ -8217,6 +8217,64 @@ paths:
                 $ref: '#/components/schemas/MyInvitationsResponse'
       security:
       - HTTPBearer: []
+  /v1/org-invitations/received/{invitation_id}/accept:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Accept an invitation from my inbox
+      description: Accept a pending invitation by id. The caller's email must match
+        the invitation.
+      operationId: accept_received_invitation
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyOrganizationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/org-invitations/received/{invitation_id}/decline:
+    post:
+      tags:
+      - Organization Invitations
+      summary: Decline an invitation from my inbox
+      description: Decline a pending invitation by id. The caller's email must match
+        the invitation.
+      operationId: decline_received_invitation
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invitation Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/org-invitations/{token}:
     get:
       tags:

@@ -1223,6 +1223,52 @@ async def list_received_invitations(
     return await service.list_received_invitations(db=db, user=user)
 
 
+@invitation_router.post(
+    "/received/{invitation_id}/accept",
+    response_model=MyOrganizationResponse,
+    operation_id="accept_received_invitation",
+    summary="Accept an invitation from my inbox",
+    description=(
+        "Accept a pending invitation by id. The caller's email must match "
+        "the invitation."
+    ),
+)
+async def accept_received_invitation(
+    invitation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> MyOrganizationResponse:
+    """Accept an invitation addressed to the authenticated user by id."""
+    return await service.accept_invitation_by_id(
+        db=db,
+        user=user,
+        invitation_id=invitation_id,
+    )
+
+
+@invitation_router.post(
+    "/received/{invitation_id}/decline",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="decline_received_invitation",
+    summary="Decline an invitation from my inbox",
+    description=(
+        "Decline a pending invitation by id. The caller's email must match "
+        "the invitation."
+    ),
+)
+async def decline_received_invitation(
+    invitation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> None:
+    """Decline an invitation addressed to the authenticated user by id."""
+    await service.decline_invitation_by_id(
+        db=db,
+        user=user,
+        invitation_id=invitation_id,
+    )
+
+
 @invitation_router.get(
     "/{token}",
     response_model=OrgInvitationPreviewResponse,

@@ -1193,6 +1193,58 @@ async def _get_live_invitation(
     return invitation, organization
 
 
+async def _get_live_invitation_by_id(
+    db: AsyncSession,
+    *,
+    invitation_id: UUID,
+) -> tuple[OrgInvitation, Organization]:
+    """Resolve a pending invitation and its active org by id.
+
+    Args:
+        db: Async database session.
+        invitation_id: Invitation id from the received-invitations inbox.
+
+    Returns:
+        The pending invitation and its active organization.
+
+    Raises:
+        HTTPException(404): Unknown id or dead org.
+        HTTPException(409): Invitation is not pending.
+        HTTPException(410): Pending invitation is expired.
+    """
+    invitation = await db.scalar(
+        select(OrgInvitation).where(OrgInvitation.id == invitation_id)
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation not found.",
+        )
+    if invitation.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invitation is not available.",
+        )
+    organization = await db.scalar(
+        select(Organization).where(
+            Organization.id == invitation.org_id,
+            Organization.deactivated_at.is_(None),
+            Organization.suspended_at.is_(None),
+        )
+    )
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation is not available.",
+        )
+    if invitation.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Invitation has expired.",
+        )
+    return invitation, organization
+
+
 async def preview_invitation(
     db: AsyncSession,
     *,
@@ -1219,34 +1271,14 @@ async def preview_invitation(
     )
 
 
-async def accept_invitation(
+async def _finalize_accept(
     db: AsyncSession,
     *,
     user: User,
-    token: str,
+    invitation: OrgInvitation,
+    organization: Organization,
 ) -> MyOrganizationResponse:
-    """Accept an invitation and join the organization.
-
-    Args:
-        db: Async database session.
-        user: Authenticated user accepting the invitation.
-        token: Raw invitation token from the URL path.
-
-    Returns:
-        The new membership in the MyOrganizationResponse shape.
-
-    Raises:
-        HTTPException(403): Authenticated user's email does not match the invite.
-        HTTPException(404/409/410): Delegated from _get_live_invitation.
-    """
-    invitation, organization = await _get_live_invitation(db, token=token)
-    if user.email.lower() != invitation.email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This invitation was sent to a different email address.",
-        )
-
-    # Extract all primitive values before rollback/begin expires them
+    """Accept a resolved, email-matched invitation."""
     invitation_id = invitation.id
     invited_role = invitation.role
     invited_by = invitation.invited_by
@@ -1260,7 +1292,6 @@ async def accept_invitation(
 
     try:
         async with db.begin():
-            # Re-load under lock to prevent double-accept races
             locked_invitation = await db.scalar(
                 select(OrgInvitation)
                 .where(OrgInvitation.id == invitation_id)
@@ -1299,8 +1330,6 @@ async def accept_invitation(
                 dedupe_key=f"org-invite-accepted:{invitation_id}",
             )
     except IntegrityError as exc:
-        # Invitee is already a member (e.g. email changed after joining
-        # another way) — surface the unique-membership violation as 409.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You are already a member of this organization.",
@@ -1308,7 +1337,6 @@ async def accept_invitation(
 
     await sync_derived_roles(db, user_id=user_id)
 
-    # Build the MyOrganizationResponse shape
     capabilities: dict[str, str] = {}
     cap_rows = (
         await db.scalars(select(OrgCapability).where(OrgCapability.org_id == org_id))
@@ -1316,7 +1344,6 @@ async def accept_invitation(
     for cap in cap_rows:
         capabilities[cap.capability] = cap.status
 
-    # Reload the organization from the DB after the transaction is complete
     org_obj = await db.scalar(select(Organization).where(Organization.id == org_id))
     if org_obj is None:
         raise HTTPException(
@@ -1328,36 +1355,18 @@ async def accept_invitation(
         org=OrganizationResponse.model_validate(org_obj),
         role=invited_role,
         capabilities=capabilities,
-        # Signal for the frontend to chain straight into NDA signing.
         nda_required=capabilities.get("attestor") in ("pending", "active"),
     )
 
 
-async def decline_invitation(
+async def _finalize_decline(
     db: AsyncSession,
     *,
     user: User,
-    token: str,
+    invitation: OrgInvitation,
+    organization: Organization,
 ) -> None:
-    """Decline an invitation without joining.
-
-    Args:
-        db: Async database session.
-        user: Authenticated user declining the invitation.
-        token: Raw invitation token from the URL path.
-
-    Raises:
-        HTTPException(403): Authenticated user's email does not match the invite.
-        HTTPException(404/409/410): Delegated from _get_live_invitation.
-    """
-    invitation, organization = await _get_live_invitation(db, token=token)
-    if user.email.lower() != invitation.email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This invitation was sent to a different email address.",
-        )
-
-    # Extract all primitive values before rollback/begin expires them
+    """Decline a resolved, email-matched invitation."""
     invitation_id = invitation.id
     invited_by = invitation.invited_by
     org_id = organization.id
@@ -1391,6 +1400,120 @@ async def decline_invitation(
             payload={"org_id": str(org_id)},
             dedupe_key=f"org-invite-declined:{invitation_id}",
         )
+
+
+async def accept_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> MyOrganizationResponse:
+    """Accept an invitation and join the organization.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user accepting the invitation.
+        token: Raw invitation token from the URL path.
+
+    Returns:
+        The new membership in the MyOrganizationResponse shape.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    return await _finalize_accept(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+
+async def decline_invitation(
+    db: AsyncSession,
+    *,
+    user: User,
+    token: str,
+) -> None:
+    """Decline an invitation without joining.
+
+    Args:
+        db: Async database session.
+        user: Authenticated user declining the invitation.
+        token: Raw invitation token from the URL path.
+
+    Raises:
+        HTTPException(403): Authenticated user's email does not match the invite.
+        HTTPException(404/409/410): Delegated from _get_live_invitation.
+    """
+    invitation, organization = await _get_live_invitation(db, token=token)
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    await _finalize_decline(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+ 
+
+async def accept_invitation_by_id(
+    db: AsyncSession,
+    *,
+    user: User,
+    invitation_id: UUID,
+) -> MyOrganizationResponse:
+    """Accept an invitation the invitee found in their inbox."""
+    invitation, organization = await _get_live_invitation_by_id(
+        db,
+        invitation_id=invitation_id,
+    )
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    return await _finalize_accept(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
+
+
+async def decline_invitation_by_id(
+    db: AsyncSession,
+    *,
+    user: User,
+    invitation_id: UUID,
+) -> None:
+    """Decline an invitation the invitee found in their inbox."""
+    invitation, organization = await _get_live_invitation_by_id(
+        db,
+        invitation_id=invitation_id,
+    )
+    if user.email.lower() != invitation.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invitation was sent to a different email address.",
+        )
+    await _finalize_decline(
+        db=db,
+        user=user,
+        invitation=invitation,
+        organization=organization,
+    )
 
 
 async def create_team(
