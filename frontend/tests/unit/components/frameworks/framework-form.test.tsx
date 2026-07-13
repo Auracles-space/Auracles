@@ -4,6 +4,20 @@ import { describe, expect, it, vi } from "vitest";
 import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
 
 describe("FrameworkForm", () => {
+  function fillRequiredFields(fe: typeof fireEvent, sc: typeof screen) {
+    fe.change(sc.getByLabelText(/framework title/i), { target: { value: "Title" } });
+    fe.change(sc.getByLabelText(/description/i), { target: { value: "Desc" } });
+    fe.change(sc.getByLabelText(/base price/i), { target: { value: "100" } });
+    const singleUser = sc.getByRole("checkbox", { name: /single user/i });
+    if (!(singleUser as HTMLInputElement).checked) {
+      fe.click(singleUser);
+    }
+    fe.change(sc.getByLabelText(/sector/i), { target: { value: "healthcare" } });
+    fe.change(sc.getByLabelText(/industry/i), { target: { value: "healthcare_providers" } });
+    fe.change(sc.getByLabelText(/function/i), { target: { value: "engineering" } });
+    fe.change(sc.getByLabelText(/category/i), { target: { value: "toolkit" } });
+    fe.change(sc.getByLabelText(/organization size/i), { target: { value: "enterprise" } });
+  }
   it("uses framework type options for the category field", () => {
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
@@ -43,14 +57,9 @@ describe("FrameworkForm", () => {
     // Title and description start empty, so the button is gated off.
     expect(submit).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
 
-    // Price defaults to a positive number; required fields are now valid.
+    // Now all required fields are filled.
     expect(submit).toBeEnabled();
   });
 
@@ -58,13 +67,11 @@ describe("FrameworkForm", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
+    fillRequiredFields(fireEvent, screen);
+    
+    // Explicitly override to ensure these specific values are tested
     fireEvent.change(screen.getByLabelText(/framework title/i), {
       target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: {
-        value: "A healthcare software engineering delivery system.",
-      },
     });
     fireEvent.change(screen.getByLabelText(/sector/i), {
       target: { value: "healthcare" },
@@ -100,12 +107,7 @@ describe("FrameworkForm", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
     fireEvent.change(screen.getByLabelText(/complexity/i), {
       target: { value: "4" },
     });
@@ -132,12 +134,7 @@ describe("FrameworkForm", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
     fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
 
     await waitFor(() => {
@@ -148,16 +145,13 @@ describe("FrameworkForm", () => {
     });
   });
 
-  it("defaults to single-user licensing only", async () => {
+  it("submits selected license types", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
+    
+    // We expect single user since fillRequiredFields checks it
     fireEvent.click(screen.getByRole("button", { name: /save framework/i }));
 
     await waitFor(() => {
@@ -184,15 +178,11 @@ describe("FrameworkForm", () => {
     expect(screen.queryByRole("checkbox", { name: /enterprise/i })).toBeNull();
   });
 
-  it("keeps the single-user tier selected when clicked", () => {
+  it("allows single-user tier to be unselected", () => {
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
+    
     const submit = screen.getByRole("button", { name: /save framework/i });
     expect(submit).toBeEnabled();
 
@@ -201,8 +191,8 @@ describe("FrameworkForm", () => {
 
     fireEvent.click(singleUser);
 
-    expect(singleUser).toBeChecked();
-    expect(submit).toBeEnabled();
+    expect(singleUser).not.toBeChecked();
+    expect(submit).toBeDisabled(); // Disabled because 0 license types selected
   });
 
   it("constrains the price input to a two-decimal currency amount", () => {
@@ -219,12 +209,7 @@ describe("FrameworkForm", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FrameworkForm onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByLabelText(/framework title/i), {
-      target: { value: "Healthcare Engineering Toolkit" },
-    });
-    fireEvent.change(screen.getByLabelText(/description/i), {
-      target: { value: "A healthcare software engineering delivery system." },
-    });
+    fillRequiredFields(fireEvent, screen);
 
     const tags = screen.getByLabelText(/tags/i);
     fireEvent.change(tags, { target: { value: "python" } });
