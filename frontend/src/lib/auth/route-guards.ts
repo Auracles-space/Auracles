@@ -32,6 +32,10 @@ const protectedPathPrefixes: RoleProtectedPrefix[] = [
   { prefix: "/attestor", requiredRoles: ["attestor"] },
   { prefix: "/checkout", requiredRoles: ["operator"] },
   { prefix: "/dashboard/developer", requiredRoles: null },
+  // Organizations are cross-role (operators, attestors, and admins own or
+  // belong to orgs), so gate on auth presence only. Must precede the
+  // contributor-scoped `/dashboard` prefix — first match wins.
+  { prefix: "/dashboard/organizations", requiredRoles: null },
   { prefix: "/dashboard", requiredRoles: ["contributor"] },
   { prefix: "/library", requiredRoles: ["operator"] },
   { prefix: "/projects", requiredRoles: ["operator", "contributor"] },

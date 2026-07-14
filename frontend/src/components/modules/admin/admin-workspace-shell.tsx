@@ -46,6 +46,11 @@ const adminLinks = [
     summary: "Review evidence and verify or reject submitted credentials.",
   },
   {
+    href: "/admin/organizations",
+    label: "Organizations",
+    summary: "Search organizations and review membership and capabilities.",
+  },
+  {
     href: "/admin/org-attestors",
     label: "Org Attestors",
     summary: "Review applications and verify KYB for organization attestors.",

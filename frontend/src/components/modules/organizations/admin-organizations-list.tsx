@@ -160,17 +160,21 @@ export function AdminOrganizationsList() {
                         <td className="px-6 py-4">{org.country}</td>
                         <td className="px-6 py-4">{org.member_count}</td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1">
-                            {Object.entries(org.capabilities).map(([cap, state]) => (
-                              <span 
-                                key={cap} 
-                                className="inline-block rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-foreground uppercase tracking-wider"
-                                title={`${cap}: ${state}`}
-                              >
-                                {cap.charAt(0)}
-                              </span>
-                            ))}
-                          </div>
+                          {Object.keys(org.capabilities).length === 0 ? (
+                            <span className="text-xs text-foreground-muted">None</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(org.capabilities).map(([cap, state]) => (
+                                <span
+                                  key={cap}
+                                  className="inline-block rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-foreground uppercase tracking-wider"
+                                  title={`${cap}: ${state}`}
+                                >
+                                  {cap.charAt(0)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className={`px-6 py-4 font-medium ${statusColor}`}>
                           {statusText}
