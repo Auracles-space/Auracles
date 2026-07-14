@@ -25,6 +25,7 @@ from app.modules.auth.models import User
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
     Organization,
+    OrgAttestorApplication,
     OrgCapability,
     OrgMember,
     OrgMemberNda,
@@ -62,6 +63,7 @@ async def nda_state(migrated_database: None) -> AsyncIterator[None]:
         """Delete NDA and org rows before shared identity cleanup."""
         async with async_session_factory() as session:
             await session.execute(delete(OrgMemberNda))
+            await session.execute(delete(OrgAttestorApplication))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
             await session.execute(delete(Organization))
@@ -119,6 +121,23 @@ async def _create_org_member(
             return org.id, user.id, member.id
 
 
+async def _add_live_application(org_id: UUID, *, app_status: str = "draft") -> None:
+    """Insert a live (pre-approval) attestor application for the org."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgAttestorApplication(
+                    org_id=org_id,
+                    status=app_status,
+                    specializations=[],
+                    jurisdictions=[],
+                    credentials_summary="Experienced auditors.",
+                    sample_work={},
+                    professional_references="Refs available on request.",
+                )
+            )
+
+
 async def test_status_not_required_without_capability(nda_state: None) -> None:
     """No attestor capability row means the NDA is not required."""
     org_id, user_id, _ = await _create_org_member()
@@ -143,6 +162,37 @@ async def test_status_required_for_pending_and_active(
             session, org_id=org_id, user_id=user_id
         )
     assert status.required is True
+
+
+@pytest.mark.parametrize("app_status", ["draft", "submitted", "needs_info"])
+async def test_status_required_for_live_application_before_capability(
+    nda_state: None, app_status: str
+) -> None:
+    """A live application requires the NDA even before the capability exists.
+
+    The attestor capability row is only created at admin approval, but the
+    trial-nomination gate (mid-application) needs members to hold a current
+    NDA signature. Keying the requirement on a live application unblocks
+    signing during the application instead of after approval.
+    """
+    org_id, user_id, _ = await _create_org_member()
+    await _add_live_application(org_id, app_status=app_status)
+    async with async_session_factory() as session:
+        status = await nda_service.get_nda_status(
+            session, org_id=org_id, user_id=user_id
+        )
+    assert status.required is True
+
+
+async def test_status_not_required_for_terminal_application(nda_state: None) -> None:
+    """A rejected application does not, by itself, keep the NDA required."""
+    org_id, user_id, _ = await _create_org_member()
+    await _add_live_application(org_id, app_status="rejected")
+    async with async_session_factory() as session:
+        status = await nda_service.get_nda_status(
+            session, org_id=org_id, user_id=user_id
+        )
+    assert status.required is False
 
 
 async def test_sign_creates_row_and_reports_signed(nda_state: None) -> None:

@@ -3004,6 +3004,10 @@ export type OrgMemberResponse = {
     email: (string | null);
     role: string;
     joined_at: string;
+    /**
+     * True iff the member holds a current-version platform NDA signature.
+     */
+    nda_signed?: boolean;
 };
 
 /**

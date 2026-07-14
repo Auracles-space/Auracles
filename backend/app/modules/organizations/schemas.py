@@ -350,6 +350,10 @@ class OrgMemberResponse(BaseModel):
     email: str | None
     role: str
     joined_at: datetime
+    # True iff the member holds a current-version platform NDA signature.
+    # The trial-nomination picker filters on this. Defaults False so other
+    # constructors of this schema stay valid.
+    nda_signed: bool = False
 
 
 class OrgMembersResponse(BaseModel):

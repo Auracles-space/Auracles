@@ -1,9 +1,10 @@
 """Org member NDA signing and assignability service.
 
-Members of an organization with a pending or active attestor capability
-must sign the platform NDA (at its current config version) before they
-can be staffed on Attestation work. One row per member; re-signing after
-a version bump updates the row in place.
+Members of an organization that is pursuing the attestor capability (a
+live attestor application) or already holds it (pending/active capability)
+must sign the platform NDA (at its current config version) before they can
+be staffed on Attestation work. One row per member; re-signing after a
+version bump updates the row in place.
 
 Maps to: docs/superpowers/specs/2026-07-04-org-attestor-design.md,
 NDA-mechanics section.
@@ -23,10 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.modules.organizations.models import (
+    OrgAttestorApplication,
     OrgCapability,
     OrgMember,
     OrgMemberNda,
 )
+
+# Application statuses that count as "live" (pre-approval, still in flight).
+# Kept in lockstep with attestor_application_service._LIVE_STATUSES; defined
+# locally because that module imports this one (avoiding a circular import).
+_LIVE_APPLICATION_STATUSES = ("draft", "submitted", "needs_info")
 
 
 @dataclass(frozen=True)
@@ -63,15 +70,30 @@ async def _get_member(db: AsyncSession, *, org_id: UUID, user_id: UUID) -> OrgMe
 
 
 async def _nda_required(db: AsyncSession, *, org_id: UUID) -> bool:
-    """True iff the org's attestor capability is pending or active."""
-    row = await db.scalar(
+    """True iff the org is pursuing or holds the attestor capability.
+
+    The attestor capability row is only created at admin approval, but the
+    trial-nomination gate runs mid-application and needs members to hold a
+    current NDA signature. So the requirement also fires while a live
+    (pre-approval) attestor application exists, not just once the capability
+    is pending or active — otherwise members could never sign before approval.
+    """
+    capability = await db.scalar(
         select(OrgCapability).where(
             OrgCapability.org_id == org_id,
             OrgCapability.capability == "attestor",
             OrgCapability.status.in_(["pending", "active"]),
         )
     )
-    return row is not None
+    if capability is not None:
+        return True
+    live_application = await db.scalar(
+        select(OrgAttestorApplication).where(
+            OrgAttestorApplication.org_id == org_id,
+            OrgAttestorApplication.status.in_(_LIVE_APPLICATION_STATUSES),
+        )
+    )
+    return live_application is not None
 
 
 async def get_nda_status(

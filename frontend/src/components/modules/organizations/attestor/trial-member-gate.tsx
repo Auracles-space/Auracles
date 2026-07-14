@@ -48,7 +48,11 @@ export function TrialMemberGate({
       if (res.error) {
         setError(describeGeneratedError(res.error));
       } else if (res.data) {
-        setMembers(res.data.members);
+        // Only NDA-signed members are staffable, so the picker lists them
+        // exclusively. Members sign via the NDA page in the org sidebar.
+        setMembers(
+          res.data.members.filter((member: OrgMemberResponse) => member.nda_signed),
+        );
       }
     }
     load();
@@ -148,7 +152,7 @@ export function TrialMemberGate({
                 {membersLoading
                   ? "Loading members…"
                   : members.length === 0
-                    ? "No members available"
+                    ? "No NDA-signed members yet"
                     : "Select a member"}
               </option>
               {members.map((member) => (
@@ -166,7 +170,15 @@ export function TrialMemberGate({
           </div>
           <p className="mt-1 text-xs text-foreground-muted">
             This person will complete the trial attestation on behalf of your organization.
-            They&apos;ll be notified by email and in the app.
+            They&apos;ll be notified by email and in the app. Only members who have signed
+            the organization NDA appear here — a member signs it from{" "}
+            <a
+              href={`/dashboard/organizations/${orgId}/nda`}
+              className="font-medium text-accent underline"
+            >
+              the NDA page
+            </a>
+            .
           </p>
         </div>
 

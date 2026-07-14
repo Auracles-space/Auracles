@@ -12,6 +12,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 
+from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
 from app.integrations import s3
@@ -20,6 +21,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgCapability,
     OrgMember,
+    OrgMemberNda,
 )
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
@@ -35,6 +37,7 @@ def migrated_database() -> Iterator[None]:
 async def _reset_org_state() -> None:
     """Delete org rows and identity rows in foreign-key-safe order."""
     async with async_session_factory() as session:
+        await session.execute(delete(OrgMemberNda))
         await session.execute(delete(OrgCapability))
         await session.execute(delete(OrgMember))
         await session.execute(delete(Organization))
@@ -371,6 +374,49 @@ async def test_member_list_hides_emails_from_plain_members(
     assert as_member.status_code == 200
     assert all(member["email"] for member in as_owner.json()["members"])
     assert all(member["email"] is None for member in as_member.json()["members"])
+
+
+async def test_member_list_reports_nda_signed_flag(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """GET members flags who holds a current-version NDA signature.
+
+    The trial-nomination picker filters on this so only NDA-signed members
+    are selectable.
+    """
+    del migrated_database, clean_orgs
+    owner_id = await create_user("nda-owner")
+    member_id = await create_user("nda-plain")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "ndaflag")
+    await add_member(str(org["id"]), member_id, "member")
+
+    # Owner holds a current-version signature; plain member holds none.
+    async with async_session_factory() as session:
+        owner_member = await session.scalar(
+            select(OrgMember).where(
+                OrgMember.org_id == UUID(str(org["id"])),
+                OrgMember.role == "owner",
+            )
+        )
+        assert owner_member is not None
+        session.add(
+            OrgMemberNda(
+                member_id=owner_member.id,
+                nda_version=get_settings().org_member_nda_version,
+                signed_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    resp = await client.get(
+        f"/v1/orgs/{org['id']}/members",
+        headers=auth(owner_token),
+    )
+    assert resp.status_code == 200
+    by_role = {m["role"]: m for m in resp.json()["members"]}
+    assert by_role["owner"]["nda_signed"] is True
+    assert by_role["member"]["nda_signed"] is False
 
 
 async def test_owner_cannot_be_removed(

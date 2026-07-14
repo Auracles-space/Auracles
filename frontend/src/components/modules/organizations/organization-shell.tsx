@@ -2,7 +2,7 @@
 
 import { useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { listMyOrganizationsV1OrgsMineGet } from "@/lib/generated/sdk.gen";
+import { listMyOrganizationsV1OrgsMineGet, getOrgNda } from "@/lib/generated/sdk.gen";
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { OrganizationProvider } from "./organization-context";
@@ -21,6 +21,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const pathname = usePathname();
 
   const [myOrg, setMyOrg] = useState<MyOrganizationResponse | null>(null);
+  const [ndaRequired, setNdaRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +50,20 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     loadOrg();
   }, [orgId]);
 
+  // The NDA becomes required as soon as the org has a live attestor
+  // application (before the capability exists), so drive the NDA tab off the
+  // NDA-status endpoint rather than the capability map.
+  useEffect(() => {
+    async function loadNda() {
+      const res = await getOrgNda({
+        path: { org_id: orgId },
+        headers: getAccessTokenHeaders(),
+      });
+      setNdaRequired(res.data?.required ?? false);
+    }
+    loadNda();
+  }, [orgId]);
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -73,7 +88,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const isOperator = operatorCap === "active";
 
   const attestorCap = myOrg.capabilities?.["attestor"];
-  const needsNda = attestorCap === "active" || attestorCap === "pending";
+  // Required while a live attestor application exists (pre-approval) or the
+  // capability is pending/active — computed server-side via the NDA endpoint.
+  const needsNda = ndaRequired;
   const attestorActive = attestorCap === "active";
 
   const contributorCap = myOrg.capabilities?.["contributor"];

@@ -20658,6 +20658,11 @@ components:
           type: string
           format: date-time
           title: Joined At
+        nda_signed:
+          type: boolean
+          title: Nda Signed
+          default: false
+          description: True iff the member holds a current-version platform NDA signature.
       type: object
       required:
       - id

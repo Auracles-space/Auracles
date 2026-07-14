@@ -35,6 +35,7 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgInvitation,
     OrgMember,
+    OrgMemberNda,
     OrgTeam,
     OrgTeamMember,
 )
@@ -513,6 +514,21 @@ async def list_members(
             .order_by(OrgMember.joined_at.asc(), OrgMember.id.asc())
         )
     ).all()
+    # Members holding a current-version NDA signature. The trial-nomination
+    # picker filters on this so only NDA-signed members are selectable.
+    current_version = get_settings().org_member_nda_version
+    signed_member_ids = set(
+        (
+            await db.scalars(
+                select(OrgMemberNda.member_id)
+                .join(OrgMember, OrgMember.id == OrgMemberNda.member_id)
+                .where(
+                    OrgMember.org_id == context.org.id,
+                    OrgMemberNda.nda_version == current_version,
+                )
+            )
+        ).all()
+    )
     return OrgMembersResponse(
         members=[
             OrgMemberResponse(
@@ -522,6 +538,7 @@ async def list_members(
                 email=email if include_email else None,
                 role=member.role,
                 joined_at=member.joined_at,
+                nda_signed=member.id in signed_member_ids,
             )
             for member, display_name, email in rows
         ]

@@ -21,8 +21,8 @@ vi.mock("@/components/modules/organizations/organization-context", () => ({
 }));
 
 const MEMBERS = [
-  { id: "member-1", user_id: "user-1", display_name: "Ada Lovelace", email: "ada@x.io", role: "member", joined_at: "2026-01-01T00:00:00Z" },
-  { id: "member-2", user_id: "user-2", display_name: "Alan Turing", email: "alan@x.io", role: "admin", joined_at: "2026-01-02T00:00:00Z" },
+  { id: "member-1", user_id: "user-1", display_name: "Ada Lovelace", email: "ada@x.io", role: "member", joined_at: "2026-01-01T00:00:00Z", nda_signed: true },
+  { id: "member-2", user_id: "user-2", display_name: "Alan Turing", email: "alan@x.io", role: "admin", joined_at: "2026-01-02T00:00:00Z", nda_signed: true },
 ];
 
 describe("TrialMemberGate", () => {
@@ -67,6 +67,21 @@ describe("TrialMemberGate", () => {
     );
     const link = screen.getByRole("link", { name: /sign the NDA/i });
     expect(link.getAttribute("href")).toBe("/dashboard/organizations/org-1/nda");
+  });
+
+  it("omits members who have not signed the NDA from the picker", async () => {
+    vi.mocked(listMembers).mockResolvedValue({
+      data: {
+        members: [
+          MEMBERS[0],
+          { ...MEMBERS[1], nda_signed: false },
+        ],
+      },
+    } as never);
+    render(<TrialMemberGate application={null} onChange={vi.fn()} />);
+
+    await screen.findByRole("option", { name: /Ada Lovelace/ });
+    expect(screen.queryByRole("option", { name: /Alan Turing/ })).toBeNull();
   });
 
   it("keeps the nominate button disabled until a member is chosen", async () => {
