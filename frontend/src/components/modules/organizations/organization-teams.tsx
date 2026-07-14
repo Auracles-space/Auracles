@@ -28,6 +28,7 @@ import {
   Pencil1Icon,
   TrashIcon,
   PersonIcon,
+  PlusIcon,
   ChevronDownIcon,
 } from "@radix-ui/react-icons";
 
@@ -349,6 +350,22 @@ export function OrganizationTeams() {
 
                     {/* ── Actions ── */}
                     <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedTeamId((prev) =>
+                            prev === team.id ? null : team.id,
+                          )
+                        }
+                        aria-expanded={expandedTeamId === team.id}
+                        title="Add or remove members"
+                        className="flex min-h-9 items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/20"
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                        <span className="hidden sm:inline">
+                          {expandedTeamId === team.id ? "Close" : "Add members"}
+                        </span>
+                      </button>
                       <button
                         type="button"
                         disabled={isSuspended}
