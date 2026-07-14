@@ -217,7 +217,6 @@ def _application_body() -> dict[str, object]:
     return {
         "legal_name": "Lifecycle Attestations Ltd",
         "registration_number": "RC998877",
-        "incorporation_doc_keys": ["kyb/lifecycle/cert.pdf"],
         "sectors": ["private_equity"],
         "functions": ["compliance"],
         "jurisdictions": ["united_states"],
@@ -357,6 +356,17 @@ async def test_org_attestor_full_lifecycle(
         headers=_auth(owner_id),
     )
     assert tax.status_code == 200
+
+    incorporation = await client.post(
+        f"{app_base}/incorporation-document",
+        json={
+            "file_name": "cert.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+        headers=_auth(owner_id),
+    )
+    assert incorporation.status_code == 200
 
     undertakings = await client.post(
         f"{app_base}/sign-undertakings",

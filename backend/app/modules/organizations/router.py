@@ -79,6 +79,8 @@ from app.modules.organizations.schemas import (
     OrgAttestorApplicationUpdateRequest,
     OrgAttestorFeedbackRequest,
     OrgAttestorGateChecklist,
+    OrgAttestorIncorporationDocumentDeleteRequest,
+    OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
     OrgCapabilityResponse,
     OrgInvitationCreateRequest,
@@ -1068,6 +1070,53 @@ async def set_attestor_tax_document(
     return await attestor_application_service.set_tax_document(
         db, org_id=org_id, actor_id=context.user.id, payload=payload
     )
+
+
+@router.post(
+    "/{org_id}/attestor-application/incorporation-document",
+    response_model=CredentialEvidenceUploadSessionResponse,
+    summary="Create an incorporation-document upload session",
+    description=(
+        "Create a presigned upload session for one incorporation document and "
+        "append its S3 key to the application's KYB document list. Owner/admin "
+        "only."
+    ),
+)
+async def add_attestor_incorporation_document(
+    org_id: UUID,
+    payload: OrgAttestorIncorporationDocumentRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned incorporation-document upload session."""
+    return await attestor_application_service.add_incorporation_document(
+        db, org_id=org_id, actor_id=context.user.id, payload=payload
+    )
+
+
+@router.delete(
+    "/{org_id}/attestor-application/incorporation-document",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Remove an incorporation document",
+    description=(
+        "Detach one incorporation document from the application by its S3 key. "
+        "Owner/admin only."
+    ),
+)
+async def remove_attestor_incorporation_document(
+    org_id: UUID,
+    payload: OrgAttestorIncorporationDocumentDeleteRequest,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Detach one incorporation document from the application."""
+    await attestor_application_service.remove_incorporation_document(
+        db, org_id=org_id, actor_id=context.user.id, s3_key=payload.s3_key
+    )
+    application, checklist = await attestor_application_service.get_application(
+        db, org_id=org_id
+    )
+    return _application_response(application, checklist)
 
 
 @router.post(

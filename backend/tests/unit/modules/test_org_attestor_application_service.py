@@ -17,7 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import encrypt_totp_secret, hash_password
@@ -37,6 +37,7 @@ from app.modules.organizations.models import (
 from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationUpdateRequest,
+    OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
@@ -149,7 +150,6 @@ def _valid_create() -> OrgAttestorApplicationCreateRequest:
     return OrgAttestorApplicationCreateRequest(
         legal_name="Acme Attestations Ltd",
         registration_number="RC123456",
-        incorporation_doc_keys=["kyb/acme/cert.pdf"],
         sectors=["private_equity"],
         functions=["compliance"],
         jurisdictions=["united_states"],
@@ -157,6 +157,27 @@ def _valid_create() -> OrgAttestorApplicationCreateRequest:
         sample_work={"portfolio": "https://example.com/samples"},
         professional_references="Jane Roe, MD of Example Capital.",
     )
+
+
+async def _add_incorporation_doc(org_id: UUID, actor_id: UUID) -> str:
+    """Attach one incorporation document via the service and return its key.
+
+    Incorporation docs are no longer supplied on create; they are appended
+    through the dedicated upload endpoint, so submit-success paths must stamp
+    one this way first.
+    """
+    async with async_session_factory() as session:
+        session_result = await svc.add_incorporation_document(
+            session,
+            org_id=org_id,
+            actor_id=actor_id,
+            payload=OrgAttestorIncorporationDocumentRequest(
+                file_name="cert.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+            ),
+        )
+    return session_result.s3_key
 
 
 async def _load_user(user_id: UUID) -> User:
@@ -189,6 +210,7 @@ async def test_update_after_submit_rejected(app_state: None) -> None:
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
+    await _add_incorporation_doc(org_id, owner.user_id)
     async with async_session_factory() as session:
         await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
     with pytest.raises(HTTPException) as exc:
@@ -209,7 +231,6 @@ async def test_submit_incomplete_kyb_rejected(app_state: None) -> None:
         payload = _valid_create()
         payload.legal_name = None
         payload.registration_number = None
-        payload.incorporation_doc_keys = []
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=payload
         )
@@ -219,6 +240,71 @@ async def test_submit_incomplete_kyb_rejected(app_state: None) -> None:
                 session, org_id=org_id, actor_id=owner.user_id
             )
     assert exc.value.status_code == 422
+
+
+async def test_add_incorporation_document_appends_key(app_state: None) -> None:
+    """Uploading an incorporation document appends its key to the application."""
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    key = await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(OrgAttestorApplication).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+    assert application is not None
+    assert application.incorporation_doc_keys == [key]
+
+
+async def test_remove_incorporation_document_detaches_key(app_state: None) -> None:
+    """Removing an incorporation document drops just that key from the list."""
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    key = await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        application = await svc.remove_incorporation_document(
+            session, org_id=org_id, actor_id=owner.user_id, s3_key=key
+        )
+    assert application.incorporation_doc_keys == []
+
+
+async def test_remove_incorporation_document_unknown_key_rejected(
+    app_state: None,
+) -> None:
+    """Removing a key not attached to the application raises 404."""
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    with pytest.raises(HTTPException) as exc:
+        async with async_session_factory() as session:
+            await svc.remove_incorporation_document(
+                session, org_id=org_id, actor_id=owner.user_id, s3_key="nope/x.pdf"
+            )
+    assert exc.value.status_code == 404
+
+
+async def test_submit_succeeds_with_full_kyb(app_state: None) -> None:
+    """A complete application with an incorporation document submits cleanly."""
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        application = await svc.submit_application(
+            session, org_id=org_id, actor_id=owner.user_id
+        )
+    assert application.status == "submitted"
 
 
 async def test_sign_undertakings_wrong_totp_rejected(app_state: None) -> None:
@@ -278,6 +364,40 @@ async def test_nominate_signed_member_succeeds(app_state: None) -> None:
             session, org_id=org_id, actor_id=owner.user_id, member_id=owner.member_id
         )
     assert application.trial_member_id == owner.member_id
+
+
+async def test_nominate_notifies_member(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nominating a trial member queues an in-app + email notification to them.
+
+    The nominee must be told they were selected, so the service dispatches a
+    durable notification (in-app + email fanout) to the member's user, deep
+    linking the org attestor page.
+    """
+    org_id, owner = await _create_org(attestor_status="pending")
+    calls: list[dict[str, object]] = []
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _FakeTask())
+
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+        await nda_service.sign_nda(session, org_id=org_id, user_id=owner.user_id)
+    async with async_session_factory() as session:
+        await svc.nominate_trial_member(
+            session, org_id=org_id, actor_id=owner.user_id, member_id=owner.member_id
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(owner.user_id)
+    assert calls[0]["notification_type"] == "org_attestor_trial_nominated"
+    assert str(org_id) in str(calls[0]["link"])
 
 
 async def test_gate_checklist_reflects_service_stamps(app_state: None) -> None:

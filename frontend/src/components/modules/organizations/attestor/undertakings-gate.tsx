@@ -8,6 +8,69 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
+/**
+ * Scrollable panel presenting the Attestor undertakings for review.
+ *
+ * TODO(william, 2026-07-14): Placeholder legal text pending counsel review.
+ * Replace with the finalized Attestor Policy and Confidentiality Undertaking
+ * (ideally sourced from a versioned document store) before public launch.
+ */
+function UndertakingsDocument() {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-foreground">Undertakings</span>
+        <span className="rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+          Draft — pending legal review
+        </span>
+      </div>
+      <div className="max-h-64 space-y-4 overflow-y-auto rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground-muted">
+        <section>
+          <h4 className="mb-1 font-semibold text-foreground">
+            1. Attestor Policy &amp; Terms of Service
+          </h4>
+          <p>
+            By acting as an Organization Attestor on Auracles, your organization agrees to
+            perform verifications honestly, competently, and independently. You will only
+            attest to matters within your professional competence and the sectors, functions,
+            and jurisdictions declared in your application.
+          </p>
+          <p className="mt-2">
+            You agree not to attest any Framework, credential, or party where a conflict of
+            interest exists, and to disclose any such conflict promptly. Auracles may suspend or
+            revoke your attestor status for inaccurate, negligent, or bad-faith attestations.
+          </p>
+          <p className="mt-2">
+            Attestations you issue are your organization&apos;s professional representations.
+            You remain responsible for their accuracy and for complying with applicable laws and
+            professional standards in every jurisdiction you operate in.
+          </p>
+        </section>
+
+        <section>
+          <h4 className="mb-1 font-semibold text-foreground">2. Confidentiality Undertaking</h4>
+          <p>
+            In the course of attestation work you may access non-public information belonging to
+            contributors, operators, and Auracles. You agree to keep all such information strictly
+            confidential, to use it solely for the purpose of performing the attestation, and not
+            to disclose it to any third party without authorization.
+          </p>
+          <p className="mt-2">
+            You will apply reasonable safeguards to protect confidential information, restrict
+            access to personnel who need it, and return or destroy it on request or when it is no
+            longer required. This obligation survives the termination of your attestor status.
+          </p>
+        </section>
+
+        <p className="text-xs italic text-foreground-muted">
+          This is placeholder text for testing and will be replaced by the final,
+          legally-reviewed undertakings before launch.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function UndertakingsGate({
   application,
   onChange,
@@ -87,29 +150,35 @@ export function UndertakingsGate({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <label htmlFor="accept_policy" className="flex items-start gap-3 text-sm">
+        <UndertakingsDocument />
+
+        <label htmlFor="accept_policy" className="flex cursor-pointer items-start gap-3 text-sm">
           <input
             id="accept_policy"
             type="checkbox"
             checked={acceptPolicy}
             onChange={(e) => setAcceptPolicy(e.target.checked)}
-            className="mt-1 size-4 shrink-0 rounded border-border-default bg-background text-foreground focus:ring-accent"
+            className="mt-1 size-4 shrink-0 cursor-pointer rounded border-border-default bg-background text-foreground focus:ring-accent"
           />
           <span className="text-foreground">
-            I accept the organization attestor policy and terms of service.
+            I have read and accept the Attestor Policy &amp; Terms of Service above.
           </span>
         </label>
 
-        <label htmlFor="accept_confidentiality" className="flex items-start gap-3 text-sm">
+        <label
+          htmlFor="accept_confidentiality"
+          className="flex cursor-pointer items-start gap-3 text-sm"
+        >
           <input
             id="accept_confidentiality"
             type="checkbox"
             checked={acceptConfidentiality}
             onChange={(e) => setAcceptConfidentiality(e.target.checked)}
-            className="mt-1 size-4 shrink-0 rounded border-border-default bg-background text-foreground focus:ring-accent"
+            className="mt-1 size-4 shrink-0 cursor-pointer rounded border-border-default bg-background text-foreground focus:ring-accent"
           />
           <span className="text-foreground">
-            I accept the confidentiality undertaking and agree to protect sensitive information.
+            I have read and accept the Confidentiality Undertaking above and agree to protect
+            sensitive information.
           </span>
         </label>
 

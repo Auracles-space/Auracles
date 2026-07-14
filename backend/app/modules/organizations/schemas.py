@@ -32,7 +32,10 @@ from app.shared.taxonomy import (
     validate_sectors,
 )
 
-_PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x1f\x7f]")
+# Block markup delimiters and dangerous control characters, but allow the
+# whitespace people type in multi-line textareas: tab (0x09), newline (0x0a),
+# and carriage return (0x0d).
+_PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _logo_public_url(logo_key: str | None) -> str | None:
@@ -569,7 +572,6 @@ class OrgAttestorApplicationCreateRequest(BaseModel):
 
     legal_name: str | None = Field(default=None, min_length=2, max_length=200)
     registration_number: str | None = Field(default=None, min_length=1, max_length=200)
-    incorporation_doc_keys: list[str] = Field(default_factory=list, max_length=20)
     sectors: list[str] = Field(min_length=1, max_length=12)
     functions: list[str] = Field(min_length=1, max_length=14)
     jurisdictions: list[str] = Field(min_length=1, max_length=24)
@@ -611,7 +613,6 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
 
     legal_name: str | None = Field(default=None, min_length=2, max_length=200)
     registration_number: str | None = Field(default=None, min_length=1, max_length=200)
-    incorporation_doc_keys: list[str] | None = Field(default=None, max_length=20)
     sectors: list[str] | None = Field(default=None, min_length=1, max_length=12)
     functions: list[str] | None = Field(default=None, min_length=1, max_length=14)
     jurisdictions: list[str] | None = Field(default=None, min_length=1, max_length=24)
@@ -669,6 +670,25 @@ class OrgAttestorTaxDocumentRequest(BaseModel):
     file_name: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0)
+
+
+class OrgAttestorIncorporationDocumentRequest(BaseModel):
+    """Request body to create a presigned incorporation-document upload session.
+
+    The org uploads incorporation documents (certificate of incorporation and
+    similar KYB evidence) to a private bucket; the returned S3 key is appended
+    to the application's ``incorporation_doc_keys`` list server-side.
+    """
+
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class OrgAttestorIncorporationDocumentDeleteRequest(BaseModel):
+    """Request body to remove one incorporation document from the application."""
+
+    s3_key: str = Field(min_length=1, max_length=1024)
 
 
 class OrgNominateTrialMemberRequest(BaseModel):

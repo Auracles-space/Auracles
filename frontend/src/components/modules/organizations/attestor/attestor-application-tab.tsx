@@ -191,7 +191,7 @@ export function AttestorApplicationTab() {
         </GateCard>
         <GateCard
           title="KYB verification"
-          description="Verify your organization's legal entity and beneficial owners via Stripe."
+          description="An admin verifies your organization's legal entity and beneficial owners during review."
           status={kybStatus}
         />
         <GateCard

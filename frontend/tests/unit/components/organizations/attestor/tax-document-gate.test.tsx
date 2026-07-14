@@ -63,4 +63,14 @@ describe("TaxDocumentGate", () => {
     );
     expect(onChange).toHaveBeenCalled();
   });
+
+  it("shows a pointer cursor on the file upload trigger", () => {
+    vi.mocked(useOrganization).mockReturnValue({ role: "owner", orgId: "org-1" } as unknown as ReturnType<typeof useOrganization>);
+
+    render(<TaxDocumentGate application={null} onChange={vi.fn()} />);
+
+    expect(screen.getByLabelText(/Upload Document/i).className).toContain(
+      "file:cursor-pointer",
+    );
+  });
 });

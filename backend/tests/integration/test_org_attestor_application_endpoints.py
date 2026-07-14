@@ -147,7 +147,6 @@ def _create_body() -> dict[str, object]:
     return {
         "legal_name": "Acme Attestations Ltd",
         "registration_number": "RC123456",
-        "incorporation_doc_keys": ["kyb/acme/cert.pdf"],
         "sectors": ["private_equity"],
         "functions": ["compliance"],
         "jurisdictions": ["united_states"],
@@ -191,7 +190,6 @@ async def test_create_accepts_canonical_functions(
     payload = {
         "legal_name": "Canonical Attestors Ltd",
         "registration_number": "RC654321",
-        "incorporation_doc_keys": ["kyb/canonical/cert.pdf"],
         "sectors": ["private_equity"],
         "functions": ["compliance", "investment_management"],
         "jurisdictions": ["united_states", "nigeria"],
@@ -339,6 +337,63 @@ async def test_tax_document_upload_session(
     )
     assert res.status_code == 200
     assert res.json()["s3_key"].startswith("org-attestor-tax-documents/")
+
+
+async def test_incorporation_document_upload_and_remove(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """Uploading appends a key; removing it detaches it from the application."""
+    owner_id = await _create_user("owner")
+    org_id = await _create_org(owner_id)
+    path = _APPLICATION_PATH.format(org_id=org_id)
+    await client.post(path, json=_create_body(), headers=auth(owner_id))
+
+    upload = await client.post(
+        f"{path}/incorporation-document",
+        json={
+            "file_name": "cert.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+        headers=auth(owner_id),
+    )
+    assert upload.status_code == 200
+    key = upload.json()["s3_key"]
+    assert key.startswith("org-attestor-incorporation-docs/")
+
+    fetched = await client.get(path, headers=auth(owner_id))
+    assert fetched.json()["incorporation_doc_keys"] == [key]
+
+    removed = await client.request(
+        "DELETE",
+        f"{path}/incorporation-document",
+        json={"s3_key": key},
+        headers=auth(owner_id),
+    )
+    assert removed.status_code == 200
+    assert removed.json()["incorporation_doc_keys"] == []
+
+
+async def test_incorporation_document_requires_membership(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """A non-member cannot open an incorporation-document upload session."""
+    owner_id = await _create_user("owner")
+    stranger_id = await _create_user("stranger")
+    org_id = await _create_org(owner_id)
+    path = _APPLICATION_PATH.format(org_id=org_id)
+    await client.post(path, json=_create_body(), headers=auth(owner_id))
+
+    res = await client.post(
+        f"{path}/incorporation-document",
+        json={
+            "file_name": "cert.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        },
+        headers=auth(stranger_id),
+    )
+    assert res.status_code == 403
 
 
 async def test_nominate_trial_member_requires_nda(

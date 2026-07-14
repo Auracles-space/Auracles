@@ -49,13 +49,21 @@ from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationUpdateRequest,
     OrgAttestorGateChecklist,
+    OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Org tax-document uploads reuse the shared credential-evidence upload limits.
 TAX_DOCUMENT_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
 TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
+
+# Incorporation-document uploads reuse the same private-bucket upload limits and
+# cap how many KYB documents one application may attach.
+INCORPORATION_DOC_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
+INCORPORATION_DOC_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
+MAX_INCORPORATION_DOCS = 20
 
 # CoI/confidentiality validity window: the undertakings gate stamps
 # coi_expires_at one year out.
@@ -192,7 +200,8 @@ async def create_application(
                 specializations=[],
                 legal_name=payload.legal_name,
                 registration_number=payload.registration_number,
-                incorporation_doc_keys=payload.incorporation_doc_keys,
+                # Incorporation docs are attached after creation via the
+                # dedicated upload endpoint; the column defaults to empty.
                 sectors=payload.sectors,
                 functions=payload.functions,
                 jurisdictions=payload.jurisdictions,
@@ -559,6 +568,143 @@ async def set_tax_document(
     )
 
 
+async def add_incorporation_document(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+    payload: OrgAttestorIncorporationDocumentRequest,
+) -> CredentialEvidenceUploadSessionResponse:
+    """Create a presigned upload session for one incorporation document.
+
+    Appends a freshly minted S3 key to the application's
+    ``incorporation_doc_keys`` list, then returns a presigned POST so the org
+    can upload the document directly to the private bucket. The list is the
+    single source of truth for KYB documents, so keys are never supplied by the
+    create/update payload.
+
+    Args:
+        db: Async session.
+        org_id: Organization owning the application.
+        actor_id: Authenticated org owner/admin acting.
+        payload: Upload metadata (file name, content type, declared size).
+
+    Returns:
+        A presigned POST upload session response for the incorporation document.
+
+    Raises:
+        HTTPException(404): If no live application exists.
+        HTTPException(409): If the application is not gate-eligible, or already
+            holds the maximum number of incorporation documents.
+        HTTPException(413): If the upload exceeds the size limit.
+    """
+    if payload.size_bytes > INCORPORATION_DOC_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Incorporation document upload is too large.",
+        )
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=INCORPORATION_DOC_UPLOAD_TTL_SECONDS)
+    async with db.begin():
+        application = await _load_live_locked(
+            db, org_id, allowed_statuses=_GATEABLE_STATUSES
+        )
+        if len(application.incorporation_doc_keys) >= MAX_INCORPORATION_DOCS:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Maximum number of incorporation documents already attached."
+                ),
+            )
+        key = (
+            f"org-attestor-incorporation-docs/{org_id}/{application.id}/"
+            f"{uuid4()}-{_safe_file_name(payload.file_name)}"
+        )
+        # Reassign (not append) so SQLAlchemy detects the mutation on the
+        # ARRAY column and flushes the new key.
+        application.incorporation_doc_keys = [
+            *application.incorporation_doc_keys,
+            key,
+        ]
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_attestor_incorporation_document_added",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"incorporation_doc_added": True},
+        )
+
+    settings = get_settings()
+    post = s3.storage.presigned_post(
+        settings.s3_artifacts_bucket,
+        key,
+        payload.content_type,
+        INCORPORATION_DOC_MAX_BYTES,
+        INCORPORATION_DOC_UPLOAD_TTL_SECONDS,
+    )
+    return CredentialEvidenceUploadSessionResponse(
+        id=uuid4(),
+        s3_key=key,
+        url=str(post["url"]),
+        fields={str(k): str(v) for k, v in post["fields"].items()},
+        expires_at=expires_at,
+        size_limit=INCORPORATION_DOC_MAX_BYTES,
+        scan_status="pending_scan",
+    )
+
+
+async def remove_incorporation_document(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+    s3_key: str,
+) -> OrgAttestorApplication:
+    """Remove one incorporation document key from the application.
+
+    Args:
+        db: Async session.
+        org_id: Organization owning the application.
+        actor_id: Authenticated org owner/admin acting.
+        s3_key: The incorporation-document key to detach.
+
+    Returns:
+        The application with the key removed.
+
+    Raises:
+        HTTPException(404): If no live application exists, or the key is not
+            attached to the application.
+        HTTPException(409): If the application is not gate-eligible.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        application = await _load_live_locked(
+            db, org_id, allowed_statuses=_GATEABLE_STATUSES
+        )
+        if s3_key not in application.incorporation_doc_keys:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Incorporation document not found.",
+            )
+        application.incorporation_doc_keys = [
+            key for key in application.incorporation_doc_keys if key != s3_key
+        ]
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_attestor_incorporation_document_removed",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={"incorporation_doc_removed": True},
+        )
+    return application
+
+
 async def nominate_trial_member(
     db: AsyncSession,
     *,
@@ -605,6 +751,7 @@ async def nominate_trial_member(
                 detail={"error_code": "nda_required"},
             )
         application.trial_member_id = member_id
+        nominee_user_id = member.user_id
         await write_audit(
             db=db,
             actor_id=actor_id,
@@ -613,6 +760,33 @@ async def nominate_trial_member(
             target_id=application.id,
             metadata={"member_id": str(member_id)},
         )
+
+    # Tell the nominee they were selected. Dispatched after commit so the
+    # worker reads the persisted nomination; failure to queue must not roll
+    # back the nomination itself (mirrors the attestation notification path).
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(nominee_user_id),
+            notification_type="org_attestor_trial_nominated",
+            title="You've been nominated for a trial attestation",
+            body=(
+                "Your organization has nominated you to complete a trial "
+                "attestation on its behalf. Open the attestor page to begin."
+            ),
+            payload={
+                "org_id": str(org_id),
+                "application_id": str(application.id),
+            },
+            link=f"/dashboard/organizations/{org_id}/attestor",
+            dedupe_key=f"org_attestor_trial_nominated:{application.id}:{member_id}",
+        )
+    except Exception as exc:  # pragma: no cover - defensive queue guard
+        logger.bind(
+            module="organizations",
+            action="nominate_trial_member",
+            org_id=org_id,
+            member_id=member_id,
+        ).error("notification_dispatch_failed", error=str(exc))
     return application
 
 

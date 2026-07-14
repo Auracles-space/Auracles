@@ -7527,6 +7527,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-application/incorporation-document:
+    post:
+      tags:
+      - Organizations
+      summary: Create an incorporation-document upload session
+      description: Create a presigned upload session for one incorporation document
+        and append its S3 key to the application's KYB document list. Owner/admin
+        only.
+      operationId: add_attestor_incorporation_document_v1_orgs__org_id__attestor_application_incorporation_document_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Remove an incorporation document
+      description: Detach one incorporation document from the application by its S3
+        key. Owner/admin only.
+      operationId: remove_attestor_incorporation_document_v1_orgs__org_id__attestor_application_incorporation_document_delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentDeleteRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/attestor-application/nominate-trial-member:
     post:
       tags:
@@ -19651,12 +19725,6 @@ components:
             minLength: 1
           - type: 'null'
           title: Registration Number
-        incorporation_doc_keys:
-          items:
-            type: string
-          type: array
-          maxItems: 20
-          title: Incorporation Doc Keys
         sectors:
           items:
             type: string
@@ -19889,14 +19957,6 @@ components:
             minLength: 1
           - type: 'null'
           title: Registration Number
-        incorporation_doc_keys:
-          anyOf:
-          - items:
-              type: string
-            type: array
-            maxItems: 20
-          - type: 'null'
-          title: Incorporation Doc Keys
         sectors:
           anyOf:
           - items:
@@ -20005,6 +20065,49 @@ components:
         Mirrors the admin activation gates so the org can see what remains
 
         before its application can be approved.'
+    OrgAttestorIncorporationDocumentDeleteRequest:
+      properties:
+        s3_key:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: S3 Key
+      type: object
+      required:
+      - s3_key
+      title: OrgAttestorIncorporationDocumentDeleteRequest
+      description: Request body to remove one incorporation document from the application.
+    OrgAttestorIncorporationDocumentRequest:
+      properties:
+        file_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: File Name
+        content_type:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Content Type
+        size_bytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+      type: object
+      required:
+      - file_name
+      - content_type
+      - size_bytes
+      title: OrgAttestorIncorporationDocumentRequest
+      description: 'Request body to create a presigned incorporation-document upload
+        session.
+
+
+        The org uploads incorporation documents (certificate of incorporation and
+
+        similar KYB evidence) to a private bucket; the returned S3 key is appended
+
+        to the application''s ``incorporation_doc_keys`` list server-side.'
     OrgAttestorTaxDocumentRequest:
       properties:
         tax_document_type:

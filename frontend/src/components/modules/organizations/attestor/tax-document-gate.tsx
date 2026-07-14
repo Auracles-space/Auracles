@@ -97,7 +97,7 @@ export function TaxDocumentGate({
             type="file"
             accept=".pdf,image/*"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="block w-full text-sm text-foreground-muted file:mr-4 file:rounded-md file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background hover:file:bg-foreground/90"
+            className="block w-full text-sm text-foreground-muted file:mr-4 file:cursor-pointer file:rounded-md file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background hover:file:bg-foreground/90"
           />
         </div>
 

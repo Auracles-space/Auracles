@@ -2693,7 +2693,6 @@ export type OrgAttestorAdminListResponse = {
 export type OrgAttestorApplicationCreateRequest = {
     legal_name?: (string | null);
     registration_number?: (string | null);
-    incorporation_doc_keys?: Array<(string)>;
     sectors: Array<(string)>;
     functions: Array<(string)>;
     jurisdictions: Array<(string)>;
@@ -2750,7 +2749,6 @@ export type OrgAttestorApplicationResponse = {
 export type OrgAttestorApplicationUpdateRequest = {
     legal_name?: (string | null);
     registration_number?: (string | null);
-    incorporation_doc_keys?: (Array<(string)> | null);
     sectors?: (Array<(string)> | null);
     functions?: (Array<(string)> | null);
     jurisdictions?: (Array<(string)> | null);
@@ -2782,6 +2780,26 @@ export type OrgAttestorGateChecklist = {
     payout_account_linked: boolean;
     tax_document_uploaded: boolean;
     trial_passed: boolean;
+};
+
+/**
+ * Request body to remove one incorporation document from the application.
+ */
+export type OrgAttestorIncorporationDocumentDeleteRequest = {
+    s3_key: string;
+};
+
+/**
+ * Request body to create a presigned incorporation-document upload session.
+ *
+ * The org uploads incorporation documents (certificate of incorporation and
+ * similar KYB evidence) to a private bucket; the returned S3 key is appended
+ * to the application's ``incorporation_doc_keys`` list server-side.
+ */
+export type OrgAttestorIncorporationDocumentRequest = {
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
 };
 
 /**
@@ -6447,6 +6465,28 @@ export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostD
 export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostError = (HTTPValidationError);
+
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostData = {
+    body: OrgAttestorIncorporationDocumentRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostError = (HTTPValidationError);
+
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteData = {
+    body: OrgAttestorIncorporationDocumentDeleteRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteResponse = (OrgAttestorApplicationResponse);
+
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteError = (HTTPValidationError);
 
 export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostData = {
     body: OrgNominateTrialMemberRequest;
