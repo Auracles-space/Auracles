@@ -116,6 +116,10 @@ class OrganizationResponse(BaseModel):
     website: str | None
     description: str | None
     created_at: datetime
+    # Populated when the org is under a platform suspension, so member-facing
+    # surfaces can render a suspension banner. Only ever returned on
+    # member-scoped endpoints; the public profile uses a separate schema.
+    suspended_at: datetime | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

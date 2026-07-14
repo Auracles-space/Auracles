@@ -2003,6 +2003,50 @@ async def admin_suspend_org(
         await sync_derived_roles(db, user_id=user_id)
 
 
+async def admin_reinstate_org(
+    db: AsyncSession,
+    *,
+    admin: User,
+    org_id: UUID,
+) -> None:
+    """Lift a platform-wide org suspension (idempotent)."""
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        org = await db.scalar(
+            select(Organization).where(Organization.id == org_id).with_for_update()
+        )
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found.")
+
+        if not org.suspended_at:
+            return
+
+        org.suspended_at = None
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_reinstated",
+            target_type="organization",
+            target_id=org_id,
+        )
+
+        members = (
+            (
+                await db.execute(
+                    select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    for user_id in members:
+        await sync_derived_roles(db, user_id=user_id)
+
+
 async def export_user_org_memberships(
     db: AsyncSession, *, user_id: UUID
 ) -> list[dict[str, object]]:

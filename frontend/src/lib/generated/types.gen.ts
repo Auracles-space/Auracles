@@ -2589,6 +2589,7 @@ export type OrganizationResponse = {
     website: (string | null);
     description: (string | null);
     created_at: string;
+    suspended_at?: (string | null);
     /**
      * Public URL the org logo is served at, or ``None`` when unset.
      */
@@ -6744,6 +6745,16 @@ export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
 
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostResponse = (void);
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostError = (HTTPValidationError);
 
 export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostData = {
     path: {

@@ -8513,6 +8513,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/orgs/{org_id}/reinstate:
+    post:
+      tags:
+      - Admin Organizations
+      summary: Reinstate a suspended organization (platform admin)
+      description: Lift a platform-wide organization suspension. Idempotent; members
+        regain org access and derived roles are re-evaluated.
+      operationId: admin_reinstate_org_v1_admin_orgs__org_id__reinstate_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/orgs/{org_id}/attestor-capability/suspend:
     post:
       tags:
@@ -21004,6 +21031,12 @@ components:
           type: string
           format: date-time
           title: Created At
+        suspended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Suspended At
         logo_url:
           anyOf:
           - type: string

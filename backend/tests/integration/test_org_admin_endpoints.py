@@ -112,6 +112,104 @@ async def test_admin_suspend_org(
     assert patch_res.json()["detail"]["error_code"] == "org_suspended"
 
 
+async def test_orgs_mine_exposes_suspension_state(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+) -> None:
+    """A member's /orgs/mine entry reports suspended_at so the UI can warn."""
+    del override_redis
+    _admin_id, admin_headers = await create_platform_admin()
+
+    owner_id = await create_user("mine-suspend-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "minesuspendorg")
+    org_id = org["id"]
+
+    before = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in before.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["org"]["suspended_at"] is None
+
+    await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+
+    after = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in after.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["org"]["suspended_at"] is not None
+
+
+async def test_admin_reinstate_org_lifts_suspension(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+) -> None:
+    """Reinstating a suspended org returns 204 and restores org-admin actions."""
+    del override_redis
+    _admin_id, admin_headers = await create_platform_admin()
+
+    owner_id = await create_user("reinstate-owner")
+    owner_token = create_access_token(owner_id, [])
+
+    org = await create_org(client, owner_token, "reinstateorg")
+    org_id = org["id"]
+
+    await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+
+    res = await client.post(
+        f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers
+    )
+    assert res.status_code == 204
+
+    # Idempotent: reinstating an active org is a no-op.
+    res2 = await client.post(
+        f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers
+    )
+    assert res2.status_code == 204
+
+    patch_res = await client.patch(
+        f"/v1/orgs/{org_id}", json={"name": "New Name"}, headers=auth(owner_token)
+    )
+    assert patch_res.status_code == 200
+
+
+async def test_admin_reinstate_org_syncs_derived_roles_for_members(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reinstatement re-evaluates derived roles for every org member."""
+    del override_redis
+    from app.modules.organizations import service as org_service
+
+    _admin_id, admin_headers = await create_platform_admin()
+    owner_id = await create_user("reinstate-sync-owner")
+    member_id = await create_user("reinstate-sync-member")
+    org = await create_org(
+        client, create_access_token(owner_id, []), "reinstatesyncorg"
+    )
+    await add_member(str(org["id"]), member_id, "member")
+    await client.post(f"/v1/admin/orgs/{org['id']}/suspend", headers=admin_headers)
+
+    synced: list[UUID] = []
+
+    async def record_sync(db: object, *, user_id: UUID) -> None:
+        """Record which user ids the reinstatement path syncs."""
+        del db
+        synced.append(user_id)
+
+    monkeypatch.setattr(org_service, "sync_derived_roles", record_sync)
+
+    res = await client.post(
+        f"/v1/admin/orgs/{org['id']}/reinstate", headers=admin_headers
+    )
+
+    assert res.status_code == 204
+    assert sorted(synced) == sorted([owner_id, member_id])
+
+
 async def test_admin_list_orgs_reports_total_on_empty_page(
     client: AsyncClient,
     override_redis: FakeRedis,

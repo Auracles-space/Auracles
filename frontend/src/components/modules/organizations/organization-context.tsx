@@ -35,7 +35,9 @@ export function OrganizationProvider({
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
 }) {
-  const [isSuspended, setIsSuspended] = useState(false);
+  // Seed from the org's persisted suspension state so the banner shows on load;
+  // markSuspended() lets a child that hits a 403 org_suspended flip it live.
+  const [isSuspended, setIsSuspended] = useState(!!org.suspended_at);
 
   return (
     <OrganizationContext.Provider

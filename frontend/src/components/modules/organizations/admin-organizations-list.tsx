@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { 
+import {
   adminListOrgsV1AdminOrgsGet,
-  adminSuspendOrgV1AdminOrgsOrgIdSuspendPost 
+  adminSuspendOrgV1AdminOrgsOrgIdSuspendPost,
+  adminReinstateOrgV1AdminOrgsOrgIdReinstatePost
 } from "@/lib/generated/sdk.gen";
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -18,16 +19,21 @@ export function AdminOrganizationsList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Pagination & Search
+  // Pagination & Search. `searchInput` is the live field text; `committedQuery`
+  // is the term actually searched — only updated on submit (Enter or button),
+  // so typing does not fire a request per keystroke.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [committedQuery, setCommittedQuery] = useState("");
   const pageSize = 10;
 
-  // Suspend State
-  const [orgToSuspend, setOrgToSuspend] = useState<AdminOrgResponse | null>(null);
-  const [suspendLoading, setSuspendLoading] = useState(false);
-  const [, setSuspendError] = useState<string | null>(null);
+  // Suspend / Reinstate State. `orgToAct` holds the pending target; `actionKind`
+  // distinguishes the confirm-dialog copy and which endpoint fires.
+  const [orgToAct, setOrgToAct] = useState<AdminOrgResponse | null>(null);
+  const [actionKind, setActionKind] = useState<"suspend" | "reinstate">("suspend");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [, setActionError] = useState<string | null>(null);
 
   async function loadOrgs(currentPage: number, query: string) {
     setLoading(true);
@@ -55,39 +61,70 @@ export function AdminOrganizationsList() {
   }
 
   useEffect(() => {
-    loadOrgs(page, searchQuery);
-  }, [page, searchQuery]);
+    loadOrgs(page, committedQuery);
+  }, [page, committedQuery]);
 
-  async function handleSearch(e: React.FormEvent) {
+  function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    setPage(1); // Reset to first page on new search
-    // loadOrgs is called by effect on page change / searchQuery change, but we want 
-    // to trigger it only on submit or debounce. To keep it simple, we bind searchQuery to state and let effect run.
+    const trimmed = searchInput.trim();
+    const pageWillChange = page !== 1;
+    const queryWillChange = trimmed !== committedQuery;
+    // Reset to page 1 and commit the term; the effect refetches on either
+    // change. When neither changes, submit still refetches so it is never a
+    // dead action.
+    if (pageWillChange) {
+      setPage(1);
+    }
+    if (queryWillChange) {
+      setCommittedQuery(trimmed);
+    }
+    if (!pageWillChange && !queryWillChange) {
+      loadOrgs(1, trimmed);
+    }
   }
 
-  async function handleSuspend() {
-    if (!orgToSuspend) return;
-    setSuspendLoading(true);
-    setSuspendError(null);
+  async function handleConfirmAction() {
+    if (!orgToAct) return;
+    setActionLoading(true);
+    setActionError(null);
+
+    const call =
+      actionKind === "suspend"
+        ? adminSuspendOrgV1AdminOrgsOrgIdSuspendPost
+        : adminReinstateOrgV1AdminOrgsOrgIdReinstatePost;
 
     try {
-      const result = await adminSuspendOrgV1AdminOrgsOrgIdSuspendPost({
-        path: { org_id: orgToSuspend.id },
+      const result = await call({
+        path: { org_id: orgToAct.id },
         headers: getAccessTokenHeaders(),
       });
 
       if (!result.response.ok) {
-        setSuspendError(result.error?.detail?.error_code || "Failed to suspend organization.");
-        setSuspendLoading(false);
+        setActionError(
+          result.error?.detail?.error_code ||
+            `Failed to ${actionKind} organization.`,
+        );
+        setActionLoading(false);
       } else {
-        setSuspendLoading(false);
-        setOrgToSuspend(null);
-        await loadOrgs(page, searchQuery);
+        setActionLoading(false);
+        setOrgToAct(null);
+        await loadOrgs(page, committedQuery);
       }
     } catch {
-      setSuspendError("An unexpected error occurred.");
-      setSuspendLoading(false);
+      setActionError("An unexpected error occurred.");
+      setActionLoading(false);
     }
+  }
+
+  /**
+   * Open the confirm dialog for a suspend or reinstate action.
+   *
+   * @param org - Target organization row.
+   * @param kind - Whether to suspend an active org or reinstate a suspended one.
+   */
+  function openAction(org: AdminOrgResponse, kind: "suspend" | "reinstate") {
+    setActionKind(kind);
+    setOrgToAct(org);
   }
 
   const totalPages = Math.ceil(total / pageSize);
@@ -99,17 +136,26 @@ export function AdminOrganizationsList() {
           Organizations
         </h1>
         
-        <form onSubmit={handleSearch} className="flex gap-2 w-full sm:w-auto">
+        <form onSubmit={handleSearch} role="search" className="flex gap-2 w-full sm:w-auto">
           <div className="relative flex-grow sm:w-64">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted" />
-            <Input 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+            {loading ? (
+              <Spinner
+                aria-label="Searching"
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent"
+              />
+            ) : (
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted" />
+            )}
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by name or slug..."
               className="pl-9"
             />
           </div>
-          <Button type="submit" variant="secondary">Search</Button>
+          <Button type="submit" variant="secondary" loading={loading}>
+            Search
+          </Button>
         </form>
       </div>
 
@@ -180,13 +226,22 @@ export function AdminOrganizationsList() {
                           {statusText}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <Button
-                            variant="secondary"
-                                                        disabled={isSuspended || isDeactivated}
-                            onClick={() => setOrgToSuspend(org)}
-                          >
-                            Suspend
-                          </Button>
+                          {isSuspended && !isDeactivated ? (
+                            <Button
+                              variant="secondary"
+                              onClick={() => openAction(org, "reinstate")}
+                            >
+                              Reinstate
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              disabled={isSuspended || isDeactivated}
+                              onClick={() => openAction(org, "suspend")}
+                            >
+                              Suspend
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -224,14 +279,22 @@ export function AdminOrganizationsList() {
       </div>
 
       <ConfirmDialog
-        open={!!orgToSuspend}
-        title="Suspend Organization?"
-        description={`Are you sure you want to suspend "${orgToSuspend?.name}"? Members will lose access to organization resources immediately.`}
-        confirmLabel="Suspend"
-        tone="danger"
-        busy={suspendLoading}
-        onConfirm={handleSuspend}
-        onClose={() => setOrgToSuspend(null)}
+        open={!!orgToAct}
+        title={
+          actionKind === "suspend"
+            ? "Suspend Organization?"
+            : "Reinstate Organization?"
+        }
+        description={
+          actionKind === "suspend"
+            ? `Are you sure you want to suspend "${orgToAct?.name}"? Members will lose access to organization resources immediately.`
+            : `Reinstate "${orgToAct?.name}"? Members will regain access to organization resources immediately.`
+        }
+        confirmLabel={actionKind === "suspend" ? "Suspend" : "Reinstate"}
+        tone={actionKind === "suspend" ? "danger" : "default"}
+        busy={actionLoading}
+        onConfirm={handleConfirmAction}
+        onClose={() => setOrgToAct(null)}
       />
     </div>
   );

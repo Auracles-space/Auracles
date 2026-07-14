@@ -1750,6 +1750,22 @@ async def admin_suspend_org(
 
 
 @admin_orgs_router.post(
+    "/{org_id}/reinstate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reinstate a suspended organization (platform admin)",
+    description=(
+        "Lift a platform-wide organization suspension. Idempotent; members "
+        "regain org access and derived roles are re-evaluated."
+    ),
+)
+async def admin_reinstate_org(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Reinstate a suspended organization platform-wide (idempotent)."""
+    await service.admin_reinstate_org(db=db, admin=admin, org_id=org_id)
+
+
+@admin_orgs_router.post(
     "/{org_id}/attestor-capability/suspend",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Suspend an org's attestor capability (platform admin)",
