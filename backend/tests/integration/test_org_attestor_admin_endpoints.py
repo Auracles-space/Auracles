@@ -148,7 +148,7 @@ async def _gated_application(org_id: UUID, owner_id: UUID) -> UUID:
                 registration_number="RC123456",
                 incorporation_doc_keys=["kyb/acme/cert.pdf"],
                 sectors=["PE"],
-                framework_categories=["Compliance"],
+                functions=["Compliance"],
                 jurisdictions=["US"],
                 credentials_summary="Two decades of PE compliance experience.",
                 sample_work={},

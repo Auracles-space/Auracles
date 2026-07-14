@@ -120,7 +120,7 @@ async def _attestor_org(
     profile_active: bool = True,
     specializations: list[str] | None = None,
     jurisdictions: list[str] | None = None,
-    framework_categories: list[str] | None = None,
+    functions: list[str] | None = None,
     coi_declarations: list[dict[str, object]] | None = None,
     coi_valid: bool = True,
     approved_at: datetime | None = None,
@@ -153,7 +153,7 @@ async def _attestor_org(
                     specializations=specializations or ["tax"],
                     jurisdictions=jurisdictions or ["US"],
                     sectors=[],
-                    framework_categories=framework_categories or [],
+                    functions=functions or [],
                     active=profile_active,
                     coi_declarations=coi_declarations or [],
                     coi_signed_at=now if coi_valid else None,
@@ -435,7 +435,7 @@ async def test_coi_declaration_subject_conflict_org_excluded(db_session) -> None
 
 
 async def test_ranking_orders_by_score_then_fifo(db_session) -> None:
-    """Category-matching orgs rank first; ties fall back to approval time."""
+    """Function-matching orgs rank first; ties fall back to approval time."""
     requestor = await _new_user("req")
     owner = await _new_user("fwowner")
     base = datetime.now(UTC)
@@ -447,6 +447,7 @@ async def test_ranking_orders_by_score_then_fifo(db_session) -> None:
                 description="Framework for org score-order tests.",
                 status="published",
                 category="compliance",
+                business_function="compliance",
                 tags=["test"],
                 price=Decimal("1.00"),
                 license_types=["single_user"],
@@ -457,7 +458,7 @@ async def test_ranking_orders_by_score_then_fifo(db_session) -> None:
             framework_id = framework.id
 
     high_org, _ = await _attestor_org(
-        framework_categories=["compliance"], approved_at=base
+        functions=["compliance"], approved_at=base
     )
     low_org, _ = await _attestor_org(approved_at=base)
     older_org, _ = await _attestor_org(approved_at=base - timedelta(days=1))

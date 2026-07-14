@@ -157,7 +157,7 @@ async def _attestor_org() -> tuple[UUID, UUID]:
                     specializations=["tax"],
                     jurisdictions=["US"],
                     sectors=["tax"],
-                    framework_categories=[],
+                    functions=[],
                     active=True,
                     approved_at=now,
                     coi_signed_at=now,

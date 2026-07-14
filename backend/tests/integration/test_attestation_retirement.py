@@ -85,9 +85,9 @@ async def test_individual_attestor_application_endpoints_removed(
         "/v1/attestor/applications",
         json={
             "legal_name": "Solo Attestor",
-            "sectors": ["PE"],
-            "framework_categories": ["Compliance"],
-            "jurisdictions": ["US"],
+            "sectors": ["private_equity"],
+            "functions": ["compliance"],
+            "jurisdictions": ["united_states"],
             "credentials_summary": "Two decades of experience.",
             "professional_references": "Jane Roe.",
         },

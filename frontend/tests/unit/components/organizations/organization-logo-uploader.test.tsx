@@ -35,10 +35,32 @@ describe("OrganizationLogoUploader", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
   it("runs the presigned upload flow and reports the new logo URL", async () => {
+    vi.stubGlobal(
+      "Image",
+      class {
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        set src(_value: string) {
+          queueMicrotask(() => {
+            this.onload?.();
+          });
+        }
+      } as typeof Image,
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+      (callback) => {
+        callback(new Blob(["cropped"], { type: "image/jpeg" }));
+      },
+    );
     vi.mocked(
       requestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPost,
     ).mockResolvedValue({
@@ -75,6 +97,11 @@ describe("OrganizationLogoUploader", () => {
 
     const input = screen.getByLabelText(/upload logo/i);
     fireEvent.change(input, { target: { files: [pngFile()] } });
+    const preview = await screen.findByAltText(/crop preview/i);
+    Object.defineProperty(preview, "naturalWidth", { value: 600 });
+    Object.defineProperty(preview, "naturalHeight", { value: 400 });
+    fireEvent.load(preview);
+    fireEvent.click(screen.getByRole("button", { name: /^apply$/i }));
 
     await waitFor(() => {
       expect(onUploaded).toHaveBeenCalledWith("https://cdn.test/abc.png");

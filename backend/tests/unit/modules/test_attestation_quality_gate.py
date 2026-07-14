@@ -139,7 +139,7 @@ async def _in_review_with_full_quality_rubric(db_session) -> Attestation:
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
-                framework_categories=[],
+                functions=[],
                 active=True,
                 approved_at=now,
                 coi_signed_at=now,

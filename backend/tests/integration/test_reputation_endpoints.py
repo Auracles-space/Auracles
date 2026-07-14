@@ -199,7 +199,7 @@ async def _create_attestor_org(owner_id: UUID) -> UUID:
                     specializations=["ml"],
                     jurisdictions=["us"],
                     sectors=["PE"],
-                    framework_categories=["Compliance"],
+                    functions=["Compliance"],
                     active=True,
                     coi_signed_at=datetime.now(UTC),
                     coi_expires_at=datetime.now(UTC) + timedelta(days=365),

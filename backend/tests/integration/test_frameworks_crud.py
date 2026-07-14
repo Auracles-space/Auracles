@@ -529,7 +529,7 @@ async def test_contributor_can_view_list_update_and_delete_draft_framework(
             "pricing": {
                 "price": "699.00",
                 "currency": "usd",
-                "license_types": ["enterprise"],
+                "license_types": ["single_user", "enterprise"],
             },
         },
         headers=headers,
@@ -1424,7 +1424,7 @@ async def test_contributor_can_edit_metadata_on_published_framework(
             "pricing": {
                 "price": "880.00",
                 "currency": "usd",
-                "license_types": ["team"],
+                "license_types": ["single_user", "team"],
             },
         },
         headers=auth_headers(contributor_id, ["contributor"]),

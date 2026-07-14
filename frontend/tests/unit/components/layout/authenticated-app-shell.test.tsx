@@ -19,6 +19,10 @@ vi.mock("@/components/modules/layout/notification-dropdown", () => ({
   NotificationDropdown: () => <div>Notifications dropdown</div>,
 }));
 
+vi.mock("@/components/modules/settings/pending-invitations-toast", () => ({
+  PendingInvitationsToast: () => null,
+}));
+
 // The shell bootstraps the session on mount (BrowserSessionGate +
 // AttestorApplicationPrompt). Stub it so the render never makes a real
 // /auth/refresh fetch — otherwise the request escapes to localhost:8000 and

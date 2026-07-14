@@ -171,7 +171,7 @@ async def _attestor_org(
                     specializations=["tax"],
                     jurisdictions=["US"],
                     sectors=["tax"],
-                    framework_categories=[],
+                    functions=[],
                     active=True,
                     approved_at=now,
                     coi_signed_at=now,

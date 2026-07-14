@@ -391,7 +391,7 @@ async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
             "pricing": {
                 "price": "799.00",
                 "currency": "USD",
-                "license_types": ["team"],
+                "license_types": ["single_user", "team"],
                 "commercial_rights": "Internal commercial use allowed.",
                 "usage_restrictions": "No resale.",
             }
@@ -404,7 +404,7 @@ async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
             "pricing": {
                 "price": "799.00",
                 "currency": "USD",
-                "license_types": ["team"],
+                "license_types": ["single_user", "team"],
                 "commercial_rights": "Internal commercial use allowed.",
                 "usage_restrictions": "No resale.",
             }

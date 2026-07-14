@@ -166,7 +166,7 @@ async def _seed_in_review_attestation_with_rubric(
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
-                framework_categories=[],
+                functions=[],
                 active=True,
                 approved_at=now,
                 verification_level=4,

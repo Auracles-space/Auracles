@@ -173,7 +173,7 @@ async def _make_org_attestor() -> UUID:
                     specializations=["tax"],
                     jurisdictions=["US"],
                     sectors=["tax"],
-                    framework_categories=[],
+                    functions=[],
                     coi_declarations=[],
                     coi_signed_at=now,
                     coi_expires_at=now + timedelta(days=365),
@@ -210,7 +210,7 @@ async def test_offer_persists_match_score(db_session) -> None:
         assert offer.score_breakdown is not None
         assert set(offer.score_breakdown) == {
             "sector",
-            "category",
+            "function",
             "credential",
             "availability",
             "reputation",

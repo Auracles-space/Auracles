@@ -118,7 +118,7 @@ async def _attestor_with_expiry(expires_at: datetime, signed_at: datetime) -> UU
                     specializations=["tax"],
                     jurisdictions=["US"],
                     sectors=[],
-                    framework_categories=[],
+                    functions=[],
                     active=True,
                     coi_signed_at=signed_at,
                     coi_expires_at=expires_at,

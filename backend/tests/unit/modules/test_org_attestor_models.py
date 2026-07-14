@@ -129,7 +129,7 @@ async def test_org_attestor_application_round_trip(
             assert row.trial_member_id is None
             assert row.coi_declarations == []
             assert row.sectors == []
-            assert row.framework_categories == []
+            assert row.functions == []
             assert row.incorporation_doc_keys == []
 
 

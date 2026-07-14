@@ -317,7 +317,7 @@ async def _make_attestor_org(*, name: str, verification_level: int) -> UUID:
                     specializations=["governance"],
                     jurisdictions=["US"],
                     sectors=["PE"],
-                    framework_categories=["Compliance"],
+                    functions=["Compliance"],
                     active=True,
                     verification_level=verification_level,
                 )

@@ -76,7 +76,7 @@ describe("ToastProvider", () => {
     expect(screen.getByText("Framework published")).toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(4000);
+      vi.advanceTimersByTime(4501);
     });
 
     expect(screen.queryByText("Framework published")).not.toBeInTheDocument();

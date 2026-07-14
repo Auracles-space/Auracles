@@ -220,7 +220,7 @@ def _create_attestor_org(
                 specializations=["tax"],
                 jurisdictions=["US"],
                 sectors=["tax"],
-                framework_categories=[],
+                functions=[],
                 active=True,
                 approved_at=datetime.now(UTC),
                 verification_level=4,
