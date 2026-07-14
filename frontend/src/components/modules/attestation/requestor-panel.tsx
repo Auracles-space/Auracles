@@ -37,8 +37,9 @@ export function RequestorPanel() {
     useState<"framework" | "contributor" | "operator" | "credential">("framework");
   const canRequest = allValid(
     isNonEmpty(targetId),
-    isNonEmpty(specializations),
-    isNonEmpty(jurisdictions),
+    targetType === "framework"
+      ? true
+      : allValid(isNonEmpty(specializations), isNonEmpty(jurisdictions)),
   );
   const canDispute = isNonEmpty(disputeReason);
 
@@ -72,8 +73,10 @@ export function RequestorPanel() {
     configureBrowserClient();
     const result = await requestAttestation({
       body: {
-        requested_jurisdictions: splitCsv(jurisdictions),
-        requested_specializations: splitCsv(specializations),
+        requested_jurisdictions:
+          targetType === "framework" ? [] : splitCsv(jurisdictions),
+        requested_specializations:
+          targetType === "framework" ? [] : splitCsv(specializations),
         target_id: targetId,
         target_type: targetType,
       },
@@ -176,15 +179,16 @@ export function RequestorPanel() {
               value={targetId}
             />
           </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Specializations
-            <Input
-              
-              onChange={(event) => setSpecializations(event.target.value)}
-              placeholder="governance, healthcare"
-              value={specializations}
-            />
-          </label>
+          {targetType !== "framework" && (
+            <label className="grid gap-2 text-sm font-semibold text-foreground">
+              Specializations
+              <Input
+                onChange={(event) => setSpecializations(event.target.value)}
+                placeholder="governance, healthcare"
+                value={specializations}
+              />
+            </label>
+          )}
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Jurisdictions
             <Input
