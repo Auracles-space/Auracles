@@ -319,7 +319,7 @@ class OrgAttestorApplication(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("'{}'::text[]"),
     )
-    framework_categories: Mapped[list[str]] = mapped_column(
+    functions: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
         nullable=False,
         server_default=text("'{}'::text[]"),
@@ -413,7 +413,7 @@ class OrgAttestorProfile(UpdatedAtMixin, Base):
         nullable=False,
         server_default=text("'{}'::text[]"),
     )
-    framework_categories: Mapped[list[str]] = mapped_column(
+    functions: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
         nullable=False,
         server_default=text("'{}'::text[]"),

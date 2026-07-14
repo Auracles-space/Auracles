@@ -148,9 +148,9 @@ def _create_body() -> dict[str, object]:
         "legal_name": "Acme Attestations Ltd",
         "registration_number": "RC123456",
         "incorporation_doc_keys": ["kyb/acme/cert.pdf"],
-        "sectors": ["PE"],
-        "framework_categories": ["Compliance"],
-        "jurisdictions": ["US"],
+        "sectors": ["private_equity"],
+        "functions": ["compliance"],
+        "jurisdictions": ["united_states"],
         "credentials_summary": "Two decades of PE compliance attestation work.",
         "sample_work": {"portfolio": "https://example.com/samples"},
         "professional_references": "Jane Roe, MD of Example Capital.",
@@ -180,6 +180,53 @@ async def test_create_get_and_edit_flow(
     )
     assert edited.status_code == 200
     assert edited.json()["legal_name"] == "Acme Attestations PLC"
+
+
+async def test_create_accepts_canonical_functions(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """Attestor application create accepts canonical functions and slugs."""
+    owner_id = await _create_user("canonical-owner")
+    org_id = await _create_org(owner_id)
+    payload = {
+        "legal_name": "Canonical Attestors Ltd",
+        "registration_number": "RC654321",
+        "incorporation_doc_keys": ["kyb/canonical/cert.pdf"],
+        "sectors": ["private_equity"],
+        "functions": ["compliance", "investment_management"],
+        "jurisdictions": ["united_states", "nigeria"],
+        "credentials_summary": (
+            "Attests private-equity compliance and operating models."
+        ),
+        "sample_work": {"portfolio": "https://example.com/canonical"},
+        "professional_references": "John Roe, Operating Partner.",
+    }
+
+    response = await client.post(
+        _APPLICATION_PATH.format(org_id=org_id),
+        json=payload,
+        headers=auth(owner_id),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["functions"] == ["compliance", "investment_management"]
+
+
+async def test_create_rejects_off_vocabulary_functions(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """Legacy function labels are rejected once canonical taxonomy is enforced."""
+    owner_id = await _create_user("off-vocabulary-owner")
+    org_id = await _create_org(owner_id)
+    payload = {**_create_body(), "functions": ["Compliance"]}
+
+    response = await client.post(
+        _APPLICATION_PATH.format(org_id=org_id),
+        json=payload,
+        headers=auth(owner_id),
+    )
+
+    assert response.status_code == 422
 
 
 async def test_create_requires_authentication(

@@ -475,7 +475,7 @@ class AttestorDirectoryEntry(BaseModel):
     name: str
     slug: str
     sectors: list[str]
-    framework_categories: list[str]
+    functions: list[str]
     jurisdictions: list[str]
     verification_level: int
     completed_attestations: int

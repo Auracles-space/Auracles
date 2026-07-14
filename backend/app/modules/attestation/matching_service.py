@@ -1123,7 +1123,7 @@ async def _rank_eligible_attestors(
             ),
             "category": scoring.category_match(
                 framework_category,
-                profile.framework_categories,
+                profile.functions,
             ),
             "credential": scoring.credential_relevance(),
             "availability": scoring.availability_score(

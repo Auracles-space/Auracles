@@ -91,9 +91,9 @@ async def _seed_active_attestor_org() -> UUID:
                 OrgAttestorProfile(
                     org_id=org.id,
                     specializations=["ml"],
-                    jurisdictions=["US"],
-                    sectors=["PE"],
-                    framework_categories=["Compliance"],
+                    jurisdictions=["united_states"],
+                    sectors=["private_equity"],
+                    functions=["compliance"],
                     active=True,
                     verification_level=2,
                     approved_at=now,
@@ -154,7 +154,7 @@ async def test_list_directory_excludes_suspended_org(clean: None) -> None:
         listed = await directory_service.list_directory(
             db=session,
             sector=None,
-            framework_category=None,
+            function=None,
             jurisdiction=None,
             level=None,
         )
@@ -170,7 +170,7 @@ async def test_list_directory_excludes_suspended_org(clean: None) -> None:
         listed = await directory_service.list_directory(
             db=session,
             sector=None,
-            framework_category=None,
+            function=None,
             jurisdiction=None,
             level=None,
         )

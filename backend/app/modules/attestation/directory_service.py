@@ -31,7 +31,7 @@ async def list_directory(
     db: AsyncSession,
     *,
     sector: str | None,
-    framework_category: str | None,
+    function: str | None,
     jurisdiction: str | None,
     level: int | None,
 ) -> list[AttestorDirectoryEntry]:
@@ -48,9 +48,9 @@ async def list_directory(
     )
     if sector is not None:
         query = query.where(OrgAttestorProfile.sectors.op("&&")([sector]))
-    if framework_category is not None:
+    if function is not None:
         query = query.where(
-            OrgAttestorProfile.framework_categories.op("&&")([framework_category])
+            OrgAttestorProfile.functions.op("&&")([function])
         )
     if jurisdiction is not None:
         query = query.where(OrgAttestorProfile.jurisdictions.op("&&")([jurisdiction]))
@@ -100,7 +100,7 @@ async def _directory_entry(
         name=organization.name,
         slug=organization.slug,
         sectors=profile.sectors,
-        framework_categories=profile.framework_categories,
+        functions=profile.functions,
         jurisdictions=profile.jurisdictions,
         verification_level=profile.verification_level,
         completed_attestations=await _completed_attestations(

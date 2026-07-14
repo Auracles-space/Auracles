@@ -213,7 +213,7 @@ async def list_attestations(
 async def list_public_attestor_directory(
     db: DatabaseSession,
     sector: str | None = Query(default=None),
-    framework_category: str | None = Query(default=None),
+    function: str | None = Query(default=None),
     jurisdiction: str | None = Query(default=None),
     level: int | None = Query(default=None),
 ) -> AttestorDirectoryResponse:
@@ -221,7 +221,7 @@ async def list_public_attestor_directory(
     attestors = await directory_service.list_directory(
         db=db,
         sector=sector,
-        framework_category=framework_category,
+        function=function,
         jurisdiction=jurisdiction,
         level=level,
     )

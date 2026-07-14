@@ -188,13 +188,13 @@ async def create_application(
             application = OrgAttestorApplication(
                 org_id=org_id,
                 status="draft",
-                # Legacy NOT NULL column superseded by sectors/framework_categories.
+                # Legacy NOT NULL column superseded by sectors/functions.
                 specializations=[],
                 legal_name=payload.legal_name,
                 registration_number=payload.registration_number,
                 incorporation_doc_keys=payload.incorporation_doc_keys,
                 sectors=payload.sectors,
-                framework_categories=payload.framework_categories,
+                functions=payload.functions,
                 jurisdictions=payload.jurisdictions,
                 credentials_summary=payload.credentials_summary,
                 sample_work=payload.sample_work,
@@ -347,7 +347,7 @@ def _kyb_complete(application: OrgAttestorApplication) -> bool:
         and application.registration_number
         and application.incorporation_doc_keys
         and application.sectors
-        and application.framework_categories
+        and application.functions
         and application.jurisdictions
         and application.credentials_summary
         and application.professional_references
@@ -642,7 +642,7 @@ async def _load_admin_application(
 def _org_profile_specializations(application: OrgAttestorApplication) -> list[str]:
     """Derive legacy-matcher specializations from onboarding taxonomy fields."""
     values: list[str] = []
-    for item in [*application.sectors, *application.framework_categories]:
+    for item in [*application.sectors, *application.functions]:
         if item not in values:
             values.append(item)
     return values
@@ -669,8 +669,8 @@ def _missing_approval_gates(
         missing.append("trial_passed")
     if not application.sectors:
         missing.append("sectors")
-    if not application.framework_categories:
-        missing.append("framework_categories")
+    if not application.functions:
+        missing.append("functions")
     return missing
 
 
@@ -850,7 +850,7 @@ async def _create_org_profile(
             specializations=specializations,
             jurisdictions=application.jurisdictions,
             sectors=application.sectors,
-            framework_categories=application.framework_categories,
+            functions=application.functions,
             active=True,
             verification_level=4,
             approved_at=approved_at,
@@ -864,7 +864,7 @@ async def _create_org_profile(
     profile.specializations = specializations
     profile.jurisdictions = application.jurisdictions
     profile.sectors = application.sectors
-    profile.framework_categories = application.framework_categories
+    profile.functions = application.functions
     profile.active = True
     profile.verification_level = 4
     profile.approved_at = approved_at

@@ -25,8 +25,12 @@ from pydantic import (
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation.schemas import CoiEntry
-from app.modules.attestation.taxonomy import validate_categories, validate_sectors
 from app.modules.library.schemas import LibraryItem
+from app.shared.taxonomy import (
+    validate_functions,
+    validate_jurisdictions,
+    validate_sectors,
+)
 
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x1f\x7f]")
 
@@ -566,9 +570,9 @@ class OrgAttestorApplicationCreateRequest(BaseModel):
     legal_name: str | None = Field(default=None, min_length=2, max_length=200)
     registration_number: str | None = Field(default=None, min_length=1, max_length=200)
     incorporation_doc_keys: list[str] = Field(default_factory=list, max_length=20)
-    sectors: list[str] = Field(min_length=1, max_length=4)
-    framework_categories: list[str] = Field(min_length=1, max_length=9)
-    jurisdictions: list[str] = Field(min_length=1, max_length=25)
+    sectors: list[str] = Field(min_length=1, max_length=12)
+    functions: list[str] = Field(min_length=1, max_length=14)
+    jurisdictions: list[str] = Field(min_length=1, max_length=24)
     credentials_summary: str = Field(min_length=10, max_length=5000)
     sample_work: dict[str, Any] = Field(default_factory=dict)
     professional_references: str = Field(min_length=3, max_length=5000)
@@ -579,17 +583,17 @@ class OrgAttestorApplicationCreateRequest(BaseModel):
         """Validate sectors against the controlled taxonomy."""
         return validate_sectors(value)
 
-    @field_validator("framework_categories")
+    @field_validator("functions")
     @classmethod
-    def _clean_categories(cls, value: list[str]) -> list[str]:
-        """Validate framework categories against the controlled taxonomy."""
-        return validate_categories(value)
+    def _clean_functions(cls, value: list[str]) -> list[str]:
+        """Validate functions against the canonical framework taxonomy."""
+        return validate_functions(value)
 
     @field_validator("jurisdictions")
     @classmethod
     def _clean_jurisdictions(cls, value: list[str]) -> list[str]:
-        """Trim and de-duplicate jurisdiction labels."""
-        return _clean_labels(value)
+        """Validate jurisdiction slugs against the canonical set."""
+        return validate_jurisdictions(value)
 
     @field_validator("legal_name", "credentials_summary", "professional_references")
     @classmethod
@@ -608,11 +612,9 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
     legal_name: str | None = Field(default=None, min_length=2, max_length=200)
     registration_number: str | None = Field(default=None, min_length=1, max_length=200)
     incorporation_doc_keys: list[str] | None = Field(default=None, max_length=20)
-    sectors: list[str] | None = Field(default=None, min_length=1, max_length=4)
-    framework_categories: list[str] | None = Field(
-        default=None, min_length=1, max_length=9
-    )
-    jurisdictions: list[str] | None = Field(default=None, min_length=1, max_length=25)
+    sectors: list[str] | None = Field(default=None, min_length=1, max_length=12)
+    functions: list[str] | None = Field(default=None, min_length=1, max_length=14)
+    jurisdictions: list[str] | None = Field(default=None, min_length=1, max_length=24)
     credentials_summary: str | None = Field(
         default=None, min_length=10, max_length=5000
     )
@@ -628,17 +630,17 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
         """Validate sectors against the controlled taxonomy when supplied."""
         return validate_sectors(value) if value is not None else None
 
-    @field_validator("framework_categories")
+    @field_validator("functions")
     @classmethod
-    def _clean_categories(cls, value: list[str] | None) -> list[str] | None:
-        """Validate framework categories against the taxonomy when supplied."""
-        return validate_categories(value) if value is not None else None
+    def _clean_functions(cls, value: list[str] | None) -> list[str] | None:
+        """Validate functions against the taxonomy when supplied."""
+        return validate_functions(value) if value is not None else None
 
     @field_validator("jurisdictions")
     @classmethod
     def _clean_jurisdictions(cls, value: list[str] | None) -> list[str] | None:
-        """Trim and de-duplicate jurisdiction labels when supplied."""
-        return _clean_labels(value) if value is not None else None
+        """Validate jurisdiction slugs against the taxonomy when supplied."""
+        return validate_jurisdictions(value) if value is not None else None
 
     @field_validator("legal_name", "credentials_summary", "professional_references")
     @classmethod
@@ -704,7 +706,7 @@ class OrgAttestorApplicationResponse(BaseModel):
     registration_number: str | None
     incorporation_doc_keys: list[str]
     sectors: list[str]
-    framework_categories: list[str]
+    functions: list[str]
     jurisdictions: list[str]
     credentials_summary: str
     sample_work: dict[str, Any]

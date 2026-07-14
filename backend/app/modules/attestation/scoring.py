@@ -48,13 +48,13 @@ def sector_alignment(
 
 def category_match(
     framework_category: str | None,
-    profile_framework_categories: list[str],
+    profile_functions: list[str],
 ) -> float:
     """Score whether a framework request category matches the profile.
 
     Args:
         framework_category: The framework category for framework-target requests.
-        profile_framework_categories: Categories listed on the Attestor profile.
+        profile_functions: Functions listed on the Attestor profile.
 
     Returns:
         ``1.0`` when the category matches, ``0.0`` when it does not, and
@@ -62,7 +62,7 @@ def category_match(
     """
     if framework_category is None:
         return 1.0
-    categories = {value.casefold() for value in profile_framework_categories}
+    categories = {value.casefold() for value in profile_functions}
     return 1.0 if framework_category.casefold() in categories else 0.0
 
 

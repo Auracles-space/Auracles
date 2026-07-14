@@ -154,7 +154,7 @@ def _application_response(
         registration_number=application.registration_number,
         incorporation_doc_keys=application.incorporation_doc_keys,
         sectors=application.sectors,
-        framework_categories=application.framework_categories,
+        functions=application.functions,
         jurisdictions=application.jurisdictions,
         credentials_summary=application.credentials_summary,
         sample_work=application.sample_work,
