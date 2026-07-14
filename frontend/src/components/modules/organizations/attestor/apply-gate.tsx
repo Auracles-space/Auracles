@@ -11,37 +11,11 @@ import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-c
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
-
-/** A selectable taxonomy value: `value` is submitted, `label` is displayed. */
-type TaxonomyOption = { label: string; value: string };
-
-/**
- * Attestor sector taxonomy. Values MUST equal the backend controlled set in
- * `attestation/taxonomy.py` (validated server-side); labels are display-only.
- */
-const SECTOR_OPTIONS: readonly TaxonomyOption[] = [
-  { label: "Private Equity", value: "PE" },
-  { label: "Venture Capital", value: "VC" },
-  { label: "Infrastructure", value: "Infrastructure" },
-  { label: "Real Estate", value: "Real Estate" },
-];
-
-/**
- * Attestor framework-category taxonomy. Values MUST equal the backend
- * controlled set in `attestation/taxonomy.py`.
- */
-const CATEGORY_OPTIONS: readonly TaxonomyOption[] = [
-  { label: "Compliance", value: "Compliance" },
-  { label: "Governance", value: "Governance" },
-  { label: "Risk", value: "Risk" },
-  { label: "Operations", value: "Operations" },
-  { label: "Legal", value: "Legal" },
-  { label: "Finance", value: "Finance" },
-  { label: "HR", value: "HR" },
-  { label: "Technology", value: "Technology" },
-  { label: "Investment Management", value: "Investment Management" },
-];
+import {
+  FUNCTION_OPTIONS,
+  JURISDICTION_OPTIONS,
+  SECTOR_OPTIONS,
+} from "@/lib/marketplace/taxonomy";
 
 export function ApplyGate({
   orgId,
@@ -66,11 +40,11 @@ export function ApplyGate({
     sample_work_url: (application?.sample_work as { url: string })?.url || "",
     incorporation_doc_keys: application?.incorporation_doc_keys || [],
     sectors: application?.sectors || [],
-    framework_categories: application?.framework_categories || [],
+    functions: application?.functions || [],
     jurisdictions: application?.jurisdictions || [],
   });
 
-  type ListField = "sectors" | "framework_categories" | "jurisdictions";
+  type ListField = "sectors" | "functions" | "jurisdictions";
 
   /** Append a selected taxonomy value to a list field, ignoring duplicates. */
   function addValue(field: ListField, value: string) {
@@ -101,7 +75,7 @@ export function ApplyGate({
         sample_work: { url: formData.sample_work_url },
         incorporation_doc_keys: formData.incorporation_doc_keys,
         sectors: formData.sectors,
-        framework_categories: formData.framework_categories,
+        functions: formData.functions,
         jurisdictions: formData.jurisdictions,
       };
       let res;
@@ -143,10 +117,10 @@ export function ApplyGate({
         sample_work: { url: formData.sample_work_url },
         incorporation_doc_keys: formData.incorporation_doc_keys,
         sectors: formData.sectors,
-        framework_categories: formData.framework_categories,
+        functions: formData.functions,
         jurisdictions: formData.jurisdictions,
       };
-      
+
       let updateRes;
       if (!application) {
         updateRes = await createOrgAttestorApplication({
@@ -267,14 +241,14 @@ export function ApplyGate({
         />
 
         <MultiAddSelect
-          label="Framework Categories"
-          placeholder="Add a category"
-          hint="Select at least one category you specialize in."
-          options={CATEGORY_OPTIONS}
-          selected={formData.framework_categories}
+          label="Functions"
+          placeholder="Add a function"
+          hint="Select at least one function you specialize in."
+          options={FUNCTION_OPTIONS}
+          selected={formData.functions}
           disabled={!canEdit}
-          onAdd={(value) => addValue("framework_categories", value)}
-          onRemove={(value) => removeValue("framework_categories", value)}
+          onAdd={(value) => addValue("functions", value)}
+          onRemove={(value) => removeValue("functions", value)}
         />
 
         <MultiAddSelect
@@ -312,7 +286,7 @@ export function ApplyGate({
  * @param label - Field label; also used to associate the select for a11y.
  * @param placeholder - Prompt shown while nothing is being added.
  * @param hint - Short helper text under the label.
- * @param options - Available taxonomy options ({@link TaxonomyOption}).
+ * @param options - Available taxonomy options.
  * @param selected - Currently chosen backend values.
  * @param disabled - Disables the control (read-only application state).
  * @param onAdd - Called with the chosen value when an option is selected.
@@ -331,7 +305,7 @@ function MultiAddSelect({
   label: string;
   placeholder: string;
   hint: string;
-  options: readonly TaxonomyOption[];
+  options: readonly { label: string; value: string }[];
   selected: string[];
   disabled?: boolean;
   onAdd: (value: string) => void;

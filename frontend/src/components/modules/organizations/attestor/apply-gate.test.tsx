@@ -24,7 +24,7 @@ describe("ApplyGate specialisation controls", () => {
     vi.mocked(submitOrgAttestorApplication).mockResolvedValue({ data: {} } as never);
   });
 
-  it("submits dropdown-selected sectors, categories, and jurisdictions", async () => {
+  it("submits dropdown-selected sectors, functions, and jurisdictions", async () => {
     render(<ApplyGate orgId="org-1" application={null} onChange={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText(/Legal Name/i), {
@@ -39,10 +39,10 @@ describe("ApplyGate specialisation controls", () => {
 
     // Pick from each dropdown; selecting an option adds it to the list.
     fireEvent.change(screen.getByLabelText(/Sectors/i), {
-      target: { value: "PE" },
+      target: { value: "private_equity" },
     });
-    fireEvent.change(screen.getByLabelText(/Framework Categories/i), {
-      target: { value: "Compliance" },
+    fireEvent.change(screen.getByLabelText(/Functions/i), {
+      target: { value: "compliance" },
     });
     fireEvent.change(screen.getByLabelText(/Jurisdictions/i), {
       target: { value: "united_states" },
@@ -53,8 +53,8 @@ describe("ApplyGate specialisation controls", () => {
     await waitFor(() => expect(createOrgAttestorApplication).toHaveBeenCalled());
 
     const body = vi.mocked(createOrgAttestorApplication).mock.calls[0][0].body;
-    expect(body.sectors).toEqual(["PE"]);
-    expect(body.framework_categories).toEqual(["Compliance"]);
+    expect(body.sectors).toEqual(["private_equity"]);
+    expect(body.functions).toEqual(["compliance"]);
     expect(body.jurisdictions).toEqual(["united_states"]);
   });
 
@@ -62,7 +62,7 @@ describe("ApplyGate specialisation controls", () => {
     render(<ApplyGate orgId="org-1" application={null} onChange={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText(/Sectors/i), {
-      target: { value: "PE" },
+      target: { value: "private_equity" },
     });
 
     // The chip renders the human label, not the raw backend value.
