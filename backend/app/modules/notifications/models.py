@@ -79,6 +79,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "org_invitation_received",
     "org_invitation_accepted",
     "org_invitation_declined",
+    "org_attestor_trial_nominated",
+    "org_attestor_trial_assigned",
     name="notification_type_enum",
     create_type=False,
 )

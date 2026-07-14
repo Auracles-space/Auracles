@@ -519,3 +519,77 @@ async def test_gate_checklist_reflects_admin_and_trial_stamps(app_state: None) -
     assert checklist.kyb_verified is True
     assert checklist.credentials_reviewed is True
     assert checklist.trial_passed is True
+
+
+async def test_admin_start_trial_notifies_member(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Starting the trial queues an in-app + email notification to the nominee.
+
+    Nomination only stamps the member; the trial becomes actionable when a
+    platform admin starts it. The nominee must be told at that moment, so
+    ``admin_start_trial`` dispatches a durable notification deep-linking the
+    org attestor page.
+    """
+    org_id, owner = await _create_org(attestor_status="pending")
+    async with async_session_factory() as session:
+        application = await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+        application_id = application.id
+    async with async_session_factory() as session:
+        row = await session.get(OrgAttestorApplication, application_id)
+        assert row is not None
+        row.status = "submitted"
+        row.trial_member_id = owner.member_id
+        await session.commit()
+
+    calls: list[dict[str, object]] = []
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _FakeTask())
+
+    async with async_session_factory() as session:
+        await svc.admin_start_trial(
+            session, application_id=application_id, admin_id=owner.user_id
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(owner.user_id)
+    assert calls[0]["notification_type"] == "org_attestor_trial_assigned"
+    assert str(org_id) in str(calls[0]["link"])
+
+
+@pytest.mark.parametrize(
+    "notification_type",
+    ["org_attestor_trial_nominated", "org_attestor_trial_assigned"],
+)
+async def test_trial_notification_types_persist(
+    app_state: None, notification_type: str
+) -> None:
+    """The trial notification types must be storable durable notifications.
+
+    ``dispatch_project_notification`` persists an in-app row typed by the
+    ``notification_type_enum``. Both trial types must be valid members of that
+    enum, or the worker insert fails and the nominee is never told.
+    """
+    from app.modules.notifications import service as notification_service
+
+    _, owner = await _create_org(attestor_status="pending")
+    async with async_session_factory() as session:
+        async with session.begin():
+            notification = await notification_service.create_notification(
+                db=session,
+                user_id=owner.user_id,
+                notification_type=notification_type,
+                title="Trial",
+                body="Trial body.",
+                link="/dashboard",
+                payload=None,
+                dedupe_key=None,
+            )
+    assert notification is not None
+    assert notification.notification_type == notification_type

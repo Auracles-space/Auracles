@@ -981,6 +981,16 @@ async def admin_start_trial(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Nominate a trial member before starting the trial.",
             )
+        nominee = await db.scalar(
+            select(OrgMember).where(OrgMember.id == application.trial_member_id)
+        )
+        if nominee is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Nominated trial member not found.",
+            )
+        nominee_user_id = nominee.user_id
+        org_id = application.org_id
         attempts = await db.scalar(
             select(func.count())
             .select_from(AttestorTrial)
@@ -1003,6 +1013,36 @@ async def admin_start_trial(
             target_id=application.id,
             metadata={"trial_id": str(trial.id), "attempt": trial.attempt},
         )
+        trial_id = trial.id
+
+    # Tell the nominee the trial is now actionable. Nomination only stamped the
+    # member; this is the first moment there is work to do. Dispatched after
+    # commit so the worker reads the persisted trial; a queue failure must not
+    # roll back the assignment (mirrors nominate_trial_member).
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(nominee_user_id),
+            notification_type="org_attestor_trial_assigned",
+            title="Your trial attestation is ready",
+            body=(
+                "A trial attestation has been assigned to you on behalf of your "
+                "organization. Open the attestor page to begin."
+            ),
+            payload={
+                "org_id": str(org_id),
+                "application_id": str(application_id),
+                "trial_id": str(trial_id),
+            },
+            link=f"/dashboard/organizations/{org_id}/attestor",
+            dedupe_key=f"org_attestor_trial_assigned:{trial_id}",
+        )
+    except Exception as exc:  # pragma: no cover - defensive queue guard
+        logger.bind(
+            module="organizations",
+            action="admin_start_trial",
+            org_id=org_id,
+            trial_id=trial_id,
+        ).error("notification_dispatch_failed", error=str(exc))
     return trial
 
 
