@@ -8,7 +8,7 @@ describe("AttestorOrgProfile", () => {
     render(<AttestorOrgProfile org={{
       org_id: "org-1", name: "Audit Ltd", slug: "audit-ltd",
       verification_level: 2, completed_attestations: 12, member_count: 4,
-      sectors: ["cybersecurity"], framework_categories: [], jurisdictions: [],
+      sectors: ["technology"], functions: [], jurisdictions: [],
       reputation: null,
       // @ts-expect-error member identity must never reach a public surface
       reviewing_member_name: "SHOULD-NOT-RENDER",

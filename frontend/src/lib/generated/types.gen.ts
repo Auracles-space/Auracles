@@ -979,8 +979,8 @@ export type AttestationRequestCreateRequest = {
     target_id: string;
     review_type?: ('quality' | 'compliance' | 'expert' | 'provenance' | null);
     brief?: (AttestationBrief | null);
-    requested_specializations: Array<(string)>;
-    requested_jurisdictions: Array<(string)>;
+    requested_specializations?: Array<(string)>;
+    requested_jurisdictions?: Array<(string)>;
 };
 
 export type target_type = 'framework' | 'contributor' | 'operator' | 'credential';
@@ -1053,7 +1053,7 @@ export type AttestorDirectoryEntry = {
     name: string;
     slug: string;
     sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
+    functions: Array<(string)>;
     jurisdictions: Array<(string)>;
     verification_level: number;
     completed_attestations: number;
@@ -2057,7 +2057,7 @@ export type FrameworkCreate = {
     category: 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
     sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
     industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
     tags?: Array<(string)>;
     jurisdiction?: (string | null);
     complexity?: (number | null);
@@ -2094,7 +2094,7 @@ export type FrameworkMetadataUpdate = {
     category?: ('framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program' | null);
     sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
     industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
     tags?: (Array<(string)> | null);
     jurisdiction?: (string | null);
     complexity?: (number | null);
@@ -2197,7 +2197,7 @@ export type FrameworkUpdate = {
     category?: ('framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program' | null);
     sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
     industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
     tags?: (Array<(string)> | null);
     jurisdiction?: (string | null);
     complexity?: (number | null);
@@ -2695,7 +2695,7 @@ export type OrgAttestorApplicationCreateRequest = {
     registration_number?: (string | null);
     incorporation_doc_keys?: Array<(string)>;
     sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
+    functions: Array<(string)>;
     jurisdictions: Array<(string)>;
     credentials_summary: string;
     sample_work?: {
@@ -2718,7 +2718,7 @@ export type OrgAttestorApplicationResponse = {
     registration_number: (string | null);
     incorporation_doc_keys: Array<(string)>;
     sectors: Array<(string)>;
-    framework_categories: Array<(string)>;
+    functions: Array<(string)>;
     jurisdictions: Array<(string)>;
     credentials_summary: string;
     sample_work: {
@@ -2752,7 +2752,7 @@ export type OrgAttestorApplicationUpdateRequest = {
     registration_number?: (string | null);
     incorporation_doc_keys?: (Array<(string)> | null);
     sectors?: (Array<(string)> | null);
-    framework_categories?: (Array<(string)> | null);
+    functions?: (Array<(string)> | null);
     jurisdictions?: (Array<(string)> | null);
     credentials_summary?: (string | null);
     sample_work?: ({
@@ -4548,7 +4548,7 @@ export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValid
 
 export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {
-        framework_category?: (string | null);
+        function?: (string | null);
         jurisdiction?: (string | null);
         level?: (number | null);
         sector?: (string | null);

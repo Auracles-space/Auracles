@@ -1005,14 +1005,14 @@ paths:
           - type: string
           - type: 'null'
           title: Sector
-      - name: framework_category
+      - name: function
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: Framework Category
+          title: Function
       - name: jurisdiction
         in: query
         required: false
@@ -14551,21 +14551,17 @@ components:
             type: string
           type: array
           maxItems: 25
-          minItems: 1
           title: Requested Specializations
         requested_jurisdictions:
           items:
             type: string
           type: array
           maxItems: 25
-          minItems: 1
           title: Requested Jurisdictions
       type: object
       required:
       - target_type
       - target_id
-      - requested_specializations
-      - requested_jurisdictions
       title: AttestationRequestCreateRequest
       description: Request body for creating an escrow-funded Attestation request.
     AttestationRequestResponse:
@@ -14776,11 +14772,11 @@ components:
             type: string
           type: array
           title: Sectors
-        framework_categories:
+        functions:
           items:
             type: string
           type: array
-          title: Framework Categories
+          title: Functions
         jurisdictions:
           items:
             type: string
@@ -14810,7 +14806,7 @@ components:
       - name
       - slug
       - sectors
-      - framework_categories
+      - functions
       - jurisdictions
       - verification_level
       - completed_attestations
@@ -17892,6 +17888,7 @@ components:
             - product
             - data_ai
             - information_security
+            - investment_management
           - type: 'null'
           title: Function
         tags:
@@ -18080,6 +18077,7 @@ components:
             - product
             - data_ai
             - information_security
+            - investment_management
           - type: 'null'
           title: Function
         tags:
@@ -18495,6 +18493,7 @@ components:
             - product
             - data_ai
             - information_security
+            - investment_management
           - type: 'null'
           title: Function
         tags:
@@ -19662,21 +19661,21 @@ components:
           items:
             type: string
           type: array
-          maxItems: 4
+          maxItems: 12
           minItems: 1
           title: Sectors
-        framework_categories:
+        functions:
           items:
             type: string
           type: array
-          maxItems: 9
+          maxItems: 14
           minItems: 1
-          title: Framework Categories
+          title: Functions
         jurisdictions:
           items:
             type: string
           type: array
-          maxItems: 25
+          maxItems: 24
           minItems: 1
           title: Jurisdictions
         credentials_summary:
@@ -19696,7 +19695,7 @@ components:
       type: object
       required:
       - sectors
-      - framework_categories
+      - functions
       - jurisdictions
       - credentials_summary
       - professional_references
@@ -19744,11 +19743,11 @@ components:
             type: string
           type: array
           title: Sectors
-        framework_categories:
+        functions:
           items:
             type: string
           type: array
-          title: Framework Categories
+          title: Functions
         jurisdictions:
           items:
             type: string
@@ -19847,7 +19846,7 @@ components:
       - registration_number
       - incorporation_doc_keys
       - sectors
-      - framework_categories
+      - functions
       - jurisdictions
       - credentials_summary
       - sample_work
@@ -19903,25 +19902,25 @@ components:
           - items:
               type: string
             type: array
-            maxItems: 4
+            maxItems: 12
             minItems: 1
           - type: 'null'
           title: Sectors
-        framework_categories:
+        functions:
           anyOf:
           - items:
               type: string
             type: array
-            maxItems: 9
+            maxItems: 14
             minItems: 1
           - type: 'null'
-          title: Framework Categories
+          title: Functions
         jurisdictions:
           anyOf:
           - items:
               type: string
             type: array
-            maxItems: 25
+            maxItems: 24
             minItems: 1
           - type: 'null'
           title: Jurisdictions

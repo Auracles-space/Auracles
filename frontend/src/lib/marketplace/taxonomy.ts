@@ -65,6 +65,7 @@ export const FUNCTION_OPTIONS = [
   { label: "Product", value: "product" },
   { label: "Data and AI", value: "data_ai" },
   { label: "Information Security", value: "information_security" },
+  { label: "Investment Management", value: "investment_management" },
 ] as const satisfies readonly MarketplaceOption<FrameworkFunction>[];
 
 export const FRAMEWORK_CATEGORY_OPTIONS = [
