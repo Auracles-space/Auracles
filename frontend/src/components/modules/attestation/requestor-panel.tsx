@@ -189,15 +189,16 @@ export function RequestorPanel() {
               />
             </label>
           )}
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Jurisdictions
-            <Input
-              
-              onChange={(event) => setJurisdictions(event.target.value)}
-              placeholder="US, EU"
-              value={jurisdictions}
-            />
-          </label>
+          {targetType !== "framework" && (
+            <label className="grid gap-2 text-sm font-semibold text-foreground">
+              Jurisdictions
+              <Input
+                onChange={(event) => setJurisdictions(event.target.value)}
+                placeholder="US, EU"
+                value={jurisdictions}
+              />
+            </label>
+          )}
         </div>
         <button
           className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"

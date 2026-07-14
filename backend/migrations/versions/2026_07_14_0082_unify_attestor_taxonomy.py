@@ -16,6 +16,7 @@ from alembic import op
 from loguru import logger
 from sqlalchemy import text
 
+from app.shared.taxonomy import JURISDICTIONS
 from migrations.attestor_taxonomy_remap import (
     FUNCTION_MAP,
     JURISDICTION_MAP,
@@ -52,10 +53,13 @@ def _remap_rows(*, function_col: str, forward: bool) -> None:
         ).mappings()
         for row in rows:
             existing_jurisdictions = list(row["jurisdictions"] or [])
+            # Flag only values that remain non-canonical after remapping;
+            # already-canonical slugs pass through and must not be logged.
             unmapped = [
                 value
                 for value in existing_jurisdictions
-                if forward and value not in JURISDICTION_MAP
+                if forward
+                and JURISDICTION_MAP.get(value, value) not in JURISDICTIONS
             ]
             if unmapped:
                 logger.bind(
