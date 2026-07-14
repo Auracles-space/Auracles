@@ -7140,6 +7140,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}/members:
+    get:
+      tags:
+      - Organizations
+      summary: List team members
+      description: List the organization members that belong to one team.
+      operationId: list_team_members_v1_orgs__org_id__teams__team_id__members_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgTeamMembersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/teams/{team_id}/members/{member_id}:
     put:
       tags:
@@ -20805,6 +20842,18 @@ components:
       - name
       title: OrgTeamCreateRequest
       description: Admin-scoped request to create a team in an organization.
+    OrgTeamMembersResponse:
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/OrgMemberResponse'
+          type: array
+          title: Members
+      type: object
+      required:
+      - members
+      title: OrgTeamMembersResponse
+      description: List wrapper for the members belonging to one team.
     OrgTeamRenameRequest:
       properties:
         name:

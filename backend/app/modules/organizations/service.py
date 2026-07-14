@@ -59,6 +59,7 @@ from app.modules.organizations.schemas import (
     OrgMemberResponse,
     OrgMembersResponse,
     OrgTeamCreateRequest,
+    OrgTeamMembersResponse,
     OrgTeamRenameRequest,
     OrgTeamResponse,
     OrgTeamsResponse,
@@ -1762,6 +1763,59 @@ async def delete_team(
             target_id=org_id,
             metadata={"team_id": str(team_id), "team_name": team_name},
         )
+
+
+async def list_team_members(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+) -> OrgTeamMembersResponse:
+    """List the organization members that belong to one team.
+
+    Email is exposed only to owners and admins, matching ``list_members``.
+
+    Args:
+        db: Async database session.
+        context: Resolved organization/member/user context from RBAC.
+        team_id: Team whose roster to return.
+
+    Returns:
+        The team's members ordered by join time.
+
+    Raises:
+        HTTPException(404): If the team does not exist in this organization.
+    """
+    org_id = context.org.id
+    team = await db.scalar(
+        select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+    )
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found.")
+
+    include_email = context.member.role in {"owner", "admin"}
+    rows = (
+        await db.execute(
+            select(OrgMember, User.display_name, User.email)
+            .join(User, User.id == OrgMember.user_id)
+            .join(OrgTeamMember, OrgTeamMember.member_id == OrgMember.id)
+            .where(OrgTeamMember.team_id == team_id)
+            .order_by(OrgMember.joined_at.asc(), OrgMember.id.asc())
+        )
+    ).all()
+    return OrgTeamMembersResponse(
+        members=[
+            OrgMemberResponse(
+                id=member.id,
+                user_id=member.user_id,
+                display_name=display_name,
+                email=email if include_email else None,
+                role=member.role,
+                joined_at=member.joined_at,
+            )
+            for member, display_name, email in rows
+        ]
+    )
 
 
 async def add_team_member(

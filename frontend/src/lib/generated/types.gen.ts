@@ -3124,6 +3124,13 @@ export type OrgTeamCreateRequest = {
 };
 
 /**
+ * List wrapper for the members belonging to one team.
+ */
+export type OrgTeamMembersResponse = {
+    members: Array<OrgMemberResponse>;
+};
+
+/**
  * Admin-scoped request to rename an existing team.
  */
 export type OrgTeamRenameRequest = {
@@ -6320,6 +6327,17 @@ export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
 export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
 
 export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetData = {
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetResponse = (OrgTeamMembersResponse);
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetError = (HTTPValidationError);
 
 export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
     path: {

@@ -106,6 +106,7 @@ from app.modules.organizations.schemas import (
     OrgPaymentMethodsResponse,
     OrgReassignReviewerRequest,
     OrgTeamCreateRequest,
+    OrgTeamMembersResponse,
     OrgTeamRenameRequest,
     OrgTeamResponse,
     OrgTeamsResponse,
@@ -805,6 +806,23 @@ async def delete_team(
     """Delete a team in the organization."""
     del org_id
     await service.delete_team(db=db, context=context, team_id=team_id)
+
+
+@router.get(
+    "/{org_id}/teams/{team_id}/members",
+    response_model=OrgTeamMembersResponse,
+    summary="List team members",
+    description="List the organization members that belong to one team.",
+)
+async def list_team_members(
+    org_id: UUID,
+    team_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgTeamMembersResponse:
+    """List the members of one team."""
+    del org_id
+    return await service.list_team_members(db=db, context=context, team_id=team_id)
 
 
 @router.put(

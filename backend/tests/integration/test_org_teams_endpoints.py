@@ -226,6 +226,48 @@ async def test_list_teams_shows_member_count(
     assert teams[0]["member_count"] == 1
 
 
+async def test_list_team_members_returns_roster(
+    client: AsyncClient, migrated_database: None, clean_teams: None
+) -> None:
+    """Listing a team's members returns each member added to the team."""
+    owner_id = await create_user("roster-owner")
+    member_id = await create_user("roster-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "roster")
+    member_row = await add_member(org["id"], member_id, "member")
+
+    team = await client.post(
+        f"/v1/orgs/{org['id']}/teams", json={"name": "Ops"}, headers=auth(owner_token)
+    )
+    team_id = team.json()["id"]
+    await client.put(
+        f"/v1/orgs/{org['id']}/teams/{team_id}/members/{member_row}",
+        headers=auth(owner_token),
+    )
+
+    res = await client.get(
+        f"/v1/orgs/{org['id']}/teams/{team_id}/members", headers=auth(owner_token)
+    )
+    assert res.status_code == 200
+    members = res.json()["members"]
+    assert [m["id"] for m in members] == [member_row]
+    assert members[0]["email"] is not None  # owner sees email
+
+
+async def test_list_team_members_unknown_team_404(
+    client: AsyncClient, migrated_database: None, clean_teams: None
+) -> None:
+    """Listing members of a team that does not exist returns 404."""
+    owner_id = await create_user("roster-404")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "roster-404")
+
+    res = await client.get(
+        f"/v1/orgs/{org['id']}/teams/{uuid4()}/members", headers=auth(owner_token)
+    )
+    assert res.status_code == 404
+
+
 async def test_delete_team(
     client: AsyncClient, migrated_database: None, clean_teams: None
 ) -> None:

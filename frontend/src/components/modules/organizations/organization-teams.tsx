@@ -23,7 +23,13 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useOrganization } from "./organization-context";
-import { Pencil1Icon, TrashIcon, PersonIcon } from "@radix-ui/react-icons";
+import { TeamMemberManager } from "./team-member-manager";
+import {
+  Pencil1Icon,
+  TrashIcon,
+  PersonIcon,
+  ChevronDownIcon,
+} from "@radix-ui/react-icons";
 
 export function OrganizationTeams() {
   const { orgId, role, isSuspended } = useOrganization();
@@ -43,6 +49,9 @@ export function OrganizationTeams() {
   const [editName, setEditName] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Expanded roster state — id of the team whose members are being managed.
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
   // Delete state
   const [teamToDelete, setTeamToDelete] = useState<OrgTeamResponse | null>(null);
@@ -274,10 +283,8 @@ export function OrganizationTeams() {
         ) : (
           <ul className="divide-y divide-border-default">
             {teams.map((team) => (
-              <li
-                key={team.id}
-                className="flex flex-col gap-4 px-8 py-5 transition-colors hover:bg-surface-2/50 sm:flex-row sm:items-center sm:justify-between"
-              >
+              <li key={team.id} className="flex flex-col">
+               <div className="flex flex-col gap-4 px-8 py-5 transition-colors hover:bg-surface-2/50 sm:flex-row sm:items-center sm:justify-between">
                 {editingTeam?.id === team.id ? (
                   /* ── Inline edit form ── */
                   <form
@@ -312,19 +319,33 @@ export function OrganizationTeams() {
                   </form>
                 ) : (
                   <>
-                    {/* ── Team info ── */}
-                    <div className="flex items-center gap-4">
+                    {/* ── Team info (toggles the member roster) ── */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedTeamId((prev) =>
+                          prev === team.id ? null : team.id,
+                        )
+                      }
+                      aria-expanded={expandedTeamId === team.id}
+                      className="flex flex-1 items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
                       {/* Avatar / icon */}
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 font-heading text-sm font-bold text-foreground-muted">
                         {team.name.charAt(0).toUpperCase()}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-semibold text-foreground">{team.name}</p>
                         <p className="mt-0.5 text-sm text-foreground-muted">
                           {team.member_count} {team.member_count === 1 ? "member" : "members"}
                         </p>
                       </div>
-                    </div>
+                      <ChevronDownIcon
+                        className={`h-4 w-4 shrink-0 text-foreground-muted transition-transform ${
+                          expandedTeamId === team.id ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
 
                     {/* ── Actions ── */}
                     <div className="flex shrink-0 items-center gap-2">
@@ -351,6 +372,17 @@ export function OrganizationTeams() {
                       </button>
                     </div>
                   </>
+                )}
+               </div>
+
+                {expandedTeamId === team.id && editingTeam?.id !== team.id && (
+                  <TeamMemberManager
+                    orgId={orgId}
+                    teamId={team.id}
+                    isAdmin={isAdmin}
+                    isSuspended={isSuspended}
+                    onChange={loadTeams}
+                  />
                 )}
               </li>
             ))}

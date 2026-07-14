@@ -469,6 +469,12 @@ class OrgTeamResponse(BaseModel):
     created_at: datetime
 
 
+class OrgTeamMembersResponse(BaseModel):
+    """List wrapper for the members belonging to one team."""
+
+    members: list[OrgMemberResponse]
+
+
 class OrgTeamsResponse(BaseModel):
     """List wrapper for organization teams."""
 
