@@ -405,6 +405,62 @@ async def test_framework_request_requires_review_type_and_brief(
     assert response.status_code == 422
 
 
+async def test_framework_request_needs_no_specializations(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A framework request succeeds without requester-typed matching lists."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user(
+        "fw-owner-no-lists@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+        },
+    )
+
+    assert response.status_code == 201
+
+
+async def test_non_framework_request_still_requires_specializations(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-framework targets still require explicit matching lists."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    operator_id = await create_user(
+        "credential-requestor-no-lists@auracles.space",
+        ["operator"],
+    )
+    credential_id = await create_credential(operator_id)
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={
+            "target_type": "credential",
+            "target_id": str(credential_id),
+        },
+    )
+
+    assert response.status_code == 422
+
+
 async def test_operator_can_request_on_published_framework_they_dont_own(
     client: AsyncClient,
     migrated_database: None,

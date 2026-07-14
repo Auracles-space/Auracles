@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 IssuerType = Literal["institution", "organisation", "government", "association"]
 
@@ -323,8 +323,18 @@ class AttestationRequestCreateRequest(BaseModel):
     target_id: UUID
     review_type: Literal["quality", "compliance", "expert", "provenance"] | None = None
     brief: AttestationBrief | None = None
-    requested_specializations: list[str] = Field(min_length=1, max_length=25)
-    requested_jurisdictions: list[str] = Field(min_length=1, max_length=25)
+    requested_specializations: list[str] = Field(default_factory=list, max_length=25)
+    requested_jurisdictions: list[str] = Field(default_factory=list, max_length=25)
+
+    @model_validator(mode="after")
+    def require_lists_for_non_framework(self) -> AttestationRequestCreateRequest:
+        """Require explicit matching lists for non-framework targets only."""
+        if self.target_type != "framework":
+            if not self.requested_specializations:
+                raise ValueError("requested_specializations is required.")
+            if not self.requested_jurisdictions:
+                raise ValueError("requested_jurisdictions is required.")
+        return self
 
 
 class AttestationRequestResponse(BaseModel):
