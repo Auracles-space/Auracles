@@ -978,15 +978,28 @@ def _is_coi_conflicted(
     return False
 
 
-async def _framework_category(db: AsyncSession, attestation: Attestation) -> str | None:
-    """Return the target framework category, or None for non-framework targets."""
+async def _framework_axes(
+    db: AsyncSession,
+    attestation: Attestation,
+) -> tuple[str | None, str | None, str | None]:
+    """Return the framework sector, function, and jurisdiction when applicable."""
     if attestation.target_type != "framework":
-        return None
-    return type_cast(
-        str | None,
-        await db.scalar(
-            select(Framework.category).where(Framework.id == attestation.target_id)
-        ),
+        return None, None, None
+    row = (
+        await db.execute(
+            select(
+                Framework.sector,
+                Framework.business_function,
+                Framework.jurisdiction,
+            ).where(Framework.id == attestation.target_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None, None, None
+    return (
+        type_cast(str | None, row.sector),
+        type_cast(str | None, row.business_function),
+        type_cast(str | None, row.jurisdiction),
     )
 
 
@@ -1042,6 +1055,9 @@ async def _rank_eligible_attestors(
     Returns:
         Ranked eligible org candidates, best first, capped to ``limit``.
     """
+    is_framework = attestation.target_type == "framework"
+    fw_sector, fw_function, fw_jurisdiction = await _framework_axes(db, attestation)
+
     query = (
         select(OrgAttestorProfile)
         .join(Organization, Organization.id == OrgAttestorProfile.org_id)
@@ -1055,16 +1071,28 @@ async def _rank_eligible_attestors(
             OrgAttestorProfile.active.is_(True),
             Organization.suspended_at.is_(None),
             Organization.deactivated_at.is_(None),
+            OrgAttestorProfile.coi_signed_at.is_not(None),
+            OrgAttestorProfile.coi_expires_at > now,
+        )
+    )
+    if is_framework:
+        if fw_sector is not None:
+            query = query.where(OrgAttestorProfile.sectors.op("&&")([fw_sector]))
+        if fw_jurisdiction is not None and fw_jurisdiction != "global":
+            query = query.where(
+                OrgAttestorProfile.jurisdictions.op("&&")(
+                    [fw_jurisdiction, "global"]
+                )
+            )
+    else:
+        query = query.where(
             OrgAttestorProfile.specializations.op("&&")(
                 sql_cast(attestation.requested_specializations, ARRAY(Text))
             ),
             OrgAttestorProfile.jurisdictions.op("&&")(
                 sql_cast(attestation.requested_jurisdictions, ARRAY(Text))
             ),
-            OrgAttestorProfile.coi_signed_at.is_not(None),
-            OrgAttestorProfile.coi_expires_at > now,
         )
-    )
     if excluded_ids:
         query = query.where(OrgAttestorProfile.org_id.not_in(excluded_ids))
     profiles = list((await db.execute(query)).scalars().all())
@@ -1090,7 +1118,6 @@ async def _rank_eligible_attestors(
 
     owner_id = await _target_owner_id(db, attestation)
     conflict_subjects = _coi_conflict_subjects(attestation, owner_id)
-    framework_category = await _framework_category(db, attestation)
     concurrency_cap = await _platform_int_config(
         db,
         key="attestation_concurrency_cap",
@@ -1117,12 +1144,16 @@ async def _rank_eligible_attestors(
 
         factors = {
             "sector": scoring.sector_alignment(
-                attestation.requested_specializations,
+                (
+                    [fw_sector]
+                    if fw_sector is not None
+                    else attestation.requested_specializations
+                ),
                 profile.sectors,
                 profile.specializations,
             ),
-            "category": scoring.category_match(
-                framework_category,
+            "function": scoring.function_match(
+                fw_function,
                 profile.functions,
             ),
             "credential": scoring.credential_relevance(),

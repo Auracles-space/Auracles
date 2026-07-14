@@ -45,19 +45,29 @@ def test_sector_alignment_empty_request_is_neutral():
     assert scoring.sector_alignment([], ["tax"], []) == 1.0
 
 
-def test_category_match_in_set():
-    """A matching category scores full credit."""
-    assert scoring.category_match("compliance", ["compliance", "tax"]) == 1.0
+def test_function_match_hits_on_framework_function():
+    """A framework function present in the profile scores 1.0."""
+    assert scoring.function_match(
+        "risk_management",
+        ["compliance", "risk_management"],
+    ) == 1.0
 
 
-def test_category_match_not_in_set():
-    """A non-matching category scores zero."""
-    assert scoring.category_match("compliance", ["tax"]) == 0.0
+def test_function_match_misses_when_absent():
+    """A framework function absent from the profile scores 0.0."""
+    assert scoring.function_match("engineering", ["compliance"]) == 0.0
 
 
-def test_category_match_none_is_neutral():
-    """Non-framework requests treat category as not applicable."""
-    assert scoring.category_match(None, []) == 1.0
+def test_function_match_neutral_when_no_function():
+    """Non-framework targets treat the function axis as not applicable."""
+    assert scoring.function_match(None, ["compliance"]) == 1.0
+
+
+def test_weights_use_function_key_and_sum_to_one():
+    """The locked factor key is 'function' and weights remain normalized."""
+    assert "function" in scoring.WEIGHTS
+    assert "category" not in scoring.WEIGHTS
+    assert pytest.approx(sum(scoring.WEIGHTS.values()), abs=1e-9) == 1.0
 
 
 def test_availability_no_active_is_full():
@@ -79,7 +89,7 @@ def test_compute_match_score_weights_and_breakdown():
     """The weighted sum should use the locked factor keys and weights."""
     factors = {
         "sector": 1.0,
-        "category": 1.0,
+        "function": 1.0,
         "credential": 0.5,
         "availability": 1.0,
         "reputation": 0.5,

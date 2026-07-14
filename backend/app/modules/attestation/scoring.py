@@ -11,7 +11,7 @@ from typing import Final
 
 WEIGHTS: Final[dict[str, float]] = {
     "sector": 0.30,
-    "category": 0.25,
+    "function": 0.25,
     "credential": 0.20,
     "availability": 0.15,
     "reputation": 0.10,
@@ -46,24 +46,24 @@ def sector_alignment(
     return len(overlap) / len(requested_set)
 
 
-def category_match(
-    framework_category: str | None,
+def function_match(
+    framework_function: str | None,
     profile_functions: list[str],
 ) -> float:
-    """Score whether a framework request category matches the profile.
+    """Score whether a framework request function matches the profile.
 
     Args:
-        framework_category: The framework category for framework-target requests.
+        framework_function: The framework function for framework-target requests.
         profile_functions: Functions listed on the Attestor profile.
 
     Returns:
-        ``1.0`` when the category matches, ``0.0`` when it does not, and
-        ``1.0`` when no category applies to the request.
+        ``1.0`` when the function matches, ``0.0`` when it does not, and
+        ``1.0`` when no function applies to the request.
     """
-    if framework_category is None:
+    if framework_function is None:
         return 1.0
-    categories = {value.casefold() for value in profile_functions}
-    return 1.0 if framework_category.casefold() in categories else 0.0
+    functions = {value.casefold() for value in profile_functions}
+    return 1.0 if framework_function.casefold() in functions else 0.0
 
 
 def availability_score(active_count: int, cap: int) -> float:

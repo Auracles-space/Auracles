@@ -247,6 +247,8 @@ async def create_admin_user() -> tuple[UUID, str]:
 async def create_org_attestor(
     *,
     specializations: list[str],
+    sectors: list[str] | None = None,
+    functions: list[str] | None = None,
     jurisdictions: list[str],
     approved_at: datetime | None = None,
     slug_prefix: str = "org",
@@ -291,8 +293,8 @@ async def create_org_attestor(
                     org_id=org.id,
                     specializations=specializations,
                     jurisdictions=jurisdictions,
-                    sectors=[],
-                    framework_categories=[],
+                    sectors=sectors or [],
+                    functions=functions or [],
                     active=True,
                     coi_signed_at=now,
                     coi_expires_at=now + timedelta(days=365),
@@ -300,6 +302,50 @@ async def create_org_attestor(
                 )
             )
             return org.id, owner_id, member.id
+
+
+async def create_framework_target_attestation(
+    requestor_id: UUID,
+) -> tuple[UUID, UUID]:
+    """Create a framework-target Attestation with intentionally misleading lists."""
+    contributor_id = await create_user(
+        f"framework-contributor-{uuid4().hex[:6]}@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Portfolio Risk Controls",
+                description="Framework-target matching should use these tags.",
+                status="published",
+                category="playbook",
+                sector="private_equity",
+                industry="fund_management",
+                business_function="risk_management",
+                jurisdiction="united_states",
+                tags=["risk", "controls"],
+                price=Decimal("149.00"),
+                currency="USD",
+                license_types=["single_user"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            attestation = Attestation(
+                target_type="framework",
+                target_id=framework.id,
+                requestor_id=requestor_id,
+                status="matching",
+                requested_specializations=["manufacturing"],
+                requested_jurisdictions=["nigeria"],
+                review_type="compliance",
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            return framework.id, attestation.id
 
 
 async def create_pending_attestation_fee(
@@ -416,6 +462,54 @@ def payment_intent_event(
             }
         },
     }
+
+
+async def test_framework_target_matches_on_framework_fields(
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Framework targets derive sector/function/jurisdiction from the framework."""
+    del migrated_database
+    del matching_context
+    requestor_id = await create_user(
+        f"framework-match-requestor-{uuid4().hex[:6]}@auracles.space",
+        ["operator"],
+    )
+    matching_org_id, _, _ = await create_org_attestor(
+        specializations=[],
+        sectors=["private_equity"],
+        functions=["risk_management"],
+        jurisdictions=["united_states"],
+        slug_prefix="framework-match",
+    )
+    disjoint_org_id, _, _ = await create_org_attestor(
+        specializations=[],
+        sectors=["private_equity"],
+        functions=["risk_management"],
+        jurisdictions=["nigeria"],
+        slug_prefix="framework-disjoint",
+    )
+    _, attestation_id = await create_framework_target_attestation(requestor_id)
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        assert attestation is not None
+        candidates = await matching_service._rank_eligible_attestors(
+            session,
+            attestation=attestation,
+            excluded_ids=set(),
+            limit=10,
+            now=datetime.now(UTC),
+        )
+
+    org_ids = {candidate.org_id for candidate in candidates}
+    assert matching_org_id in org_ids
+    assert disjoint_org_id not in org_ids
+    match = next(
+        candidate for candidate in candidates if candidate.org_id == matching_org_id
+    )
+    assert match.breakdown["sector"] == 1.0
+    assert match.breakdown["function"] == 1.0
 
 
 async def test_attestation_matching_offers_and_first_accept_wins(
