@@ -1,11 +1,20 @@
 "use client";
 
+/**
+ * Organization Teams management panel.
+ *
+ * Lets admins and owners create, rename, and delete subgroups (teams)
+ * within the organization. Read is restricted to admin/owner via the
+ * `useOrganization` context; the backend enforces the same constraint.
+ *
+ * Maps to: FR-ORG-017 through FR-ORG-019.
+ */
 import { useEffect, useState } from "react";
-import { 
+import {
   listTeamsV1OrgsOrgIdTeamsGet,
   createTeamV1OrgsOrgIdTeamsPost,
   renameTeamV1OrgsOrgIdTeamsTeamIdPatch,
-  deleteTeamV1OrgsOrgIdTeamsTeamIdDelete
+  deleteTeamV1OrgsOrgIdTeamsTeamIdDelete,
 } from "@/lib/generated/sdk.gen";
 import type { OrgTeamResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -14,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useOrganization } from "./organization-context";
-import { Pencil1Icon } from "@radix-ui/react-icons";
+import { Pencil1Icon, TrashIcon, PersonIcon } from "@radix-ui/react-icons";
 
 export function OrganizationTeams() {
   const { orgId, role, isSuspended } = useOrganization();
@@ -24,18 +33,18 @@ export function OrganizationTeams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Create State
+  // Create state
   const [newTeamName, setNewTeamName] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Edit State
+  // Edit state
   const [editingTeam, setEditingTeam] = useState<OrgTeamResponse | null>(null);
   const [editName, setEditName] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Delete State
+  // Delete state
   const [teamToDelete, setTeamToDelete] = useState<OrgTeamResponse | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -45,7 +54,7 @@ export function OrganizationTeams() {
       setLoading(false);
       return;
     }
-    
+
     try {
       const result = await listTeamsV1OrgsOrgIdTeamsGet({
         path: { org_id: orgId },
@@ -63,9 +72,9 @@ export function OrganizationTeams() {
     }
   }
 
-    useEffect(() => {
+  useEffect(() => {
     loadTeams();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
   async function handleCreate(e: React.FormEvent) {
@@ -168,127 +177,192 @@ export function OrganizationTeams() {
   }
 
   return (
-    <div className="flex flex-col gap-8 max-w-4xl">
-      {/* Create Form */}
-      <div className="rounded-2xl border border-border-default bg-surface-1 shadow-sm p-6">
-        <h2 className="mb-4 font-heading text-xl font-bold text-foreground">
-          Create Team
-        </h2>
-        {createError && (
-          <div className="mb-4 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {createError}
-          </div>
-        )}
-        <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-grow w-full">
-            <label htmlFor="teamName" className="mb-1 block text-sm font-semibold text-foreground">
-              Team Name
-            </label>
-            <Input
-              id="teamName"
-              required
-              disabled={isSuspended}
-              value={newTeamName}
-              onChange={(e) => setNewTeamName(e.target.value)}
-              placeholder="e.g. Engineering"
-            />
-          </div>
-          <Button type="submit" loading={createLoading} disabled={isSuspended || !newTeamName} className="w-full sm:w-auto mt-4 sm:mt-0">
-            Create Team
-          </Button>
-        </form>
-      </div>
+    <div className="flex flex-col gap-6 max-w-4xl">
 
-      {/* Teams List */}
-      <div className="rounded-2xl border border-border-default bg-surface-1 shadow-sm">
-        <div className="border-b border-border-default p-6">
-          <h2 className="font-heading text-xl font-bold text-foreground">
-            Teams
+      {/* ── Create Team Card ─────────────────────────────── */}
+      <div className="overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
+        {/* Header strip */}
+        <div className="border-b border-border-default bg-surface-2/50 px-8 py-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">
+            New team
+          </p>
+          <h2 className="mt-0.5 font-heading text-xl font-bold text-foreground">
+            Create a team
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Teams are subgroups within your organization. They don&apos;t have any teams yet.
+            Teams let you group members and assign roles within your organization.
           </p>
         </div>
 
-        {error && (
-          <div className="m-6 mb-0 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {error}
+        <div className="px-8 py-6">
+          {createError && (
+            <div className="mb-5 rounded-xl border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
+              {createError}
+            </div>
+          )}
+          <form onSubmit={handleCreate} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label htmlFor="teamName" className="mb-1.5 block text-sm font-semibold text-foreground">
+                Team name <span className="text-error">*</span>
+              </label>
+              <Input
+                id="teamName"
+                required
+                disabled={isSuspended}
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                placeholder="e.g. Engineering, Design, Legal…"
+                className="rounded-xl bg-background shadow-sm"
+              />
+            </div>
+            <Button
+              type="submit"
+              loading={createLoading}
+              disabled={isSuspended || !newTeamName.trim()}
+              className="w-full shrink-0 sm:w-auto"
+            >
+              Create team
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      {/* ── Teams List Card ───────────────────────────────── */}
+      <div className="overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
+        {/* Header */}
+        <div className="border-b border-border-default bg-surface-2/50 px-8 py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">
+                Organisation
+              </p>
+              <h2 className="mt-0.5 font-heading text-xl font-bold text-foreground">
+                Teams
+              </h2>
+              <p className="mt-1 text-sm text-foreground-muted">
+                Subgroups within your organization.
+              </p>
+            </div>
+            {teams.length > 0 && (
+              <span className="shrink-0 rounded-full border border-border-default bg-surface-2 px-3 py-1 text-sm font-semibold text-foreground-muted">
+                {teams.length} {teams.length === 1 ? "team" : "teams"}
+              </span>
+            )}
           </div>
-        )}
-        {editError && (
-          <div className="m-6 mb-0 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {editError}
-          </div>
-        )}
-        {deleteError && (
-          <div className="m-6 mb-0 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {deleteError}
+        </div>
+
+        {/* Errors */}
+        {(error || editError || deleteError) && (
+          <div className="mx-6 mt-6 rounded-xl border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
+            {error || editError || deleteError}
           </div>
         )}
 
-        <ul className="divide-y divide-border-default">
-          {teams.length === 0 ? (
-            <li className="p-6 text-center text-foreground-muted">No teams created yet.</li>
-          ) : (
-            teams.map((team) => (
-              <li key={team.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 hover:bg-surface-2 transition-colors">
+        {/* Empty state */}
+        {teams.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-8 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border-default bg-surface-2">
+              <PersonIcon className="h-6 w-6 text-foreground-muted" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">No teams yet</p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                Create your first team above to start grouping members.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border-default">
+            {teams.map((team) => (
+              <li
+                key={team.id}
+                className="flex flex-col gap-4 px-8 py-5 transition-colors hover:bg-surface-2/50 sm:flex-row sm:items-center sm:justify-between"
+              >
                 {editingTeam?.id === team.id ? (
-                  <form onSubmit={handleEditSubmit} className="flex flex-1 items-center gap-3">
+                  /* ── Inline edit form ── */
+                  <form
+                    onSubmit={handleEditSubmit}
+                    className="flex flex-1 flex-wrap items-center gap-3"
+                  >
                     <Input
                       autoFocus
                       disabled={editLoading || isSuspended}
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="max-w-xs"
+                      className="max-w-xs rounded-xl bg-background shadow-sm"
                     />
-                    <Button type="submit" loading={editLoading} disabled={isSuspended || !editName.trim()}>Save</Button>
-                    <Button type="button" variant="secondary" onClick={() => setEditingTeam(null)}>Cancel</Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="submit"
+                        loading={editLoading}
+                        disabled={isSuspended || !editName.trim()}
+                        className="min-h-10 px-5 text-sm"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="min-h-10 px-5 text-sm"
+                        onClick={() => setEditingTeam(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </form>
                 ) : (
                   <>
-                    <div>
-                      <p className="font-semibold text-foreground flex items-center gap-2">
-                        {team.name}
-                        <button 
-                          type="button" 
-                          disabled={isSuspended}
-                          onClick={() => {
-                            setEditingTeam(team);
-                            setEditName(team.name);
-                          }}
-                          className="text-foreground-muted hover:text-foreground p-1 rounded transition-colors disabled:opacity-50"
-                        >
-                          <Pencil1Icon className="h-4 w-4" />
-                        </button>
-                      </p>
-                      <p className="mt-1 text-sm text-foreground-muted">
-                        {team.member_count} {team.member_count === 1 ? "member" : "members"}
-                      </p>
+                    {/* ── Team info ── */}
+                    <div className="flex items-center gap-4">
+                      {/* Avatar / icon */}
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 font-heading text-sm font-bold text-foreground-muted">
+                        {team.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground">{team.name}</p>
+                        <p className="mt-0.5 text-sm text-foreground-muted">
+                          {team.member_count} {team.member_count === 1 ? "member" : "members"}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <Button
-                        variant="destructive"
-                        className="min-h-10 px-4 py-1"
+                    {/* ── Actions ── */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
                         disabled={isSuspended}
-                        onClick={() => setTeamToDelete(team)}
+                        title="Rename team"
+                        onClick={() => {
+                          setEditingTeam(team);
+                          setEditName(team.name);
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Delete
-                      </Button>
+                        <Pencil1Icon className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSuspended}
+                        title="Delete team"
+                        onClick={() => setTeamToDelete(team)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-error/30 bg-error/5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
                     </div>
                   </>
                 )}
               </li>
-            ))
-          )}
-        </ul>
+            ))}
+          </ul>
+        )}
       </div>
 
       <ConfirmDialog
         open={!!teamToDelete}
-        title={`Delete Team?`}
-        description={`Are you sure you want to delete the team "${teamToDelete?.name}"? Members will be removed from the team, but they will remain in the organization.`}
-        confirmLabel="Delete Team"
+        title="Delete team?"
+        description={`Are you sure you want to delete "${teamToDelete?.name}"? Members will be removed from the team but will remain in the organization.`}
+        confirmLabel="Delete team"
         tone="danger"
         busy={deleteLoading}
         onConfirm={handleDelete}

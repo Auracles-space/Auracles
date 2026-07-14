@@ -59,7 +59,7 @@ export function OrganizationProfile() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
+    <div className="max-w-3xl overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
       <div className="border-b border-border-default bg-surface-2/50 px-8 py-6">
         <h2 className="font-heading text-xl font-bold text-foreground tracking-tight">
           Organization Profile
