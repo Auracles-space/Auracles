@@ -49,6 +49,23 @@ pytestmark = pytest.mark.asyncio
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 
+@pytest.fixture(autouse=True)
+def _stub_trial_notification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop trial-nomination tests from enqueuing to the real Celery broker.
+
+    `nominate_trial_member` fires `dispatch_project_notification.delay`, which
+    would otherwise land on the shared dev broker and be consumed by a running
+    worker against a database that lacks the test user. Tests that assert on the
+    dispatch replace this stub with their own capturing double.
+    """
+
+    class _NoDispatch:
+        def delay(self, **kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _NoDispatch())
+
+
 @pytest.fixture
 def migrated_database() -> Iterator[None]:
     """Ensure the current database schema exists for the service tests."""

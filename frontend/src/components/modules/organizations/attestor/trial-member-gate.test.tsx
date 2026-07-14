@@ -50,6 +50,25 @@ describe("TrialMemberGate", () => {
     expect(arg.body.member_id).toBe("member-2");
   });
 
+  it("guides the user to the NDA page when nomination is blocked by nda_required", async () => {
+    vi.mocked(nominateOrgAttestorTrialMember).mockResolvedValue({
+      error: { detail: { error_code: "nda_required" } },
+    } as never);
+    render(<TrialMemberGate application={null} onChange={vi.fn()} />);
+    await screen.findByRole("option", { name: /Ada Lovelace/ });
+
+    fireEvent.change(screen.getByLabelText(/Nominee/i), {
+      target: { value: "member-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Nominate Trial Member/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/must sign the organization NDA/i)).toBeTruthy(),
+    );
+    const link = screen.getByRole("link", { name: /sign the NDA/i });
+    expect(link.getAttribute("href")).toBe("/dashboard/organizations/org-1/nda");
+  });
+
   it("keeps the nominate button disabled until a member is chosen", async () => {
     render(<TrialMemberGate application={null} onChange={vi.fn()} />);
     await screen.findByRole("option", { name: /Ada Lovelace/ });

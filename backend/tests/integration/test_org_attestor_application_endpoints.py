@@ -38,6 +38,23 @@ from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
 
+
+@pytest.fixture(autouse=True)
+def _stub_trial_notification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent trial-nomination endpoints from enqueuing to the real broker.
+
+    `nominate_trial_member` fires `dispatch_project_notification.delay`; without
+    this stub the shared dev worker would consume a task for a user that only
+    exists in the test database and log a spurious failure.
+    """
+    from app.modules.organizations import attestor_application_service as _svc
+
+    class _NoDispatch:
+        def delay(self, **kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(_svc, "dispatch_project_notification", _NoDispatch())
+
 _APPLICATION_PATH = "/v1/orgs/{org_id}/attestor-application"
 
 

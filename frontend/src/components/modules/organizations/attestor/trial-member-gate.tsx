@@ -26,6 +26,7 @@ export function TrialMemberGate({
   const [memberId, setMemberId] = useState("");
   const [members, setMembers] = useState<OrgMemberResponse[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
+  const [ndaBlocked, setNdaBlocked] = useState(false);
 
   const isNominated = !!application?.trial_member_id;
 
@@ -73,6 +74,7 @@ export function TrialMemberGate({
 
     setLoading(true);
     setError(null);
+    setNdaBlocked(false);
     try {
       const res = await nominateOrgAttestorTrialMember({
         path: { org_id: orgId },
@@ -81,7 +83,21 @@ export function TrialMemberGate({
       });
 
       if (res.error) {
-        setError(describeGeneratedError(res.error));
+        // A member must hold a current NDA signature before they can be
+        // staffed. Surface a fixable message pointing at the NDA page instead
+        // of the raw error_code payload.
+        const detail = (res.error as { detail?: unknown }).detail;
+        const code =
+          detail && typeof detail === "object" && "error_code" in detail
+            ? (detail as { error_code?: string }).error_code
+            : undefined;
+        if (code === "nda_required") {
+          setNdaBlocked(true);
+          setError(null);
+        } else {
+          setNdaBlocked(false);
+          setError(describeGeneratedError(res.error));
+        }
       } else {
         onChange();
       }
@@ -97,6 +113,18 @@ export function TrialMemberGate({
       {error && (
         <div className="mb-6 rounded-lg border border-error/50 bg-error/5 p-4 text-sm text-error">
           {error}
+        </div>
+      )}
+
+      {ndaBlocked && (
+        <div className="mb-6 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
+          The selected member must sign the organization NDA before they can be nominated.{" "}
+          <a
+            href={`/dashboard/organizations/${orgId}/nda`}
+            className="font-semibold text-accent underline"
+          >
+            Sign the NDA
+          </a>
         </div>
       )}
 
