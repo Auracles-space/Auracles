@@ -338,6 +338,29 @@ async def test_verified_contributor_can_create_draft_framework(
     assert body["pricing"]["license_types"] == ["single_user", "team"]
 
 
+async def test_framework_creation_accepts_investment_management_function(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Framework creation accepts the new canonical investment-management function."""
+    contributor_id = await create_user_with_roles(
+        "investment-function@auracles.space",
+        ["contributor"],
+    )
+    payload = valid_framework_payload()
+    payload["function"] = "investment_management"
+
+    response = await client.post(
+        "/v1/frameworks",
+        json=payload,
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["function"] == "investment_management"
+
+
 async def test_framework_creation_rejects_non_usd_pricing(
     client: AsyncClient,
     migrated_database: None,
