@@ -56,6 +56,11 @@ const adminLinks = [
     summary: "Review applications and verify KYB for organization attestors.",
   },
   {
+    href: "/admin/calibration-fixtures",
+    label: "Calibration Fixtures",
+    summary: "Manage attestor-trial fixtures: artifacts, scans, and answer keys.",
+  },
+  {
     href: "/admin/developer",
     label: "Developer",
     summary: "Approve or reject Developer Platform applications.",
