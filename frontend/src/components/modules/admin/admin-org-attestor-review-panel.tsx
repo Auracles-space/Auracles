@@ -9,6 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
+  adminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePost as adminDecideTrial,
+  adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet as adminGetTrialGrade,
+  adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet as adminListCalibrationFixtures,
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
   verifyOrgAttestorKyb,
@@ -21,6 +24,8 @@ import {
   revokeOrgAttestorCapability,
 } from "@/lib/generated/sdk.gen";
 import type {
+  AdminTrialGradeResponse,
+  CalibrationFixtureItem,
   OrgAttestorAdminListItem,
   OrgAttestorDocumentLink,
 } from "@/lib/generated/types.gen";
@@ -73,10 +78,29 @@ export function AdminOrgAttestorReviewPanel() {
   const [openDocsId, setOpenDocsId] = useState<string | null>(null);
   const [docsBusyId, setDocsBusyId] = useState<string | null>(null);
   const [docsByApp, setDocsByApp] = useState<Record<string, OrgAttestorDocumentLink[]>>({});
+  const [fixtures, setFixtures] = useState<CalibrationFixtureItem[]>([]);
+  const [selectedFixtureByApp, setSelectedFixtureByApp] = useState<Record<string, string>>({});
+  const [trialGradesByApp, setTrialGradesByApp] = useState<Record<string, AdminTrialGradeResponse>>(
+    {},
+  );
+  const [trialFeedbackByApp, setTrialFeedbackByApp] = useState<Record<string, string>>({});
 
   useEffect(() => {
     void loadQueue(statusFilter);
   }, [statusFilter]);
+
+  useEffect(() => {
+    void loadFixtures();
+  }, []);
+
+  useEffect(() => {
+    const submittedApps = applications.filter((app) => app.trial_status === "submitted");
+    submittedApps.forEach((app) => {
+      if (!trialGradesByApp[app.id]) {
+        void loadTrialGrade(app.id);
+      }
+    });
+  }, [applications, trialGradesByApp]);
 
   async function loadQueue(status: StatusFilter) {
     setLoading(true);
@@ -98,6 +122,39 @@ export function AdminOrgAttestorReviewPanel() {
       setError("Failed to load review queue.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadFixtures() {
+    configureBrowserClient();
+    try {
+      const result = await adminListCalibrationFixtures({
+        headers: getAccessTokenHeaders(),
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setFixtures(result.data.fixtures);
+    } catch {
+      setError("Failed to load calibration fixtures.");
+    }
+  }
+
+  async function loadTrialGrade(applicationId: string) {
+    configureBrowserClient();
+    try {
+      const result = await adminGetTrialGrade({
+        headers: getAccessTokenHeaders(),
+        path: { application_id: applicationId },
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setTrialGradesByApp((current) => ({ ...current, [applicationId]: result.data }));
+    } catch {
+      setError("Failed to load trial grade.");
     }
   }
 
@@ -133,9 +190,16 @@ export function AdminOrgAttestorReviewPanel() {
           path: { application_id: applicationId },
         });
       } else if (actionName === "start_trial") {
+        const frameworkId = selectedFixtureByApp[applicationId];
+        if (!frameworkId) {
+          setError("Select a calibration fixture before starting the trial.");
+          setBusyId(null);
+          return;
+        }
         result = await startOrgAttestorTrial({
           headers: getAccessTokenHeaders(),
           path: { application_id: applicationId },
+          body: { framework_id: frameworkId },
         });
       } else if (actionName === "approve") {
         result = await approveOrgAttestor({
@@ -167,6 +231,43 @@ export function AdminOrgAttestorReviewPanel() {
       }
     } catch {
       setError(`Failed to perform action: ${actionName}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleTrialDecision(applicationId: string, resultName: "pass" | "fail") {
+    setError(null);
+    setNotice(null);
+    setBusyId(applicationId);
+    configureBrowserClient();
+    try {
+      const result = await adminDecideTrial({
+        headers: getAccessTokenHeaders(),
+        path: { application_id: applicationId },
+        body: {
+          result: resultName,
+          feedback: trialFeedbackByApp[applicationId] || undefined,
+        },
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      applyUpdate(applicationId, {
+        status: result.data.status,
+        trial_status: resultName === "pass" ? "passed" : "failed",
+      });
+      setTrialGradesByApp((current) => {
+        const next = { ...current };
+        delete next[applicationId];
+        return next;
+      });
+      setNotice(
+        resultName === "pass" ? "Trial marked as passed." : "Trial marked as failed.",
+      );
+    } catch {
+      setError("Failed to decide the trial.");
     } finally {
       setBusyId(null);
     }
@@ -339,19 +440,24 @@ export function AdminOrgAttestorReviewPanel() {
             const underReview = UNDER_REVIEW.has(app.status);
             const kybDone = Boolean(app.kyb_verified_at);
             const trialPassed = app.trial_status === "passed";
-            const trialPending = app.trial_status === "assigned";
+            const trialAssigned = app.trial_status === "assigned";
+            const trialSubmitted = app.trial_status === "submitted";
             const canVerifyKyb = underReview && !kybDone;
             const canStartTrial =
-              underReview && kybDone && !trialPassed && !trialPending;
+              underReview && kybDone && !trialPassed && !trialAssigned && !trialSubmitted;
             const canApprove =
               app.status === "submitted" && kybDone && trialPassed;
+            const selectedFixtureId = selectedFixtureByApp[app.id] ?? "";
+            const grade = trialGradesByApp[app.id];
 
             const nextStep = !underReview
               ? null
               : !kybDone
                 ? "Next: verify KYB."
-                : trialPending
+                : trialAssigned
                   ? "Waiting on the nominee to complete the trial."
+                  : trialSubmitted
+                    ? "Trial submitted — review the grade below and confirm the outcome."
                   : app.trial_status === "failed"
                     ? "Trial failed — start it again to give the nominee another attempt."
                     : !trialPassed
@@ -380,6 +486,7 @@ export function AdminOrgAttestorReviewPanel() {
                 <div className="mt-4 text-sm space-y-2">
                   <p><span className="font-semibold">KYB Verified:</span> {app.kyb_verified_at ? new Date(app.kyb_verified_at).toLocaleString() : "Pending"}</p>
                   <p><span className="font-semibold">Created:</span> {new Date(app.created_at).toLocaleString()}</p>
+                  <p><span className="font-semibold">Trial Status:</span> {app.trial_status ?? "not started"}</p>
                   {app.admin_feedback && (
                     <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-warning">
                       <span className="mb-1 block font-semibold">Feedback sent to org:</span>
@@ -449,6 +556,29 @@ export function AdminOrgAttestorReviewPanel() {
                   {nextStep && (
                     <p className="mb-3 text-sm text-foreground-muted">{nextStep}</p>
                   )}
+                  {canStartTrial ? (
+                    <label className="mb-3 grid gap-2 text-sm font-medium text-foreground">
+                      <span>Calibration fixture for {app.legal_name || "this organization"}</span>
+                      <select
+                        aria-label={`Calibration fixture for ${app.legal_name || "this organization"}`}
+                        className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus:border-accent"
+                        onChange={(event) =>
+                          setSelectedFixtureByApp((current) => ({
+                            ...current,
+                            [app.id]: event.target.value,
+                          }))
+                        }
+                        value={selectedFixtureId}
+                      >
+                        <option value="">Select a fixture</option>
+                        {fixtures.map((fixture) => (
+                          <option key={fixture.id} value={fixture.id}>
+                            {fixture.title} ({fixture.review_type})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       disabled={isBusy || !canVerifyKyb}
@@ -457,7 +587,7 @@ export function AdminOrgAttestorReviewPanel() {
                       Verify KYB
                     </Button>
                     <Button
-                      disabled={isBusy || !canStartTrial}
+                      disabled={isBusy || !canStartTrial || !selectedFixtureId}
                       onClick={() => handleAction(app.id, "start_trial")}
                     >
                       Start Trial
@@ -491,6 +621,68 @@ export function AdminOrgAttestorReviewPanel() {
                       Reject
                     </Button>
                   </div>
+
+                  {trialSubmitted && grade ? (
+                    <div className="mt-4 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <p className="text-sm text-foreground">
+                          <span className="font-semibold">Score:</span>{" "}
+                          {grade.score_pct ? `${grade.score_pct}%` : "Pending"}
+                        </p>
+                        <p className="text-sm text-foreground">
+                          <span className="font-semibold">Suggested result:</span>{" "}
+                          {grade.auto_result ?? "pending"}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {grade.rows.map((row) => (
+                          <div
+                            key={row.dimension_id}
+                            className="rounded-xl border border-border-default bg-surface-1 p-4"
+                          >
+                            <p className="font-semibold text-foreground">{row.label}</p>
+                            <p className="mt-1 text-sm text-foreground-muted">
+                              Nominee: {row.nominee_score ?? "n/a"} | Key: {row.expected_score} | Tolerance: {row.tolerance}
+                            </p>
+                            {row.nominee_comment ? (
+                              <p className="mt-2 text-sm text-foreground">{row.nominee_comment}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+
+                      <label className="grid gap-2 text-sm font-medium text-foreground">
+                        Feedback
+                        <textarea
+                          className="min-h-24 rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+                          onChange={(event) =>
+                            setTrialFeedbackByApp((current) => ({
+                              ...current,
+                              [app.id]: event.target.value,
+                            }))
+                          }
+                          value={trialFeedbackByApp[app.id] ?? ""}
+                        />
+                      </label>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          disabled={isBusy}
+                          onClick={() => void handleTrialDecision(app.id, "pass")}
+                        >
+                          Pass Trial
+                        </Button>
+                        <Button
+                          disabled={isBusy}
+                          onClick={() => void handleTrialDecision(app.id, "fail")}
+                          variant="destructive"
+                        >
+                          Fail Trial
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {openFeedbackId === app.id && feedbackAction && (
                     <div className="mt-4 grid gap-3 rounded-xl bg-surface-2 p-4 border border-border-default">

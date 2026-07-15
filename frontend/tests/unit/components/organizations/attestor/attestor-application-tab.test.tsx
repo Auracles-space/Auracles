@@ -1,7 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AttestorApplicationTab } from "@/components/modules/organizations/attestor/attestor-application-tab";
-import { getOrgAttestorApplication } from "@/lib/generated/sdk.gen";
+import {
+  getOrgAttestorApplication,
+  listMembersV1OrgsOrgIdMembersGet as listMembers,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => {
   return {
@@ -13,7 +16,10 @@ vi.mock("@/lib/auth/form-client", () => {
 vi.mock("@/components/modules/organizations/organization-context", () => ({
   useOrganization: () => ({ orgId: "org-1", role: "owner" }),
 }));
-vi.mock("@/lib/generated/sdk.gen", () => ({ getOrgAttestorApplication: vi.fn() }));
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  getOrgAttestorApplication: vi.fn(),
+  listMembersV1OrgsOrgIdMembersGet: vi.fn(),
+}));
 
 const ok = <T,>(data: T) => ({
   data, error: undefined,
@@ -28,7 +34,12 @@ const notFound = () => ({
 });
 
 describe("AttestorApplicationTab", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listMembers).mockResolvedValue(
+      ok({ members: [] }) as never,
+    );
+  });
 
   it("renders the 8 activation gates with per-gate status", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue(

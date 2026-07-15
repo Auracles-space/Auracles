@@ -1,10 +1,14 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TrialMemberGate } from "@/components/modules/organizations/attestor/trial-member-gate";
-import { nominateOrgAttestorTrialMember } from "@/lib/generated/sdk.gen";
+import {
+  listMembersV1OrgsOrgIdMembersGet as listMembers,
+  nominateOrgAttestorTrialMember,
+} from "@/lib/generated/sdk.gen";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  listMembersV1OrgsOrgIdMembersGet: vi.fn(),
   nominateOrgAttestorTrialMember: vi.fn(),
 }));
 vi.mock("@/components/modules/organizations/organization-context", () => ({
@@ -38,12 +42,29 @@ describe("TrialMemberGate", () => {
 
   it("submits trial member nomination", async () => {
     vi.mocked(useOrganization).mockReturnValue({ role: "owner", orgId: "org-1" } as unknown as ReturnType<typeof useOrganization>);
+    vi.mocked(listMembers).mockResolvedValue(
+      ok({
+        members: [
+          {
+            id: "member-123",
+            display_name: "Pat Reviewer",
+            email: "pat@example.com",
+            role: "member",
+            joined_at: "2026-07-01T00:00:00Z",
+            nda_signed: true,
+          },
+        ],
+      }) as never,
+    );
     vi.mocked(nominateOrgAttestorTrialMember).mockResolvedValue(ok({}) as never);
     const onChange = vi.fn();
     
     render(<TrialMemberGate application={null} onChange={onChange} />);
     
-    fireEvent.change(screen.getByLabelText(/Nominee Member ID/i), { target: { value: "member-123" } });
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Nominee/i)).not.toBeDisabled(),
+    );
+    fireEvent.change(screen.getByLabelText(/Nominee/i), { target: { value: "member-123" } });
     fireEvent.click(screen.getByRole("button", { name: /Nominate Trial Member/i }));
     
     await waitFor(() =>

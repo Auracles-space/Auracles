@@ -37,7 +37,15 @@ describe("TaxDocumentGate", () => {
 
   it("submits tax document", async () => {
     vi.mocked(useOrganization).mockReturnValue({ role: "owner", orgId: "org-1" } as unknown as ReturnType<typeof useOrganization>);
-    vi.mocked(uploadOrgAttestorTaxDocument).mockResolvedValue(ok({}) as never);
+    vi.mocked(uploadOrgAttestorTaxDocument).mockResolvedValue(
+      ok({
+        s3_key: "org-attestor-tax-documents/org-1/app/uuid-w9.pdf",
+        url: "https://bucket.s3.amazonaws.com/",
+        fields: { key: "org-attestor-tax-documents/org-1/app/uuid-w9.pdf" },
+      }) as never,
+    );
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal("fetch", fetchMock);
     const onChange = vi.fn();
     
     render(<TaxDocumentGate application={null} onChange={onChange} />);
@@ -61,7 +69,9 @@ describe("TaxDocumentGate", () => {
         })
       )
     );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(onChange).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it("shows a pointer cursor on the file upload trigger", () => {

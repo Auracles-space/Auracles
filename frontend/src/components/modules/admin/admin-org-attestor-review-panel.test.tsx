@@ -2,6 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminOrgAttestorReviewPanel } from "@/components/modules/admin/admin-org-attestor-review-panel";
 import {
+  adminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePost as adminDecideTrial,
+  adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet as adminGetTrialGrade,
+  adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet as adminListCalibrationFixtures,
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
   startOrgAttestorTrial,
@@ -15,6 +18,9 @@ vi.mock("@/lib/auth/form-client", () => ({
 }));
 vi.mock("@/lib/auth/current-user-session", () => ({ loadCurrentUserSession: vi.fn(async () => ({ isSuperAdmin: true })) }));
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  adminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePost: vi.fn(),
+  adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet: vi.fn(),
+  adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet: vi.fn(),
   listOrgAttestorApplicationsForAdmin: vi.fn(),
   listOrgAttestorDocumentsForAdmin: vi.fn(),
   verifyOrgAttestorKyb: vi.fn(),
@@ -30,7 +36,17 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
 
 describe("AdminOrgAttestorReviewPanel", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(adminListCalibrationFixtures).mockResolvedValue(
+      ok({
+        fixtures: [
+          { id: "fixture-1", title: "Quality Fixture", review_type: "quality" },
+          { id: "fixture-2", title: "Compliance Fixture", review_type: "compliance" },
+        ],
+      }) as never,
+    );
+  });
 
   it("verifies KYB and reflects the stamp plus a success notice", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
@@ -105,7 +121,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
     expect(approve[0]).toBeDisabled();
     // app-2: Trial only.
     expect(verify[1]).toBeDisabled();
-    expect(start[1]).not.toBeDisabled();
+    expect(start[1]).toBeDisabled();
     expect(approve[1]).toBeDisabled();
     // app-3: Approve only.
     expect(verify[2]).toBeDisabled();
@@ -129,12 +145,27 @@ describe("AdminOrgAttestorReviewPanel", () => {
       ok({ id: "app-1", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z" }) as never,
     );
     render(<AdminOrgAttestorReviewPanel />);
-    await waitFor(() => screen.getByText(/Ready Org/));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Ready Org/i }),
+      ).toBeInTheDocument(),
+    );
 
+    fireEvent.change(screen.getByLabelText(/Calibration fixture for Ready Org/i), {
+      target: { value: "fixture-1" },
+    });
     const start = screen.getByRole("button", { name: /start trial/i });
     expect(start).not.toBeDisabled();
     fireEvent.click(start);
     await screen.findByText(/Trial assigned/i);
+    await waitFor(() =>
+      expect(vi.mocked(startOrgAttestorTrial)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { application_id: "app-1" },
+          body: { framework_id: "fixture-1" },
+        }),
+      ),
+    );
     // The gate must advance: Start Trial locks and the next-step copy flips.
     expect(screen.getByRole("button", { name: /start trial/i })).toBeDisabled();
     expect(screen.getByText(/Waiting on the nominee/i)).toBeTruthy();
@@ -158,9 +189,82 @@ describe("AdminOrgAttestorReviewPanel", () => {
     const start = screen.getAllByRole("button", { name: /start trial/i });
     const approve = screen.getAllByRole("button", { name: /^approve$/i });
     expect(start[0]).toBeDisabled();
-    expect(start[1]).not.toBeDisabled();
+    expect(start[1]).toBeDisabled();
     expect(approve[0]).toBeDisabled();
     expect(approve[1]).toBeDisabled();
     expect(screen.getByText(/Waiting on the nominee/i)).toBeTruthy();
+  });
+
+  it("loads the submitted trial grade view and lets the admin pass it", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(
+      ok({
+        applications: [
+          {
+            id: "app-1",
+            org_id: "org-1",
+            legal_name: "Review Org",
+            status: "submitted",
+            kyb_verified_at: "2026-07-07T12:00:00Z",
+            trial_status: "submitted",
+            created_at: "2026-07-07T12:00:00Z",
+            reviewed_at: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 10,
+      }),
+    );
+    vi.mocked(adminGetTrialGrade).mockResolvedValue(
+      ok({
+        trial_id: "trial-1",
+        status: "submitted",
+        score_pct: "84.50",
+        auto_result: "pass",
+        rows: [
+          {
+            dimension_id: "dim-1",
+            label: "Governance",
+            weight: "1.0",
+            nominee_score: 4,
+            nominee_comment: "Matches the evidence.",
+            expected_score: 4,
+            tolerance: 0,
+          },
+        ],
+      }) as never,
+    );
+    vi.mocked(adminDecideTrial).mockResolvedValue(
+      ok({
+        id: "app-1",
+        status: "submitted",
+        kyb_verified_at: "2026-07-07T12:00:00Z",
+      }) as never,
+    );
+
+    render(<AdminOrgAttestorReviewPanel />);
+
+    await waitFor(() => screen.getByText(/Review Org/));
+    expect(await screen.findByText(/84.50%/i)).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.textContent === "Suggested result: pass",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Pass Trial/i }));
+
+    await waitFor(() =>
+      expect(vi.mocked(adminDecideTrial)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { application_id: "app-1" },
+          body: { result: "pass", feedback: undefined },
+        }),
+      ),
+    );
+    expect(
+      await screen.findByText((_, element) =>
+        element?.textContent === "Trial Status: passed",
+      ),
+    ).toBeInTheDocument();
   });
 });

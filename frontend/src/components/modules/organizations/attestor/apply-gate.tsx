@@ -218,6 +218,13 @@ export function ApplyGate({
 
   return (
     <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm">
+      {application?.admin_feedback ? (
+        <div className="mb-6 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
+          <p className="font-semibold text-warning">Admin feedback</p>
+          <p className="mt-1">{application.admin_feedback}</p>
+        </div>
+      ) : null}
+
       {error && (
         <div className="mb-6 rounded-lg border border-error/50 bg-error/5 p-4 text-sm text-error">
           {error}
