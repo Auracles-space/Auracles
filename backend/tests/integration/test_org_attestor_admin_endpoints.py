@@ -177,6 +177,7 @@ async def _create_calibration_fixture(contributor_id: UUID) -> UUID:
                     file_key="calibration/fixture.pdf",
                     file_size=1024,
                     mime_type="application/pdf",
+                    scan_status="clean",
                 )
             )
 
@@ -618,3 +619,210 @@ async def test_capability_routes_require_admin(
     base = f"/v1/admin/orgs/{org_id}/attestor-capability/suspend"
     assert (await client.post(base)).status_code == 401
     assert (await client.post(base, headers=auth(plain_id))).status_code == 403
+
+
+_FIXTURES = "/v1/admin/org-attestor-applications/calibration-fixtures"
+
+
+async def _bare_fixture(contributor_id: UUID) -> UUID:
+    """Create a calibration fixture with a complete key but no artifacts."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            dimensions = (
+                await session.scalars(
+                    select(AttestationRubricDimension).where(
+                        AttestationRubricDimension.review_type == "quality",
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                )
+            ).all()
+            framework = Framework(
+                id=uuid4(),
+                contributor_id=contributor_id,
+                title="Bare Fixture",
+                description="No artifacts yet.",
+                version="1.0.0",
+                status="published",
+                is_calibration=True,
+                calibration_review_type="quality",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["risk"],
+                tags_text="risk",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("499.00"),
+                currency="USD",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+            for dimension in dimensions:
+                session.add(
+                    AttestorTrialAnswerKey(
+                        framework_id=framework.id,
+                        dimension_id=dimension.id,
+                        expected_score=4,
+                        tolerance=0,
+                    )
+                )
+            return framework.id
+
+
+async def test_admin_fixture_artifact_upload_confirm_list_delete(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin uploads, confirms, lists, and deletes a fixture artifact."""
+    from app.integrations import s3
+    from app.modules.organizations import attestor_trial_service
+
+    monkeypatch.setattr(
+        s3.storage,
+        "presigned_post",
+        lambda **kwargs: {"url": "https://s3.example/u", "fields": {"key": "v"}},
+    )
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        s3.storage, "delete_object", lambda bucket, key: deleted.append(key)
+    )
+    scanned: list[str] = []
+
+    class _FakeScan:
+        def delay(self, artifact_id: str) -> None:
+            scanned.append(artifact_id)
+
+    monkeypatch.setattr(attestor_trial_service, "scan_artifact", _FakeScan())
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    fixture_id = await _bare_fixture(owner_id)
+
+    url_res = await client.post(
+        f"{_FIXTURES}/{fixture_id}/artifacts/upload-url",
+        headers=auth(admin_id, ["admin"]),
+        json={
+            "filename": "sample.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+    )
+    assert url_res.status_code == 200
+    artifact_id = url_res.json()["artifact_id"]
+
+    confirm_res = await client.post(
+        f"{_FIXTURES}/{fixture_id}/artifacts/confirm",
+        headers=auth(admin_id, ["admin"]),
+        json={"artifact_id": artifact_id},
+    )
+    assert confirm_res.status_code == 200
+    assert scanned == [artifact_id]
+
+    list_res = await client.get(
+        f"{_FIXTURES}/{fixture_id}/artifacts", headers=auth(admin_id, ["admin"])
+    )
+    assert list_res.status_code == 200
+    assert [a["id"] for a in list_res.json()["artifacts"]] == [artifact_id]
+
+    del_res = await client.delete(
+        f"{_FIXTURES}/{fixture_id}/artifacts/{artifact_id}",
+        headers=auth(admin_id, ["admin"]),
+    )
+    assert del_res.status_code == 204
+    assert deleted and deleted[0].endswith(".pdf")
+
+    empty = await client.get(
+        f"{_FIXTURES}/{fixture_id}/artifacts", headers=auth(admin_id, ["admin"])
+    )
+    assert empty.json()["artifacts"] == []
+
+
+async def test_admin_fixture_artifact_confirm_without_object_409(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming before the object lands in S3 is 409."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(
+        s3.storage,
+        "presigned_post",
+        lambda **kwargs: {"url": "https://s3.example/u", "fields": {"key": "v"}},
+    )
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    fixture_id = await _bare_fixture(owner_id)
+
+    url_res = await client.post(
+        f"{_FIXTURES}/{fixture_id}/artifacts/upload-url",
+        headers=auth(admin_id, ["admin"]),
+        json={"filename": "s.pdf", "mime_type": "application/pdf", "file_size": 10},
+    )
+    artifact_id = url_res.json()["artifact_id"]
+    confirm_res = await client.post(
+        f"{_FIXTURES}/{fixture_id}/artifacts/confirm",
+        headers=auth(admin_id, ["admin"]),
+        json={"artifact_id": artifact_id},
+    )
+    assert confirm_res.status_code == 409
+
+
+async def test_admin_fixture_artifact_routes_require_admin(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+) -> None:
+    """Fixture-artifact routes reject anonymous (401) and non-admin (403)."""
+    plain_id = await _new_user("plain")
+    owner_id = await _new_user("owner")
+    fixture_id = await _bare_fixture(owner_id)
+    path = f"{_FIXTURES}/{fixture_id}/artifacts"
+    assert (await client.get(path)).status_code == 401
+    assert (await client.get(path, headers=auth(plain_id))).status_code == 403
+
+
+async def test_start_trial_rejects_fixture_without_clean_artifact(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+) -> None:
+    """A fixture whose artifacts are unscanned cannot start a trial (422)."""
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    fixture_id = await _bare_fixture(owner_id)
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Artifact(
+                    framework_id=fixture_id,
+                    name="pending.pdf",
+                    file_key="calibration/pending.pdf",
+                    file_size=1024,
+                    mime_type="application/pdf",
+                    scan_status="pending",
+                )
+            )
+    application_id = await _gated_application(
+        org_id, owner_id, seed_kyb_and_trial=False
+    )
+    await client.post(
+        f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
+    )
+    res = await client.post(
+        f"{_QUEUE}/{application_id}/start-trial",
+        headers=auth(admin_id, ["admin"]),
+        json={"framework_id": str(fixture_id)},
+    )
+    assert res.status_code == 422

@@ -1192,17 +1192,21 @@ async def admin_start_trial(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Fixture answer key is incomplete for its rubric.",
             )
-        # A fixture with no artifacts gives the nominee nothing to review, so the
-        # trial would be ungradeable in practice — block assignment up front.
-        artifact_count = await db.scalar(
+        # A fixture needs at least one virus-scanned (clean) artifact or the
+        # nominee has nothing safe to review — block assignment up front. Pending
+        # or infected artifacts do not count.
+        clean_artifact_count = await db.scalar(
             select(func.count())
             .select_from(Artifact)
-            .where(Artifact.framework_id == fixture.id)
+            .where(
+                Artifact.framework_id == fixture.id,
+                Artifact.scan_status == "clean",
+            )
         )
-        if not artifact_count:
+        if not clean_artifact_count:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Calibration fixture has no artifacts to review.",
+                detail="Calibration fixture has no scanned artifacts to review.",
             )
         nominee_user_id = nominee.user_id
         org_id = application.org_id

@@ -63,6 +63,11 @@ from app.modules.organizations.schemas import (
     ContributorOrgDirectoryEntry,
     ContributorOrgDirectoryResponse,
     CreateCalibrationFixtureRequest,
+    FixtureArtifactConfirmRequest,
+    FixtureArtifactItem,
+    FixtureArtifactsResponse,
+    FixtureArtifactUploadUrlRequest,
+    FixtureArtifactUploadUrlResponse,
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
@@ -122,6 +127,7 @@ from app.modules.organizations.schemas import (
     OrgTeamsResponse,
     OrgUndertakingsSignRequest,
     PublicOrganizationResponse,
+    TrialAnswerKeysResponse,
     TrialDecideRequest,
     TrialSubmitRequest,
     UpsertTrialAnswerKeyRequest,
@@ -2279,6 +2285,104 @@ async def admin_upsert_trial_answer_key(
         framework_id=framework_id,
         admin_id=admin.id,
         payload=payload,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@admin_org_attestor_router.get(
+    "/calibration-fixtures/{framework_id}/answer-keys",
+    response_model=TrialAnswerKeysResponse,
+    summary="List a fixture's answer keys (platform admin)",
+    description="Return every rubric dimension for a fixture with its key value.",
+)
+async def admin_list_trial_answer_keys(
+    framework_id: UUID,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> TrialAnswerKeysResponse:
+    """Return every rubric dimension for a fixture with its answer-key value."""
+    del admin
+    return await attestor_trial_service.list_answer_keys(db, framework_id=framework_id)
+
+
+@admin_org_attestor_router.get(
+    "/calibration-fixtures/{framework_id}/artifacts",
+    response_model=FixtureArtifactsResponse,
+    summary="List a fixture's artifacts (platform admin)",
+    description="Return a calibration fixture's artifacts with scan state.",
+)
+async def admin_list_fixture_artifacts(
+    framework_id: UUID,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> FixtureArtifactsResponse:
+    """Return a calibration fixture's artifacts."""
+    del admin
+    return await attestor_trial_service.list_fixture_artifacts(
+        db, framework_id=framework_id
+    )
+
+
+@admin_org_attestor_router.post(
+    "/calibration-fixtures/{framework_id}/artifacts/upload-url",
+    response_model=FixtureArtifactUploadUrlResponse,
+    summary="Create a fixture-artifact upload target (platform admin)",
+    description="Create a pending artifact row and a constrained S3 POST target.",
+)
+async def admin_create_fixture_artifact_upload_url(
+    framework_id: UUID,
+    payload: FixtureArtifactUploadUrlRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> FixtureArtifactUploadUrlResponse:
+    """Create a presigned upload target for one fixture artifact."""
+    return await attestor_trial_service.request_fixture_artifact_upload_url(
+        db,
+        framework_id=framework_id,
+        admin_id=admin.id,
+        payload=payload,
+    )
+
+
+@admin_org_attestor_router.post(
+    "/calibration-fixtures/{framework_id}/artifacts/confirm",
+    response_model=FixtureArtifactItem,
+    summary="Confirm a fixture-artifact upload (platform admin)",
+    description="Confirm the object exists in S3 and dispatch a virus scan.",
+)
+async def admin_confirm_fixture_artifact(
+    framework_id: UUID,
+    payload: FixtureArtifactConfirmRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> FixtureArtifactItem:
+    """Confirm a browser-uploaded fixture artifact and start scanning."""
+    return await attestor_trial_service.confirm_fixture_artifact_upload(
+        db,
+        framework_id=framework_id,
+        admin_id=admin.id,
+        payload=payload,
+    )
+
+
+@admin_org_attestor_router.delete(
+    "/calibration-fixtures/{framework_id}/artifacts/{artifact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a fixture artifact (platform admin)",
+    description="Remove one fixture artifact row and its S3 object.",
+)
+async def admin_delete_fixture_artifact(
+    framework_id: UUID,
+    artifact_id: UUID,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> Response:
+    """Delete one calibration fixture artifact."""
+    await attestor_trial_service.delete_fixture_artifact(
+        db,
+        framework_id=framework_id,
+        admin_id=admin.id,
+        artifact_id=artifact_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

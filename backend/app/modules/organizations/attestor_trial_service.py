@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
@@ -34,7 +34,14 @@ from app.modules.organizations.schemas import (
     CalibrationFixtureItem,
     CalibrationFixturesResponse,
     CreateCalibrationFixtureRequest,
+    FixtureArtifactConfirmRequest,
+    FixtureArtifactItem,
+    FixtureArtifactsResponse,
+    FixtureArtifactUploadUrlRequest,
+    FixtureArtifactUploadUrlResponse,
     NomineeTrialResponse,
+    TrialAnswerKeyItem,
+    TrialAnswerKeysResponse,
     TrialArtifactSchema,
     TrialDecideRequest,
     TrialRubricDimensionSchema,
@@ -42,9 +49,24 @@ from app.modules.organizations.schemas import (
     TrialSubmitRequest,
     UpsertTrialAnswerKeyRequest,
 )
+from app.workers.tasks.artifacts import scan_artifact
 
 _OPEN_TRIAL_STATES = ("assigned", "submitted")
 _TRIAL_ARTIFACT_URL_TTL_SECONDS = 900
+# Fixture artifacts are admin-uploaded review material. Constrain uploads the
+# same way the framework pipeline does, but keep an independent allowlist so the
+# organizations module does not import the heavy frameworks service.
+_FIXTURE_ARTIFACT_ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+_FIXTURE_ARTIFACT_MAX_SIZE = 100 * 1024 * 1024
+_FIXTURE_ARTIFACT_UPLOAD_TTL_SECONDS = 900
 _FIXTURE_DEFAULT_CATEGORY = "framework"
 _FIXTURE_DEFAULT_SECTOR = "financial_services"
 _FIXTURE_DEFAULT_INDUSTRY = "fund_management"
@@ -170,10 +192,15 @@ async def load_nominee_trial(
             .order_by(AttestationRubricDimension.display_order.asc())
         )
     ).all()
+    # Only surface virus-scanned (clean) artifacts to the nominee; pending or
+    # infected uploads are withheld.
     artifacts = (
         await db.scalars(
             select(Artifact)
-            .where(Artifact.framework_id == framework.id)
+            .where(
+                Artifact.framework_id == framework.id,
+                Artifact.scan_status == "clean",
+            )
             .order_by(Artifact.created_at.asc())
         )
     ).all()
@@ -636,3 +663,277 @@ async def upsert_answer_key(
         dimension_id=str(payload.dimension_id),
     ).info("calibration_fixture_answer_key_upserted")
     return answer_key
+
+
+async def _load_fixture(db: AsyncSession, framework_id: UUID) -> Framework:
+    """Load a calibration fixture framework, or raise 404."""
+    fixture = await db.scalar(
+        select(Framework).where(
+            Framework.id == framework_id,
+            Framework.is_calibration.is_(True),
+        )
+    )
+    if fixture is None or fixture.calibration_review_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Calibration fixture not found.",
+        )
+    return fixture
+
+
+def _fixture_artifact_extension(filename: str) -> str:
+    """Return a lowercase file extension for the S3 key, defaulting to bin."""
+    _, _, ext = filename.rpartition(".")
+    ext = ext.strip().lower()
+    return ext if ext and ext.isalnum() else "bin"
+
+
+async def list_answer_keys(
+    db: AsyncSession, *, framework_id: UUID
+) -> TrialAnswerKeysResponse:
+    """Return every rubric dimension for a fixture with its key value if set."""
+    fixture = await _load_fixture(db, framework_id)
+    dimensions = (
+        await db.scalars(
+            select(AttestationRubricDimension)
+            .where(
+                AttestationRubricDimension.review_type
+                == fixture.calibration_review_type,
+                AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+            )
+            .order_by(AttestationRubricDimension.display_order.asc())
+        )
+    ).all()
+    key_map = {
+        key.dimension_id: key
+        for key in (
+            await db.scalars(
+                select(AttestorTrialAnswerKey).where(
+                    AttestorTrialAnswerKey.framework_id == fixture.id
+                )
+            )
+        ).all()
+    }
+    return TrialAnswerKeysResponse(
+        review_type=fixture.calibration_review_type,
+        rows=[
+            TrialAnswerKeyItem(
+                dimension_id=dimension.id,
+                label=dimension.label,
+                expected_score=(
+                    key_map[dimension.id].expected_score
+                    if dimension.id in key_map
+                    else None
+                ),
+                tolerance=(
+                    key_map[dimension.id].tolerance
+                    if dimension.id in key_map
+                    else None
+                ),
+            )
+            for dimension in dimensions
+        ],
+    )
+
+
+async def list_fixture_artifacts(
+    db: AsyncSession, *, framework_id: UUID
+) -> FixtureArtifactsResponse:
+    """List a fixture's artifacts with virus-scan state for the admin editor."""
+    await _load_fixture(db, framework_id)
+    artifacts = (
+        await db.scalars(
+            select(Artifact)
+            .where(Artifact.framework_id == framework_id)
+            .order_by(Artifact.created_at.asc())
+        )
+    ).all()
+    return FixtureArtifactsResponse(
+        artifacts=[FixtureArtifactItem.model_validate(a) for a in artifacts]
+    )
+
+
+async def request_fixture_artifact_upload_url(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    admin_id: UUID,
+    payload: FixtureArtifactUploadUrlRequest,
+) -> FixtureArtifactUploadUrlResponse:
+    """Create a pending fixture Artifact row and a constrained S3 POST target.
+
+    Raises:
+        HTTPException(404): Framework is not a calibration fixture.
+        HTTPException(415): Unsupported artifact MIME type.
+    """
+    fixture = await _load_fixture(db, framework_id)
+    if payload.mime_type not in _FIXTURE_ARTIFACT_ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported artifact MIME type.",
+        )
+    if payload.file_size > _FIXTURE_ARTIFACT_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Artifact exceeds the maximum size.",
+        )
+
+    # `_load_fixture` validated framework_id is a real fixture; use the literal
+    # id from here so no expired ORM attribute is read after the rollback below.
+    del fixture
+    artifact_id = uuid4()
+    file_key = (
+        f"frameworks/{framework_id}/artifacts/{artifact_id}."
+        f"{_fixture_artifact_extension(payload.filename)}"
+    )
+    settings = get_settings()
+    upload_target = s3.storage.presigned_post(
+        bucket=settings.s3_artifacts_bucket,
+        key=file_key,
+        mime_type=payload.mime_type,
+        max_size=_FIXTURE_ARTIFACT_MAX_SIZE,
+        expires_in=_FIXTURE_ARTIFACT_UPLOAD_TTL_SECONDS,
+    )
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        db.add(
+            Artifact(
+                id=artifact_id,
+                framework_id=framework_id,
+                name=payload.filename.strip(),
+                file_key=file_key,
+                file_size=payload.file_size,
+                mime_type=payload.mime_type,
+            )
+        )
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="calibration_fixture_artifact_uploaded",
+            target_type="artifact",
+            target_id=artifact_id,
+            metadata={
+                "framework_id": str(framework_id),
+                "status": "upload_url_created",
+            },
+        )
+    return FixtureArtifactUploadUrlResponse(
+        artifact_id=artifact_id,
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(name): str(value) for name, value in upload_target["fields"].items()
+        },
+        file_key=file_key,
+        max_size=_FIXTURE_ARTIFACT_MAX_SIZE,
+        expires_in=_FIXTURE_ARTIFACT_UPLOAD_TTL_SECONDS,
+    )
+
+
+async def confirm_fixture_artifact_upload(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    admin_id: UUID,
+    payload: FixtureArtifactConfirmRequest,
+) -> FixtureArtifactItem:
+    """Confirm the uploaded object exists and dispatch a virus scan.
+
+    Raises:
+        HTTPException(404): Fixture or artifact not found.
+        HTTPException(409): Object has not been uploaded to S3 yet.
+    """
+    await _load_fixture(db, framework_id)
+    artifact = await db.scalar(
+        select(Artifact).where(
+            Artifact.id == payload.artifact_id,
+            Artifact.framework_id == framework_id,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Fixture artifact not found.",
+        )
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_artifacts_bucket, artifact.file_key):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Artifact object has not been uploaded.",
+        )
+
+    artifact_id = artifact.id
+    was_pending = artifact.scan_status == "pending"
+    if was_pending:
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            locked = await db.get(Artifact, artifact_id)
+            assert locked is not None
+            locked.processing_status = "processing"
+            locked.processing_started_at = datetime.now(UTC)
+        scan_artifact.delay(str(artifact_id))
+        logger.bind(
+            module="organizations",
+            action="confirm_fixture_artifact_upload",
+            user_id=str(admin_id),
+            framework_id=str(framework_id),
+            artifact_id=str(artifact_id),
+        ).info("calibration_fixture_artifact_scan_started")
+    # Read back as a column tuple so no expired ORM instance is lazily loaded.
+    row = (
+        await db.execute(
+            select(
+                Artifact.id,
+                Artifact.name,
+                Artifact.mime_type,
+                Artifact.scan_status,
+            ).where(Artifact.id == artifact_id)
+        )
+    ).one()
+    return FixtureArtifactItem(
+        id=row.id, name=row.name, mime_type=row.mime_type, scan_status=row.scan_status
+    )
+
+
+async def delete_fixture_artifact(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    admin_id: UUID,
+    artifact_id: UUID,
+) -> None:
+    """Delete one fixture artifact row and its S3 object.
+
+    Raises:
+        HTTPException(404): Fixture or artifact not found.
+    """
+    await _load_fixture(db, framework_id)
+    artifact = await db.scalar(
+        select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.framework_id == framework_id,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Fixture artifact not found.",
+        )
+    file_key = artifact.file_key
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        locked = await db.get(Artifact, artifact_id)
+        if locked is not None:
+            await db.delete(locked)
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="calibration_fixture_artifact_deleted",
+            target_type="artifact",
+            target_id=artifact_id,
+            metadata={"framework_id": str(framework_id)},
+        )
+    settings = get_settings()
+    s3.storage.delete_object(settings.s3_artifacts_bucket, file_key)

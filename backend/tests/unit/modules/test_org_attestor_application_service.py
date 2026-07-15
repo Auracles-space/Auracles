@@ -268,6 +268,7 @@ async def _create_calibration_fixture(
                         file_key="calibration/fixture.pdf",
                         file_size=1024,
                         mime_type="application/pdf",
+                        scan_status="clean",
                     )
                 )
 

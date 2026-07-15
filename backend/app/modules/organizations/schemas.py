@@ -864,6 +864,64 @@ class UpsertTrialAnswerKeyRequest(BaseModel):
     tolerance: int = Field(ge=0, le=4)
 
 
+class TrialAnswerKeyItem(BaseModel):
+    """One answer-key row joined to its rubric dimension, for the admin editor."""
+
+    dimension_id: UUID
+    label: str
+    expected_score: int | None
+    tolerance: int | None
+
+
+class TrialAnswerKeysResponse(BaseModel):
+    """Every rubric dimension for a fixture with its answer-key value, if set."""
+
+    review_type: str
+    rows: list[TrialAnswerKeyItem]
+
+
+class FixtureArtifactUploadUrlRequest(BaseModel):
+    """Admin body to create a constrained fixture-artifact upload target."""
+
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=150)
+    file_size: int = Field(gt=0)
+
+
+class FixtureArtifactUploadUrlResponse(BaseModel):
+    """S3 presigned POST target for one fixture artifact."""
+
+    artifact_id: UUID
+    upload_url: str
+    fields: dict[str, str]
+    file_key: str
+    max_size: int
+    expires_in: int
+
+
+class FixtureArtifactConfirmRequest(BaseModel):
+    """Admin body confirming a browser-uploaded fixture artifact object."""
+
+    artifact_id: UUID
+
+
+class FixtureArtifactItem(BaseModel):
+    """One fixture artifact with its virus-scan state."""
+
+    id: UUID
+    name: str
+    mime_type: str
+    scan_status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FixtureArtifactsResponse(BaseModel):
+    """All artifacts attached to one calibration fixture."""
+
+    artifacts: list[FixtureArtifactItem]
+
+
 class OrgAttestorAdminListItem(BaseModel):
     """Slim admin-queue row for one org attestor application.
 
