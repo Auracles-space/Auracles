@@ -32,6 +32,9 @@ from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.organizations import (
+    attestor_application_service as attestor_svc,
+)
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
@@ -303,6 +306,14 @@ async def test_full_gate_walk_to_approval(
 
     monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
 
+    notifications: list[dict[str, object]] = []
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            notifications.append(kwargs)
+
+    monkeypatch.setattr(attestor_svc, "dispatch_project_notification", _FakeTask())
+
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
@@ -356,6 +367,15 @@ async def test_full_gate_walk_to_approval(
     )
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
+
+    # The owner must be told the outcome so they can start attesting.
+    approved_notes = [
+        n
+        for n in notifications
+        if n["notification_type"] == "org_attestor_approved"
+    ]
+    assert len(approved_notes) == 1
+    assert approved_notes[0]["user_id"] == str(owner_id)
 
     async with async_session_factory() as session:
         capability = await session.scalar(

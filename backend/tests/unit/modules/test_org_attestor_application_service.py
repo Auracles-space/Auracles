@@ -473,6 +473,52 @@ async def test_needs_info_notifies_org_owner(
     assert str(org_id) in str(calls[0]["link"])
 
 
+async def test_reject_notifies_org_owner(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rejecting an application notifies the org owner of the outcome.
+
+    A terminal rejection must reach the owner with the admin's feedback, so
+    the service dispatches a durable notification deep linking the application.
+    """
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
+
+    calls: list[dict[str, object]] = []
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _FakeTask())
+
+    async with async_session_factory() as session:
+        application_id = await session.scalar(
+            select(OrgAttestorApplication.id).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+    assert application_id is not None
+    async with async_session_factory() as session:
+        await svc.admin_reject(
+            session,
+            application_id=application_id,
+            admin_id=owner.user_id,
+            feedback="References could not be verified.",
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(owner.user_id)
+    assert calls[0]["notification_type"] == "org_attestor_rejected"
+    assert str(org_id) in str(calls[0]["link"])
+
+
 async def test_sign_undertakings_wrong_totp_rejected(app_state: None) -> None:
     """Signing undertakings with an invalid TOTP code raises 422."""
     org_id, owner = await _create_org(attestor_status="pending", totp=True)
@@ -945,6 +991,8 @@ async def test_admin_start_trial_rejects_when_already_passed(
         "org_attestor_trial_nominated",
         "org_attestor_trial_assigned",
         "org_attestor_needs_info",
+        "org_attestor_approved",
+        "org_attestor_rejected",
     ],
 )
 async def test_trial_notification_types_persist(

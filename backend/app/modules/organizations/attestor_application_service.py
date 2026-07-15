@@ -934,6 +934,60 @@ def _org_profile_specializations(application: OrgAttestorApplication) -> list[st
     return values
 
 
+async def _org_owner_ids(db: AsyncSession, org_id: UUID) -> list[UUID]:
+    """Return the user ids of every owner of an organization."""
+    return list(
+        (
+            await db.scalars(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == org_id,
+                    OrgMember.role == "owner",
+                )
+            )
+        ).all()
+    )
+
+
+def _notify_org_owners(
+    owner_ids: list[UUID],
+    *,
+    org_id: UUID,
+    application_id: UUID,
+    notification_type: str,
+    title: str,
+    body: str,
+    dedupe_token: str,
+) -> None:
+    """Queue one durable owner notification per owner about a review decision.
+
+    Call after the transaction commits so the worker reads persisted state; a
+    queue failure is logged, never raised, so it cannot roll back the review.
+    """
+    for owner_id in owner_ids:
+        try:
+            dispatch_project_notification.delay(
+                user_id=str(owner_id),
+                notification_type=notification_type,
+                title=title,
+                body=body,
+                payload={
+                    "org_id": str(org_id),
+                    "application_id": str(application_id),
+                },
+                link=f"/dashboard/organizations/{org_id}/attestor",
+                dedupe_key=(
+                    f"{notification_type}:{application_id}:{owner_id}:{dedupe_token}"
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive queue guard
+            logger.bind(
+                module="organizations",
+                action="notify_org_owners",
+                org_id=org_id,
+                user_id=owner_id,
+            ).error("notification_dispatch_failed", error=str(exc))
+
+
 def _missing_approval_gates(
     application: OrgAttestorApplication,
     *,
@@ -1118,14 +1172,7 @@ async def admin_needs_info(
         org_id = application.org_id
         # Capture recipients inside the transaction: the owners manage the
         # application and must see the requested changes.
-        owner_ids = (
-            await db.scalars(
-                select(OrgMember.user_id).where(
-                    OrgMember.org_id == org_id,
-                    OrgMember.role == "owner",
-                )
-            )
-        ).all()
+        owner_ids = await _org_owner_ids(db, org_id)
         await write_audit(
             db=db,
             actor_id=admin_id,
@@ -1135,35 +1182,18 @@ async def admin_needs_info(
             metadata={"org_id": str(org_id)},
         )
 
-    # Notify each owner after commit so the worker reads the persisted state; a
-    # queue failure must not roll back the review (mirrors the trial paths).
-    for owner_id in owner_ids:
-        try:
-            dispatch_project_notification.delay(
-                user_id=str(owner_id),
-                notification_type="org_attestor_needs_info",
-                title="Your attestor application needs more information",
-                body=(
-                    "An admin has sent your organization's attestor application "
-                    "back for changes. Open the application to see what's needed."
-                ),
-                payload={
-                    "org_id": str(org_id),
-                    "application_id": str(application_id),
-                },
-                link=f"/dashboard/organizations/{org_id}/attestor",
-                dedupe_key=(
-                    f"org_attestor_needs_info:{application_id}:{owner_id}:"
-                    f"{now.isoformat()}"
-                ),
-            )
-        except Exception as exc:  # pragma: no cover - defensive queue guard
-            logger.bind(
-                module="organizations",
-                action="admin_needs_info",
-                org_id=org_id,
-                user_id=owner_id,
-            ).error("notification_dispatch_failed", error=str(exc))
+    _notify_org_owners(
+        owner_ids,
+        org_id=org_id,
+        application_id=application_id,
+        notification_type="org_attestor_needs_info",
+        title="Your attestor application needs more information",
+        body=(
+            "An admin has sent your organization's attestor application back "
+            "for changes. Open the application to see what's needed."
+        ),
+        dedupe_token=now.isoformat(),
+    )
     return application
 
 
@@ -1463,6 +1493,7 @@ async def admin_approve(
         application.reviewed_by = admin_id
         application.reviewed_at = now
         org_id = application.org_id
+        owner_ids = await _org_owner_ids(db, org_id)
         await write_audit(
             db=db,
             actor_id=admin_id,
@@ -1474,6 +1505,18 @@ async def admin_approve(
 
     await _sync_org_member_roles(db, org_id)
     await db.refresh(application)
+    _notify_org_owners(
+        owner_ids,
+        org_id=org_id,
+        application_id=application_id,
+        notification_type="org_attestor_approved",
+        title="Your attestor application was approved",
+        body=(
+            "Your organization is now a verified Auracles attestor. Open the "
+            "attestor page to start taking on attestations."
+        ),
+        dedupe_token=now.isoformat(),
+    )
     logger.bind(
         module="organizations",
         action="org_attestor_activated",
@@ -1509,14 +1552,29 @@ async def admin_reject(
         application.admin_feedback = feedback
         application.reviewed_by = admin_id
         application.reviewed_at = now
+        org_id = application.org_id
+        owner_ids = await _org_owner_ids(db, org_id)
         await write_audit(
             db=db,
             actor_id=admin_id,
             action="org_attestor_application_rejected",
             target_type="org_attestor_application",
             target_id=application.id,
-            metadata={"org_id": str(application.org_id)},
+            metadata={"org_id": str(org_id)},
         )
+
+    _notify_org_owners(
+        owner_ids,
+        org_id=org_id,
+        application_id=application_id,
+        notification_type="org_attestor_rejected",
+        title="Your attestor application was not approved",
+        body=(
+            "An admin has reviewed your organization's attestor application and "
+            "could not approve it. Open the application to see the feedback."
+        ),
+        dedupe_token=now.isoformat(),
+    )
     return application
 
 

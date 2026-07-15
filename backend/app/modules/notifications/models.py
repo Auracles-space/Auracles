@@ -82,6 +82,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "org_attestor_trial_nominated",
     "org_attestor_trial_assigned",
     "org_attestor_needs_info",
+    "org_attestor_approved",
+    "org_attestor_rejected",
     name="notification_type_enum",
     create_type=False,
 )
