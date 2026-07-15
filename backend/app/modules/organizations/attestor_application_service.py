@@ -1115,14 +1115,55 @@ async def admin_needs_info(
         application.admin_feedback = feedback
         application.reviewed_by = admin_id
         application.reviewed_at = now
+        org_id = application.org_id
+        # Capture recipients inside the transaction: the owners manage the
+        # application and must see the requested changes.
+        owner_ids = (
+            await db.scalars(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == org_id,
+                    OrgMember.role == "owner",
+                )
+            )
+        ).all()
         await write_audit(
             db=db,
             actor_id=admin_id,
             action="org_attestor_needs_info",
             target_type="org_attestor_application",
             target_id=application.id,
-            metadata={"org_id": str(application.org_id)},
+            metadata={"org_id": str(org_id)},
         )
+
+    # Notify each owner after commit so the worker reads the persisted state; a
+    # queue failure must not roll back the review (mirrors the trial paths).
+    for owner_id in owner_ids:
+        try:
+            dispatch_project_notification.delay(
+                user_id=str(owner_id),
+                notification_type="org_attestor_needs_info",
+                title="Your attestor application needs more information",
+                body=(
+                    "An admin has sent your organization's attestor application "
+                    "back for changes. Open the application to see what's needed."
+                ),
+                payload={
+                    "org_id": str(org_id),
+                    "application_id": str(application_id),
+                },
+                link=f"/dashboard/organizations/{org_id}/attestor",
+                dedupe_key=(
+                    f"org_attestor_needs_info:{application_id}:{owner_id}:"
+                    f"{now.isoformat()}"
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive queue guard
+            logger.bind(
+                module="organizations",
+                action="admin_needs_info",
+                org_id=org_id,
+                user_id=owner_id,
+            ).error("notification_dispatch_failed", error=str(exc))
     return application
 
 

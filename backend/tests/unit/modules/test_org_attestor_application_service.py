@@ -426,6 +426,53 @@ async def test_submit_succeeds_with_full_kyb(app_state: None) -> None:
     assert application.status == "submitted"
 
 
+async def test_needs_info_notifies_org_owner(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sending an application back for info notifies the org owner.
+
+    The owner manages the application, so returning it to needs_info must
+    queue a durable notification to the owner's user, deep linking the
+    attestor application page so they can act on the feedback.
+    """
+    org_id, owner = await _create_org()
+    async with async_session_factory() as session:
+        await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+    await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
+
+    calls: list[dict[str, object]] = []
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _FakeTask())
+
+    async with async_session_factory() as session:
+        application_id = await session.scalar(
+            select(OrgAttestorApplication.id).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+    assert application_id is not None
+    async with async_session_factory() as session:
+        await svc.admin_needs_info(
+            session,
+            application_id=application_id,
+            admin_id=owner.user_id,
+            feedback="Please link a payout account.",
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(owner.user_id)
+    assert calls[0]["notification_type"] == "org_attestor_needs_info"
+    assert str(org_id) in str(calls[0]["link"])
+
+
 async def test_sign_undertakings_wrong_totp_rejected(app_state: None) -> None:
     """Signing undertakings with an invalid TOTP code raises 422."""
     org_id, owner = await _create_org(attestor_status="pending", totp=True)
@@ -894,16 +941,20 @@ async def test_admin_start_trial_rejects_when_already_passed(
 
 @pytest.mark.parametrize(
     "notification_type",
-    ["org_attestor_trial_nominated", "org_attestor_trial_assigned"],
+    [
+        "org_attestor_trial_nominated",
+        "org_attestor_trial_assigned",
+        "org_attestor_needs_info",
+    ],
 )
 async def test_trial_notification_types_persist(
     app_state: None, notification_type: str
 ) -> None:
-    """The trial notification types must be storable durable notifications.
+    """The org attestor notification types must be storable durable rows.
 
     ``dispatch_project_notification`` persists an in-app row typed by the
-    ``notification_type_enum``. Both trial types must be valid members of that
-    enum, or the worker insert fails and the nominee is never told.
+    ``notification_type_enum``. Each type must be a valid member of that enum,
+    or the worker insert fails and the recipient is never told.
     """
     from app.modules.notifications import service as notification_service
 

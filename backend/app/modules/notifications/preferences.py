@@ -97,6 +97,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_invitation_declined": "account",
     "org_attestor_trial_nominated": "account",
     "org_attestor_trial_assigned": "account",
+    "org_attestor_needs_info": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()
