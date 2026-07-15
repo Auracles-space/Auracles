@@ -344,3 +344,69 @@ async def test_resubmit_after_submitted_409(
             )
 
     assert exc.value.status_code == 409
+
+
+async def test_load_nominee_trial_shows_terminal_outcome(
+    seeded_trial: SeededTrialContext,
+) -> None:
+    """The nominee can still load the latest decided trial with feedback."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            trial = await session.get(AttestorTrial, seeded_trial.trial_id)
+            assert trial is not None
+            trial.status = "passed"
+            trial.feedback = "Excellent evidence traceability."
+
+    async with async_session_factory() as session:
+        response = await svc.load_nominee_trial(
+            session,
+            org_id=seeded_trial.org_id,
+            member=seeded_trial.nominee,
+        )
+
+    assert response.status == "passed"
+    assert response.feedback == "Excellent evidence traceability."
+
+
+async def test_submit_rechecks_locked_trial_status_before_writing(
+    seeded_trial: SeededTrialContext,
+) -> None:
+    """A stale assigned read that loses the race returns 409, not a DB error."""
+    payload = seeded_trial.full_submission()
+
+    async with async_session_factory() as session:
+        original_rollback = session.rollback
+
+        async def rollback_and_submit() -> None:
+            """Simulate another submit winning between the stale read and lock."""
+            await original_rollback()
+            async with async_session_factory() as competing_session:
+                async with competing_session.begin():
+                    competing_trial = await competing_session.get(
+                        AttestorTrial,
+                        seeded_trial.trial_id,
+                        with_for_update=True,
+                    )
+                    assert competing_trial is not None
+                    competing_trial.status = "submitted"
+                    for score in payload.scores:
+                        competing_session.add(
+                            AttestorTrialRubricScore(
+                                trial_id=seeded_trial.trial_id,
+                                dimension_id=score.dimension_id,
+                                score=score.score,
+                                comment=score.comment,
+                            )
+                        )
+
+        session.rollback = rollback_and_submit  # type: ignore[method-assign]
+
+        with pytest.raises(HTTPException) as exc:
+            await svc.submit_nominee_trial(
+                session,
+                org_id=seeded_trial.org_id,
+                member=seeded_trial.nominee,
+                payload=payload,
+            )
+
+    assert exc.value.status_code == 409

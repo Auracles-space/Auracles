@@ -43,7 +43,7 @@ async def _load_open_trial(
     *,
     org_id: UUID,
 ) -> tuple[OrgAttestorApplication, AttestorTrial]:
-    """Load the org's live application plus latest active trial, or raise 404."""
+    """Load the org's live or latest trial, or raise 404 if none exist."""
     application = await db.scalar(
         select(OrgAttestorApplication).where(OrgAttestorApplication.org_id == org_id)
     )
@@ -62,6 +62,13 @@ async def _load_open_trial(
         .order_by(AttestorTrial.attempt.desc())
         .limit(1)
     )
+    if trial is None:
+        trial = await db.scalar(
+            select(AttestorTrial)
+            .where(AttestorTrial.org_application_id == application.id)
+            .order_by(AttestorTrial.attempt.desc())
+            .limit(1)
+        )
     if trial is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -288,6 +295,11 @@ async def submit_nominee_trial(
     async with db.begin():
         locked_trial = await db.get(AttestorTrial, trial_id, with_for_update=True)
         assert locked_trial is not None
+        if locked_trial.status != "assigned":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Trial already submitted.",
+            )
         for score in payload.scores:
             db.add(
                 AttestorTrialRubricScore(
