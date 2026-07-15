@@ -31,6 +31,7 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
@@ -168,6 +169,16 @@ async def _create_calibration_fixture(contributor_id: UUID) -> UUID:
             )
             session.add(framework)
             await session.flush()
+
+            session.add(
+                Artifact(
+                    framework_id=framework.id,
+                    name="Fixture.pdf",
+                    file_key="calibration/fixture.pdf",
+                    file_size=1024,
+                    mime_type="application/pdf",
+                )
+            )
 
             for dimension in dimensions:
                 session.add(

@@ -45,6 +45,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
     OrgAttestorApplication,
@@ -1190,6 +1191,18 @@ async def admin_start_trial(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Fixture answer key is incomplete for its rubric.",
+            )
+        # A fixture with no artifacts gives the nominee nothing to review, so the
+        # trial would be ungradeable in practice — block assignment up front.
+        artifact_count = await db.scalar(
+            select(func.count())
+            .select_from(Artifact)
+            .where(Artifact.framework_id == fixture.id)
+        )
+        if not artifact_count:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Calibration fixture has no artifacts to review.",
             )
         nominee_user_id = nominee.user_id
         org_id = application.org_id

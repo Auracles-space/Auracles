@@ -24,6 +24,13 @@ const ok = <T,>(data: T) => ({
   response: new Response(null, { status: 200 }),
 });
 
+const err = (status: number) => ({
+  data: undefined,
+  error: { detail: "nope" },
+  request: new Request("http://test.local"),
+  response: new Response(null, { status }),
+});
+
 describe("TrialWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -133,6 +140,42 @@ describe("TrialWorkspace", () => {
       ),
     );
     expect(await screen.findByText(/Under review/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Submit Trial/i })).not.toBeInTheDocument();
+  });
+
+  it("shows a no-trial message on 404", async () => {
+    vi.mocked(getAttestorTrial).mockResolvedValue(err(404) as never);
+    render(<TrialWorkspace orgId="org-1" />);
+    expect(await screen.findByText(/No active trial assigned/i)).toBeInTheDocument();
+  });
+
+  it("explains a trial assigned to another member on 403", async () => {
+    vi.mocked(getAttestorTrial).mockResolvedValue(err(403) as never);
+    render(<TrialWorkspace orgId="org-1" />);
+    expect(
+      await screen.findByText(/assigned to another member/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the terminal outcome and feedback without a submit form", async () => {
+    vi.mocked(getAttestorTrial).mockResolvedValue(
+      ok({
+        trial_id: "trial-1",
+        status: "passed",
+        framework_name: "Calibration Fixture",
+        framework_summary: "Review this known-good framework.",
+        artifacts: [],
+        dimensions: [
+          { dimension_id: "dim-1", key: "governance", label: "Governance", display_order: 1 },
+        ],
+        saved_scores: [{ dimension_id: "dim-1", score: 4, comment: "Solid." }],
+        feedback: "Strong calibration — approved.",
+      }) as never,
+    );
+    render(<TrialWorkspace orgId="org-1" />);
+
+    expect(await screen.findByText(/Trial passed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Strong calibration — approved\./i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Submit Trial/i })).not.toBeInTheDocument();
   });
 });

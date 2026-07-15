@@ -32,6 +32,7 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations import attestor_application_service as svc
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
@@ -214,8 +215,10 @@ async def _load_user(user_id: UUID) -> User:
         return user
 
 
-async def _create_calibration_fixture(*, omit_last_key: bool) -> Framework:
-    """Create one calibration fixture, optionally omitting one key row."""
+async def _create_calibration_fixture(
+    *, omit_last_key: bool, omit_artifacts: bool = False
+) -> Framework:
+    """Create one calibration fixture, optionally omitting a key row or artifacts."""
     _, owner = await _create_org()
     async with async_session_factory() as session:
         async with session.begin():
@@ -257,6 +260,17 @@ async def _create_calibration_fixture(*, omit_last_key: bool) -> Framework:
             session.add(framework)
             await session.flush()
 
+            if not omit_artifacts:
+                session.add(
+                    Artifact(
+                        framework_id=framework.id,
+                        name="Fixture.pdf",
+                        file_key="calibration/fixture.pdf",
+                        file_size=1024,
+                        mime_type="application/pdf",
+                    )
+                )
+
             keyed_dimensions = dimensions[:-1] if omit_last_key else dimensions
             for dimension in keyed_dimensions:
                 session.add(
@@ -283,6 +297,13 @@ async def fixture_missing_key(app_state: None) -> Framework:
     """Create one calibration fixture missing an answer-key row."""
     del app_state
     return await _create_calibration_fixture(omit_last_key=True)
+
+
+@pytest.fixture
+async def fixture_missing_artifacts(app_state: None) -> Framework:
+    """Create one calibration fixture with a complete key but no artifacts."""
+    del app_state
+    return await _create_calibration_fixture(omit_last_key=False, omit_artifacts=True)
 
 
 async def test_create_rejects_second_live_application(app_state: None) -> None:
@@ -679,6 +700,24 @@ async def test_admin_start_trial_rejects_incomplete_key(
                 application_id=application_id,
                 admin_id=admin_id,
                 framework_id=fixture_missing_key.id,
+            )
+
+    assert exc.value.status_code == 422
+
+
+async def test_admin_start_trial_rejects_fixture_without_artifacts(
+    fixture_missing_artifacts: Framework,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fixture with a complete key but no artifacts is rejected with 422."""
+    application_id, _, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_start_trial(
+                session,
+                application_id=application_id,
+                admin_id=admin_id,
+                framework_id=fixture_missing_artifacts.id,
             )
 
     assert exc.value.status_code == 422
