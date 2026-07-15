@@ -202,12 +202,14 @@ async def submit_nominee_trial(
         HTTPException(409): Trial is not currently assigned.
         HTTPException(422): Missing, duplicate, or unknown rubric dimensions.
     """
+    member_id = member.id
+    member_user_id = member.user_id
     application, trial = await _load_open_trial(db, org_id=org_id)
-    if member.id != application.trial_member_id:
+    if member_id != application.trial_member_id:
         logger.bind(
             module="organizations",
             action="submit_nominee_trial",
-            user_id=str(member.user_id),
+            user_id=str(member_user_id),
             org_id=str(org_id),
         ).warning("access_denied")
         raise HTTPException(
@@ -303,8 +305,10 @@ async def submit_nominee_trial(
     logger.bind(
         module="organizations",
         action="submit_nominee_trial",
-        user_id=str(member.user_id),
+        user_id=str(member_user_id),
         org_id=str(org_id),
         trial_id=str(trial_id),
     ).info("trial_submitted")
-    return await load_nominee_trial(db, org_id=org_id, member=member)
+    refreshed_member = await db.get(OrgMember, member_id)
+    assert refreshed_member is not None
+    return await load_nominee_trial(db, org_id=org_id, member=refreshed_member)

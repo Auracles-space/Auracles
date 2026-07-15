@@ -1215,7 +1215,7 @@ async def admin_start_trial(
                 "application_id": str(application_id),
                 "trial_id": str(trial_id),
             },
-            link=f"/dashboard/organizations/{org_id}/attestor",
+            link=f"/dashboard/organizations/{org_id}/attestor-trial",
             dedupe_key=f"org_attestor_trial_assigned:{trial_id}",
         )
     except Exception as exc:  # pragma: no cover - defensive queue guard

@@ -38,6 +38,7 @@ from app.modules.frameworks.schemas import (
 from app.modules.library.schemas import ArtifactDownloadResponse
 from app.modules.organizations import (
     attestor_application_service,
+    attestor_trial_service,
     billing_service,
     contributor_directory_service,
     contributor_service,
@@ -64,6 +65,7 @@ from app.modules.organizations.schemas import (
     MyInvitationsResponse,
     MyOrganizationResponse,
     MyOrganizationsResponse,
+    NomineeTrialResponse,
     OrgAcceptOfferRequest,
     OrganizationCreateRequest,
     OrganizationResponse,
@@ -115,6 +117,7 @@ from app.modules.organizations.schemas import (
     OrgTeamsResponse,
     OrgUndertakingsSignRequest,
     PublicOrganizationResponse,
+    TrialSubmitRequest,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
@@ -1146,6 +1149,52 @@ async def nominate_attestor_trial_member(
         db, org_id=org_id
     )
     return _application_response(application, checklist)
+
+
+@router.get(
+    "/{org_id}/attestor-trial",
+    response_model=NomineeTrialResponse,
+    summary="Load the nominee calibration trial",
+    description=(
+        "Return the nominated member's active calibration trial, including the "
+        "fixture, rubric, and any saved scores."
+    ),
+)
+async def get_attestor_trial(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> NomineeTrialResponse:
+    """Return the nominated member's live calibration trial."""
+    return await attestor_trial_service.load_nominee_trial(
+        db,
+        org_id=org_id,
+        member=context.member,
+    )
+
+
+@router.post(
+    "/{org_id}/attestor-trial/submit",
+    response_model=NomineeTrialResponse,
+    summary="Submit the nominee calibration trial",
+    description=(
+        "Persist the nominee's rubric scores and auto-score the active "
+        "calibration trial."
+    ),
+)
+async def submit_attestor_trial(
+    org_id: UUID,
+    payload: TrialSubmitRequest,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> NomineeTrialResponse:
+    """Submit the nominee's rubric for the active calibration trial."""
+    return await attestor_trial_service.submit_nominee_trial(
+        db,
+        org_id=org_id,
+        member=context.member,
+        payload=payload,
+    )
 
 
 def _offer_item(
