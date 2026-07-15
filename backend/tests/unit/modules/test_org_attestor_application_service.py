@@ -1025,3 +1025,36 @@ async def test_admin_list_documents_missing_application(app_state: None) -> None
                 session, application_id=uuid4(), admin_id=uuid4()
             )
     assert exc.value.status_code == 404
+
+
+async def test_trial_filter_lists_only_apps_with_a_trial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 'trial' queue filter returns submitted apps that have a trial."""
+    application_id, member_id, _ = await _submitted_app_with_nominee(monkeypatch)
+
+    # No trial yet -> absent from the trial queue.
+    async with async_session_factory() as session:
+        rows, total = await svc.admin_list_applications(
+            session, status_filter="trial", page=1, page_size=10
+        )
+    assert application_id not in {r.id for r in rows}
+    assert total == 0
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                AttestorTrial(
+                    org_application_id=application_id,
+                    member_id=member_id,
+                    status="assigned",
+                    attempt=1,
+                )
+            )
+
+    async with async_session_factory() as session:
+        rows, total = await svc.admin_list_applications(
+            session, status_filter="trial", page=1, page_size=10
+        )
+    assert application_id in {r.id for r in rows}
+    assert total == 1

@@ -979,7 +979,18 @@ async def admin_list_applications(
         A tuple of the page's applications and the total row count.
     """
     base = select(OrgAttestorApplication)
-    if status_filter is not None:
+    if status_filter == "trial":
+        # "trial" is not an application status — the application stays "submitted"
+        # while the calibration trial runs on a separate AttestorTrial row. The
+        # tab lists submitted applications that have a trial in progress.
+        trial_app_ids = select(AttestorTrial.org_application_id).where(
+            AttestorTrial.org_application_id.is_not(None)
+        )
+        base = base.where(
+            OrgAttestorApplication.status == "submitted",
+            OrgAttestorApplication.id.in_(trial_app_ids),
+        )
+    elif status_filter is not None:
         base = base.where(OrgAttestorApplication.status == status_filter)
     total = await db.scalar(
         select(func.count()).select_from(base.subquery())
