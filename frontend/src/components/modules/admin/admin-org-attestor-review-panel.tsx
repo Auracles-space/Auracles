@@ -42,6 +42,29 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "Rejected", value: "rejected" },
 ];
 
+// One-click feedback presets for the most common send-back reasons, so an
+// admin can unblock an application without retyping the same guidance.
+const NEEDS_INFO_PRESETS: { label: string; text: string }[] = [
+  {
+    label: "Payout account",
+    text:
+      "Please connect a payout account under the Payout Account step so we can "
+      + "release attestation earnings, then resubmit.",
+  },
+  {
+    label: "Tax documents",
+    text:
+      "Please upload the tax documents required for payouts under the Tax "
+      + "Documents step, then resubmit.",
+  },
+  {
+    label: "Calibration trial",
+    text:
+      "Please nominate a member to complete the calibration trial before "
+      + "resubmitting.",
+  },
+];
+
 function ErrorMessage({ message }: { message: string | null }) {
   if (!message) return null;
   return (
@@ -686,6 +709,20 @@ export function AdminOrgAttestorReviewPanel() {
 
                   {openFeedbackId === app.id && feedbackAction && (
                     <div className="mt-4 grid gap-3 rounded-xl bg-surface-2 p-4 border border-border-default">
+                      {feedbackAction === "needs_info" && (
+                        <div className="flex flex-wrap gap-2">
+                          {NEEDS_INFO_PRESETS.map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => setFeedbackText(preset.text)}
+                              className="min-h-9 rounded-lg border border-border-default bg-background px-3 py-1 text-xs font-medium text-foreground-muted transition hover:border-accent hover:text-foreground"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <label className="grid gap-2 text-sm font-semibold text-foreground">
                         {feedbackAction === "reject" ? "Rejection Reason" : "Info Needed"}
                         <textarea

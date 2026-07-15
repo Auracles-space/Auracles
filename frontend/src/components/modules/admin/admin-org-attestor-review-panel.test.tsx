@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminOrgAttestorReviewPanel } from "@/components/modules/admin/admin-org-attestor-review-panel";
 import {
@@ -7,6 +7,7 @@ import {
   adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet as adminListCalibrationFixtures,
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
+  orgAttestorNeedsInfo,
   startOrgAttestorTrial,
   verifyOrgAttestorKyb,
 } from "@/lib/generated/sdk.gen";
@@ -193,6 +194,42 @@ describe("AdminOrgAttestorReviewPanel", () => {
     expect(approve[0]).toBeDisabled();
     expect(approve[1]).toBeDisabled();
     expect(screen.getByText(/Waiting on the nominee/i)).toBeTruthy();
+  });
+
+  it("fills the needs-info feedback from a preset and sends it", async () => {
+    // The preset must save the admin retyping the same send-back guidance and
+    // reach the endpoint verbatim as the feedback body.
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      total: 1,
+      page: 1,
+      page_size: 10,
+    }));
+    vi.mocked(orgAttestorNeedsInfo).mockResolvedValue(
+      ok({ id: "app-1", status: "needs_info" }) as never,
+    );
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Audit Ltd/));
+
+    // "Needs Info" matches both the status filter tab and the card action, so
+    // scope to the card action via its sibling Approve button.
+    const approve = screen.getByRole("button", { name: /^approve$/i });
+    const actionRow = within(approve.parentElement as HTMLElement);
+    fireEvent.click(actionRow.getByRole("button", { name: /^needs info$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payout account/i }));
+
+    const textarea = screen.getByRole("textbox");
+    expect((textarea as HTMLTextAreaElement).value).toMatch(/connect a payout account/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /confirm needs info/i }));
+    await waitFor(() =>
+      expect(vi.mocked(orgAttestorNeedsInfo)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { application_id: "app-1" },
+          body: { feedback: expect.stringMatching(/connect a payout account/i) },
+        }),
+      ),
+    );
   });
 
   it("loads the submitted trial grade view and lets the admin pass it", async () => {
