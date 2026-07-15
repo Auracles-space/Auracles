@@ -9107,6 +9107,147 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/trial:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: Load the calibration-trial grade view (platform admin)
+      description: Return the nominee submission beside the calibration answer key.
+      operationId: admin_get_trial_grade_v1_admin_org_attestor_applications__application_id__trial_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTrialGradeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/trial/decide:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Decide the calibration trial (platform admin)
+      description: Confirm or override the latest submitted calibration trial.
+      operationId: admin_decide_trial_v1_admin_org_attestor_applications__application_id__trial_decide_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialDecideRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: List calibration fixtures (platform admin)
+      description: Return platform calibration fixtures for the admin trial picker.
+      operationId: admin_list_calibration_fixtures_v1_admin_org_attestor_applications_calibration_fixtures_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationFixturesResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Create a calibration fixture (platform admin)
+      description: Create a new platform-owned calibration fixture shell.
+      operationId: admin_create_calibration_fixture_v1_admin_org_attestor_applications_calibration_fixtures_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCalibrationFixtureRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationFixtureItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/answer-key:
+    put:
+      tags:
+      - Admin Org Attestor
+      summary: Upsert one fixture answer-key row (platform admin)
+      description: Create or update one expected rubric score for a calibration fixture.
+      operationId: admin_upsert_trial_answer_key_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__answer_key_put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTrialAnswerKeyRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/org-attestor-applications/{application_id}/approve:
     post:
       tags:
@@ -13463,6 +13604,80 @@ components:
       - items
       title: AdminSuspendedFrameworksResponse
       description: Listing of Frameworks currently suspended from the marketplace.
+    AdminTrialGradeResponse:
+      properties:
+        trial_id:
+          type: string
+          format: uuid
+          title: Trial Id
+        status:
+          type: string
+          title: Status
+        score_pct:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Score Pct
+        auto_result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auto Result
+        rows:
+          items:
+            $ref: '#/components/schemas/AdminTrialGradeRow'
+          type: array
+          title: Rows
+      type: object
+      required:
+      - trial_id
+      - status
+      - score_pct
+      - auto_result
+      - rows
+      title: AdminTrialGradeResponse
+      description: Admin trial-grade view with the auto-score suggestion.
+    AdminTrialGradeRow:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        label:
+          type: string
+          title: Label
+        weight:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Weight
+        nominee_score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Nominee Score
+        nominee_comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nominee Comment
+        expected_score:
+          type: integer
+          title: Expected Score
+        tolerance:
+          type: integer
+          title: Tolerance
+      type: object
+      required:
+      - dimension_id
+      - label
+      - weight
+      - nominee_score
+      - nominee_comment
+      - expected_score
+      - tolerance
+      title: AdminTrialGradeRow
+      description: Per-dimension nominee-vs-key comparison for admin grading.
     AdminUserDirectoryItem:
       properties:
         user_id:
@@ -15198,6 +15413,37 @@ components:
       title: BindSourceRequest
       description: Owner request to bind (attach or repoint) an artifact to a connector
         file.
+    CalibrationFixtureItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        review_type:
+          type: string
+          title: Review Type
+      type: object
+      required:
+      - id
+      - title
+      - review_type
+      title: CalibrationFixtureItem
+      description: One calibration fixture row for the admin trial picker.
+    CalibrationFixturesResponse:
+      properties:
+        fixtures:
+          items:
+            $ref: '#/components/schemas/CalibrationFixtureItem'
+          type: array
+          title: Fixtures
+      type: object
+      required:
+      - fixtures
+      title: CalibrationFixturesResponse
+      description: Admin list response for calibration fixtures.
     ClarificationCreateRequest:
       properties:
         question:
@@ -15768,6 +16014,30 @@ components:
       - contributors
       title: ContributorOrgDirectoryResponse
       description: Public list response for contributor organizations.
+    CreateCalibrationFixtureRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Title
+        description:
+          type: string
+          maxLength: 10000
+          minLength: 1
+          title: Description
+        review_type:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Review Type
+      type: object
+      required:
+      - title
+      - description
+      - review_type
+      title: CreateCalibrationFixtureRequest
+      description: Admin body to create a new calibration fixture shell.
     CredentialCreateRequest:
       properties:
         title:
@@ -24067,6 +24337,25 @@ components:
       - url
       title: TrialArtifactSchema
       description: A calibration-fixture artifact with a short-lived presigned URL.
+    TrialDecideRequest:
+      properties:
+        result:
+          type: string
+          enum:
+          - pass
+          - fail
+          title: Result
+        feedback:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Feedback
+      type: object
+      required:
+      - result
+      title: TrialDecideRequest
+      description: Admin confirmation or override of a trial outcome.
     TrialRubricDimensionSchema:
       properties:
         dimension_id:
@@ -24126,6 +24415,29 @@ components:
       - scores
       title: TrialSubmitRequest
       description: Full nominee rubric submission for one trial.
+    UpsertTrialAnswerKeyRequest:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        expected_score:
+          type: integer
+          maximum: 5.0
+          minimum: 1.0
+          title: Expected Score
+        tolerance:
+          type: integer
+          maximum: 4.0
+          minimum: 0.0
+          title: Tolerance
+      type: object
+      required:
+      - dimension_id
+      - expected_score
+      - tolerance
+      title: UpsertTrialAnswerKeyRequest
+      description: Admin body to create or update one fixture answer-key row.
     ValidationError:
       properties:
         loc:

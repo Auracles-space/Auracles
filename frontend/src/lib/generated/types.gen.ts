@@ -505,6 +505,13 @@ export type AdminRoleAssignmentResponse = {
 };
 
 /**
+ * Admin selection of the calibration fixture for a trial.
+ */
+export type AdminStartTrialRequest = {
+    framework_id: string;
+};
+
+/**
  * One suspended Framework awaiting possible reinstatement.
  */
 export type AdminSuspendedFrameworkItem = {
@@ -521,6 +528,30 @@ export type AdminSuspendedFrameworkItem = {
  */
 export type AdminSuspendedFrameworksResponse = {
     items: Array<AdminSuspendedFrameworkItem>;
+};
+
+/**
+ * Admin trial-grade view with the auto-score suggestion.
+ */
+export type AdminTrialGradeResponse = {
+    trial_id: string;
+    status: string;
+    score_pct: (string | null);
+    auto_result: (string | null);
+    rows: Array<AdminTrialGradeRow>;
+};
+
+/**
+ * Per-dimension nominee-vs-key comparison for admin grading.
+ */
+export type AdminTrialGradeRow = {
+    dimension_id: string;
+    label: string;
+    weight: string;
+    nominee_score: (number | null);
+    nominee_comment: (string | null);
+    expected_score: number;
+    tolerance: number;
 };
 
 /**
@@ -1173,6 +1204,22 @@ export type BindSourceRequest = {
 };
 
 /**
+ * One calibration fixture row for the admin trial picker.
+ */
+export type CalibrationFixtureItem = {
+    id: string;
+    title: string;
+    review_type: string;
+};
+
+/**
+ * Admin list response for calibration fixtures.
+ */
+export type CalibrationFixturesResponse = {
+    fixtures: Array<CalibrationFixtureItem>;
+};
+
+/**
  * Request body for sending one attestation clarification question.
  */
 export type ClarificationCreateRequest = {
@@ -1396,6 +1443,15 @@ export type ContributorOrgDirectoryEntry = {
  */
 export type ContributorOrgDirectoryResponse = {
     contributors: Array<ContributorOrgDirectoryEntry>;
+};
+
+/**
+ * Admin body to create a new calibration fixture shell.
+ */
+export type CreateCalibrationFixtureRequest = {
+    title: string;
+    description: string;
+    review_type: string;
 };
 
 /**
@@ -2482,6 +2538,20 @@ export type MyOrganizationsResponse = {
 };
 
 /**
+ * The nominated member's live trial workspace view.
+ */
+export type NomineeTrialResponse = {
+    trial_id: string;
+    status: string;
+    framework_name: string;
+    framework_summary: (string | null);
+    artifacts: Array<TrialArtifactSchema>;
+    dimensions: Array<TrialRubricDimensionSchema>;
+    saved_scores: Array<TrialScoreInput>;
+    feedback: (string | null);
+};
+
+/**
  * Serializable notification row returned to the owning user.
  */
 export type NotificationItem = {
@@ -2763,7 +2833,11 @@ export type OrgAttestorApplicationUpdateRequest = {
 };
 
 /**
- * One presigned download link for an application's review document. ``available`` is False when the reserved S3 key has no backing object yet (an upload that never completed); the ``url`` is then empty and the admin UI shows the document as incomplete rather than a broken link.
+ * One presigned download link for an application's review document.
+ *
+ * ``available`` is False when the reserved S3 key has no backing object yet
+ * (an upload that never completed); the ``url`` is then empty and the admin
+ * UI shows the document as incomplete rather than a broken link.
  */
 export type OrgAttestorDocumentLink = {
     label: string;
@@ -2774,6 +2848,9 @@ export type OrgAttestorDocumentLink = {
 
 /**
  * Presigned GET links for an application's KYB and tax documents.
+ *
+ * Documents live in the private bucket, so the admin panel receives
+ * short-lived presigned URLs rather than durable paths.
  */
 export type OrgAttestorDocumentsResponse = {
     documents: Array<OrgAttestorDocumentLink>;
@@ -3023,9 +3100,6 @@ export type OrgMemberResponse = {
     email: (string | null);
     role: string;
     joined_at: string;
-    /**
-     * True iff the member holds a current-version platform NDA signature.
-     */
     nda_signed?: boolean;
 };
 
@@ -4193,6 +4267,60 @@ export type TotpSetupResponse = {
 export type TotpStatusResponse = {
     totp_enabled: boolean;
     backup_codes_remaining?: number;
+};
+
+/**
+ * A calibration-fixture artifact with a short-lived presigned URL.
+ */
+export type TrialArtifactSchema = {
+    name: string;
+    mime_type: string;
+    url: string;
+};
+
+/**
+ * Admin confirmation or override of a trial outcome.
+ */
+export type TrialDecideRequest = {
+    result: 'pass' | 'fail';
+    feedback?: (string | null);
+};
+
+export type result = 'pass' | 'fail';
+
+/**
+ * One rubric dimension the nominee must score for a trial.
+ */
+export type TrialRubricDimensionSchema = {
+    dimension_id: string;
+    key: string;
+    label: string;
+    display_order: number;
+};
+
+/**
+ * One nominee score submission for a trial dimension.
+ */
+export type TrialScoreInput = {
+    dimension_id: string;
+    score: number;
+    comment?: (string | null);
+};
+
+/**
+ * Full nominee rubric submission for one trial.
+ */
+export type TrialSubmitRequest = {
+    scores: Array<TrialScoreInput>;
+};
+
+/**
+ * Admin body to create or update one fixture answer-key row.
+ */
+export type UpsertTrialAnswerKeyRequest = {
+    dimension_id: string;
+    expected_score: number;
+    tolerance: number;
 };
 
 export type ValidationError = {
@@ -6522,6 +6650,27 @@ export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTri
 
 export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostError = (HTTPValidationError);
 
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetResponse = (NomineeTrialResponse);
+
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetError = (HTTPValidationError);
+
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostData = {
+    body: TrialSubmitRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostResponse = (NomineeTrialResponse);
+
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostError = (HTTPValidationError);
+
 export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetData = {
     path: {
         org_id: string;
@@ -6953,6 +7102,7 @@ export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPo
 export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostError = (HTTPValidationError);
 
 export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostData = {
+    body: AdminStartTrialRequest;
     path: {
         application_id: string;
     };
@@ -6961,6 +7111,50 @@ export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrial
 export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostResponse = (OrgAttestorApplicationResponse);
 
 export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostError = (HTTPValidationError);
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetResponse = (AdminTrialGradeResponse);
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetError = (HTTPValidationError);
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostData = {
+    body: TrialDecideRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostError = (HTTPValidationError);
+
+export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetResponse = (CalibrationFixturesResponse);
+
+export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetError = unknown;
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostData = {
+    body: CreateCalibrationFixtureRequest;
+};
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostResponse = (CalibrationFixtureItem);
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostError = (HTTPValidationError);
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutData = {
+    body: UpsertTrialAnswerKeyRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutResponse = (void);
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutError = (HTTPValidationError);
 
 export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostData = {
     path: {
