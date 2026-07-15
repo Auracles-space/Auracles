@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { ApplyGate } from "./apply-gate";
 import { UndertakingsGate } from "./undertakings-gate";
+import { PayoutAccountGate } from "./payout-account-gate";
 import { TaxDocumentGate } from "./tax-document-gate";
 import { TrialMemberGate } from "./trial-member-gate";
 import {
@@ -52,6 +53,9 @@ export function submissionReadiness(
   }
   if ((app.incorporation_doc_keys?.length ?? 0) === 0) {
     return { ready: false, hint: "Add at least one incorporation document." };
+  }
+  if (!app.payout_account_id) {
+    return { ready: false, hint: "Set up a payout account to receive earnings." };
   }
   return { ready: true, hint: "Everything looks complete — send it for review." };
 }
@@ -282,6 +286,14 @@ export function AttestorApplicationTab() {
           statusLabel={app?.tax_document_key ? "Uploaded" : undefined}
         >
           <TaxDocumentGate application={app} onChange={reload} />
+        </GateCard>
+        <GateCard
+          title="Payout Account"
+          description="Connect an org-owned payout destination so you can receive attestation earnings."
+          status={app?.payout_account_id ? "complete" : "not_started"}
+          statusLabel={app?.payout_account_id ? "Linked" : undefined}
+        >
+          <PayoutAccountGate application={app} orgId={orgId} onChange={reload} />
         </GateCard>
         <GateCard
           title="Trial Attestation"
