@@ -312,19 +312,32 @@ async def test_full_gate_walk_to_approval(
     )
     assert trial.status_code == 200
 
-    # start-trial assigns the calibration trial; the nominee completing it and
-    # the admin deciding it (Module 4, deferred) is simulated here by flipping
-    # the assigned trial to passed so the approve gate opens.
-    async with async_session_factory() as session:
-        assigned = await session.scalar(
-            select(AttestorTrial).where(
-                AttestorTrial.org_application_id == application_id
-            )
-        )
-        assert assigned is not None and assigned.status == "assigned"
-        assert assigned.seeded_framework_id == fixture_id
-        assigned.status = "passed"
-        await session.commit()
+    trial_view = await client.get(
+        f"/v1/orgs/{org_id}/attestor-trial",
+        headers=auth(owner_id),
+    )
+    assert trial_view.status_code == 200
+    dimensions = trial_view.json()["dimensions"]
+
+    submitted = await client.post(
+        f"/v1/orgs/{org_id}/attestor-trial/submit",
+        headers=auth(owner_id),
+        json={
+            "scores": [
+                {"dimension_id": dimension["dimension_id"], "score": 4}
+                for dimension in dimensions
+            ]
+        },
+    )
+    assert submitted.status_code == 200
+
+    decided = await client.post(
+        f"{_QUEUE}/{application_id}/trial/decide",
+        headers=auth(admin_id, ["admin"]),
+        json={"result": "pass", "feedback": "Solid calibration."},
+    )
+    assert decided.status_code == 200
+    assert decided.json()["gate_checklist"]["trial_passed"] is True
 
     approved = await client.post(
         f"{_QUEUE}/{application_id}/approve", headers=auth(admin_id, ["admin"])
@@ -346,6 +359,71 @@ async def test_full_gate_walk_to_approval(
             )
         )
         assert role is not None
+
+
+async def test_admin_can_grade_and_decide_trial(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admin loads the grade view and decides a submitted trial."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    fixture_id = await _create_calibration_fixture(owner_id)
+    application_id = await _gated_application(
+        org_id, owner_id, seed_kyb_and_trial=False
+    )
+
+    await client.post(
+        f"{_QUEUE}/{application_id}/verify-kyb",
+        headers=auth(admin_id, ["admin"]),
+    )
+    started = await client.post(
+        f"{_QUEUE}/{application_id}/start-trial",
+        headers=auth(admin_id, ["admin"]),
+        json={"framework_id": str(fixture_id)},
+    )
+    assert started.status_code == 200
+
+    trial_view = await client.get(
+        f"/v1/orgs/{org_id}/attestor-trial",
+        headers=auth(owner_id),
+    )
+    assert trial_view.status_code == 200
+    dimensions = trial_view.json()["dimensions"]
+
+    submitted = await client.post(
+        f"/v1/orgs/{org_id}/attestor-trial/submit",
+        headers=auth(owner_id),
+        json={
+            "scores": [
+                {"dimension_id": dimension["dimension_id"], "score": 4}
+                for dimension in dimensions
+            ]
+        },
+    )
+    assert submitted.status_code == 200
+
+    grade = await client.get(
+        f"{_QUEUE}/{application_id}/trial",
+        headers=auth(admin_id, ["admin"]),
+    )
+    assert grade.status_code == 200
+    assert grade.json()["status"] == "submitted"
+
+    decided = await client.post(
+        f"{_QUEUE}/{application_id}/trial/decide",
+        headers=auth(admin_id, ["admin"]),
+        json={"result": "pass", "feedback": "Solid calibration."},
+    )
+    assert decided.status_code == 200
+    assert decided.json()["gate_checklist"]["trial_passed"] is True
 
 
 async def test_documents_returns_presigned_links(

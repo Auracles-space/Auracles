@@ -27,13 +27,19 @@ from app.modules.attestation.models import (
 from app.modules.auth.models import User
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.organizations import attestor_application_service as app_svc
 from app.modules.organizations import attestor_trial_service as svc
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
     OrgMember,
 )
-from app.modules.organizations.schemas import TrialScoreInput, TrialSubmitRequest
+from app.modules.organizations.schemas import (
+    TrialDecideRequest,
+    TrialScoreInput,
+    TrialSubmitRequest,
+)
+from app.shared.models.audit_log import AuditLog
 
 pytestmark = pytest.mark.asyncio
 
@@ -47,6 +53,7 @@ class SeededTrialContext:
     application_id: UUID
     org_id: UUID
     trial_id: UUID
+    admin_id: UUID
     nominee: OrgMember
     other_member: OrgMember
     dimension_ids: tuple[UUID, ...]
@@ -90,6 +97,7 @@ async def clean_state(migrated_database: None) -> AsyncIterator[None]:
         """Delete rows in dependency order."""
         async with async_session_factory() as session:
             async with session.begin():
+                await session.execute(delete(AuditLog))
                 await session.execute(delete(AttestorTrialRubricScore))
                 await session.execute(delete(AttestorTrialAnswerKey))
                 await session.execute(delete(AttestorTrial))
@@ -129,6 +137,7 @@ async def _seed_trial_context() -> SeededTrialContext:
     """Create an org application with a nominated member and assigned trial."""
     owner = await _create_user(prefix="trial-owner")
     other_user = await _create_user(prefix="trial-other")
+    admin_user = await _create_user(prefix="trial-admin")
 
     async with async_session_factory() as session:
         async with session.begin():
@@ -244,6 +253,7 @@ async def _seed_trial_context() -> SeededTrialContext:
                 application_id=application.id,
                 org_id=org.id,
                 trial_id=trial.id,
+                admin_id=admin_user.id,
                 nominee=owner_member,
                 other_member=other_member,
                 dimension_ids=tuple(dimension.id for dimension in dimensions),
@@ -407,6 +417,51 @@ async def test_submit_rechecks_locked_trial_status_before_writing(
                 org_id=seeded_trial.org_id,
                 member=seeded_trial.nominee,
                 payload=payload,
+            )
+
+    assert exc.value.status_code == 409
+
+
+async def test_admin_decide_pass_flips_gate(
+    seeded_trial: SeededTrialContext,
+) -> None:
+    """Admin deciding pass stamps the trial and opens the application gate."""
+    async with async_session_factory() as session:
+        await svc.submit_nominee_trial(
+            session,
+            org_id=seeded_trial.org_id,
+            member=seeded_trial.nominee,
+            payload=seeded_trial.full_submission(),
+        )
+
+    async with async_session_factory() as session:
+        trial = await svc.admin_decide_trial(
+            session,
+            application_id=seeded_trial.application_id,
+            admin_id=seeded_trial.admin_id,
+            payload=TrialDecideRequest(
+                result="pass",
+                feedback="Solid calibration.",
+            ),
+        )
+        gate_passed = await app_svc._trial_passed(session, seeded_trial.application_id)
+
+    assert trial.status == "passed"
+    assert trial.decided_by == seeded_trial.admin_id
+    assert gate_passed is True
+
+
+async def test_admin_decide_requires_submitted(
+    seeded_trial: SeededTrialContext,
+) -> None:
+    """Deciding a trial that is still assigned is rejected with 409."""
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_decide_trial(
+                session,
+                application_id=seeded_trial.application_id,
+                admin_id=seeded_trial.admin_id,
+                payload=TrialDecideRequest(result="pass"),
             )
 
     assert exc.value.status_code == 409

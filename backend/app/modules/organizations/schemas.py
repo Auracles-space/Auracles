@@ -834,6 +834,36 @@ class TrialDecideRequest(BaseModel):
     feedback: str | None = Field(default=None, max_length=5000)
 
 
+class CalibrationFixtureItem(BaseModel):
+    """One calibration fixture row for the admin trial picker."""
+
+    id: UUID
+    title: str
+    review_type: str
+
+
+class CalibrationFixturesResponse(BaseModel):
+    """Admin list response for calibration fixtures."""
+
+    fixtures: list[CalibrationFixtureItem]
+
+
+class CreateCalibrationFixtureRequest(BaseModel):
+    """Admin body to create a new calibration fixture shell."""
+
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1, max_length=10000)
+    review_type: str = Field(min_length=1, max_length=100)
+
+
+class UpsertTrialAnswerKeyRequest(BaseModel):
+    """Admin body to create or update one fixture answer-key row."""
+
+    dimension_id: UUID
+    expected_score: int = Field(ge=1, le=5)
+    tolerance: int = Field(ge=0, le=4)
+
+
 class OrgAttestorAdminListItem(BaseModel):
     """Slim admin-queue row for one org attestor application.
 

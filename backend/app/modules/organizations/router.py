@@ -57,8 +57,12 @@ from app.modules.organizations.models import OrgAttestorApplication, OrgLegalPro
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     AdminStartTrialRequest,
+    AdminTrialGradeResponse,
+    CalibrationFixtureItem,
+    CalibrationFixturesResponse,
     ContributorOrgDirectoryEntry,
     ContributorOrgDirectoryResponse,
+    CreateCalibrationFixtureRequest,
     LogoConfirmRequest,
     LogoUploadUrlRequest,
     LogoUploadUrlResponse,
@@ -118,7 +122,9 @@ from app.modules.organizations.schemas import (
     OrgTeamsResponse,
     OrgUndertakingsSignRequest,
     PublicOrganizationResponse,
+    TrialDecideRequest,
     TrialSubmitRequest,
+    UpsertTrialAnswerKeyRequest,
 )
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
@@ -2168,6 +2174,113 @@ async def admin_start_trial(
         )
     )
     return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.get(
+    "/{application_id}/trial",
+    response_model=AdminTrialGradeResponse,
+    summary="Load the calibration-trial grade view (platform admin)",
+    description="Return the nominee submission beside the calibration answer key.",
+)
+async def admin_get_trial_grade(
+    application_id: UUID,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> AdminTrialGradeResponse:
+    """Return the latest trial grade view for one application."""
+    del admin
+    return await attestor_trial_service.admin_trial_grade(
+        db,
+        application_id=application_id,
+    )
+
+
+@admin_org_attestor_router.post(
+    "/{application_id}/trial/decide",
+    response_model=OrgAttestorApplicationResponse,
+    summary="Decide the calibration trial (platform admin)",
+    description="Confirm or override the latest submitted calibration trial.",
+)
+async def admin_decide_trial(
+    application_id: UUID,
+    payload: TrialDecideRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> OrgAttestorApplicationResponse:
+    """Confirm or override the submitted trial outcome."""
+    await attestor_trial_service.admin_decide_trial(
+        db,
+        application_id=application_id,
+        admin_id=admin.id,
+        payload=payload,
+    )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db,
+        application_id=application_id,
+    )
+    return _admin_application_response(application, checklist)
+
+
+@admin_org_attestor_router.get(
+    "/calibration-fixtures",
+    response_model=CalibrationFixturesResponse,
+    summary="List calibration fixtures (platform admin)",
+    description="Return platform calibration fixtures for the admin trial picker.",
+)
+async def admin_list_calibration_fixtures(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> CalibrationFixturesResponse:
+    """Return calibration fixtures available for trial assignment."""
+    del admin
+    return await attestor_trial_service.list_fixtures(db)
+
+
+@admin_org_attestor_router.post(
+    "/calibration-fixtures",
+    response_model=CalibrationFixtureItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a calibration fixture (platform admin)",
+    description="Create a new platform-owned calibration fixture shell.",
+)
+async def admin_create_calibration_fixture(
+    payload: CreateCalibrationFixtureRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> CalibrationFixtureItem:
+    """Create one calibration fixture for future trial assignment."""
+    fixture = await attestor_trial_service.create_calibration_fixture(
+        db,
+        admin_id=admin.id,
+        payload=payload,
+    )
+    return CalibrationFixtureItem(
+        id=fixture.id,
+        title=fixture.title,
+        review_type=fixture.calibration_review_type or "",
+    )
+
+
+@admin_org_attestor_router.put(
+    "/calibration-fixtures/{framework_id}/answer-key",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Upsert one fixture answer-key row (platform admin)",
+    description="Create or update one expected rubric score for a calibration fixture.",
+)
+async def admin_upsert_trial_answer_key(
+    framework_id: UUID,
+    payload: UpsertTrialAnswerKeyRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+) -> Response:
+    """Create or update one answer-key row for a calibration fixture."""
+    await attestor_trial_service.upsert_answer_key(
+        db,
+        framework_id=framework_id,
+        admin_id=admin.id,
+        payload=payload,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @admin_org_attestor_router.post(

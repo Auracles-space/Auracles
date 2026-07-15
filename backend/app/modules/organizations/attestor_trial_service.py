@@ -7,6 +7,7 @@ trial page. Trial grading and admin decisioning are layered in later slices.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -14,6 +15,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation import rubrics, trial_scoring
@@ -27,15 +29,32 @@ from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations.models import OrgAttestorApplication, OrgMember
 from app.modules.organizations.schemas import (
+    AdminTrialGradeResponse,
+    AdminTrialGradeRow,
+    CalibrationFixtureItem,
+    CalibrationFixturesResponse,
+    CreateCalibrationFixtureRequest,
     NomineeTrialResponse,
     TrialArtifactSchema,
+    TrialDecideRequest,
     TrialRubricDimensionSchema,
     TrialScoreInput,
     TrialSubmitRequest,
+    UpsertTrialAnswerKeyRequest,
 )
 
 _OPEN_TRIAL_STATES = ("assigned", "submitted")
 _TRIAL_ARTIFACT_URL_TTL_SECONDS = 900
+_FIXTURE_DEFAULT_CATEGORY = "framework"
+_FIXTURE_DEFAULT_SECTOR = "financial_services"
+_FIXTURE_DEFAULT_INDUSTRY = "fund_management"
+_FIXTURE_DEFAULT_FUNCTION = "risk_management"
+_FIXTURE_DEFAULT_JURISDICTION = "us"
+_FIXTURE_DEFAULT_ORG_SIZE = "mid_market"
+_FIXTURE_DEFAULT_LIFECYCLE_STAGE = "scale"
+_FIXTURE_DEFAULT_PRICE = Decimal("1.00")
+_FIXTURE_DEFAULT_CURRENCY = "USD"
+_FIXTURE_DEFAULT_LICENSE_TYPES = ["single_user"]
 
 
 async def _load_open_trial(
@@ -75,6 +94,26 @@ async def _load_open_trial(
             detail="No active trial.",
         )
     return application, trial
+
+
+async def _load_trial_for_admin(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+) -> AttestorTrial:
+    """Load the latest trial for one application, or raise 404."""
+    trial = await db.scalar(
+        select(AttestorTrial)
+        .where(AttestorTrial.org_application_id == application_id)
+        .order_by(AttestorTrial.attempt.desc())
+        .limit(1)
+    )
+    if trial is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No trial.",
+        )
+    return trial
 
 
 async def load_nominee_trial(
@@ -324,3 +363,276 @@ async def submit_nominee_trial(
     refreshed_member = await db.get(OrgMember, member_id)
     assert refreshed_member is not None
     return await load_nominee_trial(db, org_id=org_id, member=refreshed_member)
+
+
+async def admin_trial_grade(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+) -> AdminTrialGradeResponse:
+    """Return the latest trial beside its answer key for admin grading."""
+    trial = await _load_trial_for_admin(db, application_id=application_id)
+    framework = await db.scalar(
+        select(Framework).where(Framework.id == trial.seeded_framework_id)
+    )
+    if framework is None or framework.calibration_review_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trial fixture missing.",
+        )
+
+    dimensions = (
+        await db.scalars(
+            select(AttestationRubricDimension)
+            .where(
+                AttestationRubricDimension.review_type
+                == framework.calibration_review_type,
+                AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+            )
+            .order_by(AttestationRubricDimension.display_order.asc())
+        )
+    ).all()
+    score_map = {
+        score.dimension_id: score
+        for score in (
+            await db.scalars(
+                select(AttestorTrialRubricScore).where(
+                    AttestorTrialRubricScore.trial_id == trial.id
+                )
+            )
+        ).all()
+    }
+    answer_key_map = {
+        answer_key.dimension_id: answer_key
+        for answer_key in (
+            await db.scalars(
+                select(AttestorTrialAnswerKey).where(
+                    AttestorTrialAnswerKey.framework_id == framework.id
+                )
+            )
+        ).all()
+    }
+    rows = [
+        AdminTrialGradeRow(
+            dimension_id=dimension.id,
+            label=dimension.label,
+            weight=dimension.weight,
+            nominee_score=(
+                score_map[dimension.id].score if dimension.id in score_map else None
+            ),
+            nominee_comment=(
+                score_map[dimension.id].comment if dimension.id in score_map else None
+            ),
+            expected_score=answer_key_map[dimension.id].expected_score,
+            tolerance=answer_key_map[dimension.id].tolerance,
+        )
+        for dimension in dimensions
+        if dimension.id in answer_key_map
+    ]
+    return AdminTrialGradeResponse(
+        trial_id=trial.id,
+        status=trial.status,
+        score_pct=trial.score_pct,
+        auto_result=trial.auto_result,
+        rows=rows,
+    )
+
+
+async def admin_decide_trial(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+    payload: TrialDecideRequest,
+) -> AttestorTrial:
+    """Confirm or override the latest submitted trial outcome."""
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        trial = await _load_trial_for_admin(db, application_id=application_id)
+        if trial.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Trial is not awaiting a decision.",
+            )
+        trial.status = "passed" if payload.result == "pass" else "failed"
+        trial.decided_by = admin_id
+        trial.decided_at = datetime.now(UTC)
+        trial.feedback = payload.feedback
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_trial_decided",
+            target_type="attestor_trial",
+            target_id=trial.id,
+            metadata={
+                "result": payload.result,
+                "score_pct": str(trial.score_pct),
+            },
+        )
+    logger.bind(
+        module="organizations",
+        action="admin_decide_trial",
+        user_id=str(admin_id),
+        trial_id=str(trial.id),
+    ).info("trial_decided")
+    return trial
+
+
+async def list_fixtures(db: AsyncSession) -> CalibrationFixturesResponse:
+    """Return calibration fixtures for the admin start-trial picker."""
+    fixtures = (
+        await db.scalars(
+            select(Framework)
+            .where(Framework.is_calibration.is_(True))
+            .order_by(Framework.title.asc())
+        )
+    ).all()
+    return CalibrationFixturesResponse(
+        fixtures=[
+            CalibrationFixtureItem(
+                id=fixture.id,
+                title=fixture.title,
+                review_type=fixture.calibration_review_type or "",
+            )
+            for fixture in fixtures
+        ]
+    )
+
+
+async def create_calibration_fixture(
+    db: AsyncSession,
+    *,
+    admin_id: UUID,
+    payload: CreateCalibrationFixtureRequest,
+) -> Framework:
+    """Create a calibration fixture shell for future answer-key curation."""
+    review_dimensions = (
+        await db.scalars(
+            select(AttestationRubricDimension.id).where(
+                AttestationRubricDimension.review_type == payload.review_type,
+                AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+            )
+        )
+    ).all()
+    if not review_dimensions:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unknown calibration review type.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        fixture = Framework(
+            contributor_id=admin_id,
+            title=payload.title,
+            description=payload.description,
+            version="1.0.0",
+            status="published",
+            is_calibration=True,
+            calibration_review_type=payload.review_type,
+            category=_FIXTURE_DEFAULT_CATEGORY,
+            sector=_FIXTURE_DEFAULT_SECTOR,
+            industry=_FIXTURE_DEFAULT_INDUSTRY,
+            business_function=_FIXTURE_DEFAULT_FUNCTION,
+            tags=["calibration"],
+            tags_text="calibration",
+            jurisdiction=_FIXTURE_DEFAULT_JURISDICTION,
+            complexity=3,
+            org_size=_FIXTURE_DEFAULT_ORG_SIZE,
+            lifecycle_stage=_FIXTURE_DEFAULT_LIFECYCLE_STAGE,
+            price=_FIXTURE_DEFAULT_PRICE,
+            currency=_FIXTURE_DEFAULT_CURRENCY,
+            license_types=_FIXTURE_DEFAULT_LICENSE_TYPES,
+        )
+        db.add(fixture)
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="calibration_fixture_created",
+            target_type="framework",
+            target_id=fixture.id,
+            metadata={"review_type": payload.review_type},
+        )
+    logger.bind(
+        module="organizations",
+        action="create_calibration_fixture",
+        user_id=str(admin_id),
+        framework_id=str(fixture.id),
+    ).info("calibration_fixture_created")
+    return fixture
+
+
+async def upsert_answer_key(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    admin_id: UUID,
+    payload: UpsertTrialAnswerKeyRequest,
+) -> AttestorTrialAnswerKey:
+    """Create or update one expected rubric score for a calibration fixture."""
+    fixture = await db.scalar(
+        select(Framework).where(
+            Framework.id == framework_id,
+            Framework.is_calibration.is_(True),
+        )
+    )
+    if fixture is None or fixture.calibration_review_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Calibration fixture not found.",
+        )
+    dimension = await db.scalar(
+        select(AttestationRubricDimension).where(
+            AttestationRubricDimension.id == payload.dimension_id,
+            AttestationRubricDimension.review_type == fixture.calibration_review_type,
+            AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+        )
+    )
+    if dimension is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Dimension does not belong to the fixture rubric.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        answer_key = await db.scalar(
+            select(AttestorTrialAnswerKey)
+            .where(
+                AttestorTrialAnswerKey.framework_id == framework_id,
+                AttestorTrialAnswerKey.dimension_id == payload.dimension_id,
+            )
+            .limit(1)
+        )
+        if answer_key is None:
+            answer_key = AttestorTrialAnswerKey(
+                framework_id=framework_id,
+                dimension_id=payload.dimension_id,
+                expected_score=payload.expected_score,
+                tolerance=payload.tolerance,
+            )
+            db.add(answer_key)
+        else:
+            answer_key.expected_score = payload.expected_score
+            answer_key.tolerance = payload.tolerance
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="calibration_fixture_answer_key_upserted",
+            target_type="framework",
+            target_id=framework_id,
+            metadata={"dimension_id": str(payload.dimension_id)},
+        )
+    logger.bind(
+        module="organizations",
+        action="upsert_answer_key",
+        user_id=str(admin_id),
+        framework_id=str(framework_id),
+        dimension_id=str(payload.dimension_id),
+    ).info("calibration_fixture_answer_key_upserted")
+    return answer_key
