@@ -232,12 +232,26 @@ export function ApplyGate({
         },
         headers: getAccessTokenHeaders(),
       });
-      if (res.error) {
+      if (res.error || !res.data) {
         setError(describeGeneratedError(res.error));
-      } else {
-        setDocFile(null);
-        onChange();
+        return;
       }
+
+      // The session only reserves the S3 key; the file must still be pushed to
+      // the bucket, or the admin download later resolves to a missing object.
+      const form = new FormData();
+      for (const [key, value] of Object.entries(res.data.fields)) {
+        form.append(key, String(value));
+      }
+      form.append("file", docFile);
+      const upload = await fetch(res.data.url, { method: "POST", body: form });
+      if (!upload.ok) {
+        setError("The upload could not be completed. Try again.");
+        return;
+      }
+
+      setDocFile(null);
+      onChange();
     } catch {
       setError("An unexpected error occurred.");
     } finally {
@@ -273,13 +287,6 @@ export function ApplyGate({
 
   return (
     <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm">
-      {isNeedsInfo && application?.admin_feedback && (
-        <div className="mb-6 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          <span className="mb-1 block font-bold">Admin Feedback:</span>
-          {application.admin_feedback}
-        </div>
-      )}
-
       {error && (
         <div className="mb-6 rounded-lg border border-error/50 bg-error/5 p-4 text-sm text-error">
           {error}

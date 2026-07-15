@@ -52,11 +52,25 @@ export function TaxDocumentGate({
         headers: getAccessTokenHeaders(),
       });
 
-      if (res.error) {
+      if (res.error || !res.data) {
         setError(describeGeneratedError(res.error));
-      } else {
-        onChange();
+        return;
       }
+
+      // The session only reserves the S3 key; the file must still be pushed to
+      // the bucket, or the admin download later resolves to a missing object.
+      const form = new FormData();
+      for (const [key, value] of Object.entries(res.data.fields)) {
+        form.append(key, String(value));
+      }
+      form.append("file", file);
+      const upload = await fetch(res.data.url, { method: "POST", body: form });
+      if (!upload.ok) {
+        setError("The upload could not be completed. Try again.");
+        return;
+      }
+
+      onChange();
     } catch {
       setError("An unexpected error occurred.");
     } finally {

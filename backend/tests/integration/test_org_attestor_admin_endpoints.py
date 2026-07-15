@@ -306,6 +306,19 @@ async def test_needs_info_and_reject(
     assert held.status_code == 200
     assert held.json()["status"] == "needs_info"
 
+    # The admin queue must surface the feedback the admin sent, so the
+    # reviewer can see what they asked the org to clarify.
+    queue = await client.get(
+        f"{_QUEUE}?status=needs_info", headers=auth(admin_id, ["admin"])
+    )
+    assert queue.status_code == 200
+    row = next(
+        item
+        for item in queue.json()["applications"]
+        if item["id"] == str(application_id)
+    )
+    assert row["admin_feedback"] == "Clarify jurisdictions."
+
     rejected = await client.post(
         f"{_QUEUE}/{application_id}/reject",
         json={"feedback": "Not a fit at this time."},

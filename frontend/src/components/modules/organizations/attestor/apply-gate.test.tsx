@@ -120,8 +120,20 @@ describe("ApplyGate specialisation controls", () => {
     ).toHaveProperty("disabled", false);
   });
 
-  it("attaches an incorporation document via the dedicated endpoint", async () => {
-    vi.mocked(addIncorporationDocument).mockResolvedValue({ data: {} } as never);
+  it("uploads the incorporation document to S3 after reserving the key", async () => {
+    // The endpoint only reserves the S3 key; the file itself must still be
+    // POSTed to the bucket, or the admin download later hits a missing object.
+    vi.mocked(addIncorporationDocument).mockResolvedValue({
+      data: {
+        s3_key: "kyb/org-1/app/uuid-cert.pdf",
+        url: "https://bucket.s3.amazonaws.com/",
+        fields: { key: "kyb/org-1/app/uuid-cert.pdf", policy: "abc" },
+      },
+    } as never);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal("fetch", fetchMock);
     const onChange = vi.fn();
     render(
       <ApplyGate
@@ -141,7 +153,16 @@ describe("ApplyGate specialisation controls", () => {
     const arg = vi.mocked(addIncorporationDocument).mock.calls[0][0];
     expect(arg.body.file_name).toBe("cert.pdf");
     expect(arg.body.content_type).toBe("application/pdf");
+
+    // The file is pushed to the presigned URL as multipart form data.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://bucket.s3.amazonaws.com/");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBeInstanceOf(File);
     expect(onChange).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it("removes an attached incorporation document", async () => {

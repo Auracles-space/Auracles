@@ -2670,6 +2670,7 @@ export type OrgAttestorAdminListItem = {
     kyb_verified_at: (string | null);
     reviewed_at: (string | null);
     created_at: string;
+    admin_feedback: (string | null);
 };
 
 /**

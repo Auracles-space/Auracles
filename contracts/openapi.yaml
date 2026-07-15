@@ -19700,6 +19700,11 @@ components:
           type: string
           format: date-time
           title: Created At
+        admin_feedback:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin Feedback
       type: object
       required:
       - id
@@ -19709,6 +19714,7 @@ components:
       - kyb_verified_at
       - reviewed_at
       - created_at
+      - admin_feedback
       title: OrgAttestorAdminListItem
       description: 'Slim admin-queue row for one org attestor application.
 

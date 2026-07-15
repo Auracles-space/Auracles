@@ -308,6 +308,12 @@ export function AdminOrgAttestorReviewPanel() {
                 <div className="mt-4 text-sm space-y-2">
                   <p><span className="font-semibold">KYB Verified:</span> {app.kyb_verified_at ? new Date(app.kyb_verified_at).toLocaleString() : "Pending"}</p>
                   <p><span className="font-semibold">Created:</span> {new Date(app.created_at).toLocaleString()}</p>
+                  {app.admin_feedback && (
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-warning">
+                      <span className="mb-1 block font-semibold">Feedback sent to org:</span>
+                      {app.admin_feedback}
+                    </div>
+                  )}
                   <Button
                     variant="secondary"
                     className="mt-2"

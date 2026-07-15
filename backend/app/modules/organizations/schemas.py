@@ -767,6 +767,7 @@ class OrgAttestorAdminListItem(BaseModel):
     kyb_verified_at: datetime | None
     reviewed_at: datetime | None
     created_at: datetime
+    admin_feedback: str | None
 
     model_config = ConfigDict(from_attributes=True)
 
