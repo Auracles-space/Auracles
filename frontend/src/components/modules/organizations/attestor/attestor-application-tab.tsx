@@ -5,6 +5,7 @@ import { CheckCircledIcon, ExclamationTriangleIcon, BorderDashedIcon } from "@ra
 
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { ApplyGate } from "./apply-gate";
 import { UndertakingsGate } from "./undertakings-gate";
 import { TaxDocumentGate } from "./tax-document-gate";
@@ -14,8 +15,46 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { getOrgAttestorApplication } from "@/lib/generated/sdk.gen";
+import {
+  getOrgAttestorApplication,
+  submitOrgAttestorApplication,
+} from "@/lib/generated/sdk.gen";
+import { isLengthBetween } from "@/lib/forms/validators";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
+
+/**
+ * Readiness for submitting the application, mirroring the backend
+ * `_kyb_complete` rule so the sticky submit bar can gate the action and
+ * explain what is still missing.
+ *
+ * @param app - The live application, or null before it exists.
+ * @returns Whether the application can be submitted and a one-line hint.
+ */
+export function submissionReadiness(
+  app: OrgAttestorApplicationResponse | null,
+): {
+  ready: boolean;
+  hint: string;
+} {
+  if (!app) {
+    return { ready: false, hint: "Save a draft to start your application." };
+  }
+  const detailsComplete =
+    isLengthBetween(app.legal_name ?? "", 2, 200) &&
+    isLengthBetween(app.registration_number ?? "", 1, 200) &&
+    isLengthBetween(app.credentials_summary ?? "", 10, 5000) &&
+    isLengthBetween(app.professional_references ?? "", 3, 5000) &&
+    (app.sectors?.length ?? 0) > 0 &&
+    (app.functions?.length ?? 0) > 0 &&
+    (app.jurisdictions?.length ?? 0) > 0;
+  if (!detailsComplete) {
+    return { ready: false, hint: "Complete the required application details." };
+  }
+  if ((app.incorporation_doc_keys?.length ?? 0) === 0) {
+    return { ready: false, hint: "Add at least one incorporation document." };
+  }
+  return { ready: true, hint: "Everything looks complete — send it for review." };
+}
 
 function StatusTag({
   status,
@@ -102,8 +141,31 @@ export function AttestorApplicationTab() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const reload = () => setRefreshKey((k) => k + 1);
+
+  /** Send the application to admins for review. */
+  async function handleSubmitForReview() {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await submitOrgAttestorApplication({
+        path: { org_id: orgId },
+        headers: getAccessTokenHeaders(),
+      });
+      if (res.error) {
+        setSubmitError(describeGeneratedError(res.error));
+      } else {
+        reload();
+      }
+    } catch {
+      setSubmitError("An unexpected error occurred.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -165,6 +227,11 @@ export function AttestorApplicationTab() {
   const credentialsStatus = checklist?.credentials_reviewed ? "complete" : "not_started";
 
   const activationStatus = app?.status === "approved" ? "complete" : "not_started";
+
+  // Only draft and needs-info applications can be (re)submitted for review.
+  const editable =
+    !!app && (app.status === "draft" || app.status === "needs_info");
+  const readiness = submissionReadiness(app);
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -238,6 +305,25 @@ export function AttestorApplicationTab() {
           statusLabel={activationStatus === "complete" ? "Active" : undefined}
         />
       </div>
+
+      {editable && (
+        <div className="sticky bottom-0 z-10 rounded-xl border border-border-default bg-surface-1/95 p-4 shadow-lg backdrop-blur">
+          {submitError && (
+            <p className="mb-2 text-sm text-error">{submitError}</p>
+          )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-foreground-muted">{readiness.hint}</p>
+            <Button
+              className="w-full sm:w-auto"
+              disabled={!readiness.ready || submitting}
+              loading={submitting}
+              onClick={handleSubmitForReview}
+            >
+              {app?.status === "needs_info" ? "Resubmit for review" : "Submit for review"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

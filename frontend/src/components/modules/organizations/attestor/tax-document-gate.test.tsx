@@ -51,6 +51,40 @@ describe("TaxDocumentGate", () => {
     vi.unstubAllGlobals();
   });
 
+  it("allows replacing the tax document while the application needs info", () => {
+    // A dangling or superseded document must be replaceable, or a needs-info
+    // application can never fix its tax document.
+    render(
+      <TaxDocumentGate
+        application={
+          { status: "needs_info", tax_document_key: "org-tax/old.pdf" } as never
+        }
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/already on file/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Upload Document/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("locks the tax document once the application is submitted", () => {
+    render(
+      <TaxDocumentGate
+        application={
+          { status: "submitted", tax_document_key: "org-tax/final.pdf" } as never
+        }
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/uploaded successfully/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Upload Document/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("surfaces an error and does not confirm when the S3 upload fails", async () => {
     vi.mocked(uploadOrgAttestorTaxDocument).mockResolvedValue({
       data: {

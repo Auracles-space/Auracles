@@ -18,15 +18,43 @@ export function TaxDocumentGate({
   const { orgId } = useOrganization();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploaded, setUploaded] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [docType, setDocType] = useState<"w9" | "w8ben" | "other">("w9");
 
   const isUploaded = !!application?.tax_document_key;
+  // Only draft and needs-info applications may change their documents; once the
+  // application is submitted or further along the tax document is locked.
+  const canEdit =
+    !application ||
+    application.status === "draft" ||
+    application.status === "needs_info";
 
-  if (isUploaded) {
+  // Uploaded and locked: show the read-only confirmation.
+  if (isUploaded && !canEdit) {
     return (
       <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm text-sm text-foreground">
         Tax document uploaded successfully.
+      </div>
+    );
+  }
+
+  // Just uploaded in an editable state: confirm success and offer a replace,
+  // since the surrounding checklist gives no other visible confirmation.
+  if (uploaded) {
+    return (
+      <div className="rounded-xl border border-success/40 bg-success/10 p-5 text-sm text-foreground">
+        <p className="font-semibold text-success">Tax document uploaded.</p>
+        <button
+          type="button"
+          className="mt-3 min-h-11 text-sm font-semibold text-accent underline-offset-4 hover:underline"
+          onClick={() => {
+            setUploaded(false);
+            setFile(null);
+          }}
+        >
+          Replace document
+        </button>
       </div>
     );
   }
@@ -70,6 +98,7 @@ export function TaxDocumentGate({
         return;
       }
 
+      setUploaded(true);
       onChange();
     } catch {
       setError("An unexpected error occurred.");
@@ -80,6 +109,12 @@ export function TaxDocumentGate({
 
   return (
     <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm">
+      {isUploaded && (
+        <div className="mb-4 rounded-lg border border-border-default bg-surface-2 p-3 text-sm text-foreground-muted">
+          A tax document is already on file. Uploading a new one replaces it.
+        </div>
+      )}
+
       {error && (
         <div className="mb-6 rounded-lg border border-error/50 bg-error/5 p-4 text-sm text-error">
           {error}

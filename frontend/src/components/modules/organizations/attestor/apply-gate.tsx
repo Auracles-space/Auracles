@@ -5,7 +5,6 @@ import {
   addAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPost as addIncorporationDocument,
   createOrgAttestorApplication,
   removeAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDelete as removeIncorporationDocument,
-  submitOrgAttestorApplication,
   updateOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
@@ -13,7 +12,7 @@ import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-c
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { isLengthBetween, isNonEmpty } from "@/lib/forms/validators";
+import { isLengthBetween } from "@/lib/forms/validators";
 import {
   FUNCTION_OPTIONS,
   JURISDICTION_OPTIONS,
@@ -78,19 +77,6 @@ export function ApplyGate({
   const incorporationDocs = application?.incorporation_doc_keys ?? [];
   const isNew = !application;
 
-  // Submit runs the backend `_kyb_complete` check: legal_name, registration
-  // number, at least one incorporation document, credentials, references, and
-  // all three taxonomy lists (sample_work stays optional).
-  const isComplete =
-    isLengthBetween(formData.legal_name, 2, 200) &&
-    isNonEmpty(formData.registration_number) &&
-    incorporationDocs.length > 0 &&
-    isLengthBetween(formData.credentials_summary, 10, 5000) &&
-    isLengthBetween(formData.professional_references, 3, 5000) &&
-    formData.sectors.length > 0 &&
-    formData.functions.length > 0 &&
-    formData.jurisdictions.length > 0;
-
   // Creating the draft row only needs the columns the create endpoint marks
   // required; legal_name, registration_number, and docs are attached afterward.
   const canCreate =
@@ -101,7 +87,6 @@ export function ApplyGate({
     formData.jurisdictions.length > 0;
 
   const saveDraftDisabled = loading || (isNew && !canCreate);
-  const submitDisabled = loading || !isComplete;
 
   type ListField = "sectors" | "functions" | "jurisdictions";
 
@@ -151,60 +136,6 @@ export function ApplyGate({
           headers: getAccessTokenHeaders(),
         });
       }
-      if (res.error) {
-        setError(describeGeneratedError(res.error));
-      } else {
-        onChange();
-      }
-    } catch {
-      setError("An unexpected error occurred.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      // First save draft
-      const body = {
-        legal_name: formData.legal_name,
-        registration_number: formData.registration_number,
-        credentials_summary: formData.credentials_summary,
-        professional_references: formData.professional_references,
-        sample_work: { url: formData.sample_work_url },
-        sectors: formData.sectors,
-        functions: formData.functions,
-        jurisdictions: formData.jurisdictions,
-      };
-
-      let updateRes;
-      if (!application) {
-        updateRes = await createOrgAttestorApplication({
-          path: { org_id: orgId },
-          body,
-          headers: getAccessTokenHeaders(),
-        });
-      } else {
-        updateRes = await updateOrgAttestorApplication({
-          path: { org_id: orgId },
-          body,
-          headers: getAccessTokenHeaders(),
-        });
-      }
-
-      if (updateRes.error) {
-        setError(describeGeneratedError(updateRes.error));
-        setLoading(false);
-        return;
-      }
-
-      const res = await submitOrgAttestorApplication({
-        path: { org_id: orgId },
-        headers: getAccessTokenHeaders(),
-      });
       if (res.error) {
         setError(describeGeneratedError(res.error));
       } else {
@@ -293,7 +224,7 @@ export function ApplyGate({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
         <div>
           <label htmlFor="legal_name" className="mb-1 block text-sm font-semibold text-foreground">
             Legal Name
@@ -478,23 +409,19 @@ export function ApplyGate({
           onRemove={(value) => removeValue("jurisdictions", value)}
         />
 
-        <div className="flex gap-3 pt-4">
-          {canEdit && (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleSaveDraft}
-                disabled={saveDraftDisabled}
-              >
-                Save Draft
-              </Button>
-              <Button type="submit" disabled={submitDisabled} loading={loading}>
-                Submit Application
-              </Button>
-            </>
-          )}
-        </div>
+        {canEdit && (
+          <div className="pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={saveDraftDisabled}
+              loading={loading}
+            >
+              Save Draft
+            </Button>
+          </div>
+        )}
       </form>
     </div>
   );

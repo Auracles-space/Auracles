@@ -4,7 +4,6 @@ import {
   addAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPost as addIncorporationDocument,
   createOrgAttestorApplication,
   removeAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDelete as removeIncorporationDocument,
-  submitOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import { ApplyGate } from "./apply-gate";
 
@@ -15,7 +14,6 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   removeAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDelete:
     vi.fn(),
   updateOrgAttestorApplication: vi.fn(),
-  submitOrgAttestorApplication: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -27,7 +25,6 @@ describe("ApplyGate specialisation controls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(createOrgAttestorApplication).mockResolvedValue({ data: {} } as never);
-    vi.mocked(submitOrgAttestorApplication).mockResolvedValue({ data: {} } as never);
   });
 
   it("sends dropdown-selected sectors, functions, and jurisdictions on save", async () => {
@@ -63,13 +60,17 @@ describe("ApplyGate specialisation controls", () => {
     expect(body.jurisdictions).toEqual(["united_states"]);
   });
 
-  it("enables Save Draft once create fields are filled but keeps Submit gated", () => {
+  it("enables Save Draft once the create-required fields are filled", () => {
+    // Submit itself lives in the application tab's sticky bar now; the gate
+    // only owns Save Draft, which unlocks once the create endpoint's required
+    // fields are satisfied.
     render(<ApplyGate orgId="org-1" application={null} onChange={vi.fn()} />);
 
-    const submit = screen.getByRole("button", { name: /Submit Application/i });
     const saveDraft = screen.getByRole("button", { name: /Save Draft/i });
-    expect(submit).toHaveProperty("disabled", true);
     expect(saveDraft).toHaveProperty("disabled", true);
+    expect(
+      screen.queryByRole("button", { name: /Submit/i }),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/Credentials Summary/i), {
       target: { value: "Ten years of audit experience across sectors." },
@@ -87,37 +88,7 @@ describe("ApplyGate specialisation controls", () => {
       target: { value: "united_states" },
     });
 
-    // Create-required fields are satisfied, so the draft can be saved. Submit
-    // still needs legal name, registration number, and an incorporation
-    // document, which are attached only after the draft exists.
     expect(saveDraft).toHaveProperty("disabled", false);
-    expect(submit).toHaveProperty("disabled", true);
-  });
-
-  it("enables Submit for a fully complete existing application", () => {
-    render(
-      <ApplyGate
-        orgId="org-1"
-        onChange={vi.fn()}
-        application={
-          {
-            status: "draft",
-            legal_name: "Meridian Ltd.",
-            registration_number: "RC123456",
-            credentials_summary: "Ten years of audit experience across sectors.",
-            professional_references: "Jane Doe, jane@example.com",
-            incorporation_doc_keys: ["kyb/org-1/app/uuid-cert.pdf"],
-            sectors: ["private_equity"],
-            functions: ["compliance"],
-            jurisdictions: ["united_states"],
-          } as never
-        }
-      />,
-    );
-
-    expect(
-      screen.getByRole("button", { name: /Submit Application/i }),
-    ).toHaveProperty("disabled", false);
   });
 
   it("uploads the incorporation document to S3 after reserving the key", async () => {
