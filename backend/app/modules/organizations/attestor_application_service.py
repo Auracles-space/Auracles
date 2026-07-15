@@ -860,37 +860,37 @@ async def admin_list_documents(
     if db.in_transaction():
         await db.rollback()
     settings = get_settings()
+    bucket = settings.s3_artifacts_bucket
+
+    def _link(label: str, key: str) -> OrgAttestorDocumentLink:
+        """Build a link for one key, signing only when the object exists.
+
+        A reserved key whose upload never completed has no backing object, so
+        signing a GET would resolve to an S3 ``NoSuchKey`` page. Verify first
+        and hand back an unavailable placeholder instead of a broken link.
+        """
+        filename = _download_name_from_key(key)
+        if not s3.storage.object_exists(bucket, key):
+            return OrgAttestorDocumentLink(
+                label=label, filename=filename, url="", available=False
+            )
+        return OrgAttestorDocumentLink(
+            label=label,
+            filename=filename,
+            url=s3.storage.presigned_get(
+                bucket, key, DOCUMENT_DOWNLOAD_TTL_SECONDS, download_name=filename
+            ),
+        )
+
     async with db.begin():
         application = await _load_admin_application(db, application_id)
         links: list[OrgAttestorDocumentLink] = []
         for index, key in enumerate(application.incorporation_doc_keys, start=1):
-            filename = _download_name_from_key(key)
-            links.append(
-                OrgAttestorDocumentLink(
-                    label=f"Incorporation document {index}",
-                    filename=filename,
-                    url=s3.storage.presigned_get(
-                        settings.s3_artifacts_bucket,
-                        key,
-                        DOCUMENT_DOWNLOAD_TTL_SECONDS,
-                        download_name=filename,
-                    ),
-                )
-            )
+            links.append(_link(f"Incorporation document {index}", key))
         if application.tax_document_key is not None:
-            filename = _download_name_from_key(application.tax_document_key)
             tax_type = application.tax_document_type or "document"
             links.append(
-                OrgAttestorDocumentLink(
-                    label=f"Tax document ({tax_type})",
-                    filename=filename,
-                    url=s3.storage.presigned_get(
-                        settings.s3_artifacts_bucket,
-                        application.tax_document_key,
-                        DOCUMENT_DOWNLOAD_TTL_SECONDS,
-                        download_name=filename,
-                    ),
-                )
+                _link(f"Tax document ({tax_type})", application.tax_document_key)
             )
         await write_audit(
             db=db,
@@ -995,12 +995,27 @@ async def admin_verify_kyb(
     """
     if db.in_transaction():
         await db.rollback()
+    settings = get_settings()
+    bucket = settings.s3_artifacts_bucket
     async with db.begin():
         application = await _load_admin_application(db, application_id)
         if application.status not in ("submitted", "needs_info"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Only applications under review can be KYB-verified.",
+            )
+        # Never certify KYB against documents that were reserved but never
+        # uploaded; the object must exist in storage before the gate can pass.
+        keys = [*application.incorporation_doc_keys]
+        if application.tax_document_key is not None:
+            keys.append(application.tax_document_key)
+        if any(not s3.storage.object_exists(bucket, key) for key in keys):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "One or more KYB/tax documents were not fully uploaded to "
+                    "storage. Ask the organization to re-upload before verifying."
+                ),
             )
         application.kyb_verified_at = datetime.now(UTC)
         application.kyb_verified_by = admin_id

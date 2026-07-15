@@ -340,8 +340,13 @@ async def test_suspend_revokes_and_reinstate_regrants_roles(
     assert await _role_count(members[0]) == 1
 
 
-async def test_verify_kyb_and_needs_info_transitions(admin_state: None) -> None:
+async def test_verify_kyb_and_needs_info_transitions(
+    admin_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """KYB verification stamps the row; needs-info moves submitted → needs_info."""
+    # Reserved doc keys have no uploaded object in tests; treat them as present
+    # so the KYB-verify existence gate does not block this transition test.
+    monkeypatch.setattr(svc.s3.storage, "object_exists", lambda bucket, key: True)
     org_id, admin_id, members = await _org_with_members()
     application_id = await _gated_application(
         org_id, members[0], omit="kyb_verified_at"

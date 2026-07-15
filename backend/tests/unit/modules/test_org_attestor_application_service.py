@@ -638,6 +638,7 @@ async def test_admin_list_documents_returns_presigned_links(
         return f"https://signed.example/{key}"
 
     monkeypatch.setattr(svc.s3.storage, "presigned_get", _fake_presigned_get)
+    monkeypatch.setattr(svc.s3.storage, "object_exists", lambda bucket, key: True)
 
     async with async_session_factory() as session:
         documents = await svc.admin_list_documents(
@@ -651,7 +652,40 @@ async def test_admin_list_documents_returns_presigned_links(
     filenames = [doc.filename for doc in documents]
     assert "cert.pdf" in filenames
     assert "w9.pdf" in filenames
+    assert all(doc.available for doc in documents)
     assert all(doc.url.startswith("https://signed.example/") for doc in documents)
+
+
+async def test_admin_list_documents_flags_missing_object(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reserved key with no uploaded object is flagged unavailable, not signed.
+
+    Signing a GET for a missing object yields an S3 ``NoSuchKey`` page, so the
+    link is returned with ``available=False`` and an empty URL instead.
+    """
+    org_id, owner = await _create_org(attestor_status="pending")
+    async with async_session_factory() as session:
+        application = await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+        application_id = application.id
+    await _add_incorporation_doc(org_id, owner.user_id)
+
+    def _boom_presigned_get(*args: object, **kwargs: object) -> str:
+        raise AssertionError("must not sign a GET for a missing object")
+
+    monkeypatch.setattr(svc.s3.storage, "presigned_get", _boom_presigned_get)
+    monkeypatch.setattr(svc.s3.storage, "object_exists", lambda bucket, key: False)
+
+    async with async_session_factory() as session:
+        documents = await svc.admin_list_documents(
+            session, application_id=application_id, admin_id=owner.user_id
+        )
+
+    assert len(documents) == 1
+    assert documents[0].available is False
+    assert documents[0].url == ""
 
 
 async def test_admin_list_documents_missing_application(app_state: None) -> None:

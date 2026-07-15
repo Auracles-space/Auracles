@@ -2762,12 +2762,13 @@ export type OrgAttestorApplicationUpdateRequest = {
 };
 
 /**
- * One presigned download link for an application's review document.
+ * One presigned download link for an application's review document. ``available`` is False when the reserved S3 key has no backing object yet (an upload that never completed); the ``url`` is then empty and the admin UI shows the document as incomplete rather than a broken link.
  */
 export type OrgAttestorDocumentLink = {
     label: string;
     filename: string;
     url: string;
+    available?: boolean;
 };
 
 /**

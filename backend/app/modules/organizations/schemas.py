@@ -782,11 +782,17 @@ class OrgAttestorAdminListResponse(BaseModel):
 
 
 class OrgAttestorDocumentLink(BaseModel):
-    """One presigned download link for an application's review document."""
+    """One presigned download link for an application's review document.
+
+    ``available`` is False when the reserved S3 key has no backing object yet
+    (an upload that never completed); the ``url`` is then empty and the admin
+    UI shows the document as incomplete rather than a broken link.
+    """
 
     label: str
     filename: str
     url: str
+    available: bool = True
 
 
 class OrgAttestorDocumentsResponse(BaseModel):

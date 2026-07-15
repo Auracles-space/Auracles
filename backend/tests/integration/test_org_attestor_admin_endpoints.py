@@ -205,9 +205,16 @@ async def test_queue_lists_and_filters(
 
 
 async def test_full_gate_walk_to_approval(
-    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify-kyb → start-trial → approve activates the capability."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
@@ -260,6 +267,7 @@ async def test_documents_returns_presigned_links(
         "presigned_get",
         lambda bucket, key, expires_in, *, download_name=None: f"https://signed/{key}",
     )
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
 
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")
@@ -272,8 +280,57 @@ async def test_documents_returns_presigned_links(
     assert res.status_code == 200
     documents = res.json()["documents"]
     assert len(documents) == 2
+    assert all(doc["available"] for doc in documents)
     assert all(doc["url"].startswith("https://signed/") for doc in documents)
     assert {doc["filename"] for doc in documents} == {"cert.pdf", "key.pdf"}
+
+
+async def test_documents_flag_missing_objects(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reserved keys with no uploaded object come back flagged unavailable."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    application_id = await _gated_application(org_id, owner_id)
+
+    res = await client.get(
+        f"{_QUEUE}/{application_id}/documents", headers=auth(admin_id, ["admin"])
+    )
+    assert res.status_code == 200
+    documents = res.json()["documents"]
+    assert documents
+    assert all(doc["available"] is False for doc in documents)
+    assert all(doc["url"] == "" for doc in documents)
+
+
+async def test_verify_kyb_blocked_when_document_missing(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KYB cannot be verified while a reserved document has no stored object."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    application_id = await _gated_application(org_id, owner_id)
+
+    res = await client.post(
+        f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
+    )
+    assert res.status_code == 422
 
 
 async def test_documents_requires_admin(

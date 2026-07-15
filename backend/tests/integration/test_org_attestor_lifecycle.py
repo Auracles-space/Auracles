@@ -335,6 +335,11 @@ async def test_org_attestor_full_lifecycle(
     member), and the org's public identity carries the attestation.
     """
     del clean_state
+    # Uploads reserve S3 keys but never PUT objects in tests, so treat the
+    # objects as present for the KYB-verify existence gate.
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
     owner_secret = pyotp.random_base32()
     owner_id = await _new_user("owner", totp_secret=owner_secret)
     reviewer_user_id = await _new_user("reviewer")

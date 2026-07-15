@@ -333,19 +333,36 @@ export function AdminOrgAttestorReviewPanel() {
                         </p>
                       ) : (
                         <ul className="grid gap-2">
-                          {docsByApp[app.id].map((doc) => (
-                            <li key={doc.url}>
-                              <a
-                                className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-accent underline-offset-4 hover:underline"
-                                href={doc.url}
-                                rel="noopener noreferrer"
-                                target="_blank"
+                          {docsByApp[app.id].map((doc) =>
+                            doc.available === false ? (
+                              <li
+                                key={`${doc.label}-${doc.filename}`}
+                                className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm"
                               >
-                                <span className="font-semibold">{doc.label}:</span>
-                                <span className="break-all text-foreground">{doc.filename}</span>
-                              </a>
-                            </li>
-                          ))}
+                                <span className="font-semibold text-foreground-muted">
+                                  {doc.label}:
+                                </span>
+                                <span className="break-all text-foreground-muted">
+                                  {doc.filename}
+                                </span>
+                                <span className="rounded bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+                                  Upload incomplete
+                                </span>
+                              </li>
+                            ) : (
+                              <li key={doc.url}>
+                                <a
+                                  className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-accent underline-offset-4 hover:underline"
+                                  href={doc.url}
+                                  rel="noopener noreferrer"
+                                  target="_blank"
+                                >
+                                  <span className="font-semibold">{doc.label}:</span>
+                                  <span className="break-all text-foreground">{doc.filename}</span>
+                                </a>
+                              </li>
+                            ),
+                          )}
                         </ul>
                       )}
                       <p className="mt-2 text-xs text-foreground-muted">
