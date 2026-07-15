@@ -99,6 +99,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const tabs = [
     { id: "", label: "Profile" },
     { id: "members", label: "Members" },
+    // Any member may be nominated for the attestor calibration trial; the page
+    // resolves to a friendly "no active trial" state for non-nominees.
+    { id: "attestor-trial", label: "Calibration Trial" },
   ];
   if (needsNda) {
     tabs.push({ id: "nda", label: "NDA" });

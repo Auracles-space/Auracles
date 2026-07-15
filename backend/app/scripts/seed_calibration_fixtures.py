@@ -191,6 +191,10 @@ async def seed_calibration_fixtures(session: AsyncSession) -> list[str]:
 
 async def main() -> None:
     """Run the seed inside one transaction and log the outcome."""
+    # Import the app so every ORM model is registered before mappers configure;
+    # run standalone, this module alone leaves cross-module FKs unresolved.
+    import app.main  # noqa: F401
+
     async with async_session_factory() as session:
         async with session.begin():
             created = await seed_calibration_fixtures(session)
