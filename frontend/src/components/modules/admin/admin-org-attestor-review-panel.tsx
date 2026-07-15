@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
   listOrgAttestorApplicationsForAdmin,
+  listOrgAttestorDocumentsForAdmin,
   verifyOrgAttestorKyb,
   orgAttestorNeedsInfo,
   startOrgAttestorTrial,
@@ -19,9 +20,14 @@ import {
   reinstateOrgAttestorCapability,
   revokeOrgAttestorCapability,
 } from "@/lib/generated/sdk.gen";
-import type { OrgAttestorAdminListItem } from "@/lib/generated/types.gen";
+import type {
+  OrgAttestorAdminListItem,
+  OrgAttestorDocumentLink,
+} from "@/lib/generated/types.gen";
 
 type StatusFilter = "submitted" | "needs_info" | "trial" | "approved" | "rejected";
+
+const UNDER_REVIEW: ReadonlySet<string> = new Set(["submitted", "needs_info"]);
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "Submitted", value: "submitted" },
@@ -53,6 +59,10 @@ export function AdminOrgAttestorReviewPanel() {
 
   const [openCapabilityId, setOpenCapabilityId] = useState<string | null>(null);
   const [capabilityAction, setCapabilityAction] = useState<"suspend" | "reinstate" | "revoke" | null>(null);
+
+  const [openDocsId, setOpenDocsId] = useState<string | null>(null);
+  const [docsBusyId, setDocsBusyId] = useState<string | null>(null);
+  const [docsByApp, setDocsByApp] = useState<Record<string, OrgAttestorDocumentLink[]>>({});
 
   useEffect(() => {
     void loadQueue(statusFilter);
@@ -159,6 +169,34 @@ export function AdminOrgAttestorReviewPanel() {
       setError(`Failed to process feedback action.`);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleViewDocuments(applicationId: string) {
+    // Toggle closed if already open for this application.
+    if (openDocsId === applicationId) {
+      setOpenDocsId(null);
+      return;
+    }
+    setOpenDocsId(applicationId);
+    setError(null);
+    // Fetch fresh links each open: presigned URLs expire after 15 minutes.
+    setDocsBusyId(applicationId);
+    configureBrowserClient();
+    try {
+      const result = await listOrgAttestorDocumentsForAdmin({
+        headers: getAccessTokenHeaders(),
+        path: { application_id: applicationId },
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setDocsByApp((current) => ({ ...current, [applicationId]: result.data.documents }));
+    } catch {
+      setError("Failed to load documents.");
+    } finally {
+      setDocsBusyId(null);
     }
   }
 
@@ -270,41 +308,71 @@ export function AdminOrgAttestorReviewPanel() {
                 <div className="mt-4 text-sm space-y-2">
                   <p><span className="font-semibold">KYB Verified:</span> {app.kyb_verified_at ? new Date(app.kyb_verified_at).toLocaleString() : "Pending"}</p>
                   <p><span className="font-semibold">Created:</span> {new Date(app.created_at).toLocaleString()}</p>
-                  <Button 
+                  <Button
                     variant="secondary"
                     className="mt-2"
-                    onClick={() => {
-                      alert("Contract Gap: The OpenAPI spec does not define an endpoint to download KYB/tax documents for org attestor applications. Stop and Escalate.");
-                    }}
+                    disabled={docsBusyId === app.id}
+                    onClick={() => handleViewDocuments(app.id)}
                   >
-                    View KYB / Tax Documents
+                    {openDocsId === app.id ? "Hide" : "View"} KYB / Tax Documents
                   </Button>
+
+                  {openDocsId === app.id && (
+                    <div className="mt-3 rounded-xl border border-border-default bg-surface-2 p-4">
+                      {docsBusyId === app.id ? (
+                        <p className="text-sm text-foreground-muted">Loading documents…</p>
+                      ) : (docsByApp[app.id]?.length ?? 0) === 0 ? (
+                        <p className="text-sm text-foreground-muted">
+                          No documents uploaded for this application.
+                        </p>
+                      ) : (
+                        <ul className="grid gap-2">
+                          {docsByApp[app.id].map((doc) => (
+                            <li key={doc.url}>
+                              <a
+                                className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-accent underline-offset-4 hover:underline"
+                                href={doc.url}
+                                rel="noopener noreferrer"
+                                target="_blank"
+                              >
+                                <span className="font-semibold">{doc.label}:</span>
+                                <span className="break-all text-foreground">{doc.filename}</span>
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="mt-2 text-xs text-foreground-muted">
+                        Links expire after 15 minutes.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 border-t border-border-default/45 pt-4">
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted mb-3">Application Actions</h3>
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={isBusy || app.status !== "submitted"}
+                      disabled={isBusy || !UNDER_REVIEW.has(app.status)}
                       onClick={() => handleAction(app.id, "verify_kyb")}
                     >
                       Verify KYB
                     </Button>
                     <Button
-                      disabled={isBusy}
+                      disabled={isBusy || !UNDER_REVIEW.has(app.status)}
                       onClick={() => handleAction(app.id, "start_trial")}
                     >
                       Start Trial
                     </Button>
                     <Button
-                      disabled={isBusy}
+                      disabled={isBusy || app.status !== "trial"}
                       onClick={() => handleAction(app.id, "approve")}
                     >
                       Approve
                     </Button>
                     <Button
                       variant="secondary"
-                      disabled={isBusy}
+                      disabled={isBusy || app.status !== "submitted"}
                       onClick={() => {
                         setFeedbackAction("needs_info");
                         setOpenFeedbackId(openFeedbackId === app.id ? null : app.id);
@@ -315,7 +383,7 @@ export function AdminOrgAttestorReviewPanel() {
                     </Button>
                     <Button
                       variant="destructive"
-                      disabled={isBusy}
+                      disabled={isBusy || app.status === "approved" || app.status === "rejected"}
                       onClick={() => {
                         setFeedbackAction("reject");
                         setOpenFeedbackId(openFeedbackId === app.id ? null : app.id);

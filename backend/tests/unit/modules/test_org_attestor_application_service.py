@@ -593,3 +593,72 @@ async def test_trial_notification_types_persist(
             )
     assert notification is not None
     assert notification.notification_type == notification_type
+
+
+async def test_admin_list_documents_returns_presigned_links(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Admin document review returns one presigned GET link per KYB + tax doc.
+
+    KYB and tax documents live in the private bucket, so the admin panel can
+    only surface them through short-lived presigned GET URLs generated on
+    demand. One link is produced per incorporation document and one for the
+    tax document, each labelled and carrying the original file name.
+    """
+    org_id, owner = await _create_org(attestor_status="pending")
+    async with async_session_factory() as session:
+        application = await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+        application_id = application.id
+    await _add_incorporation_doc(org_id, owner.user_id)
+    async with async_session_factory() as session:
+        await svc.set_tax_document(
+            session,
+            org_id=org_id,
+            actor_id=owner.user_id,
+            payload=OrgAttestorTaxDocumentRequest(
+                tax_document_type="w9",
+                file_name="w9.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+            ),
+        )
+
+    captured: list[tuple[str, str | None]] = []
+
+    def _fake_presigned_get(
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
+        captured.append((key, download_name))
+        return f"https://signed.example/{key}"
+
+    monkeypatch.setattr(svc.s3.storage, "presigned_get", _fake_presigned_get)
+
+    async with async_session_factory() as session:
+        documents = await svc.admin_list_documents(
+            session, application_id=application_id, admin_id=owner.user_id
+        )
+
+    assert len(documents) == 2
+    labels = [doc.label for doc in documents]
+    assert any("Incorporation" in label for label in labels)
+    assert any("Tax" in label for label in labels)
+    filenames = [doc.filename for doc in documents]
+    assert "cert.pdf" in filenames
+    assert "w9.pdf" in filenames
+    assert all(doc.url.startswith("https://signed.example/") for doc in documents)
+
+
+async def test_admin_list_documents_missing_application(app_state: None) -> None:
+    """Listing documents for an unknown application raises 404."""
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_list_documents(
+                session, application_id=uuid4(), admin_id=uuid4()
+            )
+    assert exc.value.status_code == 404

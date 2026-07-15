@@ -48,6 +48,7 @@ from app.modules.organizations.models import (
 from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationUpdateRequest,
+    OrgAttestorDocumentLink,
     OrgAttestorGateChecklist,
     OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
@@ -64,6 +65,15 @@ TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
 INCORPORATION_DOC_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
 INCORPORATION_DOC_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
 MAX_INCORPORATION_DOCS = 20
+
+# Admin review download links follow the platform-wide 15-minute presigned-URL
+# expiry so a shared or logged link goes stale quickly.
+DOCUMENT_DOWNLOAD_TTL_SECONDS = 900
+
+# S3 keys are minted as ``{uuid4}-{safe_file_name}``; the uuid4 string is a
+# fixed 36 characters followed by a hyphen, so the original name is everything
+# after that prefix.
+_UUID_KEY_PREFIX_LEN = 37
 
 # CoI/confidentiality validity window: the undertakings gate stamps
 # coi_expires_at one year out.
@@ -811,6 +821,95 @@ async def _load_admin_application(
             detail="Org attestor application not found.",
         )
     return application
+
+
+def _download_name_from_key(key: str) -> str:
+    """Recover the original file name from a minted ``{uuid4}-{name}`` S3 key."""
+    segment = key.rsplit("/", 1)[-1]
+    if len(segment) > _UUID_KEY_PREFIX_LEN and segment[_UUID_KEY_PREFIX_LEN - 1] == "-":
+        return segment[_UUID_KEY_PREFIX_LEN:]
+    return segment
+
+
+async def admin_list_documents(
+    db: AsyncSession,
+    *,
+    application_id: UUID,
+    admin_id: UUID,
+) -> list[OrgAttestorDocumentLink]:
+    """Return presigned GET links for an application's KYB and tax documents.
+
+    KYB (incorporation) and tax documents live in the private artifacts bucket,
+    so a reviewing platform admin can only open them through short-lived
+    presigned GET URLs generated on demand (BR-level: private S3, presigned
+    delivery only). Each incorporation document and the tax document, when
+    present, yields one labelled link carrying its original file name. The
+    access is audited.
+
+    Args:
+        db: Async session.
+        application_id: Application whose documents to surface.
+        admin_id: Authenticated platform admin requesting the links.
+
+    Returns:
+        A list of presigned download links, empty when no documents exist.
+
+    Raises:
+        HTTPException(404): If the application does not exist.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    settings = get_settings()
+    async with db.begin():
+        application = await _load_admin_application(db, application_id)
+        links: list[OrgAttestorDocumentLink] = []
+        for index, key in enumerate(application.incorporation_doc_keys, start=1):
+            filename = _download_name_from_key(key)
+            links.append(
+                OrgAttestorDocumentLink(
+                    label=f"Incorporation document {index}",
+                    filename=filename,
+                    url=s3.storage.presigned_get(
+                        settings.s3_artifacts_bucket,
+                        key,
+                        DOCUMENT_DOWNLOAD_TTL_SECONDS,
+                        download_name=filename,
+                    ),
+                )
+            )
+        if application.tax_document_key is not None:
+            filename = _download_name_from_key(application.tax_document_key)
+            tax_type = application.tax_document_type or "document"
+            links.append(
+                OrgAttestorDocumentLink(
+                    label=f"Tax document ({tax_type})",
+                    filename=filename,
+                    url=s3.storage.presigned_get(
+                        settings.s3_artifacts_bucket,
+                        application.tax_document_key,
+                        DOCUMENT_DOWNLOAD_TTL_SECONDS,
+                        download_name=filename,
+                    ),
+                )
+            )
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_attestor_documents_viewed",
+            target_type="org_attestor_application",
+            target_id=application.id,
+            metadata={
+                "org_id": str(application.org_id),
+                "document_count": len(links),
+            },
+        )
+    logger.bind(
+        module="organizations",
+        action="admin_list_documents",
+        user_id=admin_id,
+        org_id=application.org_id,
+    ).info("org_attestor_documents_viewed", document_count=len(links))
+    return links
 
 
 def _org_profile_specializations(application: OrgAttestorApplication) -> list[str]:

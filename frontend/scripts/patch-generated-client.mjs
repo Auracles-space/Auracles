@@ -140,6 +140,7 @@ const compatibilityAliases = {
   requestOrgPayout: "requestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPost",
   listOrgInvoices: "listOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGet",
   listOrgAttestorApplicationsForAdmin: "adminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGet",
+  listOrgAttestorDocumentsForAdmin: "adminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGet",
   verifyOrgAttestorKyb: "adminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPost",
   orgAttestorNeedsInfo: "adminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPost",
   startOrgAttestorTrial: "adminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPost",

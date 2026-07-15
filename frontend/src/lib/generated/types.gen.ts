@@ -2761,6 +2761,22 @@ export type OrgAttestorApplicationUpdateRequest = {
 };
 
 /**
+ * One presigned download link for an application's review document.
+ */
+export type OrgAttestorDocumentLink = {
+    label: string;
+    filename: string;
+    url: string;
+};
+
+/**
+ * Presigned GET links for an application's KYB and tax documents.
+ */
+export type OrgAttestorDocumentsResponse = {
+    documents: Array<OrgAttestorDocumentLink>;
+};
+
+/**
  * Admin feedback body for needs-info and reject actions.
  */
 export type OrgAttestorFeedbackRequest = {
@@ -6901,6 +6917,16 @@ export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetDat
 export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetResponse = (OrgAttestorAdminListResponse);
 
 export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetError = (HTTPValidationError);
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetResponse = (OrgAttestorDocumentsResponse);
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetError = (HTTPValidationError);
 
 export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostData = {
     path: {

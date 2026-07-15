@@ -8906,6 +8906,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/{application_id}/documents:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: List KYB/tax document links (platform admin)
+      description: Return short-lived presigned GET links for an application's incorporation
+        and tax documents. Access is audited.
+      operationId: admin_list_org_attestor_documents_v1_admin_org_attestor_applications__application_id__documents_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Application Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAttestorDocumentsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/org-attestor-applications/{application_id}/verify-kyb:
     post:
       tags:
@@ -20018,6 +20049,36 @@ components:
         Every field is optional: only supplied fields are applied. Setting
 
         ``payout_account_id`` links an org-owned payout account to the gate.'
+    OrgAttestorDocumentLink:
+      properties:
+        label:
+          type: string
+          title: Label
+        filename:
+          type: string
+          title: Filename
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - label
+      - filename
+      - url
+      title: OrgAttestorDocumentLink
+      description: One presigned download link for an application's review document.
+    OrgAttestorDocumentsResponse:
+      properties:
+        documents:
+          items:
+            $ref: '#/components/schemas/OrgAttestorDocumentLink'
+          type: array
+          title: Documents
+      type: object
+      required:
+      - documents
+      title: OrgAttestorDocumentsResponse
+      description: Presigned GET links for an application's KYB and tax documents.
     OrgAttestorFeedbackRequest:
       properties:
         feedback:

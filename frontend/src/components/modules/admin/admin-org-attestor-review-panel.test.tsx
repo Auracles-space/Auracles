@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminOrgAttestorReviewPanel } from "@/components/modules/admin/admin-org-attestor-review-panel";
-import { listOrgAttestorApplicationsForAdmin, verifyOrgAttestorKyb } from "@/lib/generated/sdk.gen";
+import {
+  listOrgAttestorApplicationsForAdmin,
+  listOrgAttestorDocumentsForAdmin,
+  verifyOrgAttestorKyb,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   describeGeneratedError: vi.fn(() => "err"),
@@ -11,7 +15,8 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/auth/current-user-session", () => ({ loadCurrentUserSession: vi.fn(async () => ({ isSuperAdmin: true })) }));
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listOrgAttestorApplicationsForAdmin: vi.fn(),
-  verifyOrgAttestorKyb: vi.fn(), 
+  listOrgAttestorDocumentsForAdmin: vi.fn(),
+  verifyOrgAttestorKyb: vi.fn(),
   orgAttestorNeedsInfo: vi.fn(),
   startOrgAttestorTrial: vi.fn(), 
   approveOrgAttestor: vi.fn(), 
@@ -39,5 +44,38 @@ describe("AdminOrgAttestorReviewPanel", () => {
     await waitFor(() => expect(vi.mocked(verifyOrgAttestorKyb)).toHaveBeenCalledWith(
       expect.objectContaining({ path: { application_id: "app-1" } }),
     ));
+  });
+
+  it("loads and renders document links on view", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      total: 1,
+      page: 1,
+      page_size: 10
+    }));
+    vi.mocked(listOrgAttestorDocumentsForAdmin).mockResolvedValue(ok({
+      documents: [{ label: "Incorporation document 1", filename: "cert.pdf", url: "https://signed/cert.pdf" }],
+    }) as never);
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Audit Ltd/));
+    fireEvent.click(screen.getByRole("button", { name: /view kyb \/ tax documents/i }));
+    await waitFor(() => expect(vi.mocked(listOrgAttestorDocumentsForAdmin)).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { application_id: "app-1" } }),
+    ));
+    const link = await screen.findByRole("link", { name: /cert\.pdf/i });
+    expect(link).toHaveAttribute("href", "https://signed/cert.pdf");
+  });
+
+  it("disables approve while an application is only submitted", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      total: 1,
+      page: 1,
+      page_size: 10
+    }));
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Audit Ltd/));
+    expect(screen.getByRole("button", { name: /^approve$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /verify kyb/i })).not.toBeDisabled();
   });
 });

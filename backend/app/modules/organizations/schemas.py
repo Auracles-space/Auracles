@@ -780,6 +780,24 @@ class OrgAttestorAdminListResponse(BaseModel):
     page_size: int
 
 
+class OrgAttestorDocumentLink(BaseModel):
+    """One presigned download link for an application's review document."""
+
+    label: str
+    filename: str
+    url: str
+
+
+class OrgAttestorDocumentsResponse(BaseModel):
+    """Presigned GET links for an application's KYB and tax documents.
+
+    Documents live in the private bucket, so the admin panel receives
+    short-lived presigned URLs rather than durable paths.
+    """
+
+    documents: list[OrgAttestorDocumentLink]
+
+
 class OrgAttestorFeedbackRequest(BaseModel):
     """Admin feedback body for needs-info and reject actions."""
 

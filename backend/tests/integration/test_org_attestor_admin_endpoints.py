@@ -246,6 +246,49 @@ async def test_full_gate_walk_to_approval(
         assert role is not None
 
 
+async def test_documents_returns_presigned_links(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admin gets one presigned link per incorporation and tax document."""
+    from app.integrations import s3
+
+    monkeypatch.setattr(
+        s3.storage,
+        "presigned_get",
+        lambda bucket, key, expires_in, *, download_name=None: f"https://signed/{key}",
+    )
+
+    admin_id = await _new_user("admin", roles=["admin"])
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    application_id = await _gated_application(org_id, owner_id)
+
+    res = await client.get(
+        f"{_QUEUE}/{application_id}/documents", headers=auth(admin_id, ["admin"])
+    )
+    assert res.status_code == 200
+    documents = res.json()["documents"]
+    assert len(documents) == 2
+    assert all(doc["url"].startswith("https://signed/") for doc in documents)
+    assert {doc["filename"] for doc in documents} == {"cert.pdf", "key.pdf"}
+
+
+async def test_documents_requires_admin(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """The documents route rejects anonymous (401) and non-admin (403) callers."""
+    plain_id = await _new_user("plain")
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    application_id = await _gated_application(org_id, owner_id)
+    url = f"{_QUEUE}/{application_id}/documents"
+    assert (await client.get(url)).status_code == 401
+    assert (await client.get(url, headers=auth(plain_id))).status_code == 403
+
+
 async def test_needs_info_and_reject(
     client: AsyncClient, migrated_database: None, clean_state: FakeRedis
 ) -> None:

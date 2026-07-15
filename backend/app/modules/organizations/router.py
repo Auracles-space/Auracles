@@ -77,6 +77,7 @@ from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationResponse,
     OrgAttestorApplicationUpdateRequest,
+    OrgAttestorDocumentsResponse,
     OrgAttestorFeedbackRequest,
     OrgAttestorGateChecklist,
     OrgAttestorIncorporationDocumentDeleteRequest,
@@ -2015,6 +2016,25 @@ async def admin_list_org_attestor_applications(
         page=page,
         page_size=page_size,
     )
+
+
+@admin_org_attestor_router.get(
+    "/{application_id}/documents",
+    response_model=OrgAttestorDocumentsResponse,
+    summary="List KYB/tax document links (platform admin)",
+    description=(
+        "Return short-lived presigned GET links for an application's "
+        "incorporation and tax documents. Access is audited."
+    ),
+)
+async def admin_list_org_attestor_documents(
+    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> OrgAttestorDocumentsResponse:
+    """Return presigned download links for an application's review documents."""
+    documents = await attestor_application_service.admin_list_documents(
+        db, application_id=application_id, admin_id=admin.id
+    )
+    return OrgAttestorDocumentsResponse(documents=documents)
 
 
 @admin_org_attestor_router.post(
