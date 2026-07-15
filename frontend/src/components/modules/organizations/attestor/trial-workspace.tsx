@@ -264,7 +264,14 @@ export function TrialWorkspace({ orgId }: TrialWorkspaceProps) {
                     className="grid gap-2 text-sm font-medium text-foreground"
                     htmlFor={`score-${dimension.dimension_id}`}
                   >
-                    {dimension.label} score
+                    <span>
+                      {dimension.label} score
+                      <span className="text-error" aria-hidden="true">
+                        {" "}
+                        *
+                      </span>
+                      <span className="sr-only"> (required)</span>
+                    </span>
                     <select
                       id={`score-${dimension.dimension_id}`}
                       className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus:border-accent"
@@ -288,7 +295,8 @@ export function TrialWorkspace({ orgId }: TrialWorkspaceProps) {
                     className="grid gap-2 text-sm font-medium text-foreground"
                     htmlFor={`comment-${dimension.dimension_id}`}
                   >
-                    {dimension.label} comment
+                    {dimension.label} comment{" "}
+                    <span className="text-foreground-muted">(optional)</span>
                     <textarea
                       id={`comment-${dimension.dimension_id}`}
                       className="min-h-28 rounded-xl border border-border-default bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-accent"
