@@ -160,6 +160,7 @@ CREDENTIAL_ISSUER_TYPE_ENUM = ENUM(
 )
 ATTESTOR_TRIAL_STATUS_ENUM = ENUM(
     "assigned",
+    "submitted",
     "passed",
     "failed",
     name="attestor_trial_status_enum",
@@ -906,6 +907,10 @@ class AttestorTrial(CreatedAtMixin, Base):
         CheckConstraint(
             "attempt >= 1 AND attempt <= 2", name="ck_attestor_trials_attempt_range"
         ),
+        CheckConstraint(
+            "auto_result IS NULL OR auto_result IN ('pass','fail')",
+            name="ck_attestor_trials_auto_result",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -934,6 +939,12 @@ class AttestorTrial(CreatedAtMixin, Base):
         ForeignKey("frameworks.id", ondelete="SET NULL"),
         nullable=True,
     )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    score_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_result: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         ATTESTOR_TRIAL_STATUS_ENUM,
         nullable=False,
@@ -954,6 +965,84 @@ class AttestorTrial(CreatedAtMixin, Base):
         nullable=True,
     )
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AttestorTrialAnswerKey(Base):
+    """Expected rubric score per dimension for one calibration fixture."""
+
+    __tablename__ = "attestor_trial_answer_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "framework_id",
+            "dimension_id",
+            name="uq_attestor_trial_answer_keys_framework_dimension",
+        ),
+        CheckConstraint(
+            "expected_score BETWEEN 1 AND 5",
+            name="ck_attestor_trial_answer_keys_score_range",
+        ),
+        CheckConstraint(
+            "tolerance BETWEEN 0 AND 4",
+            name="ck_attestor_trial_answer_keys_tolerance_range",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    framework_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("frameworks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dimension_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestation_rubric_dimensions.id"),
+        nullable=False,
+    )
+    expected_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    tolerance: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+
+
+class AttestorTrialRubricScore(UpdatedAtMixin, CreatedAtMixin, Base):
+    """One nominee rubric score and comment for a trial dimension."""
+
+    __tablename__ = "attestor_trial_rubric_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "trial_id",
+            "dimension_id",
+            name="uq_attestor_trial_rubric_scores_trial_dimension",
+        ),
+        CheckConstraint(
+            "score BETWEEN 1 AND 5",
+            name="ck_attestor_trial_rubric_scores_range",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    trial_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestor_trials.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dimension_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestation_rubric_dimensions.id"),
+        nullable=False,
+    )
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AttestationBadge(CreatedAtMixin, Base):
