@@ -2097,6 +2097,53 @@ export type ExploreSearchFilters = {
 };
 
 /**
+ * Admin body confirming a browser-uploaded fixture artifact object.
+ */
+export type FixtureArtifactConfirmRequest = {
+    artifact_id: string;
+};
+
+/**
+ * One fixture artifact with its virus-scan state.
+ */
+export type FixtureArtifactItem = {
+    id: string;
+    name: string;
+    mime_type: string;
+    scan_status: string;
+};
+
+/**
+ * All artifacts attached to one calibration fixture.
+ */
+export type FixtureArtifactsResponse = {
+    artifacts: Array<FixtureArtifactItem>;
+};
+
+/**
+ * Admin body to create a constrained fixture-artifact upload target.
+ */
+export type FixtureArtifactUploadUrlRequest = {
+    filename: string;
+    mime_type: string;
+    file_size: number;
+};
+
+/**
+ * S3 presigned POST target for one fixture artifact.
+ */
+export type FixtureArtifactUploadUrlResponse = {
+    artifact_id: string;
+    upload_url: string;
+    fields: {
+        [key: string]: (string);
+    };
+    file_key: string;
+    max_size: number;
+    expires_in: number;
+};
+
+/**
  * Request body for starting password reset without enumeration.
  */
 export type ForgotPasswordRequest = {
@@ -4267,6 +4314,24 @@ export type TotpSetupResponse = {
 export type TotpStatusResponse = {
     totp_enabled: boolean;
     backup_codes_remaining?: number;
+};
+
+/**
+ * One answer-key row joined to its rubric dimension, for the admin editor.
+ */
+export type TrialAnswerKeyItem = {
+    dimension_id: string;
+    label: string;
+    expected_score: (number | null);
+    tolerance: (number | null);
+};
+
+/**
+ * Every rubric dimension for a fixture with its answer-key value, if set.
+ */
+export type TrialAnswerKeysResponse = {
+    review_type: string;
+    rows: Array<TrialAnswerKeyItem>;
 };
 
 /**
@@ -7155,6 +7220,59 @@ export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFi
 export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutResponse = (void);
 
 export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutError = (HTTPValidationError);
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetResponse = (TrialAnswerKeysResponse);
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetError = (HTTPValidationError);
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetResponse = (FixtureArtifactsResponse);
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetError = (HTTPValidationError);
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostData = {
+    body: FixtureArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostResponse = (FixtureArtifactUploadUrlResponse);
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostData = {
+    body: FixtureArtifactConfirmRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostResponse = (FixtureArtifactItem);
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
 
 export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostData = {
     path: {

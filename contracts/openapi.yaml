@@ -4931,11 +4931,11 @@ paths:
       tags:
       - Frameworks
       summary: Re-sync a connector-bound artifact from its source
-      description: Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's
-        bound source into a new artifact version and re-runs the pipeline. Returns
-        a new artifact id on change; 409 already_up_to_date when the source is unchanged.
-        A 404 on the old id afterward means it was superseded — refetch the artifact
-        list.
+      description: "Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's\
+        \ bound source into a new artifact version and re-runs the pipeline. Returns\
+        \ a new artifact id on change; 409 already_up_to_date when the source is unchanged.\
+        \ A 404 on the old id afterward means it was superseded \u2014 refetch the\
+        \ artifact list."
       operationId: resync_artifact_v1_frameworks__framework_id__artifacts__artifact_id__resync_post
       security:
       - HTTPBearer: []
@@ -9239,6 +9239,171 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpsertTrialAnswerKeyRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/answer-keys:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: List a fixture's answer keys (platform admin)
+      description: Return every rubric dimension for a fixture with its key value.
+      operationId: admin_list_trial_answer_keys_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__answer_keys_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialAnswerKeysResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/artifacts:
+    get:
+      tags:
+      - Admin Org Attestor
+      summary: List a fixture's artifacts (platform admin)
+      description: Return a calibration fixture's artifacts with scan state.
+      operationId: admin_list_fixture_artifacts_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__artifacts_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FixtureArtifactsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/artifacts/upload-url:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Create a fixture-artifact upload target (platform admin)
+      description: Create a pending artifact row and a constrained S3 POST target.
+      operationId: admin_create_fixture_artifact_upload_url_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__artifacts_upload_url_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FixtureArtifactUploadUrlRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FixtureArtifactUploadUrlResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/artifacts/confirm:
+    post:
+      tags:
+      - Admin Org Attestor
+      summary: Confirm a fixture-artifact upload (platform admin)
+      description: Confirm the object exists in S3 and dispatch a virus scan.
+      operationId: admin_confirm_fixture_artifact_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__artifacts_confirm_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FixtureArtifactConfirmRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FixtureArtifactItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/org-attestor-applications/calibration-fixtures/{framework_id}/artifacts/{artifact_id}:
+    delete:
+      tags:
+      - Admin Org Attestor
+      summary: Delete a fixture artifact (platform admin)
+      description: Remove one fixture artifact row and its S3 object.
+      operationId: admin_delete_fixture_artifact_v1_admin_org_attestor_applications_calibration_fixtures__framework_id__artifacts__artifact_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
       responses:
         '204':
           description: Successful Response
@@ -15218,15 +15383,10 @@ components:
       - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: 'Public attestor-organization directory row safe for anonymous
-        browsing.
-
-
-        Lists the organization''s public matching profile, completed-attestation
-
-        count, member count, and certification mark. Never exposes individual member
-
-        identities — attestation is credited to the organization, not its reviewers.'
+      description: "Public attestor-organization directory row safe for anonymous\
+        \ browsing.\n\nLists the organization's public matching profile, completed-attestation\n\
+        count, member count, and certification mark. Never exposes individual member\n\
+        identities \u2014 attestation is credited to the organization, not its reviewers."
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -18251,6 +18411,108 @@ components:
         Pagination is intentionally excluded so a saved search captures query intent,
 
         not one temporary result page.'
+    FixtureArtifactConfirmRequest:
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+          title: Artifact Id
+      type: object
+      required:
+      - artifact_id
+      title: FixtureArtifactConfirmRequest
+      description: Admin body confirming a browser-uploaded fixture artifact object.
+    FixtureArtifactItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        mime_type:
+          type: string
+          title: Mime Type
+        scan_status:
+          type: string
+          title: Scan Status
+      type: object
+      required:
+      - id
+      - name
+      - mime_type
+      - scan_status
+      title: FixtureArtifactItem
+      description: One fixture artifact with its virus-scan state.
+    FixtureArtifactUploadUrlRequest:
+      properties:
+        filename:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Filename
+        mime_type:
+          type: string
+          maxLength: 150
+          minLength: 1
+          title: Mime Type
+        file_size:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: File Size
+      type: object
+      required:
+      - filename
+      - mime_type
+      - file_size
+      title: FixtureArtifactUploadUrlRequest
+      description: Admin body to create a constrained fixture-artifact upload target.
+    FixtureArtifactUploadUrlResponse:
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+          title: Artifact Id
+        upload_url:
+          type: string
+          title: Upload Url
+        fields:
+          additionalProperties:
+            type: string
+          type: object
+          title: Fields
+        file_key:
+          type: string
+          title: File Key
+        max_size:
+          type: integer
+          title: Max Size
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - artifact_id
+      - upload_url
+      - fields
+      - file_key
+      - max_size
+      - expires_in
+      title: FixtureArtifactUploadUrlResponse
+      description: S3 presigned POST target for one fixture artifact.
+    FixtureArtifactsResponse:
+      properties:
+        artifacts:
+          items:
+            $ref: '#/components/schemas/FixtureArtifactItem'
+          type: array
+          title: Artifacts
+      type: object
+      required:
+      - artifacts
+      title: FixtureArtifactsResponse
+      description: All artifacts attached to one calibration fixture.
     ForgotPasswordRequest:
       properties:
         email:
@@ -21383,12 +21645,10 @@ components:
       - refresh_url
       - return_url
       title: OrgPayoutAccountOnboardRequest
-      description: 'Request body for onboarding an organization payout destination.
-
-
-        The organization''s registered ``country`` is authoritative for provider
-
-        routing, so — unlike the individual request — no country is accepted here.'
+      description: "Request body for onboarding an organization payout destination.\n\
+        \nThe organization's registered ``country`` is authoritative for provider\n\
+        routing, so \u2014 unlike the individual request \u2014 no country is accepted\
+        \ here."
     OrgProposalCreateRequest:
       properties:
         scope:
@@ -23445,12 +23705,9 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: 'Verified Credential fields safe for public profile display.
-
-
-        Never exposes evidence keys, verification URL, reference number, or review
-
-        metadata — anti-gaming and PII protection.'
+      description: "Verified Credential fields safe for public profile display.\n\n\
+        Never exposes evidence keys, verification URL, reference number, or review\n\
+        metadata \u2014 anti-gaming and PII protection."
     PublicOrganizationResponse:
       properties:
         slug:
@@ -24319,6 +24576,51 @@ components:
         enable/disable endpoints leave it at the default since the count is not
 
         relevant to their result.'
+    TrialAnswerKeyItem:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        label:
+          type: string
+          title: Label
+        expected_score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Expected Score
+        tolerance:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tolerance
+      type: object
+      required:
+      - dimension_id
+      - label
+      - expected_score
+      - tolerance
+      title: TrialAnswerKeyItem
+      description: One answer-key row joined to its rubric dimension, for the admin
+        editor.
+    TrialAnswerKeysResponse:
+      properties:
+        review_type:
+          type: string
+          title: Review Type
+        rows:
+          items:
+            $ref: '#/components/schemas/TrialAnswerKeyItem'
+          type: array
+          title: Rows
+      type: object
+      required:
+      - review_type
+      - rows
+      title: TrialAnswerKeysResponse
+      description: Every rubric dimension for a fixture with its answer-key value,
+        if set.
     TrialArtifactSchema:
       properties:
         name:
