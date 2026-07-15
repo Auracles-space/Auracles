@@ -196,7 +196,11 @@ async def test_queue_lists_and_filters(
 
     res = await client.get(_QUEUE, headers=auth(admin_id, ["admin"]))
     assert res.status_code == 200
-    assert res.json()["total"] == 1
+    body = res.json()
+    assert body["total"] == 1
+    # The gated fixture seeds a passed trial; the row must surface it so the
+    # admin queue can gate Approve without opening the full application.
+    assert body["applications"][0]["trial_status"] == "passed"
 
     filtered = await client.get(
         f"{_QUEUE}?status=needs_info", headers=auth(admin_id, ["admin"])

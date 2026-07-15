@@ -14,6 +14,7 @@ dependencies; this layer assumes an authorized org owner/admin actor.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
@@ -981,6 +982,40 @@ async def admin_list_applications(
     return list(rows), int(total or 0)
 
 
+async def admin_trial_states(
+    db: AsyncSession,
+    application_ids: Sequence[UUID],
+) -> dict[UUID, str]:
+    """Return the latest calibration-trial status per application.
+
+    A ``passed`` trial always wins; otherwise the highest-attempt trial's
+    status is reported. Applications with no trial are absent from the map.
+
+    Args:
+        db: Async session.
+        application_ids: Applications to resolve trial state for.
+
+    Returns:
+        Mapping of application id to its trial status enum value.
+    """
+    if not application_ids:
+        return {}
+    result = await db.execute(
+        select(
+            AttestorTrial.org_application_id,
+            AttestorTrial.status,
+        )
+        .where(AttestorTrial.org_application_id.in_(application_ids))
+        .order_by(AttestorTrial.attempt.asc())
+    )
+    states: dict[UUID, str] = {}
+    for app_id, trial_status in result:
+        if app_id is None or states.get(app_id) == "passed":
+            continue
+        states[app_id] = trial_status
+    return states
+
+
 async def admin_verify_kyb(
     db: AsyncSession,
     *,
@@ -1011,7 +1046,7 @@ async def admin_verify_kyb(
             keys.append(application.tax_document_key)
         if any(not s3.storage.object_exists(bucket, key) for key in keys):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
                     "One or more KYB/tax documents were not fully uploaded to "
                     "storage. Ask the organization to re-upload before verifying."

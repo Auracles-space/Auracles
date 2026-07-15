@@ -768,6 +768,11 @@ class OrgAttestorAdminListItem(BaseModel):
     reviewed_at: datetime | None
     created_at: datetime
     admin_feedback: str | None
+    # Latest calibration-trial state for this application: None if no trial has
+    # been assigned, else the enum value (assigned/passed/failed). Lets the
+    # admin queue gate Start Trial and Approve in sequence without opening the
+    # full application.
+    trial_status: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

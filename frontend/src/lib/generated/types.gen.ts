@@ -2671,6 +2671,7 @@ export type OrgAttestorAdminListItem = {
     reviewed_at: (string | null);
     created_at: string;
     admin_feedback: (string | null);
+    trial_status?: (string | null);
 };
 
 /**

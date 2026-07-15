@@ -46,11 +46,21 @@ function ErrorMessage({ message }: { message: string | null }) {
   );
 }
 
+function NoticeMessage({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <p className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success">
+      {message}
+    </p>
+  );
+}
+
 export function AdminOrgAttestorReviewPanel() {
   const [applications, setApplications] = useState<OrgAttestorAdminListItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("submitted");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [openFeedbackId, setOpenFeedbackId] = useState<string | null>(null);
@@ -71,6 +81,7 @@ export function AdminOrgAttestorReviewPanel() {
   async function loadQueue(status: StatusFilter) {
     setLoading(true);
     setError(null);
+    setNotice(null);
     configureBrowserClient();
     try {
       const result = await listOrgAttestorApplicationsForAdmin({
@@ -90,17 +101,30 @@ export function AdminOrgAttestorReviewPanel() {
     }
   }
 
-  function applyUpdate(updatedAppId: string, newStatus: string) {
+  function applyUpdate(
+    updatedAppId: string,
+    patch: Partial<OrgAttestorAdminListItem>,
+  ) {
     setApplications((current) =>
-      current.map((item) => (item.id === updatedAppId ? { ...item, status: newStatus } : item))
+      current.map((item) => (item.id === updatedAppId ? { ...item, ...patch } : item))
     );
   }
 
+  // Success messages per action. Verify KYB and Start Trial leave the
+  // application's status unchanged, so without an explicit confirmation the
+  // admin sees no feedback and assumes the click did nothing.
+  const ACTION_SUCCESS: Record<string, string> = {
+    verify_kyb: "KYB verified.",
+    start_trial: "Trial assigned to the nominated member.",
+    approve: "Application approved and attestor capability activated.",
+  };
+
   async function handleAction(applicationId: string, actionName: string) {
     setError(null);
+    setNotice(null);
     setBusyId(applicationId);
     configureBrowserClient();
-    
+
     try {
       let result;
       if (actionName === "verify_kyb") {
@@ -123,7 +147,19 @@ export function AdminOrgAttestorReviewPanel() {
       if (result && !result.response.ok) {
         setError(describeGeneratedError(result.error));
       } else if (result?.data) {
-        applyUpdate(applicationId, (result.data as { status?: string }).status || "updated");
+        const data = result.data as {
+          status?: string;
+          kyb_verified_at?: string | null;
+        };
+        // Merge every field the row displays, not just status — verify_kyb
+        // updates kyb_verified_at while leaving status put.
+        applyUpdate(applicationId, {
+          ...(data.status ? { status: data.status } : {}),
+          ...(data.kyb_verified_at !== undefined
+            ? { kyb_verified_at: data.kyb_verified_at }
+            : {}),
+        });
+        setNotice(ACTION_SUCCESS[actionName] ?? "Done.");
       }
     } catch {
       setError(`Failed to perform action: ${actionName}`);
@@ -160,7 +196,13 @@ export function AdminOrgAttestorReviewPanel() {
       if (result && !result.response.ok) {
         setError(describeGeneratedError(result.error));
       } else if (result?.data) {
-        applyUpdate(applicationId, (result.data as { status?: string }).status || "updated");
+        const status = (result.data as { status?: string }).status;
+        applyUpdate(applicationId, status ? { status } : {});
+        setNotice(
+          feedbackAction === "reject"
+            ? "Application rejected."
+            : "Sent back to the org for more information.",
+        );
         setOpenFeedbackId(null);
         setFeedbackText("");
         setFeedbackAction(null);
@@ -249,6 +291,7 @@ export function AdminOrgAttestorReviewPanel() {
       </div>
 
       <ErrorMessage message={error} />
+      <NoticeMessage message={notice} />
 
       <nav
         aria-label="Filter applications by status"
@@ -285,6 +328,31 @@ export function AdminOrgAttestorReviewPanel() {
         <div className="grid gap-4">
           {applications.map((app) => {
             const isBusy = busyId === app.id || busyId === app.org_id;
+
+            // Gates run in sequence: KYB → trial → approve. Only the next
+            // undone step is active; the rest stay disabled until their
+            // predecessor completes.
+            const underReview = UNDER_REVIEW.has(app.status);
+            const kybDone = Boolean(app.kyb_verified_at);
+            const trialPassed = app.trial_status === "passed";
+            const trialPending = app.trial_status === "assigned";
+            const canVerifyKyb = underReview && !kybDone;
+            const canStartTrial =
+              underReview && kybDone && !trialPassed && !trialPending;
+            const canApprove =
+              app.status === "submitted" && kybDone && trialPassed;
+
+            const nextStep = !underReview
+              ? null
+              : !kybDone
+                ? "Next: verify KYB."
+                : trialPending
+                  ? "Waiting on the nominee to complete the trial."
+                  : app.trial_status === "failed"
+                    ? "Trial failed — start it again to give the nominee another attempt."
+                    : !trialPassed
+                      ? "Next: start the calibration trial."
+                      : "All gates met — ready to approve.";
 
             return (
               <article
@@ -374,21 +442,24 @@ export function AdminOrgAttestorReviewPanel() {
 
                 <div className="mt-6 border-t border-border-default/45 pt-4">
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted mb-3">Application Actions</h3>
+                  {nextStep && (
+                    <p className="mb-3 text-sm text-foreground-muted">{nextStep}</p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      disabled={isBusy || !UNDER_REVIEW.has(app.status)}
+                      disabled={isBusy || !canVerifyKyb}
                       onClick={() => handleAction(app.id, "verify_kyb")}
                     >
                       Verify KYB
                     </Button>
                     <Button
-                      disabled={isBusy || !UNDER_REVIEW.has(app.status)}
+                      disabled={isBusy || !canStartTrial}
                       onClick={() => handleAction(app.id, "start_trial")}
                     >
                       Start Trial
                     </Button>
                     <Button
-                      disabled={isBusy || app.status !== "trial"}
+                      disabled={isBusy || !canApprove}
                       onClick={() => handleAction(app.id, "approve")}
                     >
                       Approve

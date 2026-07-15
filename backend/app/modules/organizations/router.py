@@ -2010,8 +2010,16 @@ async def admin_list_org_attestor_applications(
     rows, total = await attestor_application_service.admin_list_applications(
         db, status_filter=status_filter, page=page, page_size=page_size
     )
+    trial_states = await attestor_application_service.admin_trial_states(
+        db, [row.id for row in rows]
+    )
+    items: list[OrgAttestorAdminListItem] = []
+    for row in rows:
+        item = OrgAttestorAdminListItem.model_validate(row)
+        item.trial_status = trial_states.get(row.id)
+        items.append(item)
     return OrgAttestorAdminListResponse(
-        applications=[OrgAttestorAdminListItem.model_validate(row) for row in rows],
+        applications=items,
         total=total,
         page=page,
         page_size=page_size,

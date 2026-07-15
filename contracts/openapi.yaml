@@ -19705,6 +19705,12 @@ components:
           - type: string
           - type: 'null'
           title: Admin Feedback
+        trial_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trial Status
+          default: null
       type: object
       required:
       - id
