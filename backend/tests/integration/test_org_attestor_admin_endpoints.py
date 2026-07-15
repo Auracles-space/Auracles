@@ -9,6 +9,7 @@ submit → verify-kyb → ... → approve walk.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,9 +22,15 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
-from app.modules.attestation.models import AttestorTrial
+from app.modules.attestation import rubrics
+from app.modules.attestation.models import (
+    AttestationRubricDimension,
+    AttestorTrial,
+    AttestorTrialAnswerKey,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PayoutAccount
+from app.modules.frameworks.models import Framework
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
@@ -55,6 +62,7 @@ async def clean_state() -> AsyncIterator[FakeRedis]:
     async def cleanup() -> None:
         """Delete rows in FK order between tests."""
         async with async_session_factory() as session:
+            await session.execute(delete(AttestorTrialAnswerKey))
             await session.execute(delete(AttestorTrial))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgAttestorApplication))
@@ -63,6 +71,7 @@ async def clean_state() -> AsyncIterator[FakeRedis]:
             await session.execute(delete(OrgMember))
             await session.execute(delete(PayoutAccount))
             await session.execute(delete(Organization))
+            await session.execute(delete(Framework))
             await session.execute(delete(UserRole))
             await session.execute(delete(AuditLog))
             await session.commit()
@@ -116,6 +125,61 @@ async def _org(owner_id: UUID) -> UUID:
                 OrgCapability(org_id=org.id, capability="attestor", status="pending")
             )
             return org.id
+
+
+async def _create_calibration_fixture(contributor_id: UUID) -> UUID:
+    """Create one calibration fixture with a complete quality answer key."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            dimensions = (
+                await session.scalars(
+                    select(AttestationRubricDimension)
+                    .where(
+                        AttestationRubricDimension.review_type == "quality",
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                    .order_by(AttestationRubricDimension.display_order.asc())
+                )
+            ).all()
+            assert dimensions
+
+            framework = Framework(
+                id=uuid4(),
+                contributor_id=contributor_id,
+                title="Calibration Fixture",
+                description="Calibration framework fixture.",
+                version="1.0.0",
+                status="published",
+                is_calibration=True,
+                calibration_review_type="quality",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["risk"],
+                tags_text="risk",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("499.00"),
+                currency="USD",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+
+            for dimension in dimensions:
+                session.add(
+                    AttestorTrialAnswerKey(
+                        framework_id=framework.id,
+                        dimension_id=dimension.id,
+                        expected_score=4,
+                        tolerance=0,
+                    )
+                )
+            await session.flush()
+            return framework.id
 
 
 async def _gated_application(
@@ -230,6 +294,7 @@ async def test_full_gate_walk_to_approval(
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
+    fixture_id = await _create_calibration_fixture(owner_id)
     application_id = await _gated_application(
         org_id, owner_id, seed_kyb_and_trial=False
     )
@@ -241,7 +306,9 @@ async def test_full_gate_walk_to_approval(
     assert verified.json()["gate_checklist"]["kyb_verified"] is True
 
     trial = await client.post(
-        f"{_QUEUE}/{application_id}/start-trial", headers=auth(admin_id, ["admin"])
+        f"{_QUEUE}/{application_id}/start-trial",
+        headers=auth(admin_id, ["admin"]),
+        json={"framework_id": str(fixture_id)},
     )
     assert trial.status_code == 200
 
@@ -255,6 +322,7 @@ async def test_full_gate_walk_to_approval(
             )
         )
         assert assigned is not None and assigned.status == "assigned"
+        assert assigned.seeded_framework_id == fixture_id
         assigned.status = "passed"
         await session.commit()
 

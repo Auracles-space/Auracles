@@ -38,16 +38,20 @@ from app.core.security import (
     hash_payout_provider_account_id,
 )
 from app.main import app
+from app.modules.attestation import rubrics
 from app.modules.attestation.models import (
     Attestation,
     AttestationAnnotation,
     AttestationOffer,
+    AttestationRubricDimension,
     AttestationRubricScore,
     AttestorTrial,
+    AttestorTrialAnswerKey,
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.frameworks.models import Framework
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
@@ -122,6 +126,7 @@ async def clean_state(migrated_database: None) -> AsyncIterator[FakeRedis]:
                 await session.execute(delete(Attestation))
                 await session.execute(delete(Escrow))
                 await session.execute(delete(Transaction))
+                await session.execute(delete(AttestorTrialAnswerKey))
                 await session.execute(delete(AttestorTrial))
                 await session.execute(delete(OrgAttestorProfile))
                 await session.execute(delete(OrgAttestorApplication))
@@ -130,6 +135,7 @@ async def clean_state(migrated_database: None) -> AsyncIterator[FakeRedis]:
                 await session.execute(delete(OrgMember))
                 await session.execute(delete(PayoutAccount))
                 await session.execute(delete(Organization))
+                await session.execute(delete(Framework))
                 await session.execute(delete(UserRole))
                 await session.execute(delete(User))
 
@@ -227,6 +233,61 @@ async def _org_payout_account(org_id: UUID) -> UUID:
             session.add(account)
             await session.flush()
             return account.id
+
+
+async def _create_calibration_fixture(contributor_id: UUID) -> UUID:
+    """Create one calibration fixture with a complete quality answer key."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            dimensions = (
+                await session.scalars(
+                    select(AttestationRubricDimension)
+                    .where(
+                        AttestationRubricDimension.review_type == "quality",
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                    .order_by(AttestationRubricDimension.display_order.asc())
+                )
+            ).all()
+            assert dimensions
+
+            framework = Framework(
+                id=uuid4(),
+                contributor_id=contributor_id,
+                title="Lifecycle Calibration Fixture",
+                description="Lifecycle calibration framework fixture.",
+                version="1.0.0",
+                status="published",
+                is_calibration=True,
+                calibration_review_type="quality",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["risk"],
+                tags_text="risk",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("499.00"),
+                currency="USD",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+
+            for dimension in dimensions:
+                session.add(
+                    AttestorTrialAnswerKey(
+                        framework_id=framework.id,
+                        dimension_id=dimension.id,
+                        expected_score=4,
+                        tolerance=0,
+                    )
+                )
+            await session.flush()
+            return framework.id
 
 
 def _application_body() -> dict[str, object]:
@@ -343,6 +404,7 @@ async def test_org_attestor_full_lifecycle(
     owner_secret = pyotp.random_base32()
     owner_id = await _new_user("owner", totp_secret=owner_secret)
     reviewer_user_id = await _new_user("reviewer")
+    fixture_id = await _create_calibration_fixture(owner_id)
     org_id, _owner_member_id, reviewer_member_id = await _org_with_members(
         owner_id, reviewer_user_id
     )
@@ -419,7 +481,11 @@ async def test_org_attestor_full_lifecycle(
         await client.post(f"{admin_base}/verify-kyb", headers=admin_headers)
     ).status_code == 200
     assert (
-        await client.post(f"{admin_base}/start-trial", headers=admin_headers)
+        await client.post(
+            f"{admin_base}/start-trial",
+            headers=admin_headers,
+            json={"framework_id": str(fixture_id)},
+        )
     ).status_code == 200
     await _pass_trial(application_id)
     approved = await client.post(f"{admin_base}/approve", headers=admin_headers)

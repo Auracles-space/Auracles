@@ -7638,6 +7638,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-trial:
+    get:
+      tags:
+      - Organizations
+      summary: Load the nominee calibration trial
+      description: Return the nominated member's active calibration trial, including
+        the fixture, rubric, and any saved scores.
+      operationId: get_attestor_trial_v1_orgs__org_id__attestor_trial_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NomineeTrialResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/attestor-trial/submit:
+    post:
+      tags:
+      - Organizations
+      summary: Submit the nominee calibration trial
+      description: Persist the nominee's rubric scores and auto-score the active calibration
+        trial.
+      operationId: submit_attestor_trial_v1_orgs__org_id__attestor_trial_submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialSubmitRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NomineeTrialResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/attestation-offers:
     get:
       tags:
@@ -9020,6 +9088,12 @@ paths:
           type: string
           format: uuid
           title: Application Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStartTrialRequest'
       responses:
         '200':
           description: Successful Response
@@ -13331,6 +13405,17 @@ components:
       - approved
       title: AdminRoleAssignmentResponse
       description: Response body for admin role assignment.
+    AdminStartTrialRequest:
+      properties:
+        framework_id:
+          type: string
+          format: uuid
+          title: Framework Id
+      type: object
+      required:
+      - framework_id
+      title: AdminStartTrialRequest
+      description: Admin selection of the calibration fixture for a trial.
     AdminSuspendedFrameworkItem:
       properties:
         framework_id:
@@ -19342,6 +19427,55 @@ components:
       - organizations
       title: MyOrganizationsResponse
       description: List wrapper for the authenticated user's organizations.
+    NomineeTrialResponse:
+      properties:
+        trial_id:
+          type: string
+          format: uuid
+          title: Trial Id
+        status:
+          type: string
+          title: Status
+        framework_name:
+          type: string
+          title: Framework Name
+        framework_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Summary
+        artifacts:
+          items:
+            $ref: '#/components/schemas/TrialArtifactSchema'
+          type: array
+          title: Artifacts
+        dimensions:
+          items:
+            $ref: '#/components/schemas/TrialRubricDimensionSchema'
+          type: array
+          title: Dimensions
+        saved_scores:
+          items:
+            $ref: '#/components/schemas/TrialScoreInput'
+          type: array
+          title: Saved Scores
+        feedback:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feedback
+      type: object
+      required:
+      - trial_id
+      - status
+      - framework_name
+      - framework_summary
+      - artifacts
+      - dimensions
+      - saved_scores
+      - feedback
+      title: NomineeTrialResponse
+      description: The nominated member's live trial workspace view.
     NotificationItem:
       properties:
         id:
@@ -19710,7 +19844,6 @@ components:
           - type: string
           - type: 'null'
           title: Trial Status
-          default: null
       type: object
       required:
       - id
@@ -20082,11 +20215,14 @@ components:
       - filename
       - url
       title: OrgAttestorDocumentLink
-      description: >-
-        One presigned download link for an application's review document.
-        ``available`` is False when the reserved S3 key has no backing object
-        yet (an upload that never completed); the ``url`` is then empty and the
-        admin UI shows the document as incomplete rather than a broken link.
+      description: 'One presigned download link for an application''s review document.
+
+
+        ``available`` is False when the reserved S3 key has no backing object yet
+
+        (an upload that never completed); the ``url`` is then empty and the admin
+
+        UI shows the document as incomplete rather than a broken link.'
     OrgAttestorDocumentsResponse:
       properties:
         documents:
@@ -20098,7 +20234,12 @@ components:
       required:
       - documents
       title: OrgAttestorDocumentsResponse
-      description: Presigned GET links for an application's KYB and tax documents.
+      description: 'Presigned GET links for an application''s KYB and tax documents.
+
+
+        Documents live in the private bucket, so the admin panel receives
+
+        short-lived presigned URLs rather than durable paths.'
     OrgAttestorFeedbackRequest:
       properties:
         feedback:
@@ -20743,7 +20884,6 @@ components:
           type: boolean
           title: Nda Signed
           default: false
-          description: True iff the member holds a current-version platform NDA signature.
       type: object
       required:
       - id
@@ -23909,6 +24049,83 @@ components:
         enable/disable endpoints leave it at the default since the count is not
 
         relevant to their result.'
+    TrialArtifactSchema:
+      properties:
+        name:
+          type: string
+          title: Name
+        mime_type:
+          type: string
+          title: Mime Type
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - name
+      - mime_type
+      - url
+      title: TrialArtifactSchema
+      description: A calibration-fixture artifact with a short-lived presigned URL.
+    TrialRubricDimensionSchema:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        key:
+          type: string
+          title: Key
+        label:
+          type: string
+          title: Label
+        display_order:
+          type: integer
+          title: Display Order
+      type: object
+      required:
+      - dimension_id
+      - key
+      - label
+      - display_order
+      title: TrialRubricDimensionSchema
+      description: One rubric dimension the nominee must score for a trial.
+    TrialScoreInput:
+      properties:
+        dimension_id:
+          type: string
+          format: uuid
+          title: Dimension Id
+        score:
+          type: integer
+          maximum: 5.0
+          minimum: 1.0
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 5000
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - dimension_id
+      - score
+      title: TrialScoreInput
+      description: One nominee score submission for a trial dimension.
+    TrialSubmitRequest:
+      properties:
+        scores:
+          items:
+            $ref: '#/components/schemas/TrialScoreInput'
+          type: array
+          minItems: 1
+          title: Scores
+      type: object
+      required:
+      - scores
+      title: TrialSubmitRequest
+      description: Full nominee rubric submission for one trial.
     ValidationError:
       properties:
         loc:

@@ -701,6 +701,12 @@ class OrgNominateTrialMemberRequest(BaseModel):
     member_id: UUID
 
 
+class AdminStartTrialRequest(BaseModel):
+    """Admin selection of the calibration fixture for a trial."""
+
+    framework_id: UUID
+
+
 class OrgAttestorGateChecklist(BaseModel):
     """Per-gate readiness flags for an org attestor application.
 

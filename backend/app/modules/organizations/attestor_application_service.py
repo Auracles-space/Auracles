@@ -29,16 +29,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.attestation import rubrics
 from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_MAX_BYTES,
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
     _safe_file_name,
 )
-from app.modules.attestation.models import AttestorTrial
+from app.modules.attestation.models import (
+    AttestationRubricDimension,
+    AttestorTrial,
+    AttestorTrialAnswerKey,
+)
 from app.modules.attestation.schemas import CredentialEvidenceUploadSessionResponse
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
+from app.modules.frameworks.models import Framework
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
     OrgAttestorApplication,
@@ -1113,6 +1119,7 @@ async def admin_start_trial(
     *,
     application_id: UUID,
     admin_id: UUID,
+    framework_id: UUID,
 ) -> AttestorTrial:
     """Assign the calibration trial to the nominated org member.
 
@@ -1148,6 +1155,42 @@ async def admin_start_trial(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Nominated trial member not found.",
             )
+        fixture = await db.scalar(
+            select(Framework).where(
+                Framework.id == framework_id,
+                Framework.is_calibration.is_(True),
+            )
+        )
+        if fixture is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Selected framework is not a calibration fixture.",
+            )
+        dimension_ids = set(
+            (
+                await db.scalars(
+                    select(AttestationRubricDimension.id).where(
+                        AttestationRubricDimension.review_type
+                        == fixture.calibration_review_type,
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                )
+            ).all()
+        )
+        key_dimension_ids = set(
+            (
+                await db.scalars(
+                    select(AttestorTrialAnswerKey.dimension_id).where(
+                        AttestorTrialAnswerKey.framework_id == fixture.id
+                    )
+                )
+            ).all()
+        )
+        if not dimension_ids or key_dimension_ids != dimension_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Fixture answer key is incomplete for its rubric.",
+            )
         nominee_user_id = nominee.user_id
         org_id = application.org_id
         # Trials are attempt-capped (constraint: attempt in 1..2). Gate on the
@@ -1182,6 +1225,7 @@ async def admin_start_trial(
             org_application_id=application_id,
             org_id=application.org_id,
             member_id=application.trial_member_id,
+            seeded_framework_id=fixture.id,
             status="assigned",
             attempt=next_attempt,
         )

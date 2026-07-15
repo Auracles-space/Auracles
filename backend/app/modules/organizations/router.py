@@ -56,6 +56,7 @@ from app.modules.organizations.dependencies import (
 from app.modules.organizations.models import OrgAttestorApplication, OrgLegalProfile
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
+    AdminStartTrialRequest,
     ContributorOrgDirectoryEntry,
     ContributorOrgDirectoryResponse,
     LogoConfirmRequest,
@@ -2149,11 +2150,17 @@ async def admin_needs_info(
     description="Assign the calibration trial to the nominated org member.",
 )
 async def admin_start_trial(
-    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    application_id: UUID,
+    payload: AdminStartTrialRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> OrgAttestorApplicationResponse:
     """Assign the calibration trial to the nominated member."""
     await attestor_application_service.admin_start_trial(
-        db, application_id=application_id, admin_id=admin.id
+        db,
+        application_id=application_id,
+        admin_id=admin.id,
+        framework_id=payload.framework_id,
     )
     application, checklist = (
         await attestor_application_service.get_application_by_id(

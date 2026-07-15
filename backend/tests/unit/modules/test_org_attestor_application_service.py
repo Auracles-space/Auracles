@@ -9,6 +9,7 @@ application flow of docs/superpowers/specs/2026-07-04-org-attestor-design.md.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -22,9 +23,15 @@ from sqlalchemy import create_engine, delete, select
 from app.core.database import async_session_factory, engine
 from app.core.security import encrypt_totp_secret, hash_password
 from app.main import app
-from app.modules.attestation.models import AttestorTrial
+from app.modules.attestation import rubrics
+from app.modules.attestation.models import (
+    AttestationRubricDimension,
+    AttestorTrial,
+    AttestorTrialAnswerKey,
+)
 from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
+from app.modules.frameworks.models import Framework
 from app.modules.organizations import attestor_application_service as svc
 from app.modules.organizations import nda_service
 from app.modules.organizations.models import (
@@ -91,6 +98,7 @@ async def app_state(migrated_database: None) -> AsyncIterator[None]:
     async def cleanup() -> None:
         """Delete rows in FK order before shared identity cleanup."""
         async with async_session_factory() as session:
+            await session.execute(delete(AttestorTrialAnswerKey))
             await session.execute(delete(AttestorTrial))
             await session.execute(delete(OrgAttestorApplication))
             await session.execute(delete(OrgMemberNda))
@@ -98,6 +106,7 @@ async def app_state(migrated_database: None) -> AsyncIterator[None]:
             await session.execute(delete(OrgMember))
             await session.execute(delete(PayoutAccount))
             await session.execute(delete(Organization))
+            await session.execute(delete(Framework))
             await clear_identity_state_async(session)
             await session.commit()
 
@@ -203,6 +212,77 @@ async def _load_user(user_id: UUID) -> User:
         user = await session.get(User, user_id)
         assert user is not None
         return user
+
+
+async def _create_calibration_fixture(*, omit_last_key: bool) -> Framework:
+    """Create one calibration fixture, optionally omitting one key row."""
+    _, owner = await _create_org()
+    async with async_session_factory() as session:
+        async with session.begin():
+            dimensions = (
+                await session.scalars(
+                    select(AttestationRubricDimension)
+                    .where(
+                        AttestationRubricDimension.review_type == "quality",
+                        AttestationRubricDimension.version == rubrics.RUBRIC_VERSION,
+                    )
+                    .order_by(AttestationRubricDimension.display_order.asc())
+                )
+            ).all()
+            assert dimensions
+
+            framework = Framework(
+                id=uuid4(),
+                contributor_id=owner.user_id,
+                title="Calibration Fixture",
+                description="Calibration framework fixture.",
+                version="1.0.0",
+                status="published",
+                is_calibration=True,
+                calibration_review_type="quality",
+                category="framework",
+                sector="financial_services",
+                industry="fund_management",
+                business_function="risk_management",
+                tags=["risk"],
+                tags_text="risk",
+                jurisdiction="us",
+                complexity=3,
+                org_size="mid_market",
+                lifecycle_stage="scale",
+                price=Decimal("499.00"),
+                currency="USD",
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+
+            keyed_dimensions = dimensions[:-1] if omit_last_key else dimensions
+            for dimension in keyed_dimensions:
+                session.add(
+                    AttestorTrialAnswerKey(
+                        framework_id=framework.id,
+                        dimension_id=dimension.id,
+                        expected_score=4,
+                        tolerance=0,
+                    )
+                )
+            await session.flush()
+            return framework
+
+
+@pytest.fixture
+async def calibration_fixture(app_state: None) -> Framework:
+    """Create one calibration fixture with a complete answer key."""
+    del app_state
+    return await _create_calibration_fixture(omit_last_key=False)
+
+
+@pytest.fixture
+async def fixture_missing_key(app_state: None) -> Framework:
+    """Create one calibration fixture missing an answer-key row."""
+    del app_state
+    return await _create_calibration_fixture(omit_last_key=True)
 
 
 async def test_create_rejects_second_live_application(app_state: None) -> None:
@@ -522,7 +602,9 @@ async def test_gate_checklist_reflects_admin_and_trial_stamps(app_state: None) -
 
 
 async def test_admin_start_trial_notifies_member(
-    app_state: None, monkeypatch: pytest.MonkeyPatch
+    app_state: None,
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Starting the trial queues an in-app + email notification to the nominee.
 
@@ -554,13 +636,52 @@ async def test_admin_start_trial_notifies_member(
 
     async with async_session_factory() as session:
         await svc.admin_start_trial(
-            session, application_id=application_id, admin_id=owner.user_id
+            session,
+            application_id=application_id,
+            admin_id=owner.user_id,
+            framework_id=calibration_fixture.id,
         )
 
     assert len(calls) == 1
     assert calls[0]["user_id"] == str(owner.user_id)
     assert calls[0]["notification_type"] == "org_attestor_trial_assigned"
     assert str(org_id) in str(calls[0]["link"])
+
+
+async def test_admin_start_trial_sets_seeded_framework(
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Starting the trial with a valid fixture stamps seeded_framework_id."""
+    application_id, _, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        trial = await svc.admin_start_trial(
+            session,
+            application_id=application_id,
+            admin_id=admin_id,
+            framework_id=calibration_fixture.id,
+        )
+
+    assert trial.seeded_framework_id == calibration_fixture.id
+    assert trial.status == "assigned"
+
+
+async def test_admin_start_trial_rejects_incomplete_key(
+    fixture_missing_key: Framework,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fixture missing a key row for its rubric is rejected with 422."""
+    application_id, _, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_start_trial(
+                session,
+                application_id=application_id,
+                admin_id=admin_id,
+                framework_id=fixture_missing_key.id,
+            )
+
+    assert exc.value.status_code == 422
 
 
 async def _submitted_app_with_nominee(
@@ -594,7 +715,9 @@ async def _submitted_app_with_nominee(
 
 
 async def test_admin_start_trial_is_idempotent_while_assigned(
-    app_state: None, monkeypatch: pytest.MonkeyPatch
+    app_state: None,
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Starting the trial twice must not stack a second assigned trial.
 
@@ -606,12 +729,18 @@ async def test_admin_start_trial_is_idempotent_while_assigned(
     application_id, _, admin_id = await _submitted_app_with_nominee(monkeypatch)
     async with async_session_factory() as session:
         first = await svc.admin_start_trial(
-            session, application_id=application_id, admin_id=admin_id
+            session,
+            application_id=application_id,
+            admin_id=admin_id,
+            framework_id=calibration_fixture.id,
         )
         first_id = first.id
     async with async_session_factory() as session:
         second = await svc.admin_start_trial(
-            session, application_id=application_id, admin_id=admin_id
+            session,
+            application_id=application_id,
+            admin_id=admin_id,
+            framework_id=calibration_fixture.id,
         )
         assert second.id == first_id
     async with async_session_factory() as session:
@@ -627,7 +756,9 @@ async def test_admin_start_trial_is_idempotent_while_assigned(
 
 
 async def test_admin_start_trial_retries_after_failure(
-    app_state: None, monkeypatch: pytest.MonkeyPatch
+    app_state: None,
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed first attempt allows a second, with attempt incremented."""
     application_id, member_id, admin_id = await _submitted_app_with_nominee(monkeypatch)
@@ -646,14 +777,19 @@ async def test_admin_start_trial_retries_after_failure(
         await session.commit()
     async with async_session_factory() as session:
         retry = await svc.admin_start_trial(
-            session, application_id=application_id, admin_id=admin_id
+            session,
+            application_id=application_id,
+            admin_id=admin_id,
+            framework_id=calibration_fixture.id,
         )
         assert retry.attempt == 2
         assert retry.status == "assigned"
 
 
 async def test_admin_start_trial_caps_attempts_at_two(
-    app_state: None, monkeypatch: pytest.MonkeyPatch
+    app_state: None,
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A second failed attempt is terminal — no third trial, a clean 422.
 
@@ -677,13 +813,18 @@ async def test_admin_start_trial_caps_attempts_at_two(
     async with async_session_factory() as session:
         with pytest.raises(HTTPException) as exc:
             await svc.admin_start_trial(
-                session, application_id=application_id, admin_id=admin_id
+                session,
+                application_id=application_id,
+                admin_id=admin_id,
+                framework_id=calibration_fixture.id,
             )
     assert exc.value.status_code == 422
 
 
 async def test_admin_start_trial_rejects_when_already_passed(
-    app_state: None, monkeypatch: pytest.MonkeyPatch
+    app_state: None,
+    calibration_fixture: Framework,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Once a trial has passed, starting again is a 409 conflict."""
     application_id, member_id, admin_id = await _submitted_app_with_nominee(monkeypatch)
@@ -703,7 +844,10 @@ async def test_admin_start_trial_rejects_when_already_passed(
     async with async_session_factory() as session:
         with pytest.raises(HTTPException) as exc:
             await svc.admin_start_trial(
-                session, application_id=application_id, admin_id=admin_id
+                session,
+                application_id=application_id,
+                admin_id=admin_id,
+                framework_id=calibration_fixture.id,
             )
     assert exc.value.status_code == 409
 
