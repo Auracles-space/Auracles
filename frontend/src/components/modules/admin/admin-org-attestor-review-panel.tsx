@@ -152,12 +152,16 @@ export function AdminOrgAttestorReviewPanel() {
           kyb_verified_at?: string | null;
         };
         // Merge every field the row displays, not just status — verify_kyb
-        // updates kyb_verified_at while leaving status put.
+        // updates kyb_verified_at while leaving status put. start_trial's
+        // response is the application (no trial_status), so reflect the
+        // freshly-assigned trial here or the gate never advances and Start
+        // Trial re-enables for a re-assign.
         applyUpdate(applicationId, {
           ...(data.status ? { status: data.status } : {}),
           ...(data.kyb_verified_at !== undefined
             ? { kyb_verified_at: data.kyb_verified_at }
             : {}),
+          ...(actionName === "start_trial" ? { trial_status: "assigned" } : {}),
         });
         setNotice(ACTION_SUCCESS[actionName] ?? "Done.");
       }

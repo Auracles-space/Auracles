@@ -563,6 +563,151 @@ async def test_admin_start_trial_notifies_member(
     assert str(org_id) in str(calls[0]["link"])
 
 
+async def _submitted_app_with_nominee(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[UUID, UUID, UUID]:
+    """Seed a submitted application with a nominated trial member.
+
+    Silences the notification dispatch so tests exercise only the trial
+    state machine. Returns (application_id, member_id, admin_user_id).
+    """
+    org_id, owner = await _create_org(attestor_status="pending")
+    async with async_session_factory() as session:
+        application = await svc.create_application(
+            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
+        )
+        application_id = application.id
+    async with async_session_factory() as session:
+        row = await session.get(OrgAttestorApplication, application_id)
+        assert row is not None
+        row.status = "submitted"
+        row.trial_member_id = owner.member_id
+
+        await session.commit()
+
+    class _FakeTask:
+        def delay(self, **kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(svc, "dispatch_project_notification", _FakeTask())
+    return application_id, owner.member_id, owner.user_id
+
+
+async def test_admin_start_trial_is_idempotent_while_assigned(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Starting the trial twice must not stack a second assigned trial.
+
+    A double-click (or a UI that re-enables the button) previously inserted a
+    fresh AttestorTrial per call, marching ``attempt`` past its check
+    constraint. While a trial is already ``assigned`` the second call is a
+    no-op returning the existing trial.
+    """
+    application_id, _, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        first = await svc.admin_start_trial(
+            session, application_id=application_id, admin_id=admin_id
+        )
+        first_id = first.id
+    async with async_session_factory() as session:
+        second = await svc.admin_start_trial(
+            session, application_id=application_id, admin_id=admin_id
+        )
+        assert second.id == first_id
+    async with async_session_factory() as session:
+        rows = (
+            await session.scalars(
+                select(AttestorTrial).where(
+                    AttestorTrial.org_application_id == application_id
+                )
+            )
+        ).all()
+    assert len(rows) == 1
+    assert rows[0].attempt == 1
+
+
+async def test_admin_start_trial_retries_after_failure(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed first attempt allows a second, with attempt incremented."""
+    application_id, member_id, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        row = await session.get(OrgAttestorApplication, application_id)
+        assert row is not None
+        session.add(
+            AttestorTrial(
+                org_application_id=application_id,
+                org_id=row.org_id,
+                member_id=member_id,
+                status="failed",
+                attempt=1,
+            )
+        )
+        await session.commit()
+    async with async_session_factory() as session:
+        retry = await svc.admin_start_trial(
+            session, application_id=application_id, admin_id=admin_id
+        )
+        assert retry.attempt == 2
+        assert retry.status == "assigned"
+
+
+async def test_admin_start_trial_caps_attempts_at_two(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second failed attempt is terminal — no third trial, a clean 422.
+
+    The check constraint caps ``attempt`` at 2; the service must reject the
+    third start with a typed error instead of an IntegrityError.
+    """
+    application_id, member_id, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        row = await session.get(OrgAttestorApplication, application_id)
+        assert row is not None
+        session.add(
+            AttestorTrial(
+                org_application_id=application_id,
+                org_id=row.org_id,
+                member_id=member_id,
+                status="failed",
+                attempt=2,
+            )
+        )
+        await session.commit()
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_start_trial(
+                session, application_id=application_id, admin_id=admin_id
+            )
+    assert exc.value.status_code == 422
+
+
+async def test_admin_start_trial_rejects_when_already_passed(
+    app_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once a trial has passed, starting again is a 409 conflict."""
+    application_id, member_id, admin_id = await _submitted_app_with_nominee(monkeypatch)
+    async with async_session_factory() as session:
+        row = await session.get(OrgAttestorApplication, application_id)
+        assert row is not None
+        session.add(
+            AttestorTrial(
+                org_application_id=application_id,
+                org_id=row.org_id,
+                member_id=member_id,
+                status="passed",
+                attempt=1,
+            )
+        )
+        await session.commit()
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc:
+            await svc.admin_start_trial(
+                session, application_id=application_id, admin_id=admin_id
+            )
+    assert exc.value.status_code == 409
+
+
 @pytest.mark.parametrize(
     "notification_type",
     ["org_attestor_trial_nominated", "org_attestor_trial_assigned"],

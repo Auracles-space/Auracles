@@ -76,6 +76,11 @@ DOCUMENT_DOWNLOAD_TTL_SECONDS = 900
 # after that prefix.
 _UUID_KEY_PREFIX_LEN = 37
 
+# Calibration trial attempt cap. Mirrors the DB check constraint
+# ck_attestor_trials_attempt_range (attempt in 1..2): the nominee gets at most
+# two shots before the attempt is spent.
+_MAX_TRIAL_ATTEMPTS = 2
+
 # CoI/confidentiality validity window: the undertakings gate stamps
 # coi_expires_at one year out.
 COI_VALIDITY = timedelta(days=365)
@@ -1111,10 +1116,15 @@ async def admin_start_trial(
 ) -> AttestorTrial:
     """Assign the calibration trial to the nominated org member.
 
+    Idempotent while a trial is already assigned: a repeat call returns the
+    in-flight trial rather than stacking another attempt.
+
     Raises:
-        HTTPException(404): If the application does not exist.
-        HTTPException(409): If the application is not under review.
-        HTTPException(422): If no trial member has been nominated.
+        HTTPException(404): If the application (or nominee) does not exist.
+        HTTPException(409): If the application is not under review, or the
+            trial has already passed.
+        HTTPException(422): If no trial member has been nominated, or both
+            trial attempts are already spent.
     """
     if db.in_transaction():
         await db.rollback()
@@ -1140,17 +1150,40 @@ async def admin_start_trial(
             )
         nominee_user_id = nominee.user_id
         org_id = application.org_id
-        attempts = await db.scalar(
-            select(func.count())
-            .select_from(AttestorTrial)
+        # Trials are attempt-capped (constraint: attempt in 1..2). Gate on the
+        # latest trial so a re-click never stacks another row past the cap:
+        #  - assigned  -> already in flight; idempotent no-op, return it
+        #  - passed    -> terminal success; 409
+        #  - failed    -> retry with the next attempt, unless the cap is spent
+        latest = await db.scalar(
+            select(AttestorTrial)
             .where(AttestorTrial.org_application_id == application_id)
+            .order_by(AttestorTrial.attempt.desc())
+            .limit(1)
         )
+        if latest is not None:
+            if latest.status == "assigned":
+                return latest
+            if latest.status == "passed":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The trial has already passed for this application.",
+                )
+            # latest.status == "failed" — retry path.
+            if latest.attempt >= _MAX_TRIAL_ATTEMPTS:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="No trial attempts remain for this application.",
+                )
+            next_attempt = latest.attempt + 1
+        else:
+            next_attempt = 1
         trial = AttestorTrial(
             org_application_id=application_id,
             org_id=application.org_id,
             member_id=application.trial_member_id,
             status="assigned",
-            attempt=int(attempts or 0) + 1,
+            attempt=next_attempt,
         )
         db.add(trial)
         await db.flush()

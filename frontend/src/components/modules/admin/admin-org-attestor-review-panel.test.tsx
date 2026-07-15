@@ -4,6 +4,7 @@ import { AdminOrgAttestorReviewPanel } from "@/components/modules/admin/admin-or
 import {
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
+  startOrgAttestorTrial,
   verifyOrgAttestorKyb,
 } from "@/lib/generated/sdk.gen";
 
@@ -110,6 +111,33 @@ describe("AdminOrgAttestorReviewPanel", () => {
     expect(verify[2]).toBeDisabled();
     expect(start[2]).toBeDisabled();
     expect(approve[2]).not.toBeDisabled();
+  });
+
+  it("holds Start Trial after assigning it, without a page reload", async () => {
+    // Start Trial returns the application response (no trial_status). If the
+    // panel does not reflect the freshly-assigned trial locally, the button
+    // re-enables and the admin can re-assign — the reported flicker.
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [
+        { id: "app-1", org_id: "org-1", legal_name: "Ready Org", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 10
+    }));
+    vi.mocked(startOrgAttestorTrial).mockResolvedValue(
+      ok({ id: "app-1", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z" }) as never,
+    );
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Ready Org/));
+
+    const start = screen.getByRole("button", { name: /start trial/i });
+    expect(start).not.toBeDisabled();
+    fireEvent.click(start);
+    await screen.findByText(/Trial assigned/i);
+    // The gate must advance: Start Trial locks and the next-step copy flips.
+    expect(screen.getByRole("button", { name: /start trial/i })).toBeDisabled();
+    expect(screen.getByText(/Waiting on the nominee/i)).toBeTruthy();
   });
 
   it("holds Start Trial while a trial is pending and offers a retry after a failure", async () => {

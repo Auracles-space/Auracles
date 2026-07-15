@@ -118,8 +118,15 @@ async def _org(owner_id: UUID) -> UUID:
             return org.id
 
 
-async def _gated_application(org_id: UUID, owner_id: UUID) -> UUID:
-    """Create a submitted application with all gates satisfied; return its id."""
+async def _gated_application(
+    org_id: UUID, owner_id: UUID, *, seed_kyb_and_trial: bool = True
+) -> UUID:
+    """Create a submitted application with all gates satisfied; return its id.
+
+    With ``seed_kyb_and_trial=False`` the KYB stamp and passed trial are left
+    off, so a test can drive the verify-kyb → start-trial → approve walk
+    through the real endpoints.
+    """
     from datetime import UTC, datetime
 
     now = datetime.now(UTC)
@@ -153,7 +160,7 @@ async def _gated_application(org_id: UUID, owner_id: UUID) -> UUID:
                 credentials_summary="Two decades of PE compliance experience.",
                 sample_work={},
                 professional_references="Jane Roe, MD.",
-                kyb_verified_at=now,
+                kyb_verified_at=now if seed_kyb_and_trial else None,
                 coi_declarations=[],
                 coi_signed_at=now,
                 coi_expires_at=now,
@@ -165,14 +172,15 @@ async def _gated_application(org_id: UUID, owner_id: UUID) -> UUID:
             )
             session.add(application)
             await session.flush()
-            session.add(
-                AttestorTrial(
-                    org_application_id=application.id,
-                    org_id=org_id,
-                    member_id=member.id,
-                    status="passed",
+            if seed_kyb_and_trial:
+                session.add(
+                    AttestorTrial(
+                        org_application_id=application.id,
+                        org_id=org_id,
+                        member_id=member.id,
+                        status="passed",
+                    )
                 )
-            )
             return application.id
 
 
@@ -222,7 +230,9 @@ async def test_full_gate_walk_to_approval(
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
-    application_id = await _gated_application(org_id, owner_id)
+    application_id = await _gated_application(
+        org_id, owner_id, seed_kyb_and_trial=False
+    )
 
     verified = await client.post(
         f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
@@ -234,6 +244,19 @@ async def test_full_gate_walk_to_approval(
         f"{_QUEUE}/{application_id}/start-trial", headers=auth(admin_id, ["admin"])
     )
     assert trial.status_code == 200
+
+    # start-trial assigns the calibration trial; the nominee completing it and
+    # the admin deciding it (Module 4, deferred) is simulated here by flipping
+    # the assigned trial to passed so the approve gate opens.
+    async with async_session_factory() as session:
+        assigned = await session.scalar(
+            select(AttestorTrial).where(
+                AttestorTrial.org_application_id == application_id
+            )
+        )
+        assert assigned is not None and assigned.status == "assigned"
+        assigned.status = "passed"
+        await session.commit()
 
     approved = await client.post(
         f"{_QUEUE}/{application_id}/approve", headers=auth(admin_id, ["admin"])
