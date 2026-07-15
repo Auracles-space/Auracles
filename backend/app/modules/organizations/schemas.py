@@ -753,6 +753,81 @@ class OrgAttestorApplicationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TrialRubricDimensionSchema(BaseModel):
+    """One rubric dimension the nominee must score for a trial."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dimension_id: UUID
+    key: str
+    label: str
+    display_order: int
+
+
+class TrialArtifactSchema(BaseModel):
+    """A calibration-fixture artifact with a short-lived presigned URL."""
+
+    name: str
+    mime_type: str
+    url: str
+
+
+class TrialScoreInput(BaseModel):
+    """One nominee score submission for a trial dimension."""
+
+    dimension_id: UUID
+    score: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=5000)
+
+
+class TrialSubmitRequest(BaseModel):
+    """Full nominee rubric submission for one trial."""
+
+    scores: list[TrialScoreInput] = Field(min_length=1)
+
+
+class NomineeTrialResponse(BaseModel):
+    """The nominated member's live trial workspace view."""
+
+    trial_id: UUID
+    status: str
+    framework_name: str
+    framework_summary: str | None
+    artifacts: list[TrialArtifactSchema]
+    dimensions: list[TrialRubricDimensionSchema]
+    saved_scores: list[TrialScoreInput]
+    feedback: str | None
+
+
+class AdminTrialGradeRow(BaseModel):
+    """Per-dimension nominee-vs-key comparison for admin grading."""
+
+    dimension_id: UUID
+    label: str
+    weight: Decimal
+    nominee_score: int | None
+    nominee_comment: str | None
+    expected_score: int
+    tolerance: int
+
+
+class AdminTrialGradeResponse(BaseModel):
+    """Admin trial-grade view with the auto-score suggestion."""
+
+    trial_id: UUID
+    status: str
+    score_pct: Decimal | None
+    auto_result: str | None
+    rows: list[AdminTrialGradeRow]
+
+
+class TrialDecideRequest(BaseModel):
+    """Admin confirmation or override of a trial outcome."""
+
+    result: Literal["pass", "fail"]
+    feedback: str | None = Field(default=None, max_length=5000)
+
+
 class OrgAttestorAdminListItem(BaseModel):
     """Slim admin-queue row for one org attestor application.
 
