@@ -264,6 +264,8 @@ def _base_catalog_query(current_user_id: UUID | None) -> Select[tuple[Framework]
     )
     query = select(Framework).where(
         Framework.status == "published",
+        # Calibration fixtures are never marketplace-visible.
+        Framework.is_calibration.is_(False),
         or_(
             and_(
                 Framework.contributor_id.is_not(None),
@@ -1378,6 +1380,8 @@ async def get_contributor_profile(
             select(func.count(Framework.id)).where(
                 Framework.contributor_id == contributor_id,
                 Framework.status == "published",
+                # Calibration fixtures are never marketplace-visible.
+                Framework.is_calibration.is_(False),
             )
         )
         or 0
@@ -1393,6 +1397,8 @@ async def get_contributor_profile(
         .where(
             Framework.contributor_id == contributor_id,
             Framework.status == "published",
+            # Calibration fixtures are never marketplace-visible.
+            Framework.is_calibration.is_(False),
         )
         .order_by(desc(Framework.published_at).nullslast(), Framework.created_at.desc())
         .limit(12)
@@ -1496,6 +1502,8 @@ async def public_framework_cards(
                 select(Framework).where(
                     Framework.id.in_(framework_ids),
                     Framework.status == "published",
+                    # Calibration fixtures are never marketplace-visible.
+                    Framework.is_calibration.is_(False),
                 )
             )
         )
