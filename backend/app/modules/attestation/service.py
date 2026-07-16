@@ -297,6 +297,83 @@ async def fund_attestation(
     )
 
 
+async def get_attestation_fee_payment(
+    db: AsyncSession,
+    requestor: User,
+    *,
+    attestation_id: UUID,
+) -> AttestationFundingResponse:
+    """Return the client secret to resume payment of a pending attestation fee.
+
+    The PaymentIntent was created when the request was funded; this re-returns
+    its existing secret so the requestor can complete an unpaid fee without
+    minting a duplicate intent or moving any escrow.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated user resuming payment.
+        attestation_id: Attestation whose fee is being paid.
+
+    Returns:
+        Funding details including the existing PaymentIntent client secret.
+
+    Raises:
+        HTTPException(404): The attestation does not exist or is not owned by
+            the requestor.
+        HTTPException(409): The attestation is not awaiting payment or has no
+            pending fee PaymentIntent.
+        HTTPException(502): The payment provider could not be reached.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None or attestation.requestor_id != requestor.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    if attestation.status != "pending_fee":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation is not awaiting payment.",
+        )
+
+    transaction = await db.scalar(
+        select(Transaction).where(
+            Transaction.ref_id == attestation_id,
+            Transaction.ref_type == "attestation",
+            Transaction.status == "pending",
+        )
+    )
+    if transaction is None or transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No pending fee payment for this attestation.",
+        )
+
+    try:
+        payment_intent = await stripe.retrieve_payment_intent(
+            transaction.provider_ref
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="attestation",
+            action="get_attestation_fee_payment",
+            user_id=requestor.id,
+            transaction_id=transaction.id,
+            attestation_id=attestation_id,
+        ).error("stripe_payment_intent_retrieve_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    return AttestationFundingResponse(
+        id=attestation_id,
+        transaction_id=transaction.id,
+        provider="stripe",
+        client_secret=payment_intent.client_secret,
+    )
+
+
 async def _ensure_stripe_customer(db: AsyncSession, requestor: User) -> str:
     """Return the requestor Stripe customer id, creating one if missing."""
     if requestor.stripe_customer_id is not None:

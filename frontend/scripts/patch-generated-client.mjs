@@ -49,6 +49,7 @@ const compatibilityAliases = {
   requestDeliverableRevision: "requestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPost",
   forgotPassword: "forgotPasswordV1AuthForgotPasswordPost",
   fundMilestone: "fundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPost",
+  getAttestationFeePayment: "getAttestationFeePaymentV1AttestationsAttestationIdPaymentGet",
   getContributorEarnings: "getContributorEarningsV1FinancialsEarningsGet",
   getContributorFramework: "getFrameworkV1FrameworksFrameworkIdGet",
   getCurrentUser: "meV1AuthMeGet",

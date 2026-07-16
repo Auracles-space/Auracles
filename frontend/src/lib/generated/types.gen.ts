@@ -4781,6 +4781,16 @@ export type FundAttestationV1AttestationsAttestationIdFundPostResponse = (Attest
 
 export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValidationError);
 
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetResponse = (AttestationFundingResponse);
+
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetError = (HTTPValidationError);
+
 export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {
         function?: (string | null);

@@ -231,8 +231,24 @@ async def _stub_stripe(monkeypatch: pytest.MonkeyPatch) -> None:
             "pi_framework_attestation_secret",
         )
 
+    async def fake_retrieve_payment_intent(
+        payment_intent_id: str,
+        *,
+        settings: object | None = None,
+        client: object | None = None,
+    ) -> FakeStripePaymentIntent:
+        """Return the fake PaymentIntent for a stored provider ref."""
+        del settings, client
+        return FakeStripePaymentIntent(
+            payment_intent_id,
+            f"{payment_intent_id}_secret",
+        )
+
     monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
     monkeypatch.setattr(stripe, "create_payment_intent", fake_create_payment_intent)
+    monkeypatch.setattr(
+        stripe, "retrieve_payment_intent", fake_retrieve_payment_intent
+    )
 
 
 async def _create_framework(owner_id: UUID, status_value: str = "published") -> UUID:
@@ -377,6 +393,76 @@ async def test_framework_request_persists_review_type_and_brief(
     assert audit.metadata_["review_type"] == "compliance"
     assert audit.metadata_["brief_provided"] is True
     assert audit.metadata_["initiator_is_owner"] is True
+
+
+async def test_pending_fee_request_returns_resumable_payment_secret(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The payment endpoint re-returns the existing PaymentIntent secret."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("resume-fee@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    created = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+        },
+    )
+    assert created.status_code == 201
+    attestation_id = created.json()["id"]
+
+    resumed = await client.get(
+        f"/v1/attestations/{attestation_id}/payment",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert resumed.status_code == 200
+    body = resumed.json()
+    assert body["id"] == attestation_id
+    assert body["client_secret"] == "pi_framework_attestation_secret"
+
+
+async def test_payment_secret_denied_to_non_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user who does not own the request cannot fetch its payment secret."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("owner-fee@auracles.space", ["contributor"])
+    intruder_id = await create_user("intruder-fee@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    created = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+        },
+    )
+    assert created.status_code == 201
+    attestation_id = created.json()["id"]
+
+    denied = await client.get(
+        f"/v1/attestations/{attestation_id}/payment",
+        headers=auth_headers(intruder_id, ["contributor"]),
+    )
+
+    assert denied.status_code == 404
 
 
 async def test_framework_request_requires_review_type_and_brief(

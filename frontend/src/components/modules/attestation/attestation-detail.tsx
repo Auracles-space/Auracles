@@ -19,6 +19,7 @@ import {
   acceptAttestationReport,
   createAttestationDispute,
   getAttestation,
+  getAttestationFeePayment,
 } from "@/lib/generated/sdk.gen";
 import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
@@ -27,6 +28,7 @@ import {
   ErrorMessage,
   StatusTag,
 } from "@/components/modules/attestation/attestation-status";
+import { AttestationFundingPanel } from "@/components/modules/attestation/attestation-funding-panel";
 
 type AttestationDetailProps = {
   /** Attestation id from the route. */
@@ -72,6 +74,7 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
   const [loading, setLoading] = useState(true);
   const [disputeReason, setDisputeReason] = useState("");
   const [acting, setActing] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
@@ -92,6 +95,26 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     }
     setAttestation(result.data);
     setLoading(false);
+  }
+
+  /** Fetch the PaymentIntent secret to resume an unpaid fee, then show Stripe. */
+  async function handleStartPayment() {
+    setError(null);
+    setActing(true);
+    try {
+      configureBrowserClient();
+      const result = await getAttestationFeePayment({
+        headers: getAccessTokenHeaders(),
+        path: { attestation_id: attestationId },
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setClientSecret(result.data.client_secret);
+    } finally {
+      setActing(false);
+    }
   }
 
   /** Accept the submitted report and release escrow to the attestor. */
@@ -146,6 +169,7 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
 
   const reportReady = attestation.status === "report_submitted";
   const hasReport = Boolean(attestation.summary || attestation.scope);
+  const awaitingFee = attestation.status === "pending_fee";
 
   return (
     <section className="grid gap-6">
@@ -169,6 +193,37 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
           <StatusTag value={attestation.status} />
         </div>
       </div>
+
+      {awaitingFee &&
+        (clientSecret ? (
+          <AttestationFundingPanel
+            attestationId={attestationId}
+            clientSecret={clientSecret}
+            onCancel={() => setClientSecret(null)}
+            onPaid={() => {
+              setClientSecret(null);
+              void load();
+            }}
+          />
+        ) : (
+          <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+            <h2 className="font-heading text-xl font-bold text-foreground">
+              Pay attestation fee
+            </h2>
+            <p className="mt-1 text-sm text-foreground-muted">
+              This request is waiting for its fee. Pay it to send the request to
+              matching attestor organizations.
+            </p>
+            <button
+              className="mt-4 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={acting}
+              onClick={handleStartPayment}
+              type="button"
+            >
+              {acting ? "Loading…" : "Pay fee"}
+            </button>
+          </div>
+        ))}
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
         <h2 className="font-heading text-xl font-bold text-foreground">

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   acceptAttestationReport,
   getAttestation,
+  getAttestationFeePayment,
 } from "@/lib/generated/sdk.gen";
 import { AttestationDetail } from "./attestation-detail";
 
@@ -14,9 +15,22 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   getAttestation: vi.fn(),
+  getAttestationFeePayment: vi.fn(),
   acceptAttestationReport: vi.fn(),
   createAttestationDispute: vi.fn(),
 }));
+
+// Stub the Stripe-backed funding panel so tests avoid mounting Stripe Elements.
+vi.mock("./attestation-funding-panel", () => ({
+  AttestationFundingPanel: ({ attestationId }: { attestationId: string }) => (
+    <div data-testid="funding-panel">Pay fee for {attestationId}</div>
+  ),
+}));
+
+/** A pending-fee attestation the requestor still needs to pay. */
+function pendingFeeAttestation() {
+  return { ...reportedAttestation(), status: "pending_fee", summary: null, scope: null };
+}
 
 /** A submitted-report attestation the requestor can accept or dispute. */
 function reportedAttestation() {
@@ -84,5 +98,32 @@ describe("AttestationDetail", () => {
         expect.objectContaining({ path: { attestation_id: "att-1" } }),
       );
     });
+  });
+
+  it("resumes payment for a pending-fee request", async () => {
+    vi.mocked(getAttestation).mockResolvedValue({
+      response: { ok: true },
+      data: pendingFeeAttestation(),
+    } as never);
+    vi.mocked(getAttestationFeePayment).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        id: "att-1",
+        transaction_id: "txn-1",
+        provider: "stripe",
+        client_secret: "pi_secret_test",
+      },
+    } as never);
+
+    render(<AttestationDetail attestationId="att-1" />);
+    const payButton = await screen.findByRole("button", { name: /Pay fee/i });
+    fireEvent.click(payButton);
+
+    expect(await screen.findByTestId("funding-panel")).toHaveTextContent(
+      "att-1",
+    );
+    expect(getAttestationFeePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { attestation_id: "att-1" } }),
+    );
   });
 });

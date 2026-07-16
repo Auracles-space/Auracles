@@ -268,6 +268,31 @@ async def create_payment_intent(
     return StripePaymentIntent(id=payment_intent_id, client_secret=client_secret)
 
 
+async def retrieve_payment_intent(
+    payment_intent_id: str,
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> StripePaymentIntent:
+    """Retrieve an existing Stripe PaymentIntent and its client secret.
+
+    Used to resume payment for an already-created fee: the PaymentIntent was
+    created when the request was funded, so this returns the same secret rather
+    than minting a second intent.
+    """
+    payload = await _get_json(
+        f"/payment_intents/{payment_intent_id}",
+        params={},
+        settings=settings,
+        client=client,
+    )
+    resolved_id = payload.get("id")
+    client_secret = payload.get("client_secret")
+    if not isinstance(resolved_id, str) or not isinstance(client_secret, str):
+        raise StripeProviderError("Stripe PaymentIntent response missing fields.")
+    return StripePaymentIntent(id=resolved_id, client_secret=client_secret)
+
+
 async def create_setup_intent(
     *,
     customer_id: str,

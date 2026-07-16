@@ -181,6 +181,29 @@ async def fund_attestation(
     )
 
 
+@router.get(
+    "/attestations/{attestation_id}/payment",
+    response_model=AttestationFundingResponse,
+    summary="Resume payment for a pending attestation fee",
+    description=(
+        "Return the existing Stripe PaymentIntent client secret so the "
+        "requestor can complete an unpaid attestation fee without minting a "
+        "second intent. Owner only."
+    ),
+)
+async def get_attestation_fee_payment(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationFundingResponse:
+    """Return the client secret to resume an unpaid attestation fee."""
+    return await attestation_service.get_attestation_fee_payment(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+    )
+
+
 @router.get("/attestations", response_model=AttestationsResponse)
 async def list_attestations(
     user: CurrentUser,
