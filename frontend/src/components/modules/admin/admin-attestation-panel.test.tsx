@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   listAdminAttestations,
@@ -61,11 +61,50 @@ describe("AdminAttestationPanel needs-admin queue", () => {
 
     render(<AdminAttestationPanel />);
 
-    expect(await screen.findByText(/Needs admin \(1\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Attestations \(1\)/)).toBeInTheDocument();
     // Inline row exposes its own action, no shared "load into controls" step.
     expect(
       await screen.findByRole("button", { name: /Assign to org/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("quality review")).toBeInTheDocument();
+  });
+
+  it("switches to a read-only history view for a non-needs-admin status", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue({
+      response: { ok: true },
+      data: { applications: [] },
+    } as never);
+    vi.mocked(listAttestorOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: { attestors: [] },
+    } as never);
+    // First load (needs_admin) empty; after switching status, return a closed one.
+    vi.mocked(listAdminAttestations)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: { attestations: [] },
+      } as never)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: {
+          attestations: [{ ...needsAdminItem(), status: "closed" }],
+        },
+      } as never);
+
+    render(<AdminAttestationPanel />);
+    await screen.findByText(/No attestations in this status/i);
+
+    fireEvent.change(screen.getByLabelText(/Status/i), {
+      target: { value: "closed" },
+    });
+
+    // Read-only row shows, with no assign/refund action.
+    expect(await screen.findByText("quality review")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Assign to org/i }),
+    ).toBeNull();
+    expect(listAdminAttestations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { status: "closed" } }),
+    );
   });
 });

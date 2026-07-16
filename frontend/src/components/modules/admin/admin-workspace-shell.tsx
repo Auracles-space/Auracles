@@ -15,6 +15,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { listAdminAttestations } from "@/lib/generated/sdk.gen";
+import { NEEDS_ADMIN_CHANGED_EVENT } from "@/components/modules/admin/admin-events";
 
 type AdminWorkspaceShellProps = {
   children: ReactNode;
@@ -99,6 +100,12 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
       }
     }
     void loadNeedsAdminCount();
+    // Refresh the badge when an admin assigns or refunds a needs-admin request
+    // elsewhere in the workspace, so the count never goes stale.
+    const onChanged = () => void loadNeedsAdminCount();
+    window.addEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
+    return () =>
+      window.removeEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
   }, []);
 
   const badgeCounts: Record<string, number> = {

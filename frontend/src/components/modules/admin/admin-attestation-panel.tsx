@@ -24,13 +24,16 @@ import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import {
   ErrorMessage,
   HeaderCard,
+  StatusTag,
 } from "@/components/modules/attestation/attestation-status";
 import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
+import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
-  const [needsAdmin, setNeedsAdmin] = useState<AttestationRequestResponse[]>([]);
+  const [queueItems, setQueueItems] = useState<AttestationRequestResponse[]>([]);
+  const [queueStatus, setQueueStatus] = useState("needs_admin");
   const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
   const [disputeId, setDisputeId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +54,12 @@ export function AdminAttestationPanel() {
 
   useEffect(() => {
     void loadApplications();
-    void loadNeedsAdmin();
     void loadAttestorOrgs();
   }, []);
+
+  useEffect(() => {
+    void loadQueue(queueStatus);
+  }, [queueStatus]);
 
   /** Load active attestor orgs for the manual-assign org picker. */
   async function loadAttestorOrgs() {
@@ -77,18 +83,18 @@ export function AdminAttestationPanel() {
     setApplications(result.data.applications);
   }
 
-  /** Load the needs-admin attestation queue for manual assign/refund. */
-  async function loadNeedsAdmin() {
+  /** Load attestations in the given status for the admin queue/history. */
+  async function loadQueue(status: string) {
     configureBrowserClient();
     const result = await listAdminAttestations({
       headers: getAccessTokenHeaders(),
-      query: { status: "needs_admin" },
+      query: { status },
     });
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
     }
-    setNeedsAdmin(result.data.attestations);
+    setQueueItems(result.data.attestations);
   }
 
   /** Drop an application from the list once it is rejected. */
@@ -100,9 +106,11 @@ export function AdminAttestationPanel() {
 
   /** Drop a request from the queue once it is assigned or refunded. */
   function handleNeedsAdminResolved(attestationId: string) {
-    setNeedsAdmin((current) =>
+    setQueueItems((current) =>
       current.filter((item) => item.id !== attestationId),
     );
+    // Let the workspace shell refresh its needs-admin count badge.
+    emitNeedsAdminChanged();
   }
 
   async function handleResolveDispute() {
@@ -149,26 +157,65 @@ export function AdminAttestationPanel() {
       </div>
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <h3 className="font-heading text-lg font-bold text-foreground">
-          Needs admin{needsAdmin.length > 0 ? ` (${needsAdmin.length})` : ""}
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-heading text-lg font-bold text-foreground">
+            Attestations
+            {queueStatus === "needs_admin" && queueItems.length > 0
+              ? ` (${queueItems.length})`
+              : ""}
+          </h3>
+          <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+            Status
+            <Select
+              onChange={(event) => setQueueStatus(event.target.value)}
+              value={queueStatus}
+            >
+              <option value="needs_admin">Needs admin</option>
+              <option value="offered">Offered (assigned)</option>
+              <option value="accepted">Accepted</option>
+              <option value="in_review">In review</option>
+              <option value="report_submitted">Report submitted</option>
+              <option value="closed">Closed / refunded</option>
+            </Select>
+          </label>
+        </div>
         <p className="mt-1 text-sm text-foreground-muted">
-          Requests auto-matching could not staff. Assign each to an attestor org
-          (the org then staffs its own reviewer) or refund the fee — inline.
+          {queueStatus === "needs_admin"
+            ? "Requests auto-matching could not staff. Assign each to an attestor org (the org then staffs its own reviewer) or refund the fee — inline."
+            : "Read-only view of attestations in this status."}
         </p>
         <div className="mt-4 grid gap-3">
-          {needsAdmin.length === 0 ? (
+          {queueItems.length === 0 ? (
             <p className="text-sm text-foreground-muted">
-              No requests are waiting for admin action.
+              No attestations in this status.
             </p>
-          ) : (
-            needsAdmin.map((item) => (
+          ) : queueStatus === "needs_admin" ? (
+            queueItems.map((item) => (
               <NeedsAdminRow
                 attestation={item}
                 attestorOrgs={attestorOrgs}
                 key={item.id}
                 onResolved={handleNeedsAdminResolved}
               />
+            ))
+          ) : (
+            queueItems.map((item) => (
+              <article
+                className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                key={item.id}
+              >
+                <div>
+                  <p className="font-heading text-sm font-bold text-foreground">
+                    {item.review_type
+                      ? `${item.review_type} review`
+                      : "Attestation request"}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground-muted">
+                    {item.id} · {item.currency} {item.fee_amount}
+                  </p>
+                </div>
+                <StatusTag value={item.status} />
+              </article>
             ))
           )}
         </div>

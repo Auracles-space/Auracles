@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { listAdminAttestations } from "@/lib/generated/sdk.gen";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
+import { NEEDS_ADMIN_CHANGED_EVENT } from "./admin-events";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/attestations",
@@ -48,5 +49,32 @@ describe("AdminWorkspaceShell needs-admin badge", () => {
 
     await waitFor(() => expect(listAdminAttestations).toHaveBeenCalled());
     expect(screen.queryByLabelText(/needing attention/)).toBeNull();
+  });
+
+  it("refetches the count when a needs-admin change event fires", async () => {
+    vi.mocked(listAdminAttestations)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: { attestations: [{ id: "att-1" }] },
+      } as never)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: { attestations: [] },
+      } as never);
+
+    render(
+      <AdminWorkspaceShell>
+        <div>content</div>
+      </AdminWorkspaceShell>,
+    );
+    await screen.findByLabelText("1 needing attention");
+
+    act(() => {
+      window.dispatchEvent(new Event(NEEDS_ADMIN_CHANGED_EVENT));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/needing attention/)).toBeNull(),
+    );
   });
 });
