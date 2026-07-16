@@ -17,6 +17,13 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   getOrgAttestorApplication: vi.fn(),
 }));
 
+// Keep the real getAccessTokenHeaders/describeGeneratedError; only stub
+// configureBrowserClient, which touches the (mocked-away) transport client.
+vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/form-client")>()),
+  configureBrowserClient: vi.fn(),
+}));
+
 describe("OrgAttestorFinancialsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -83,15 +90,17 @@ describe("OrgAttestorFinancialsTab", () => {
     fireEvent.click(screen.getByText("Confirm Payout"));
 
     await waitFor(() => {
-      expect(requestOrgPayout).toHaveBeenCalledWith({
-        path: { org_id: "org-1" },
-        body: {
-          amount: "450.00",
-          currency: "USD",
-          payout_account_id: "payout-acc-id",
-          totp_code: "123456",
-        },
-      });
+      expect(requestOrgPayout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { org_id: "org-1" },
+          body: {
+            amount: "450.00",
+            currency: "USD",
+            payout_account_id: "payout-acc-id",
+            totp_code: "123456",
+          },
+        }),
+      );
     });
   });
 
@@ -125,6 +134,31 @@ describe("OrgAttestorFinancialsTab", () => {
         }),
       );
     });
+  });
+
+  it("surfaces the backend error when re-opening Stripe fails", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: {
+        id: "app-id",
+        org_id: "org-1",
+        status: "approved",
+        payout_account_id: "payout-acc-id",
+      },
+    } as never);
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      error: { detail: "Payout provider is unavailable." },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+    await waitFor(() => {
+      expect(screen.getByText("Manage payout account")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Manage payout account"));
+
+    expect(
+      await screen.findByText("Payout provider is unavailable."),
+    ).toBeInTheDocument();
   });
 
   it("blocks payout if application is not approved", async () => {

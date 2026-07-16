@@ -12,6 +12,11 @@ import type { EarningsResponse, OrgAttestorApplicationResponse, OrgInvoiceListIt
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { TotpInput } from "@/components/modules/auth/totp-input";
+import {
+  configureBrowserClient,
+  describeGeneratedError,
+  getAccessTokenHeaders,
+} from "@/lib/auth/form-client";
 
 interface OrgAttestorFinancialsTabProps {
   orgId: string;
@@ -25,13 +30,16 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showTotp, setShowTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+  const [payoutError, setPayoutError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
+      configureBrowserClient();
+      const headers = getAccessTokenHeaders();
       const [earningsRes, appRes, invoicesRes] = await Promise.all([
-        getOrgAttestorEarnings({ path: { org_id: orgId } }),
-        getOrgAttestorApplication({ path: { org_id: orgId } }),
-        listOrgInvoices({ path: { org_id: orgId } }),
+        getOrgAttestorEarnings({ headers, path: { org_id: orgId } }),
+        getOrgAttestorApplication({ headers, path: { org_id: orgId } }),
+        listOrgInvoices({ headers, path: { org_id: orgId } }),
       ]);
       setEarnings(earningsRes.data || null);
       setApplication(appRes.data || null);
@@ -50,8 +58,11 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
 
   const handleSetupPayoutAccount = async () => {
     setIsActionLoading(true);
+    setPayoutError(null);
     try {
+      configureBrowserClient();
       const res = await onboardOrgPayoutAccount({
+        headers: getAccessTokenHeaders(),
         path: { org_id: orgId },
         body: {
           provider: "stripe",
@@ -61,9 +72,14 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
       });
       if (res.data?.onboarding_url) {
         window.location.href = res.data.onboarding_url;
+        return;
       }
+      // Non-2xx responses resolve with `error` (the generated client does not
+      // throw); surface the reason instead of failing silently.
+      setPayoutError(describeGeneratedError(res.error));
     } catch (error) {
       console.error("Failed to onboard payout account:", error);
+      setPayoutError("The request could not be completed.");
     } finally {
       setIsActionLoading(false);
     }
@@ -73,7 +89,9 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
     if (!earnings || !application?.payout_account_id) return;
     setIsActionLoading(true);
     try {
+      configureBrowserClient();
       await requestOrgPayout({
+        headers: getAccessTokenHeaders(),
         path: { org_id: orgId },
         body: {
           amount: earnings.available_balance,
@@ -130,6 +148,11 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
 
       <div className="p-6 rounded-lg bg-surface-2 border border-border-strong">
         <h3 className="text-lg font-medium mb-4">Payout Actions</h3>
+        {payoutError && (
+          <p className="text-sm text-error mb-4" role="alert">
+            {payoutError}
+          </p>
+        )}
         {application?.status !== "approved" ? (
           <div className="text-sm text-foreground-subtle">
             <p className="font-medium text-warning">Account Pending</p>
