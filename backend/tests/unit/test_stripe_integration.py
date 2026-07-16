@@ -14,6 +14,7 @@ import respx
 from app.core.config import Settings
 from app.integrations.stripe import (
     StripeProviderError,
+    create_account_link,
     create_customer,
     create_payment_intent,
     create_refund,
@@ -158,6 +159,39 @@ async def test_stripe_setup_intent_and_payment_methods_are_provider_held() -> No
     assert list_route.calls.last.request.url.params["customer"] == "cus_123"
     assert detached == "pm_123"
     assert detach_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stripe_error_surfaces_provider_message_and_status() -> None:
+    """A Stripe 4xx surfaces status + the provider ``error.message`` for triage.
+
+    Without this, callers only see ``Stripe returned 400.`` and cannot tell an
+    unenabled-country account link apart from a malformed request.
+    """
+    respx.post("https://api.stripe.com/v1/account_links").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "You must enable GB for Express.",
+                    "type": "invalid_request_error",
+                }
+            },
+        )
+    )
+
+    with pytest.raises(StripeProviderError) as excinfo:
+        await create_account_link(
+            account_id="acct_123",
+            refresh_url="https://app.test/refresh",
+            return_url="https://app.test/return",
+            settings=STRIPE_SETTINGS,
+        )
+
+    message = str(excinfo.value)
+    assert "400" in message
+    assert "You must enable GB for Express." in message
 
 
 def test_stripe_webhook_signature_matrix_accepts_only_valid_raw_payload() -> None:

@@ -584,6 +584,48 @@ async def test_onboard_org_payout_account_endpoint(
     assert account.is_default is True
 
 
+async def test_onboard_org_payout_account_logs_provider_detail_on_failure(
+    client: AsyncClient, clean_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider rejection returns 502 and logs the Stripe detail for triage.
+
+    Regression: the failure log dropped ``error=`` (loguru renders only the
+    message), and the provider adapter dropped Stripe's ``error.message``, so a
+    502 gave no clue why. Both must survive into the rendered log line.
+    """
+    from loguru import logger as loguru_logger
+
+    from app.integrations.stripe import StripeProviderError
+
+    detail = "Stripe returned 400. You must enable GB for Express."
+
+    async def _boom_express(*, email: str, country: str) -> SimpleNamespace:
+        raise StripeProviderError(detail)
+
+    monkeypatch.setattr(
+        financials_service.stripe, "create_express_account", _boom_express
+    )
+    org_id, owner_id, _secret = await _attestor_org()
+
+    messages: list[str] = []
+    sink_id = loguru_logger.add(messages.append, format="{message}")
+    try:
+        response = await client.post(
+            f"/v1/orgs/{org_id}/financials/payout-accounts",
+            headers=_auth(owner_id),
+            json={
+                "provider": "stripe",
+                "refresh_url": "https://app.test/refresh",
+                "return_url": "https://app.test/return",
+            },
+        )
+    finally:
+        loguru_logger.remove(sink_id)
+
+    assert response.status_code == 502
+    assert any(detail in message for message in messages)
+
+
 async def test_org_invoices_endpoint_lists_metadata_only(
     client: AsyncClient, clean_state: None
 ) -> None:

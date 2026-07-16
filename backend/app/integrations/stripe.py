@@ -115,6 +115,28 @@ def _metadata_form(metadata: Mapping[str, str]) -> dict[str, str]:
     return {f"metadata[{key}]": value for key, value in metadata.items()}
 
 
+def _status_error_detail(response: httpx.Response) -> str:
+    """Build a triage-ready error string from a Stripe non-2xx response.
+
+    Stripe returns a JSON ``error.message`` describing why a request was
+    rejected (unenabled country, missing capability, bad parameter). Surfacing
+    it turns an opaque ``Stripe returned 400.`` into an actionable message. The
+    body carries no secrets — the auth header is request-side only — so it is
+    safe to include. Falls back to the bare status when the body is not the
+    expected shape.
+    """
+    detail = f"Stripe returned {response.status_code}."
+    try:
+        body = response.json()
+    except ValueError:
+        return detail
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    if isinstance(message, str) and message:
+        return f"{detail} {message}"
+    return detail
+
+
 async def _post_form(
     path: str,
     form: Mapping[str, str | int],
@@ -140,9 +162,7 @@ async def _post_form(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise StripeProviderError(
-                f"Stripe returned {response.status_code}."
-            ) from exc
+            raise StripeProviderError(_status_error_detail(response)) from exc
         payload = response.json()
         if not isinstance(payload, dict):
             raise StripeProviderError("Stripe returned malformed JSON.")
@@ -175,9 +195,7 @@ async def _get_json(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise StripeProviderError(
-                f"Stripe returned {response.status_code}."
-            ) from exc
+            raise StripeProviderError(_status_error_detail(response)) from exc
         payload = response.json()
         if not isinstance(payload, dict):
             raise StripeProviderError("Stripe returned malformed JSON.")

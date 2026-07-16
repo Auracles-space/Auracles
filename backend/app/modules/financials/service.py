@@ -2086,7 +2086,7 @@ async def onboard_org_payout_account(
                 module="financials",
                 action="onboard_org_payout_account",
                 org_id=org_id,
-            ).error("payout_account_provider_failed", error=str(exc))
+            ).error("payout_account_provider_failed: {error}", error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Payout provider is unavailable.",
@@ -2114,7 +2114,7 @@ async def onboard_org_payout_account(
             module="financials",
             action="onboard_org_payout_account",
             org_id=org_id,
-        ).error("payout_account_provider_failed", error=str(exc))
+        ).error("payout_account_provider_failed: {error}", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Payout provider is unavailable.",
@@ -2541,7 +2541,7 @@ async def onboard_payout_account(
                 module="financials",
                 action="onboard_payout_account",
                 user_id=contributor_id,
-            ).error("payout_account_provider_failed", error=str(exc))
+            ).error("payout_account_provider_failed: {error}", error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Payout provider is unavailable.",
@@ -2577,7 +2577,7 @@ async def onboard_payout_account(
             module="financials",
             action="onboard_payout_account",
             user_id=contributor_id,
-        ).error("payout_account_provider_failed", error=str(exc))
+        ).error("payout_account_provider_failed: {error}", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Payout provider is unavailable.",
