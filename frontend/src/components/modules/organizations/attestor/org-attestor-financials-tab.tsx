@@ -120,31 +120,28 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Earnings Overview</h2>
-        {earnings && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-              <p className="text-sm text-foreground-subtle mb-1">Available Balance</p>
-              <p className="text-2xl font-bold">
-                {earnings.currency} {earnings.available_balance}
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-              <p className="text-sm text-foreground-subtle mb-1">Pending Clearance</p>
-              <p className="text-2xl font-bold">
-                {earnings.currency} {earnings.pending_clearance}
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-              <p className="text-sm text-foreground-subtle mb-1">Gross Revenue</p>
-              <p className="text-2xl font-bold">
-                {earnings.currency} {earnings.gross_revenue}
-              </p>
-            </div>
+      {earnings && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
+            <p className="text-sm text-foreground-subtle mb-1">Available Balance</p>
+            <p className="text-2xl font-bold">
+              {earnings.currency} {earnings.available_balance}
+            </p>
           </div>
-        )}
-      </div>
+          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
+            <p className="text-sm text-foreground-subtle mb-1">Pending Clearance</p>
+            <p className="text-2xl font-bold">
+              {earnings.currency} {earnings.pending_clearance}
+            </p>
+          </div>
+          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
+            <p className="text-sm text-foreground-subtle mb-1">Gross Revenue</p>
+            <p className="text-2xl font-bold">
+              {earnings.currency} {earnings.gross_revenue}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="p-6 rounded-lg bg-surface-2 border border-border-strong">
         <h3 className="text-lg font-medium mb-4">Payout Actions</h3>

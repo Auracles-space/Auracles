@@ -64,6 +64,16 @@ describe("OrgAttestorFinancialsTab", () => {
     expect(screen.getByText("Setup Payout Account")).toBeInTheDocument();
   });
 
+  it("does not render a duplicate earnings section heading inside the org tab", async () => {
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Available Balance")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("heading", { name: "Earnings Overview" })).toBeNull();
+  });
+
   it("shows request payout CTA and handles TOTP flow when payout account exists", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: {
