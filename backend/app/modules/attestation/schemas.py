@@ -374,6 +374,31 @@ class AttestationsResponse(BaseModel):
     attestations: list[AttestationRequestResponse]
 
 
+class AdminAttestationOfferItem(BaseModel):
+    """One offer made for an Attestation, with the recipient org's name.
+
+    Admin oversight only: exposes which org an Attestation was offered to (or
+    accepted by) and the offer lifecycle timestamps.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    org_id: UUID | None
+    org_name: str | None
+    status: str
+    cohort_index: int
+    offered_at: datetime
+    expires_at: datetime
+    responded_at: datetime | None
+
+
+class AdminAttestationDetailResponse(BaseModel):
+    """Admin detail for one Attestation: the request plus its offer history."""
+
+    attestation: AttestationRequestResponse
+    offers: list[AdminAttestationOfferItem]
+
+
 class AttestorAssignmentResponse(BaseModel):
     """Attestation offer or assignment visible to an approved Attestor."""
 

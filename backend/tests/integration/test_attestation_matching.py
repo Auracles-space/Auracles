@@ -1713,6 +1713,59 @@ async def test_admin_manually_assigns_needs_admin_attestation(
     assert audit is not None
 
 
+async def test_admin_detail_returns_offer_org_and_status(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Admin detail exposes which org an assigned request was offered to."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    requestor_id = await create_user(
+        "detail-requestor@auracles.space",
+        ["operator"],
+    )
+    org_id, _attestor_id, _member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="detail",
+    )
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, _txn, _ = await create_needs_admin_attestation(requestor_id)
+
+    assign = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/assign",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "attestor_org_id": str(org_id),
+            "reason": "Manual dispatch to a chosen org.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    assert assign.status_code == 200
+
+    detail = await client.get(
+        f"/v1/admin/attestations/{attestation_id}",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["attestation"]["status"] == "offered"
+    assert len(body["offers"]) == 1
+    offer = body["offers"][0]
+    assert offer["org_id"] == str(org_id)
+    assert offer["org_name"]
+    assert offer["status"] == "offered"
+
+
 async def test_admin_lists_needs_admin_attestations(
     client: AsyncClient,
     migrated_database: None,

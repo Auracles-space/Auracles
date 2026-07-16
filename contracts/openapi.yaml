@@ -1746,6 +1746,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/attestations/{attestation_id}:
+    get:
+      tags:
+      - Attestation
+      summary: Attestation detail for admin oversight
+      description: Return one Attestation plus its offer history — which org each
+        offer went to (or was accepted by), offer statuses, and timestamps. Admin
+        only.
+      operationId: get_admin_attestation_detail_v1_admin_attestations__attestation_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttestationDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/attestations/{attestation_id}/assign:
     post:
       tags:
@@ -12723,6 +12755,21 @@ components:
         The admin picks the attestor organization only. The org then accepts the
 
         offer and staffs its own reviewing member through the normal offer flow.'
+    AdminAttestationDetailResponse:
+      properties:
+        attestation:
+          $ref: '#/components/schemas/AttestationRequestResponse'
+        offers:
+          items:
+            $ref: '#/components/schemas/AdminAttestationOfferItem'
+          type: array
+          title: Offers
+      type: object
+      required:
+      - attestation
+      - offers
+      title: AdminAttestationDetailResponse
+      description: 'Admin detail for one Attestation: the request plus its offer history.'
     AdminAttestationDisputeResolveRequest:
       properties:
         outcome:
@@ -12760,6 +12807,55 @@ components:
         three-outcome verdict: reject the dispute (report stands, release escrow),
 
         uphold with a refund, or uphold requiring the attestor to revise.'
+    AdminAttestationOfferItem:
+      properties:
+        org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Org Id
+        org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Name
+        status:
+          type: string
+          title: Status
+        cohort_index:
+          type: integer
+          title: Cohort Index
+        offered_at:
+          type: string
+          format: date-time
+          title: Offered At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        responded_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Responded At
+      type: object
+      required:
+      - org_id
+      - org_name
+      - status
+      - cohort_index
+      - offered_at
+      - expires_at
+      - responded_at
+      title: AdminAttestationOfferItem
+      description: 'One offer made for an Attestation, with the recipient org''s name.
+
+
+        Admin oversight only: exposes which org an Attestation was offered to (or
+
+        accepted by) and the offer lifecycle timestamps.'
     AdminAttestationRefundRequest:
       properties:
         reason:

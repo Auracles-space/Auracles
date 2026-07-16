@@ -50,6 +50,7 @@ const compatibilityAliases = {
   forgotPassword: "forgotPasswordV1AuthForgotPasswordPost",
   fundMilestone: "fundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPost",
   getAttestationFeePayment: "getAttestationFeePaymentV1AttestationsAttestationIdPaymentGet",
+  getAdminAttestationDetail: "getAdminAttestationDetailV1AdminAttestationsAttestationIdGet",
   listAdminAttestations: "listAdminAttestationsV1AdminAttestationsGet",
   getContributorEarnings: "getContributorEarningsV1FinancialsEarningsGet",
   getContributorFramework: "getFrameworkV1FrameworksFrameworkIdGet",

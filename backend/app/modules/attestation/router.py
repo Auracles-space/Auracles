@@ -35,6 +35,7 @@ from app.modules.attestation.dependencies import require_approved_attestor
 from app.modules.attestation.models import Credential as _CredentialModel
 from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
+    AdminAttestationDetailResponse,
     AdminAttestationDisputeResolveRequest,
     AdminAttestationRefundRequest,
     AnnotationCreateRequest,
@@ -692,6 +693,29 @@ async def list_admin_attestations(
             AttestationRequestResponse.model_validate(attestation)
             for attestation in attestations
         ]
+    )
+
+
+@router.get(
+    "/admin/attestations/{attestation_id}",
+    response_model=AdminAttestationDetailResponse,
+    summary="Attestation detail for admin oversight",
+    description=(
+        "Return one Attestation plus its offer history — which org each offer "
+        "went to (or was accepted by), offer statuses, and timestamps. Admin "
+        "only."
+    ),
+)
+async def get_admin_attestation_detail(
+    attestation_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminAttestationDetailResponse:
+    """Return one Attestation with its offer history for admin oversight."""
+    del admin
+    return await attestation_service.get_admin_attestation_detail(
+        db=db,
+        attestation_id=attestation_id,
     )
 
 

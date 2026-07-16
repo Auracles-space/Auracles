@@ -29,12 +29,14 @@ import {
 import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
 import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
+import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
   const [queueItems, setQueueItems] = useState<AttestationRequestResponse[]>([]);
   const [queueStatus, setQueueStatus] = useState("needs_admin");
   const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [disputeId, setDisputeId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -200,9 +202,11 @@ export function AdminAttestationPanel() {
             ))
           ) : (
             queueItems.map((item) => (
-              <article
-                className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+              <button
+                className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-4 text-left shadow-sm outline-none transition-colors hover:border-border-strong hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 key={item.id}
+                onClick={() => setDetailId(item.id)}
+                type="button"
               >
                 <div>
                   <p className="font-heading text-sm font-bold text-foreground">
@@ -215,7 +219,7 @@ export function AdminAttestationPanel() {
                   </p>
                 </div>
                 <StatusTag value={item.status} />
-              </article>
+              </button>
             ))
           )}
         </div>
@@ -304,6 +308,13 @@ export function AdminAttestationPanel() {
           </div>
         </div>
       </div>
+
+      {detailId ? (
+        <AttestationDetailModal
+          attestationId={detailId}
+          onClose={() => setDetailId(null)}
+        />
+      ) : null}
     </section>
   );
 }

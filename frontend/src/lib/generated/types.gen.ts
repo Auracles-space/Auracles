@@ -131,6 +131,14 @@ export type AdminAttestationAssignRequest = {
 };
 
 /**
+ * Admin detail for one Attestation: the request plus its offer history.
+ */
+export type AdminAttestationDetailResponse = {
+    attestation: AttestationRequestResponse;
+    offers: Array<AdminAttestationOfferItem>;
+};
+
+/**
  * Admin request body for resolving an Attestation dispute.
  *
  * Module 5 replaces the old release/refund/split money-split model with a
@@ -145,6 +153,22 @@ export type AdminAttestationDisputeResolveRequest = {
 };
 
 export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
+
+/**
+ * One offer made for an Attestation, with the recipient org's name.
+ *
+ * Admin oversight only: exposes which org an Attestation was offered to (or
+ * accepted by) and the offer lifecycle timestamps.
+ */
+export type AdminAttestationOfferItem = {
+    org_id: (string | null);
+    org_name: (string | null);
+    status: string;
+    cohort_index: number;
+    offered_at: string;
+    expires_at: string;
+    responded_at: (string | null);
+};
 
 /**
  * Admin request body for refunding a needs-admin Attestation.
@@ -5006,6 +5030,16 @@ export type ListAdminAttestationsV1AdminAttestationsGetData = {
 export type ListAdminAttestationsV1AdminAttestationsGetResponse = (AttestationsResponse);
 
 export type ListAdminAttestationsV1AdminAttestationsGetError = (HTTPValidationError);
+
+export type GetAdminAttestationDetailV1AdminAttestationsAttestationIdGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAdminAttestationDetailV1AdminAttestationsAttestationIdGetResponse = (AdminAttestationDetailResponse);
+
+export type GetAdminAttestationDetailV1AdminAttestationsAttestationIdGetError = (HTTPValidationError);
 
 export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostData = {
     body: AdminAttestationAssignRequest;

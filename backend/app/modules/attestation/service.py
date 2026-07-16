@@ -20,16 +20,23 @@ from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import notifications as attestation_notifications
-from app.modules.attestation.models import Attestation, Credential
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationOffer,
+    Credential,
+)
 from app.modules.attestation.schemas import (
+    AdminAttestationDetailResponse,
+    AdminAttestationOfferItem,
     AttestationConsentPendingResponse,
     AttestationFundingResponse,
     AttestationRequestCreateRequest,
+    AttestationRequestResponse,
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
-from app.modules.organizations.models import OrgMember
+from app.modules.organizations.models import Organization, OrgMember
 
 IN_FLIGHT_ATTESTATION_STATUSES = {
     "pending_fee",
@@ -114,6 +121,54 @@ async def list_admin_attestations(
         .order_by(Attestation.created_at.asc(), Attestation.id)
     )
     return list(rows.scalars().all())
+
+
+async def get_admin_attestation_detail(
+    db: AsyncSession,
+    *,
+    attestation_id: UUID,
+) -> AdminAttestationDetailResponse:
+    """Return an Attestation plus its offer history for admin oversight.
+
+    Args:
+        db: Async database session.
+        attestation_id: Attestation to inspect.
+
+    Returns:
+        The Attestation request plus each offer made for it, with the recipient
+        org's name and offer lifecycle timestamps.
+
+    Raises:
+        HTTPException(404): The Attestation does not exist.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    rows = await db.execute(
+        select(AttestationOffer, Organization.name)
+        .outerjoin(Organization, Organization.id == AttestationOffer.org_id)
+        .where(AttestationOffer.attestation_id == attestation_id)
+        .order_by(AttestationOffer.offered_at.asc(), AttestationOffer.id)
+    )
+    offers = [
+        AdminAttestationOfferItem(
+            org_id=offer.org_id,
+            org_name=org_name,
+            status=offer.status,
+            cohort_index=offer.cohort_index,
+            offered_at=offer.offered_at,
+            expires_at=offer.expires_at,
+            responded_at=offer.responded_at,
+        )
+        for offer, org_name in rows.all()
+    ]
+    return AdminAttestationDetailResponse(
+        attestation=AttestationRequestResponse.model_validate(attestation),
+        offers=offers,
+    )
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
