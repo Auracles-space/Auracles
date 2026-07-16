@@ -95,7 +95,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
-        <Spinner />
+        <Spinner className="h-8 w-8 text-accent" />
       </div>
     );
   }
@@ -164,12 +164,21 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
           </div>
         ) : (
           <div>
-            <Button 
-              onClick={() => setShowTotp(true)} 
-              disabled={parseFloat(earnings?.available_balance || "0") <= 0}
-            >
-              Request Payout
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => setShowTotp(true)}
+                disabled={parseFloat(earnings?.available_balance || "0") <= 0}
+              >
+                Request Payout
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleSetupPayoutAccount}
+                disabled={isActionLoading}
+              >
+                Manage payout account
+              </Button>
+            </div>
             {parseFloat(earnings?.available_balance || "0") <= 0 && (
               <p className="text-sm text-foreground-subtle mt-2">
                 No available balance to payout.

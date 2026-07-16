@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getOrgAttestorEarnings,
+  onboardOrgPayoutAccount,
   requestOrgPayout,
   listOrgInvoices,
   getOrgAttestorApplication,
@@ -91,6 +92,38 @@ describe("OrgAttestorFinancialsTab", () => {
           totp_code: "123456",
         },
       });
+    });
+  });
+
+  it("lets an approved org re-open Stripe to manage an existing payout account", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: {
+        id: "app-id",
+        org_id: "org-1",
+        status: "approved",
+        payout_account_id: "payout-acc-id",
+      },
+    } as never);
+    // No onboarding_url in the response so the component skips the redirect
+    // (jsdom cannot navigate) while we still assert the call is wired.
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      data: {},
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+    await waitFor(() => {
+      expect(screen.getByText("Manage payout account")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Manage payout account"));
+
+    await waitFor(() => {
+      expect(onboardOrgPayoutAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { org_id: "org-1" },
+          body: expect.objectContaining({ provider: "stripe" }),
+        }),
+      );
     });
   });
 
