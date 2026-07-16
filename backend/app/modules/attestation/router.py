@@ -666,6 +666,35 @@ async def resolve_attestation_dispute(
     return AttestationDisputeResponse.model_validate(dispute)
 
 
+@router.get(
+    "/admin/attestations",
+    response_model=AttestationsResponse,
+    summary="List attestations for admin triage",
+    description=(
+        "List Attestations in a given status for admin action. Defaults to the "
+        "needs_admin queue — requests auto-matching could not staff, which an "
+        "admin must assign or refund. Admin only."
+    ),
+)
+async def list_admin_attestations(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_value: str = Query(default="needs_admin", alias="status"),
+) -> AttestationsResponse:
+    """List Attestations in a given status for admin triage."""
+    del admin
+    attestations = await attestation_service.list_admin_attestations(
+        db=db,
+        status_value=status_value,
+    )
+    return AttestationsResponse(
+        attestations=[
+            AttestationRequestResponse.model_validate(attestation)
+            for attestation in attestations
+        ]
+    )
+
+
 @router.post(
     "/admin/attestations/{attestation_id}/assign",
     response_model=AttestationRequestResponse,

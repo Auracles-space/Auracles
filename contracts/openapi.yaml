@@ -1714,6 +1714,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/attestations:
+    get:
+      tags:
+      - Attestation
+      summary: List attestations for admin triage
+      description: List Attestations in a given status for admin action. Defaults
+        to the needs_admin queue — requests auto-matching could not staff, which an
+        admin must assign or refund. Admin only.
+      operationId: list_admin_attestations_v1_admin_attestations_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          default: needs_admin
+          title: Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/attestations/{attestation_id}/assign:
     post:
       tags:

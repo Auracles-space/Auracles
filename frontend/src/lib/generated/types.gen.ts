@@ -4998,6 +4998,16 @@ export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolveP
 
 export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostError = (HTTPValidationError);
 
+export type ListAdminAttestationsV1AdminAttestationsGetData = {
+    query?: {
+        status?: string;
+    };
+};
+
+export type ListAdminAttestationsV1AdminAttestationsGetResponse = (AttestationsResponse);
+
+export type ListAdminAttestationsV1AdminAttestationsGetError = (HTTPValidationError);
+
 export type AdminAssignAttestationV1AdminAttestationsAttestationIdAssignPostData = {
     body: AdminAttestationAssignRequest;
     path: {

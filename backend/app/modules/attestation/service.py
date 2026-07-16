@@ -91,6 +91,31 @@ async def list_attestations_for_user(
     return list(rows.scalars().all())
 
 
+async def list_admin_attestations(
+    db: AsyncSession,
+    *,
+    status_value: str = "needs_admin",
+) -> list[Attestation]:
+    """Return all Attestations in a given status for admin triage.
+
+    Defaults to the ``needs_admin`` queue — requests that auto-matching could
+    not staff and that an admin must assign or refund.
+
+    Args:
+        db: Async database session.
+        status_value: Attestation status to filter by.
+
+    Returns:
+        Attestations in the requested status, oldest first.
+    """
+    rows = await db.execute(
+        select(Attestation)
+        .where(Attestation.status == status_value)
+        .order_by(Attestation.created_at.asc(), Attestation.id)
+    )
+    return list(rows.scalars().all())
+
+
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for persisted payment records."""
     return amount.quantize(Decimal("0.01"))

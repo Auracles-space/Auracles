@@ -1719,6 +1719,37 @@ async def test_admin_manually_assigns_needs_admin_attestation(
     assert audit is not None
 
 
+async def test_admin_lists_needs_admin_attestations(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Admin can list the needs-admin queue; non-admins are forbidden."""
+    del migrated_database, matching_context
+    requestor_id = await create_user(
+        "needs-admin-list-requestor@auracles.space",
+        ["operator"],
+    )
+    admin_id, _ = await create_admin_user()
+    attestation_id, _, _ = await create_needs_admin_attestation(requestor_id)
+
+    listed = await client.get(
+        "/v1/admin/attestations",
+        params={"status": "needs_admin"},
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    assert listed.status_code == 200
+    ids = [item["id"] for item in listed.json()["attestations"]]
+    assert str(attestation_id) in ids
+
+    forbidden = await client.get(
+        "/v1/admin/attestations",
+        params={"status": "needs_admin"},
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+    assert forbidden.status_code == 403
+
+
 async def test_admin_refunds_needs_admin_attestation(
     client: AsyncClient,
     migrated_database: None,

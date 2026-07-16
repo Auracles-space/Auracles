@@ -12,11 +12,15 @@ import { Select } from "@/components/ui/select";
 import {
   adminAssignAttestation,
   adminRefundAttestation,
+  listAdminAttestations,
   listOrgAttestorApplicationsForAdmin,
   rejectOrgAttestor,
   resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
-import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
+import type {
+  AttestationRequestResponse,
+  OrgAttestorApplicationResponse,
+} from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import {
   ErrorMessage,
@@ -26,6 +30,7 @@ import {
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
+  const [needsAdmin, setNeedsAdmin] = useState<AttestationRequestResponse[]>([]);
   const [assignAttestationId, setAssignAttestationId] = useState("");
   const [assignAttestorOrgId, setAssignAttestorOrgId] = useState("");
   const [assignReviewingMemberId, setAssignReviewingMemberId] = useState("");
@@ -61,6 +66,7 @@ export function AdminAttestationPanel() {
 
   useEffect(() => {
     void loadApplications();
+    void loadNeedsAdmin();
   }, []);
 
   async function loadApplications() {
@@ -74,6 +80,20 @@ export function AdminAttestationPanel() {
       return;
     }
     setApplications(result.data.applications);
+  }
+
+  /** Load the needs-admin attestation queue for manual assign/refund. */
+  async function loadNeedsAdmin() {
+    configureBrowserClient();
+    const result = await listAdminAttestations({
+      headers: getAccessTokenHeaders(),
+      query: { status: "needs_admin" },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    setNeedsAdmin(result.data.attestations);
   }
 
   async function handleReview(application: OrgAttestorApplicationResponse) {
@@ -252,6 +272,48 @@ export function AdminAttestationPanel() {
             </article>
           ))
         )}
+      </div>
+
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+        <h3 className="font-heading text-lg font-bold text-foreground">
+          Needs admin{needsAdmin.length > 0 ? ` (${needsAdmin.length})` : ""}
+        </h3>
+        <p className="mt-1 text-sm text-foreground-muted">
+          Requests auto-matching could not staff. Load one into the controls
+          below to assign an attestor or refund the fee.
+        </p>
+        <div className="mt-4 grid gap-3">
+          {needsAdmin.length === 0 ? (
+            <p className="text-sm text-foreground-muted">
+              No requests are waiting for admin action.
+            </p>
+          ) : (
+            needsAdmin.map((item) => (
+              <article
+                className="grid gap-3 rounded-xl border border-border-default bg-surface-1 p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                key={item.id}
+              >
+                <div>
+                  <p className="font-heading text-sm font-bold text-foreground">
+                    {item.review_type
+                      ? `${item.review_type} review`
+                      : "Attestation request"}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground-muted">
+                    {item.id} · {item.currency} {item.fee_amount}
+                  </p>
+                </div>
+                <button
+                  className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={() => setAssignAttestationId(item.id)}
+                  type="button"
+                >
+                  Load into controls
+                </button>
+              </article>
+            ))
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
