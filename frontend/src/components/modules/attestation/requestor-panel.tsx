@@ -206,10 +206,13 @@ export function RequestorPanel() {
       />
       <ErrorMessage message={error} />
 
-      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <h2 className="font-heading text-xl font-bold text-foreground">
+      <details
+        className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm"
+        open={attestations.length === 0}
+      >
+        <summary className="cursor-pointer font-heading text-xl font-bold text-foreground">
           Request Attestation
-        </h2>
+        </summary>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             <span>Framework <span className="text-error">*</span></span>
@@ -312,7 +315,7 @@ export function RequestorPanel() {
         >
           {isRequesting ? "Requesting…" : "Request attestation"}
         </button>
-      </div>
+      </details>
 
       {fundingSession && (
         <AttestationFundingPanel
@@ -327,6 +330,16 @@ export function RequestorPanel() {
       )}
 
       <div className="grid gap-3">
+        <h2 className="font-heading text-xl font-bold text-foreground">
+          Your requests
+          {attestations.length > 0 ? ` (${attestations.length})` : ""}
+        </h2>
+        {attestations.length === 0 ? (
+          <p className="rounded-2xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted shadow-sm">
+            You have not requested any attestations yet. Open “Request
+            Attestation” above to start one.
+          </p>
+        ) : null}
         {attestations.map((attestation) => (
           <AttestationCard attestation={attestation} key={attestation.id}>
             <div className="mt-4">
