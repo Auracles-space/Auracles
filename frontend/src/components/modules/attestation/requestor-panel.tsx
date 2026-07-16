@@ -27,6 +27,7 @@ import {
   ErrorMessage,
   HeaderCard,
 } from "@/components/modules/attestation/attestation-status";
+import { AttestationFundingPanel } from "@/components/modules/attestation/attestation-funding-panel";
 
 export function RequestorPanel() {
   const [attestations, setAttestations] = useState<AttestationRequestResponse[]>([]);
@@ -44,6 +45,10 @@ export function RequestorPanel() {
   const [focusAreas, setFocusAreas] = useState("");
   const [desiredOutcome, setDesiredOutcome] = useState("");
   const [isRequesting, setIsRequesting] = useState(false);
+  const [fundingSession, setFundingSession] = useState<{
+    attestationId: string;
+    clientSecret: string;
+  } | null>(null);
   // Attestation is framework-only today; the request always targets a Framework
   // and the backend requires a review type plus a fully-populated brief.
   const canRequest =
@@ -129,6 +134,16 @@ export function RequestorPanel() {
       setJurisdiction("");
       setFocusAreas("");
       setDesiredOutcome("");
+      const data = result.data;
+      // A requestor funding their own framework gets a PaymentIntent secret
+      // back; surface the inline fee payment. A non-owner request instead
+      // awaits owner consent and has no secret yet.
+      if ("client_secret" in data && data.client_secret) {
+        setFundingSession({
+          attestationId: data.id,
+          clientSecret: data.client_secret,
+        });
+      }
       await loadRequestorAttestations();
     } finally {
       setIsRequesting(false);
@@ -297,6 +312,18 @@ export function RequestorPanel() {
           {isRequesting ? "Requesting…" : "Request attestation"}
         </button>
       </div>
+
+      {fundingSession && (
+        <AttestationFundingPanel
+          attestationId={fundingSession.attestationId}
+          clientSecret={fundingSession.clientSecret}
+          onCancel={() => setFundingSession(null)}
+          onPaid={() => {
+            setFundingSession(null);
+            void loadRequestorAttestations();
+          }}
+        />
+      )}
 
       <div className="grid gap-3">
         {attestations.map((attestation) => (

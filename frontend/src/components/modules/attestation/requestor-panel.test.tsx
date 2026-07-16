@@ -9,6 +9,13 @@ vi.mock("@/lib/auth/form-client", () => ({
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer test" })),
 }));
 
+// Stub the Stripe-backed funding panel so tests avoid mounting Stripe Elements.
+vi.mock("./attestation-funding-panel", () => ({
+  AttestationFundingPanel: ({ attestationId }: { attestationId: string }) => (
+    <div data-testid="funding-panel">Pay fee for {attestationId}</div>
+  ),
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   acceptAttestationReport: vi.fn(),
   createAttestationDispute: vi.fn(),
@@ -167,5 +174,45 @@ describe("RequestorPanel framework request", () => {
         }),
       );
     });
+  });
+
+  it("opens the fee payment panel when the request returns a client secret", async () => {
+    vi.mocked(requestAttestation).mockResolvedValueOnce({
+      response: { ok: true },
+      data: {
+        id: "att-1",
+        transaction_id: "txn-1",
+        provider: "stripe",
+        client_secret: "pi_secret_test",
+      },
+    } as never);
+
+    render(<RequestorPanel />);
+    await screen.findByText("Request Attestation");
+    await fillFrameworkRequest();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Request attestation/i }),
+    );
+
+    expect(await screen.findByTestId("funding-panel")).toHaveTextContent(
+      "att-1",
+    );
+  });
+
+  it("does not open the fee panel when the request awaits owner consent", async () => {
+    vi.mocked(requestAttestation).mockResolvedValueOnce({
+      response: { ok: true },
+      data: { id: "att-2", status: "pending_owner_consent" },
+    } as never);
+
+    render(<RequestorPanel />);
+    await screen.findByText("Request Attestation");
+    await fillFrameworkRequest();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Request attestation/i }),
+    );
+
+    await waitFor(() => expect(requestAttestation).toHaveBeenCalled());
+    expect(screen.queryByTestId("funding-panel")).toBeNull();
   });
 });
