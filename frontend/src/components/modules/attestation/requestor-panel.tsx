@@ -85,6 +85,8 @@ export function RequestorPanel() {
 
   /**
    * Load requestor-visible Attestations.
+   *
+   * @returns The loaded attestations, or null when the request failed.
    */
   async function loadRequestorAttestations() {
     configureBrowserClient();
@@ -95,10 +97,33 @@ export function RequestorPanel() {
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       setLoading(false);
-      return;
+      return null;
     }
     setAttestations(result.data.attestations);
     setLoading(false);
+    return result.data.attestations;
+  }
+
+  /**
+   * Poll a just-paid request until it leaves ``pending_fee``.
+   *
+   * The fee moves the request forward via an async Stripe webhook, so a single
+   * reload right after payment races it. Reload immediately, then retry a few
+   * times so the status updates without a manual refresh.
+   *
+   * @param attestationId - The funded attestation to watch.
+   */
+  async function pollFundedStatus(attestationId: string) {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const attestations = await loadRequestorAttestations();
+      const target = attestations?.find(
+        (item: AttestationRequestResponse) => item.id === attestationId,
+      );
+      if (!target || target.status !== "pending_fee") {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
 
   /**
@@ -323,8 +348,9 @@ export function RequestorPanel() {
           clientSecret={fundingSession.clientSecret}
           onCancel={() => setFundingSession(null)}
           onPaid={() => {
+            const paidId = fundingSession.attestationId;
             setFundingSession(null);
-            void loadRequestorAttestations();
+            void pollFundedStatus(paidId);
           }}
         />
       )}

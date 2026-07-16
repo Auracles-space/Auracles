@@ -3,6 +3,21 @@ import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
+ * Requestor-facing labels for internal attestation statuses.
+ *
+ * The stored status names are operational (e.g. ``needs_admin`` means auto-match
+ * found no attestor and a human must assign one). These map them to plain,
+ * requestor-friendly wording; unmapped statuses fall back to title-casing.
+ */
+const STATUS_LABELS: Record<string, string> = {
+  pending_fee: "Awaiting payment",
+  matching: "Finding attestor",
+  needs_admin: "Finding attestor",
+  offered: "Offer sent",
+  report_submitted: "Report ready",
+};
+
+/**
  * Render a compact status tag.
  *
  * @param value - Raw status value from the API.
@@ -22,7 +37,7 @@ export function StatusTag({ value }: { value: string }) {
     <span
       className={`inline-flex rounded-badge border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] ${classes}`}
     >
-      {formatLabel(value)}
+      {STATUS_LABELS[value] ?? formatLabel(value)}
     </span>
   );
 }
