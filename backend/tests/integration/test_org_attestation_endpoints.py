@@ -28,6 +28,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgAttestorProfile,
     OrgCapability,
+    OrgInvitation,
     OrgMember,
     OrgMemberNda,
 )
@@ -53,12 +54,16 @@ async def clean_state() -> AsyncIterator[None]:
     async def cleanup() -> None:
         """Delete rows in FK order between tests."""
         async with async_session_factory() as session:
+            from app.modules.frameworks.models import Framework
+
             await session.execute(delete(AuditLog))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
+            await session.execute(delete(Framework))
             await session.execute(delete(OrgAttestorProfile))
             await session.execute(delete(OrgMemberNda))
             await session.execute(delete(OrgCapability))
+            await session.execute(delete(OrgInvitation))
             await session.execute(delete(OrgMember))
             await session.execute(delete(Organization))
             await session.execute(delete(UserRole))
@@ -174,6 +179,128 @@ async def _offered_attestation(org_id: UUID) -> tuple[UUID, UUID]:
             session.add(offer)
             await session.flush()
             return attestation.id, offer.id
+
+
+async def _offered_framework_attestation(
+    org_id: UUID, *, title: str
+) -> tuple[UUID, UUID]:
+    """Create an offered attestation targeting a framework. Return (attn, offer)."""
+    from app.modules.frameworks.models import Framework
+
+    contributor = await _new_user("contrib")
+    now = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor,
+                title=title,
+                description="A framework under review.",
+                category="operations",
+                price=Decimal("100.00"),
+                license_types=["single_user"],
+            )
+            session.add(framework)
+            await session.flush()
+            attestation = Attestation(
+                target_type="framework",
+                target_id=framework.id,
+                requestor_id=contributor,
+                status="offered",
+                review_type="quality",
+                fee_amount=Decimal("500.00"),
+                currency="USD",
+                requested_specializations=["tax"],
+                requested_jurisdictions=["US"],
+            )
+            session.add(attestation)
+            await session.flush()
+            offer = AttestationOffer(
+                attestation_id=attestation.id,
+                org_id=org_id,
+                cohort_index=0,
+                status="offered",
+                offered_at=now,
+                expires_at=now + timedelta(hours=48),
+            )
+            session.add(offer)
+            await session.flush()
+            return attestation.id, offer.id
+
+
+async def test_offer_preview_includes_framework_title(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """A framework offer previews the framework title; contributor targets are null."""
+    org_id, owner_user, _ = await _attestor_org()
+    await _offered_framework_attestation(org_id, title="Revenue Ops Playbook")
+    await _offered_attestation(org_id)  # contributor target -> null title
+
+    res = await client.get(
+        f"/v1/orgs/{org_id}/attestation-offers", headers=auth(owner_user)
+    )
+    assert res.status_code == 200
+    offers = res.json()["offers"]
+    titles = {o["target_type"]: o["target_title"] for o in offers}
+    assert titles["framework"] == "Revenue Ops Playbook"
+    assert titles["contributor"] is None
+
+
+async def test_orgs_mine_reports_action_counts(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """/orgs/mine returns per-org offer, queue, and invitation counts for admins."""
+    org_id, owner_user, _ = await _attestor_org()
+    # One open framework offer -> offers = 1.
+    await _offered_framework_attestation(org_id, title="Ops Playbook")
+    # One in-flight assigned attestation -> queue = 1.
+    async with async_session_factory() as session:
+        async with session.begin():
+            requestor = await _new_user("q-req")
+            session.add(
+                Attestation(
+                    target_type="contributor",
+                    target_id=uuid4(),
+                    requestor_id=requestor,
+                    attestor_org_id=org_id,
+                    status="accepted",
+                    review_type="quality",
+                    fee_amount=Decimal("500.00"),
+                    currency="USD",
+                    requested_specializations=["tax"],
+                    requested_jurisdictions=["US"],
+                )
+            )
+            # One pending invitation -> invitations = 1.
+            session.add(
+                OrgInvitation(
+                    org_id=org_id,
+                    email="invitee@auracles.space",
+                    role="member",
+                    invited_by=owner_user,
+                    status="pending",
+                    token_hash="hash",
+                    expires_at=datetime.now(UTC) + timedelta(days=7),
+                )
+            )
+
+    res = await client.get("/v1/orgs/mine", headers=auth(owner_user))
+    assert res.status_code == 200
+    org = next(o for o in res.json()["organizations"] if o["org"]["id"] == str(org_id))
+    assert org["counts"] == {"offers": 1, "queue": 1, "invitations": 1}
+
+
+async def test_orgs_mine_counts_zero_for_plain_member(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """A plain member sees all-zero counts even when offers exist."""
+    org_id, _, _ = await _attestor_org()
+    await _offered_framework_attestation(org_id, title="Ops Playbook")
+    _, member_user = await _add_member(org_id)
+
+    res = await client.get("/v1/orgs/mine", headers=auth(member_user))
+    assert res.status_code == 200
+    org = next(o for o in res.json()["organizations"] if o["org"]["id"] == str(org_id))
+    assert org["counts"] == {"offers": 0, "queue": 0, "invitations": 0}
 
 
 async def test_offers_endpoint_requires_admin(

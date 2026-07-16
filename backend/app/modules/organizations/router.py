@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -31,6 +32,7 @@ from app.modules.financials.schemas import (
     PurchaseResponse,
 )
 from app.modules.frameworks import service as frameworks_service
+from app.modules.frameworks.models import Framework
 from app.modules.frameworks.schemas import (
     FrameworkReviewCreate,
     FrameworkReviewResponse,
@@ -77,6 +79,7 @@ from app.modules.organizations.schemas import (
     MyOrganizationsResponse,
     NomineeTrialResponse,
     OrgAcceptOfferRequest,
+    OrgActionCounts,
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
@@ -240,6 +243,12 @@ async def list_my_organizations(
 ) -> MyOrganizationsResponse:
     """List organizations the authenticated user belongs to."""
     organizations = await service.list_my_organizations(db=db, user_id=user.id)
+    admin_org_ids = [
+        organization.id
+        for organization, role, _caps in organizations
+        if role in {"owner", "admin"}
+    ]
+    counts_by_org = await service.count_org_actions(db, admin_org_ids=admin_org_ids)
     return MyOrganizationsResponse(
         organizations=[
             MyOrganizationResponse(
@@ -249,6 +258,7 @@ async def list_my_organizations(
                     capability.capability: capability.status
                     for capability in capabilities
                 },
+                counts=counts_by_org.get(organization.id, OrgActionCounts()),
             )
             for organization, role, capabilities in organizations
         ]
@@ -1213,6 +1223,7 @@ async def submit_attestor_trial(
 def _offer_item(
     offer: AttestationOffer,
     attestation: Attestation,
+    target_title: str | None = None,
 ) -> OrgAttestationOfferItem:
     """Build an offer list item from an offer + attestation pair."""
     return OrgAttestationOfferItem(
@@ -1220,6 +1231,7 @@ def _offer_item(
         attestation_id=attestation.id,
         target_type=attestation.target_type,
         target_id=attestation.target_id,
+        target_title=target_title,
         status=offer.status,
         cohort_index=offer.cohort_index,
         match_score=float(offer.match_score) if offer.match_score is not None else None,
@@ -1242,8 +1254,32 @@ async def list_org_attestation_offers(
     """List cohort offers made to the attestor org."""
     del context
     rows = await matching_service.list_org_offers(db, org_id=org_id)
+    # Resolve framework titles in one query so each offer card can preview the
+    # asset name instead of a bare "framework" label.
+    framework_ids = {
+        attestation.target_id
+        for _offer, attestation in rows
+        if attestation.target_type == "framework"
+    }
+    titles: dict[UUID, str] = {}
+    if framework_ids:
+        title_rows = await db.execute(
+            select(Framework.id, Framework.title).where(
+                Framework.id.in_(framework_ids)
+            )
+        )
+        titles = {fid: title for fid, title in title_rows.all()}
     return OrgAttestationOffersResponse(
-        offers=[_offer_item(offer, attestation) for offer, attestation in rows]
+        offers=[
+            _offer_item(
+                offer,
+                attestation,
+                titles.get(attestation.target_id)
+                if attestation.target_type == "framework"
+                else None,
+            )
+            for offer, attestation in rows
+        ]
     )
 
 

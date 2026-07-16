@@ -85,8 +85,17 @@ export default function OrganizationsPage() {
                 <h2 className="font-heading text-xl font-bold text-foreground">
                   {item.org.name}
                 </h2>
-                <div className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface-3 px-3 py-1 text-xs font-bold uppercase tracking-wider text-foreground-muted">
-                  {item.role}
+                <div className="flex shrink-0 items-center gap-2">
+                  {item.counts?.offers ? (
+                    <span
+                      aria-label={`${item.counts.offers} attestation offer${item.counts.offers === 1 ? "" : "s"} to review`}
+                      className="h-2.5 w-2.5 rounded-full bg-accent ring-4 ring-accent/15"
+                      title="Attestation offers to review"
+                    />
+                  ) : null}
+                  <div className="inline-flex items-center justify-center rounded-full bg-surface-3 px-3 py-1 text-xs font-bold uppercase tracking-wider text-foreground-muted">
+                    {item.role}
+                  </div>
                 </div>
               </div>
               

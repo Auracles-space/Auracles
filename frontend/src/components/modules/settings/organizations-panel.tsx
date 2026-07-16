@@ -161,9 +161,18 @@ export function OrganizationsPanel() {
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h3 className="font-heading text-lg font-semibold text-foreground">
-                      {item.org.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-heading text-lg font-semibold text-foreground">
+                        {item.org.name}
+                      </h3>
+                      {item.counts?.offers ? (
+                        <span
+                          aria-label={`${item.counts.offers} attestation offer${item.counts.offers === 1 ? "" : "s"} to review`}
+                          className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent ring-4 ring-accent/15"
+                          title="Attestation offers to review"
+                        />
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-sm capitalize text-foreground-muted">
                       {item.role}
                     </p>

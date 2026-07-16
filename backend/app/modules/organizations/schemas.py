@@ -149,6 +149,18 @@ class OrgCapabilityResponse(BaseModel):
     updated_at: datetime
 
 
+class OrgActionCounts(BaseModel):
+    """Per-org counts of items awaiting admin attention.
+
+    Drives the org-card unread dot and the inner-tab count badges. All zero
+    for plain members (the tabs these counts feed are admin-only).
+    """
+
+    offers: int = 0
+    queue: int = 0
+    invitations: int = 0
+
+
 class MyOrganizationResponse(BaseModel):
     """An organization membership visible to the current user."""
 
@@ -158,6 +170,8 @@ class MyOrganizationResponse(BaseModel):
     # True when the org's attestor capability is pending/active, so the
     # frontend can chain invitation acceptance straight into NDA signing.
     nda_required: bool = False
+    # Items awaiting admin attention, per org, for badges/dots.
+    counts: OrgActionCounts = OrgActionCounts()
 
 
 class MyOrganizationsResponse(BaseModel):
@@ -996,6 +1010,9 @@ class OrgAttestationOfferItem(BaseModel):
     attestation_id: UUID
     target_type: str
     target_id: UUID
+    # Human-readable name of the offered target (framework title). Null when the
+    # target has no resolvable title (e.g. a contributor target).
+    target_title: str | None = None
     status: str
     cohort_index: int
     match_score: float | None

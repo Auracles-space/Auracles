@@ -6,7 +6,7 @@ import { listMyOrganizationsV1OrgsMineGet, getOrgNda } from "@/lib/generated/sdk
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { OrganizationProvider } from "./organization-context";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
 import { useOrganization } from "./organization-context";
@@ -96,7 +96,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const contributorCap = myOrg.capabilities?.["contributor"];
   const contributorActive = contributorCap === "active";
 
-  const tabs = [
+  const tabs: TabItem[] = [
     { id: "", label: "Profile" },
     { id: "members", label: "Members" },
     // Any member may be nominated for the attestor calibration trial; the page
@@ -107,22 +107,27 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     tabs.push({ id: "nda", label: "NDA" });
   }
   
+  const counts = myOrg.counts;
   if (isAdmin) {
-    tabs.push({ id: "invitations", label: "Invitations" });
+    tabs.push({
+      id: "invitations",
+      label: "Invitations",
+      count: counts?.invitations,
+    });
     tabs.push({ id: "teams", label: "Teams" });
     tabs.push({ id: "attestor", label: "Attestor" });
-    
+
     if (isOperator) {
       tabs.push({ id: "operator", label: "Operator" });
       tabs.push({ id: "projects", label: "Projects" });
     }
-    
+
     if (isOperator || attestorActive || contributorActive) {
       tabs.push({ id: "financials", label: "Financials" });
     }
-    
-    tabs.push({ id: "offers", label: "Offers" });
-    tabs.push({ id: "queue", label: "Queue" });
+
+    tabs.push({ id: "offers", label: "Offers", count: counts?.offers });
+    tabs.push({ id: "queue", label: "Queue", count: counts?.queue });
   }
   if (isOwner) {
     tabs.push({ id: "danger-zone", label: "Danger Zone" });

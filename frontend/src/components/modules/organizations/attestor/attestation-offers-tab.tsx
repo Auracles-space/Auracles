@@ -101,13 +101,20 @@ export function AttestationOffersTab() {
           return (
             <div key={offer.offer_id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-foreground capitalize">{offer.target_type}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-foreground">
+                    {offer.target_title ?? (
+                      <span className="capitalize">{offer.target_type}</span>
+                    )}
+                  </span>
+                  <Badge variant="default" className="capitalize">
+                    {offer.target_type}
+                  </Badge>
                   <Badge variant={isExpired ? "error" : offer.status === "offered" ? "info" : "default"}>
                     {isExpired ? "expired" : offer.status}
                   </Badge>
                 </div>
-                <div className="text-sm text-foreground-muted font-mono">
+                <div className="text-xs text-foreground-muted font-mono">
                   Attestation ID: {offer.attestation_id}
                 </div>
                 <div className="text-sm text-foreground-muted">

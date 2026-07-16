@@ -1719,9 +1719,9 @@ paths:
       tags:
       - Attestation
       summary: List attestations for admin triage
-      description: List Attestations in a given status for admin action. Defaults
-        to the needs_admin queue — requests auto-matching could not staff, which an
-        admin must assign or refund. Admin only.
+      description: "List Attestations in a given status for admin action. Defaults\
+        \ to the needs_admin queue \u2014 requests auto-matching could not staff,\
+        \ which an admin must assign or refund. Admin only."
       operationId: list_admin_attestations_v1_admin_attestations_get
       security:
       - HTTPBearer: []
@@ -1751,9 +1751,9 @@ paths:
       tags:
       - Attestation
       summary: Attestation detail for admin oversight
-      description: Return one Attestation plus its offer history — which org each
-        offer went to (or was accepted by), offer statuses, and timestamps. Admin
-        only.
+      description: "Return one Attestation plus its offer history \u2014 which org\
+        \ each offer went to (or was accepted by), offer statuses, and timestamps.\
+        \ Admin only."
       operationId: get_admin_attestation_detail_v1_admin_attestations__attestation_id__get
       security:
       - HTTPBearer: []
@@ -5027,11 +5027,11 @@ paths:
       tags:
       - Frameworks
       summary: Re-sync a connector-bound artifact from its source
-      description: Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's
-        bound source into a new artifact version and re-runs the pipeline. Returns
-        a new artifact id on change; 409 already_up_to_date when the source is unchanged.
-        A 404 on the old id afterward means it was superseded — refetch the artifact
-        list.
+      description: "Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's\
+        \ bound source into a new artifact version and re-runs the pipeline. Returns\
+        \ a new artifact id on change; 409 already_up_to_date when the source is unchanged.\
+        \ A 404 on the old id afterward means it was superseded \u2014 refetch the\
+        \ artifact list."
       operationId: resync_artifact_v1_frameworks__framework_id__artifacts__artifact_id__resync_post
       security:
       - HTTPBearer: []
@@ -15539,15 +15539,10 @@ components:
       - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: 'Public attestor-organization directory row safe for anonymous
-        browsing.
-
-
-        Lists the organization''s public matching profile, completed-attestation
-
-        count, member count, and certification mark. Never exposes individual member
-
-        identities — attestation is credited to the organization, not its reviewers.'
+      description: "Public attestor-organization directory row safe for anonymous\
+        \ browsing.\n\nLists the organization's public matching profile, completed-attestation\n\
+        count, member count, and certification mark. Never exposes individual member\n\
+        identities \u2014 attestation is credited to the organization, not its reviewers."
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -20101,6 +20096,12 @@ components:
           type: boolean
           title: Nda Required
           default: false
+        counts:
+          $ref: '#/components/schemas/OrgActionCounts'
+          default:
+            offers: 0
+            queue: 0
+            invitations: 0
       type: object
       required:
       - org
@@ -20363,6 +20364,28 @@ components:
       - reviewing_member_id
       title: OrgAcceptOfferRequest
       description: Accept-and-staff body naming the reviewing member for the assignment.
+    OrgActionCounts:
+      properties:
+        offers:
+          type: integer
+          title: Offers
+          default: 0
+        queue:
+          type: integer
+          title: Queue
+          default: 0
+        invitations:
+          type: integer
+          title: Invitations
+          default: 0
+      type: object
+      title: OrgActionCounts
+      description: 'Per-org counts of items awaiting admin attention.
+
+
+        Drives the org-card unread dot and the inner-tab count badges. All zero
+
+        for plain members (the tabs these counts feed are admin-only).'
     OrgAttestationItem:
       properties:
         id:
@@ -20437,6 +20460,11 @@ components:
           type: string
           format: uuid
           title: Target Id
+        target_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Title
         status:
           type: string
           title: Status
@@ -21811,12 +21839,10 @@ components:
       - refresh_url
       - return_url
       title: OrgPayoutAccountOnboardRequest
-      description: 'Request body for onboarding an organization payout destination.
-
-
-        The organization''s registered ``country`` is authoritative for provider
-
-        routing, so — unlike the individual request — no country is accepted here.'
+      description: "Request body for onboarding an organization payout destination.\n\
+        \nThe organization's registered ``country`` is authoritative for provider\n\
+        routing, so \u2014 unlike the individual request \u2014 no country is accepted\
+        \ here."
     OrgProposalCreateRequest:
       properties:
         scope:
@@ -23873,12 +23899,9 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: 'Verified Credential fields safe for public profile display.
-
-
-        Never exposes evidence keys, verification URL, reference number, or review
-
-        metadata — anti-gaming and PII protection.'
+      description: "Verified Credential fields safe for public profile display.\n\n\
+        Never exposes evidence keys, verification URL, reference number, or review\n\
+        metadata \u2014 anti-gaming and PII protection."
     PublicOrganizationResponse:
       properties:
         slug:

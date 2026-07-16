@@ -2598,6 +2598,7 @@ export type MyOrganizationResponse = {
         [key: string]: (string);
     };
     nda_required?: boolean;
+    counts?: OrgActionCounts;
 };
 
 /**
@@ -2707,6 +2708,18 @@ export type OrgAcceptOfferRequest = {
 };
 
 /**
+ * Per-org counts of items awaiting admin attention.
+ *
+ * Drives the org-card unread dot and the inner-tab count badges. All zero
+ * for plain members (the tabs these counts feed are admin-only).
+ */
+export type OrgActionCounts = {
+    offers?: number;
+    queue?: number;
+    invitations?: number;
+};
+
+/**
  * Request body to create an organization.
  */
 export type OrganizationCreateRequest = {
@@ -2775,6 +2788,7 @@ export type OrgAttestationOfferItem = {
     attestation_id: string;
     target_type: string;
     target_id: string;
+    target_title?: (string | null);
     status: string;
     cohort_index: number;
     match_score: (number | null);

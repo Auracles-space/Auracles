@@ -64,3 +64,55 @@ describe("OrganizationShell NDA tab", () => {
     expect(screen.queryByRole("tab", { name: /NDA/i })).toBeNull();
   });
 });
+
+describe("OrganizationShell action-count badges", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+  });
+
+  it("shows offer, queue, and invitation counts on the admin tabs", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            capabilities: { attestor: "active" },
+            counts: { offers: 2, queue: 3, invitations: 1 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(await screen.findByRole("tab", { name: /Offers/i })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /Queue/i })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: /Invitations/i })).toHaveTextContent("1");
+  });
+
+  it("renders no count badge when there is nothing to attend to", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            capabilities: { attestor: "active" },
+            counts: { offers: 0, queue: 0, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    const offersTab = await screen.findByRole("tab", { name: /Offers/i });
+    expect(offersTab).toHaveTextContent(/^Offers$/);
+  });
+});

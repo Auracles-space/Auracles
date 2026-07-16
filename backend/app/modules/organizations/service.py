@@ -50,6 +50,7 @@ from app.modules.organizations.schemas import (
     MyInvitationResponse,
     MyInvitationsResponse,
     MyOrganizationResponse,
+    OrgActionCounts,
     OrganizationCreateRequest,
     OrganizationResponse,
     OrganizationUpdateRequest,
@@ -203,6 +204,85 @@ async def list_my_organizations(
         (organization, role, capabilities_by_org.get(organization.id, []))
         for organization, role in memberships
     ]
+
+
+# Membership roles allowed to act on offers, the queue, and invitations. Plain
+# members never see these tabs, so their counts stay zero.
+_ADMIN_ROLES = {"owner", "admin"}
+
+
+async def count_org_actions(
+    db: AsyncSession,
+    *,
+    admin_org_ids: list[UUID],
+) -> dict[UUID, OrgActionCounts]:
+    """Count items awaiting admin attention per org, in three grouped queries.
+
+    Feeds the org-card unread dot and the inner-tab count badges. Only orgs
+    where the caller is owner/admin are passed in; others are omitted (they map
+    to the default all-zero counts on the frontend).
+
+    Args:
+        db: Async database session.
+        admin_org_ids: Org ids where the current user is owner or admin.
+
+    Returns:
+        Mapping of org id to its offer/queue/invitation counts. Orgs with no
+        pending items are omitted (absence means all zero).
+    """
+    if not admin_org_ids:
+        return {}
+
+    from app.modules.attestation.models import Attestation, AttestationOffer
+
+    now = datetime.now(UTC)
+    offers: dict[UUID, int] = {}
+    queue: dict[UUID, int] = {}
+    invitations: dict[UUID, int] = {}
+
+    offer_rows = await db.execute(
+        select(AttestationOffer.org_id, func.count())
+        .where(
+            AttestationOffer.org_id.in_(admin_org_ids),
+            AttestationOffer.status == "offered",
+            AttestationOffer.expires_at > now,
+        )
+        .group_by(AttestationOffer.org_id)
+    )
+    for org_id, count in offer_rows.all():
+        offers[org_id] = int(count)
+
+    queue_rows = await db.execute(
+        select(Attestation.attestor_org_id, func.count())
+        .where(
+            Attestation.attestor_org_id.in_(admin_org_ids),
+            Attestation.status.in_(_IN_FLIGHT_REVIEW_STATUSES),
+        )
+        .group_by(Attestation.attestor_org_id)
+    )
+    for org_id, count in queue_rows.all():
+        if org_id is not None:
+            queue[org_id] = int(count)
+
+    invite_rows = await db.execute(
+        select(OrgInvitation.org_id, func.count())
+        .where(
+            OrgInvitation.org_id.in_(admin_org_ids),
+            OrgInvitation.status == "pending",
+        )
+        .group_by(OrgInvitation.org_id)
+    )
+    for org_id, count in invite_rows.all():
+        invitations[org_id] = int(count)
+
+    return {
+        org_id: OrgActionCounts(
+            offers=offers.get(org_id, 0),
+            queue=queue.get(org_id, 0),
+            invitations=invitations.get(org_id, 0),
+        )
+        for org_id in admin_org_ids
+    }
 
 
 async def get_public_org(
