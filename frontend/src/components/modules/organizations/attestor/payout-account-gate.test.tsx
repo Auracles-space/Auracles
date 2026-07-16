@@ -62,10 +62,10 @@ describe("PayoutAccountGate", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lets a linked-but-unverified account resume provider verification", async () => {
-    // Stripe Express onboarding is a separate step; a linked account may still
-    // be unverified. The linked state must offer a way back to the hosted flow,
-    // not dead-end. Re-onboarding reuses the same account and redirects.
+  it("lets a linked account be managed on the provider without dead-ending", async () => {
+    // The gate is satisfied by a linked account; verification is a payout-time
+    // concern. The linked state confirms completion but still offers a way back
+    // to the hosted flow. Re-onboarding reuses the same account and redirects.
     vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
       data: {
         provider: "stripe",
@@ -88,7 +88,7 @@ describe("PayoutAccountGate", () => {
     );
 
     expect(screen.getByText(/payout account linked/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /continue verification/i }));
+    fireEvent.click(screen.getByRole("button", { name: /manage on stripe/i }));
 
     await waitFor(() => expect(onboardOrgPayoutAccount).toHaveBeenCalled());
     await waitFor(() =>

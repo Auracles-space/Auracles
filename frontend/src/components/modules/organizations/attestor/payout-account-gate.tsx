@@ -101,8 +101,9 @@ export function PayoutAccountGate({
         )}
         <p className="text-sm font-medium text-success">Payout account linked.</p>
         <p className="text-sm text-foreground-muted">
-          Finish verification with the provider to receive payouts. Resume the
-          hosted flow at any time — it reconnects the same account.
+          This satisfies the payout requirement for your application. You can
+          finish or update verification on Stripe anytime before your first
+          payout — it reconnects the same account.
         </p>
         <Button
           type="button"
@@ -111,7 +112,7 @@ export function PayoutAccountGate({
           disabled={loading}
           loading={loading}
         >
-          Continue verification
+          Manage on Stripe
         </Button>
       </div>
     );
