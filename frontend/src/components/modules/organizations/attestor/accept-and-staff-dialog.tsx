@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { ReviewingMemberPicker } from "./reviewing-member-picker";
 import { acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPost } from "@/lib/generated/sdk.gen";
@@ -48,10 +49,14 @@ export function AcceptAndStaffDialog({ orgId, offerId, onDone, onClose }: Accept
     }
   }
 
-  return (
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-[100] grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
       onClick={onClose}
       role="dialog"
     >
@@ -92,6 +97,7 @@ export function AcceptAndStaffDialog({ orgId, offerId, onDone, onClose }: Accept
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
