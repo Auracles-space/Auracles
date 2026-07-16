@@ -288,6 +288,9 @@ async def test_queue_lists_and_filters(
     # The gated fixture seeds a passed trial; the row must surface it so the
     # admin queue can gate Approve without opening the full application.
     assert body["applications"][0]["trial_status"] == "passed"
+    # The org's attestor capability status rides along so the admin queue can
+    # gate the suspend/reinstate/revoke controls; _org seeds it pending.
+    assert body["applications"][0]["capability_status"] == "pending"
 
     filtered = await client.get(
         f"{_QUEUE}?status=needs_info", headers=auth(admin_id, ["admin"])

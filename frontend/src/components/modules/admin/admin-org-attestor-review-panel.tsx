@@ -746,9 +746,12 @@ export function AdminOrgAttestorReviewPanel() {
                   <div className="mt-6 border-t border-border-default/45 pt-4">
                     <h3 className="text-sm font-semibold uppercase tracking-wider text-error mb-3">Capability Controls</h3>
                     <div className="flex flex-wrap gap-2">
+                      {/* Enable only the valid transitions for the current
+                          capability status: active can suspend/revoke,
+                          suspended can reinstate/revoke, revoked is terminal. */}
                       <Button
                         variant="destructive"
-                        disabled={isBusy}
+                        disabled={isBusy || app.capability_status !== "active"}
                         onClick={() => {
                           setCapabilityAction("suspend");
                           setOpenCapabilityId(openCapabilityId === app.org_id ? null : app.org_id);
@@ -758,7 +761,7 @@ export function AdminOrgAttestorReviewPanel() {
                       </Button>
                       <Button
                         variant="secondary"
-                        disabled={isBusy}
+                        disabled={isBusy || app.capability_status !== "suspended"}
                         onClick={() => {
                           setCapabilityAction("reinstate");
                           setOpenCapabilityId(openCapabilityId === app.org_id ? null : app.org_id);
@@ -768,7 +771,11 @@ export function AdminOrgAttestorReviewPanel() {
                       </Button>
                       <Button
                         variant="destructive"
-                        disabled={isBusy}
+                        disabled={
+                          isBusy ||
+                          (app.capability_status !== "active" &&
+                            app.capability_status !== "suspended")
+                        }
                         onClick={() => {
                           setCapabilityAction("revoke");
                           setOpenCapabilityId(openCapabilityId === app.org_id ? null : app.org_id);

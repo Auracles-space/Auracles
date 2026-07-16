@@ -942,6 +942,10 @@ class OrgAttestorAdminListItem(BaseModel):
     # admin queue gate Start Trial and Approve in sequence without opening the
     # full application.
     trial_status: str | None = None
+    # The org's attestor capability status (pending/active/suspended/revoked),
+    # or None if no capability row exists. Lets the admin queue enable only the
+    # valid suspend/reinstate/revoke transitions per row.
+    capability_status: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

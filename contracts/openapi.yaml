@@ -20376,6 +20376,11 @@ components:
           - type: string
           - type: 'null'
           title: Trial Status
+        capability_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Capability Status
       type: object
       required:
       - id

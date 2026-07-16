@@ -304,4 +304,45 @@ describe("AdminOrgAttestorReviewPanel", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("enables only the valid capability transitions for an active capability", async () => {
+    // Active capability: suspend and revoke apply; reinstate does not. All three
+    // must never be live at once.
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Active Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "active", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      total: 1, page: 1, page_size: 10,
+    }) as never);
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Active Org/));
+
+    expect(screen.getByRole("button", { name: /^suspend$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^reinstate$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeEnabled();
+  });
+
+  it("enables reinstate and revoke, not suspend, for a suspended capability", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Suspended Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "suspended", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      total: 1, page: 1, page_size: 10,
+    }) as never);
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Suspended Org/));
+
+    expect(screen.getByRole("button", { name: /^suspend$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^reinstate$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeEnabled();
+  });
+
+  it("disables every capability control once the capability is revoked", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Revoked Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "revoked", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      total: 1, page: 1, page_size: 10,
+    }) as never);
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Revoked Org/));
+
+    expect(screen.getByRole("button", { name: /^suspend$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^reinstate$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeDisabled();
+  });
 });

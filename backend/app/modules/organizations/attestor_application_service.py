@@ -1093,6 +1093,33 @@ async def admin_trial_states(
     return states
 
 
+async def admin_capability_states(
+    db: AsyncSession,
+    org_ids: Sequence[UUID],
+) -> dict[UUID, str]:
+    """Return each org's attestor capability status, keyed by org id.
+
+    Orgs without an attestor capability row are absent from the map. Lets the
+    admin queue enable only the valid capability transitions per row.
+
+    Args:
+        db: Async session.
+        org_ids: Organizations to resolve capability status for.
+
+    Returns:
+        Mapping of org id to its attestor capability status enum value.
+    """
+    if not org_ids:
+        return {}
+    result = await db.execute(
+        select(OrgCapability.org_id, OrgCapability.status).where(
+            OrgCapability.capability == "attestor",
+            OrgCapability.org_id.in_(org_ids),
+        )
+    )
+    return {org_id: status for org_id, status in result}
+
+
 async def admin_verify_kyb(
     db: AsyncSession,
     *,

@@ -2075,10 +2075,14 @@ async def admin_list_org_attestor_applications(
     trial_states = await attestor_application_service.admin_trial_states(
         db, [row.id for row in rows]
     )
+    capability_states = await attestor_application_service.admin_capability_states(
+        db, [row.org_id for row in rows]
+    )
     items: list[OrgAttestorAdminListItem] = []
     for row in rows:
         item = OrgAttestorAdminListItem.model_validate(row)
         item.trial_status = trial_states.get(row.id)
+        item.capability_status = capability_states.get(row.org_id)
         items.append(item)
     return OrgAttestorAdminListResponse(
         applications=items,
