@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   configureBrowserClient,
@@ -328,6 +329,14 @@ export function RequestorPanel() {
       <div className="grid gap-3">
         {attestations.map((attestation) => (
           <AttestationCard attestation={attestation} key={attestation.id}>
+            <div className="mt-4">
+              <Link
+                className="text-sm font-semibold text-accent hover:underline"
+                href={`/attestations/${attestation.id}`}
+              >
+                View details
+              </Link>
+            </div>
             {attestation.status === "report_submitted" ? (
               <div className="mt-4 grid gap-3">
                 <button
