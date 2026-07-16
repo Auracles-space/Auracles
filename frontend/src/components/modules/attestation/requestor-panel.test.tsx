@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { requestAttestation } from "@/lib/generated/sdk.gen";
 import { RequestorPanel } from "./requestor-panel";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -15,27 +16,156 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
     response: { ok: true },
     data: { attestations: [] },
   })),
-  requestAttestation: vi.fn(),
+  listContributorFrameworks: vi.fn(async () => ({
+    response: { ok: true },
+    data: [
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        title: "Governance Playbook",
+        version: "1.0.0",
+        status: "published",
+        category: "governance",
+        price: "0",
+        currency: "USD",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+      },
+      {
+        id: "22222222-2222-2222-2222-222222222222",
+        title: "Risk Register Template",
+        version: "1.0.0",
+        status: "draft",
+        category: "risk",
+        price: "0",
+        currency: "USD",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+      },
+    ],
+  })),
+  requestAttestation: vi.fn(async () => ({ response: { ok: true }, data: {} })),
 }));
 
-describe("RequestorPanel specializations visibility", () => {
-  it("hides the specializations input for framework targets", async () => {
+/** Fill every required framework-request field with valid values. */
+async function fillFrameworkRequest() {
+  await screen.findByRole("option", { name: "Governance Playbook" });
+  fireEvent.change(screen.getByLabelText(/Framework/i), {
+    target: { value: "11111111-1111-1111-1111-111111111111" },
+  });
+  fireEvent.change(screen.getByLabelText(/Review type/i), {
+    target: { value: "quality" },
+  });
+  fireEvent.change(screen.getByLabelText(/What it does/i), {
+    target: { value: "Structures governance decisions." },
+  });
+  fireEvent.change(screen.getByLabelText(/Use case/i), {
+    target: { value: "Board oversight." },
+  });
+  fireEvent.change(screen.getByLabelText(/Jurisdiction/i), {
+    target: { value: "global" },
+  });
+  fireEvent.change(screen.getByLabelText(/Focus areas/i), {
+    target: { value: "Controls and audit trail." },
+  });
+  fireEvent.change(screen.getByLabelText(/Desired outcome/i), {
+    target: { value: "Independent quality sign-off." },
+  });
+}
+
+describe("RequestorPanel framework request", () => {
+  it("lists the requester's own frameworks in the picker", async () => {
     render(<RequestorPanel />);
 
     await screen.findByText("Request Attestation");
-    expect(screen.queryByLabelText(/Specializations/i)).toBeNull();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: "Governance Playbook" }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("option", { name: "Risk Register Template" }),
+    ).toBeInTheDocument();
   });
 
-  it("does not require requester-typed lists for framework targets", async () => {
+  it("is framework-only: no target-type selector or manual id field", async () => {
     render(<RequestorPanel />);
 
     await screen.findByText("Request Attestation");
-    fireEvent.change(screen.getByLabelText(/Target ID/i), {
+    expect(screen.queryByLabelText(/Target type/i)).toBeNull();
+    expect(screen.queryByLabelText(/Target ID/i)).toBeNull();
+  });
+
+  it("keeps the request disabled until review type and brief are filled", async () => {
+    render(<RequestorPanel />);
+
+    await screen.findByText("Request Attestation");
+    await screen.findByRole("option", { name: "Governance Playbook" });
+    fireEvent.change(screen.getByLabelText(/Framework/i), {
       target: { value: "11111111-1111-1111-1111-111111111111" },
     });
 
+    // Framework picked but review type and brief still empty.
     expect(
-      screen.getByRole("button", { name: /Start fee escrow/i }),
-    ).toBeEnabled();
+      screen.getByRole("button", { name: /Request attestation/i }),
+    ).toBeDisabled();
+  });
+
+  it("shows a requesting state while the request is in flight", async () => {
+    let resolveRequest: (value: unknown) => void = () => {};
+    vi.mocked(requestAttestation).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }) as never,
+    );
+
+    render(<RequestorPanel />);
+
+    await screen.findByText("Request Attestation");
+    await fillFrameworkRequest();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Request attestation/i }),
+    );
+
+    // Button flips to the busy label and disables while the promise is pending.
+    const busy = await screen.findByRole("button", { name: /Requesting/i });
+    expect(busy).toBeDisabled();
+
+    resolveRequest({ response: { ok: true }, data: {} });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Request attestation/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("submits the review type and structured brief for a framework", async () => {
+    render(<RequestorPanel />);
+
+    await screen.findByText("Request Attestation");
+    await fillFrameworkRequest();
+
+    const button = screen.getByRole("button", { name: /Request attestation/i });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(requestAttestation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            target_type: "framework",
+            target_id: "11111111-1111-1111-1111-111111111111",
+            review_type: "quality",
+            brief: {
+              what_it_does: "Structures governance decisions.",
+              use_case: "Board oversight.",
+              jurisdiction: "global",
+              focus_areas: "Controls and audit trail.",
+              desired_outcome: "Independent quality sign-off.",
+            },
+          }),
+        }),
+      );
+    });
   });
 });

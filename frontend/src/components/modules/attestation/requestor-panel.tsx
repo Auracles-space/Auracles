@@ -7,45 +7,75 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 import {
   acceptAttestationReport,
   createAttestationDispute,
   listAttestations,
+  listContributorFrameworks,
   requestAttestation,
 } from "@/lib/generated/sdk.gen";
-import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
-import { allValid, isNonEmpty } from "@/lib/forms/validators";
+import type {
+  AttestationRequestResponse,
+  FrameworkListItem,
+} from "@/lib/generated/types.gen";
+import { isNonEmpty } from "@/lib/forms/validators";
 import {
   AttestationCard,
   ErrorMessage,
   HeaderCard,
-  splitCsv,
 } from "@/components/modules/attestation/attestation-status";
 
 export function RequestorPanel() {
   const [attestations, setAttestations] = useState<AttestationRequestResponse[]>([]);
   const [disputeReason, setDisputeReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [jurisdictions, setJurisdictions] = useState("");
   const [loading, setLoading] = useState(true);
-  const [specializations, setSpecializations] = useState("");
   const [targetId, setTargetId] = useState("");
-  const [targetType, setTargetType] =
-    useState<"framework" | "contributor" | "operator" | "credential">("framework");
-  const canRequest = allValid(
-    isNonEmpty(targetId),
-    targetType === "framework"
-      ? true
-      : allValid(isNonEmpty(specializations), isNonEmpty(jurisdictions)),
-  );
+  const [myFrameworks, setMyFrameworks] = useState<FrameworkListItem[]>([]);
+  const [reviewType, setReviewType] = useState<
+    "" | "quality" | "compliance" | "expert" | "provenance"
+  >("");
+  const [whatItDoes, setWhatItDoes] = useState("");
+  const [useCase, setUseCase] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("");
+  const [focusAreas, setFocusAreas] = useState("");
+  const [desiredOutcome, setDesiredOutcome] = useState("");
+  const [isRequesting, setIsRequesting] = useState(false);
+  // Attestation is framework-only today; the request always targets a Framework
+  // and the backend requires a review type plus a fully-populated brief.
+  const canRequest =
+    isNonEmpty(targetId) &&
+    isNonEmpty(reviewType) &&
+    isNonEmpty(whatItDoes) &&
+    isNonEmpty(useCase) &&
+    isNonEmpty(jurisdiction) &&
+    isNonEmpty(focusAreas) &&
+    isNonEmpty(desiredOutcome);
   const canDispute = isNonEmpty(disputeReason);
 
   useEffect(() => {
     void loadRequestorAttestations();
+    void loadMyFrameworks();
   }, []);
+
+  /**
+   * Load the requester's own frameworks to populate the framework target picker.
+   *
+   * Failure is non-fatal: the picker simply shows no options, and the request
+   * form surfaces its own error when a target is not selected.
+   */
+  async function loadMyFrameworks() {
+    configureBrowserClient();
+    const result = await listContributorFrameworks({
+      headers: getAccessTokenHeaders(),
+    });
+    if (result.response.ok && result.data) {
+      setMyFrameworks(result.data);
+    }
+  }
 
   /**
    * Load requestor-visible Attestations.
@@ -70,24 +100,39 @@ export function RequestorPanel() {
    */
   async function handleRequestAttestation() {
     setError(null);
-    configureBrowserClient();
-    const result = await requestAttestation({
-      body: {
-        requested_jurisdictions:
-          targetType === "framework" ? [] : splitCsv(jurisdictions),
-        requested_specializations:
-          targetType === "framework" ? [] : splitCsv(specializations),
-        target_id: targetId,
-        target_type: targetType,
-      },
-      headers: getAccessTokenHeaders(),
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
+    setIsRequesting(true);
+    try {
+      configureBrowserClient();
+      const result = await requestAttestation({
+        body: {
+          target_type: "framework",
+          target_id: targetId,
+          review_type: reviewType || null,
+          brief: {
+            what_it_does: whatItDoes,
+            use_case: useCase,
+            jurisdiction,
+            focus_areas: focusAreas,
+            desired_outcome: desiredOutcome,
+          },
+        },
+        headers: getAccessTokenHeaders(),
+      });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setTargetId("");
+      setReviewType("");
+      setWhatItDoes("");
+      setUseCase("");
+      setJurisdiction("");
+      setFocusAreas("");
+      setDesiredOutcome("");
+      await loadRequestorAttestations();
+    } finally {
+      setIsRequesting(false);
     }
-    setTargetId("");
-    await loadRequestorAttestations();
   }
 
   /**
@@ -151,62 +196,105 @@ export function RequestorPanel() {
         </h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Target type
+            <span>Framework <span className="text-error">*</span></span>
             <Select
-              
-              onChange={(event) =>
-                setTargetType(
-                  event.target.value as
-                    | "framework"
-                    | "contributor"
-                    | "operator"
-                    | "credential",
-                )
-              }
-              value={targetType}
+              onChange={(event) => setTargetId(event.target.value)}
+              value={targetId}
             >
-              <option value="framework">Framework</option>
-              <option value="contributor">Contributor profile</option>
-              <option value="operator">Operator organization</option>
-              <option value="credential">Credential</option>
+              <option value="">Select a framework</option>
+              {myFrameworks.map((framework) => (
+                <option key={framework.id} value={framework.id}>
+                  {framework.title}
+                </option>
+              ))}
             </Select>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Target ID
-            <Input
-              
-              onChange={(event) => setTargetId(event.target.value)}
-              value={targetId}
+            <span>Review type <span className="text-error">*</span></span>
+            <Select
+              onChange={(event) =>
+                setReviewType(
+                  event.target.value as
+                    | ""
+                    | "quality"
+                    | "compliance"
+                    | "expert"
+                    | "provenance",
+                )
+              }
+              value={reviewType}
+            >
+              <option value="">Select a review type</option>
+              <option value="quality">Quality</option>
+              <option value="compliance">Compliance</option>
+              <option value="expert">Expert</option>
+              <option value="provenance">Provenance</option>
+            </Select>
+          </label>
+        </div>
+
+        <p className="mt-6 text-sm font-semibold text-foreground">
+          Review brief
+        </p>
+        <p className="mt-1 text-sm text-foreground-muted">
+          The attestor cohort sees this brief when deciding whether to take the
+          review.
+        </p>
+        <div className="mt-3 grid gap-4">
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>What it does <span className="text-error">*</span></span>
+            <Textarea
+              onChange={(event) => setWhatItDoes(event.target.value)}
+              placeholder="What the framework does and the problem it solves."
+              value={whatItDoes}
             />
           </label>
-          {targetType !== "framework" && (
-            <label className="grid gap-2 text-sm font-semibold text-foreground">
-              Specializations
-              <Input
-                onChange={(event) => setSpecializations(event.target.value)}
-                placeholder="governance, healthcare"
-                value={specializations}
-              />
-            </label>
-          )}
-          {targetType !== "framework" && (
-            <label className="grid gap-2 text-sm font-semibold text-foreground">
-              Jurisdictions
-              <Input
-                onChange={(event) => setJurisdictions(event.target.value)}
-                placeholder="US, EU"
-                value={jurisdictions}
-              />
-            </label>
-          )}
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>Use case <span className="text-error">*</span></span>
+            <Textarea
+              onChange={(event) => setUseCase(event.target.value)}
+              placeholder="Who uses it and in what situation."
+              value={useCase}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>Jurisdiction <span className="text-error">*</span></span>
+            <Select
+              onChange={(event) => setJurisdiction(event.target.value)}
+              value={jurisdiction}
+            >
+              <option value="">Select a jurisdiction</option>
+              {JURISDICTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>Focus areas <span className="text-error">*</span></span>
+            <Textarea
+              onChange={(event) => setFocusAreas(event.target.value)}
+              placeholder="What the review should scrutinise most."
+              value={focusAreas}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>Desired outcome <span className="text-error">*</span></span>
+            <Textarea
+              onChange={(event) => setDesiredOutcome(event.target.value)}
+              placeholder="What a successful attestation looks like for you."
+              value={desiredOutcome}
+            />
+          </label>
         </div>
         <button
           className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!canRequest}
+          disabled={!canRequest || isRequesting}
           onClick={handleRequestAttestation}
           type="button"
         >
-          Start fee escrow
+          {isRequesting ? "Requesting…" : "Request attestation"}
         </button>
       </div>
 
