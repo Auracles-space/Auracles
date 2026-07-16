@@ -76,6 +76,32 @@ describe("OrganizationShell NDA tab", () => {
     expect(screen.getByLabelText(/NDA signature required/i)).toBeInTheDocument();
   });
 
+  it("clears the NDA dot on the nda-signed event without a manual refresh", async () => {
+    mockOrg({});
+    // First load: required + unsigned -> dot shows.
+    vi.mocked(getOrgNda).mockResolvedValueOnce({
+      data: { required: true, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+    // After signing, the re-check reports it signed.
+    vi.mocked(getOrgNda).mockResolvedValueOnce({
+      data: {
+        required: true,
+        current_version: "1.0",
+        signed_version: "1.0",
+        signed_at: "2026-07-16T00:00:00Z",
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+    expect(await screen.findByLabelText(/NDA signature required/i)).toBeInTheDocument();
+
+    window.dispatchEvent(new Event("auracles:nda-signed"));
+
+    await vi.waitFor(() => {
+      expect(screen.queryByLabelText(/NDA signature required/i)).not.toBeInTheDocument();
+    });
+  });
+
   it("shows no NDA dot once the member has signed", async () => {
     mockOrg({});
     vi.mocked(getOrgNda).mockResolvedValue({

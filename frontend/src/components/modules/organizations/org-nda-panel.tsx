@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { getOrgNda, signOrgNda } from "@/lib/generated/sdk.gen";
+import { emitNdaSigned } from "@/lib/organizations/org-events";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { OrgNdaStatusResponse } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,8 @@ export function OrgNdaPanel({ onSigned }: { onSigned?: () => void }) {
     } else if (res.data) {
       setNda(res.data);
       onSigned?.();
+      // Tell the org shell to clear its NDA dot without a manual refresh.
+      emitNdaSigned();
     }
   };
 

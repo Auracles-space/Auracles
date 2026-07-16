@@ -11,6 +11,26 @@ import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { ReassignReviewerDialog } from "./reassign-reviewer-dialog";
 
+// In-flight assignment statuses — mirrors the backend _IN_FLIGHT_REVIEW_STATUSES
+// used for the Queue tab count, so the badge and the list always agree.
+const ACTIVE_QUEUE_STATUSES = [
+  "accepted",
+  "in_review",
+  "report_submitted",
+  "revision_requested",
+  "disputed",
+];
+
+/** Badge variant for an in-flight attestation status. */
+function queueStatusVariant(
+  status: string,
+): "info" | "default" | "warning" | "error" {
+  if (status === "accepted") return "info";
+  if (status === "disputed") return "error";
+  if (status === "in_review") return "default";
+  return "warning";
+}
+
 export function AttestationQueueTab() {
   const { orgId, role } = useOrganization();
   const [attestations, setAttestations] = useState<OrgAttestationItem[]>([]);
@@ -57,7 +77,9 @@ export function AttestationQueueTab() {
     return <div className="p-4 text-sm text-error bg-error/5 border border-error/20 rounded-md">{error}</div>;
   }
 
-  const activeAttestations = attestations.filter(a => ["assigned", "in_progress", "in_review"].includes(a.status));
+  const activeAttestations = attestations.filter((a) =>
+    ACTIVE_QUEUE_STATUSES.includes(a.status),
+  );
 
   if (activeAttestations.length === 0) {
     return (
@@ -82,7 +104,7 @@ export function AttestationQueueTab() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-foreground capitalize">{att.target_type}</span>
-                <Badge variant={att.status === "assigned" ? "info" : att.status === "in_progress" ? "default" : "warning"}>
+                <Badge variant={queueStatusVariant(att.status)}>
                   {att.status.replace("_", " ")}
                 </Badge>
               </div>

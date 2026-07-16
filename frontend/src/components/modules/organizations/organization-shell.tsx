@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
+import { NDA_SIGNED_EVENT } from "@/lib/organizations/org-events";
 import { listMyOrganizationsV1OrgsMineGet, getOrgNda } from "@/lib/generated/sdk.gen";
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -78,6 +79,16 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     void loadNda();
   }, [loadOrg, loadNda]);
   useRefetchOnFocus(refresh);
+
+  // Clear the NDA dot the moment the member signs (from the NDA tab child),
+  // without waiting for a focus change or manual refresh.
+  useEffect(() => {
+    function onSigned(): void {
+      void loadNda();
+    }
+    window.addEventListener(NDA_SIGNED_EVENT, onSigned);
+    return () => window.removeEventListener(NDA_SIGNED_EVENT, onSigned);
+  }, [loadNda]);
 
   if (loading) {
     return (
