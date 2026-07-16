@@ -64,6 +64,8 @@ export function PayoutAccountGate({
 
       // Link the account to the application before navigating away: the gate
       // checks payout_account_id, not whether Stripe onboarding finished.
+      // Re-onboarding an already-linked account returns the same id, so this
+      // is a no-op link on the "continue verification" path.
       const link = await updateOrgAttestorApplication({
         path: { org_id: orgId },
         body: { payout_account_id: onboard.data.payout_account.id },
@@ -74,10 +76,14 @@ export function PayoutAccountGate({
         return;
       }
 
-      onChange();
+      // Redirect to provider verification. Navigate before refetching so the
+      // parent re-render can't swap this control out mid-flight. Only fall back
+      // to a refetch when the provider returned no onboarding URL.
       if (onboard.data.onboarding_url) {
         window.location.assign(onboard.data.onboarding_url);
+        return;
       }
+      onChange();
     } catch {
       setError("An unexpected error occurred.");
     } finally {
@@ -87,9 +93,27 @@ export function PayoutAccountGate({
 
   if (linked) {
     return (
-      <p className="text-sm font-medium text-success">
-        Payout account linked. Complete provider verification to receive payouts.
-      </p>
+      <div className="space-y-3">
+        {error && (
+          <div className="rounded-lg border border-error/50 bg-error/5 p-3 text-sm text-error">
+            {error}
+          </div>
+        )}
+        <p className="text-sm font-medium text-success">Payout account linked.</p>
+        <p className="text-sm text-foreground-muted">
+          Finish verification with the provider to receive payouts. Resume the
+          hosted flow at any time — it reconnects the same account.
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleSetup}
+          disabled={loading}
+          loading={loading}
+        >
+          Continue verification
+        </Button>
+      </div>
     );
   }
 

@@ -62,7 +62,23 @@ describe("PayoutAccountGate", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the linked state and no setup button once an account is linked", () => {
+  it("lets a linked-but-unverified account resume provider verification", async () => {
+    // Stripe Express onboarding is a separate step; a linked account may still
+    // be unverified. The linked state must offer a way back to the hosted flow,
+    // not dead-end. Re-onboarding reuses the same account and redirects.
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      data: {
+        provider: "stripe",
+        onboarding_url: "https://connect.stripe.com/setup/resume",
+        payout_account: { id: "acct-uuid-1" },
+      },
+    } as never);
+    vi.mocked(updateOrgAttestorApplication).mockResolvedValue({
+      data: { payout_account_id: "acct-uuid-1" },
+    } as never);
+    const assignMock = vi.fn();
+    vi.stubGlobal("location", { href: "http://localhost/", assign: assignMock });
+
     render(
       <PayoutAccountGate
         orgId="org-1"
@@ -72,9 +88,15 @@ describe("PayoutAccountGate", () => {
     );
 
     expect(screen.getByText(/payout account linked/i)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /set up payout account/i }),
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /continue verification/i }));
+
+    await waitFor(() => expect(onboardOrgPayoutAccount).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(assignMock).toHaveBeenCalledWith(
+        "https://connect.stripe.com/setup/resume",
+      ),
+    );
+    vi.unstubAllGlobals();
   });
 
   it("locks the gate once the application is submitted", () => {
