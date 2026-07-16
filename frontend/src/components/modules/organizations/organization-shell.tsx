@@ -22,6 +22,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   const [myOrg, setMyOrg] = useState<MyOrganizationResponse | null>(null);
   const [ndaRequired, setNdaRequired] = useState(false);
+  // True when the NDA is required but this member has not yet signed it, so
+  // the NDA tab can flag that action is needed.
+  const [ndaUnsigned, setNdaUnsigned] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +62,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
         path: { org_id: orgId },
         headers: getAccessTokenHeaders(),
       });
-      setNdaRequired(res.data?.required ?? false);
+      const required = res.data?.required ?? false;
+      setNdaRequired(required);
+      setNdaUnsigned(required && !res.data?.signed_at);
     }
     loadNda();
   }, [orgId]);
@@ -104,7 +109,12 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     { id: "attestor-trial", label: "Calibration Trial" },
   ];
   if (needsNda) {
-    tabs.push({ id: "nda", label: "NDA" });
+    tabs.push({
+      id: "nda",
+      label: "NDA",
+      dot: ndaUnsigned,
+      dotLabel: "NDA signature required",
+    });
   }
   
   const counts = myOrg.counts;

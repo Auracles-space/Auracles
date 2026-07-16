@@ -20,6 +20,14 @@ export type TabItem = {
    * shown compact (e.g. "1.2K") with the exact value available on hover.
    */
   count?: number;
+  /**
+   * Optional binary attention marker. Renders a small dot (no number) when
+   * true and `count` is not greater than 0 — for yes/no states like an
+   * unsigned NDA. Falls behind `count` when both are set.
+   */
+  dot?: boolean;
+  /** Accessible label for the dot marker (e.g. "Action required"). */
+  dotLabel?: string;
 };
 
 /** Format a tab count compactly for the badge (e.g. 1234 → "1.2K"). */
@@ -121,6 +129,12 @@ export function Tabs({ tabs, activeId, onChange, label }: TabsProps) {
               >
                 {formatTabCount(tab.count)}
               </span>
+            ) : tab.dot ? (
+              <span
+                aria-label={tab.dotLabel ?? "Action required"}
+                className="ml-2 h-2 w-2 rounded-full bg-accent ring-4 ring-accent/15"
+                role="img"
+              />
             ) : null}
           </button>
         );

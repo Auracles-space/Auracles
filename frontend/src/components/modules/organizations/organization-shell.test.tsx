@@ -63,6 +63,35 @@ describe("OrganizationShell NDA tab", () => {
     await screen.findByRole("tab", { name: /Members/i });
     expect(screen.queryByRole("tab", { name: /NDA/i })).toBeNull();
   });
+
+  it("flags the NDA tab with a dot when required but unsigned", async () => {
+    mockOrg({});
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: true, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    await screen.findByRole("tab", { name: /NDA/i });
+    expect(screen.getByLabelText(/NDA signature required/i)).toBeInTheDocument();
+  });
+
+  it("shows no NDA dot once the member has signed", async () => {
+    mockOrg({});
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: {
+        required: true,
+        current_version: "1.0",
+        signed_version: "1.0",
+        signed_at: "2026-07-16T00:00:00Z",
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    await screen.findByRole("tab", { name: /NDA/i });
+    expect(screen.queryByLabelText(/NDA signature required/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("OrganizationShell action-count badges", () => {
