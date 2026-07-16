@@ -112,7 +112,10 @@ export function AttestationOffersTab() {
         {offers.map((offer) => {
           const expiresAt = new Date(offer.expires_at);
           const isExpired = expiresAt < new Date();
-          
+          // Accept/decline only make sense on a live, un-actioned offer. Once
+          // accepted (member staffed) or expired, show status only.
+          const isActionable = offer.status === "offered" && !isExpired;
+
           return (
             <div key={offer.offer_id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -142,21 +145,27 @@ export function AttestationOffersTab() {
                 )}
               </div>
               
-              <div className="flex gap-2">
-                <Button 
-                  variant="secondary" 
-                  disabled={isExpired || !isAdmin || decliningId === offer.offer_id}
-                  onClick={() => handleDecline(offer.offer_id)}
-                >
-                  {decliningId === offer.offer_id ? "Declining..." : "Decline"}
-                </Button>
-                <Button 
-                  disabled={isExpired || !isAdmin}
-                  onClick={() => setAcceptingOfferId(offer.offer_id)}
-                >
-                  Accept
-                </Button>
-              </div>
+              {isActionable ? (
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={!isAdmin || decliningId === offer.offer_id}
+                    onClick={() => handleDecline(offer.offer_id)}
+                  >
+                    {decliningId === offer.offer_id ? "Declining..." : "Decline"}
+                  </Button>
+                  <Button
+                    disabled={!isAdmin}
+                    onClick={() => setAcceptingOfferId(offer.offer_id)}
+                  >
+                    Accept
+                  </Button>
+                </div>
+              ) : offer.status === "accepted" ? (
+                <span className="text-sm font-medium text-success">
+                  Accepted &middot; member assigned
+                </span>
+              ) : null}
             </div>
           );
         })}

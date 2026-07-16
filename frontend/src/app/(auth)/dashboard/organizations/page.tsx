@@ -94,7 +94,7 @@ export default function OrganizationsPage() {
                   {item.counts?.offers ? (
                     <span
                       aria-label={`${item.counts.offers} attestation offer${item.counts.offers === 1 ? "" : "s"} to review`}
-                      className="h-2.5 w-2.5 rounded-full bg-accent ring-4 ring-accent/15"
+                      className="h-2.5 w-2.5 rounded-full bg-accent"
                       title="Attestation offers to review"
                     />
                   ) : null}

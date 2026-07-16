@@ -57,6 +57,34 @@ describe("AttestationOffersTab preview", () => {
     ).toBeInTheDocument();
   });
 
+  it("hides accept/decline once the offer is accepted", async () => {
+    vi.mocked(listOffers).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        offers: [offer({ status: "accepted", target_title: "Ops Playbook" })],
+      },
+    } as never);
+
+    render(<AttestationOffersTab />);
+
+    await screen.findByText("Ops Playbook");
+    expect(screen.queryByRole("button", { name: /accept/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /decline/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/member assigned/i)).toBeInTheDocument();
+  });
+
+  it("shows accept/decline while the offer is open", async () => {
+    vi.mocked(listOffers).mockResolvedValue({
+      response: { ok: true },
+      data: { offers: [offer({ status: "offered", target_title: "Ops Playbook" })] },
+    } as never);
+
+    render(<AttestationOffersTab />);
+
+    expect(await screen.findByRole("button", { name: /accept/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /decline/i })).toBeInTheDocument();
+  });
+
   it("falls back to the target type when there is no title", async () => {
     vi.mocked(listOffers).mockResolvedValue({
       response: { ok: true },

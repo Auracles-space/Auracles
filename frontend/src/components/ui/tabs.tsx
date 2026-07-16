@@ -132,7 +132,7 @@ export function Tabs({ tabs, activeId, onChange, label }: TabsProps) {
             ) : tab.dot ? (
               <span
                 aria-label={tab.dotLabel ?? "Action required"}
-                className="ml-2 h-2 w-2 rounded-full bg-accent ring-4 ring-accent/15"
+                className="ml-2 h-2 w-2 rounded-full bg-accent"
                 role="img"
               />
             ) : null}
