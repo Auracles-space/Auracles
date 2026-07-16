@@ -141,6 +141,9 @@ export function AttestationQueueTab() {
         <ReassignReviewerDialog
           orgId={orgId}
           attestationId={reassigningId}
+          currentMemberId={
+            attestations.find((a) => a.id === reassigningId)?.reviewing_member_id
+          }
           onClose={() => setReassigningId(null)}
           onDone={() => {
             setReassigningId(null);

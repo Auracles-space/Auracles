@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { ReviewingMemberPicker } from "./reviewing-member-picker";
 import { reassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPost } from "@/lib/generated/sdk.gen";
@@ -9,12 +10,14 @@ import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-c
 export type ReassignReviewerDialogProps = {
   orgId: string;
   attestationId: string;
+  /** Currently assigned reviewing member, preselected in the picker. */
+  currentMemberId?: string | null;
   onDone: () => void;
   onClose: () => void;
 };
 
-export function ReassignReviewerDialog({ orgId, attestationId, onDone, onClose }: ReassignReviewerDialogProps) {
-  const [selectedMemberId, setSelectedMemberId] = useState("");
+export function ReassignReviewerDialog({ orgId, attestationId, currentMemberId, onDone, onClose }: ReassignReviewerDialogProps) {
+  const [selectedMemberId, setSelectedMemberId] = useState(currentMemberId ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,10 +51,14 @@ export function ReassignReviewerDialog({ orgId, attestationId, onDone, onClose }
     }
   }
 
-  return (
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-[100] grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
       onClick={onClose}
       role="dialog"
     >
@@ -92,6 +99,7 @@ export function ReassignReviewerDialog({ orgId, attestationId, onDone, onClose }
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
