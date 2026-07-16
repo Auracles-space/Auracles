@@ -13,7 +13,6 @@ import {
   listAdminAttestations,
   listAttestorOrgs,
   listOrgAttestorApplicationsForAdmin,
-  rejectOrgAttestor,
   resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
 import type {
@@ -25,9 +24,9 @@ import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import {
   ErrorMessage,
   HeaderCard,
-  StatusTag,
 } from "@/components/modules/attestation/attestation-status";
 import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
+import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
@@ -39,14 +38,13 @@ export function AdminAttestationPanel() {
   const [releaseAmount, setReleaseAmount] = useState("");
   const [resolutionType, setResolutionType] =
     useState<"release" | "refund" | "split">("release");
-  const [manualReason, setManualReason] = useState("");
-  const [totpCode, setTotpCode] = useState("");
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeTotp, setDisputeTotp] = useState("");
 
-  const hasTotp = totpCode.trim().length >= 6;
   const canResolveDispute = allValid(
     isNonEmpty(disputeId),
-    isNonEmpty(manualReason),
-    hasTotp,
+    isNonEmpty(disputeReason),
+    disputeTotp.trim().length >= 6,
     resolutionType !== "split" ||
       allValid(isPositiveNumber(releaseAmount), isPositiveNumber(refundAmount)),
   );
@@ -93,19 +91,11 @@ export function AdminAttestationPanel() {
     setNeedsAdmin(result.data.attestations);
   }
 
-  async function handleReview(application: OrgAttestorApplicationResponse) {
-    setError(null);
-    configureBrowserClient();
-    const result = await rejectOrgAttestor({
-      body: { feedback: manualReason },
-      headers: getAccessTokenHeaders(),
-      path: { application_id: application.id },
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    setApplications((current) => current.filter((item) => item.id !== application.id));
+  /** Drop an application from the list once it is rejected. */
+  function handleApplicationRejected(applicationId: string) {
+    setApplications((current) =>
+      current.filter((item) => item.id !== applicationId),
+    );
   }
 
   /** Drop a request from the queue once it is assigned or refunded. */
@@ -121,8 +111,8 @@ export function AdminAttestationPanel() {
     const result = await resolveAttestationDispute({
       body: {
         outcome: resolutionType === "refund" ? "upheld_refund" : "rejected",
-        resolution_notes: manualReason,
-        totp_code: totpCode,
+        resolution_notes: disputeReason,
+        totp_code: disputeTotp,
       },
       headers: getAccessTokenHeaders(),
       path: { dispute_id: disputeId },
@@ -141,30 +131,6 @@ export function AdminAttestationPanel() {
       />
       
       <ErrorMessage message={error} />
-      
-      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-        <h3 className="font-heading text-lg font-bold text-foreground mb-4">
-          Audit & Security Context
-        </h3>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Admin 2FA code
-            <Input 
-              onChange={(event) => setTotpCode(event.target.value)} 
-              placeholder="Enter 6-digit code"
-              value={totpCode} 
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-semibold text-foreground">
-            Reason or notes
-            <Input 
-              onChange={(event) => setManualReason(event.target.value)} 
-              placeholder="Explain this action for audit logs..."
-              value={manualReason} 
-            />
-          </label>
-        </div>
-      </div>
 
       <div className="grid gap-3">
         {applications.length === 0 ? (
@@ -173,76 +139,11 @@ export function AdminAttestationPanel() {
           </p>
         ) : (
           applications.map((application) => (
-            <article className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm" key={application.id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="grid gap-2">
-                  <h3 className="font-heading text-lg font-bold text-foreground">
-                    Attestor Application
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {application.jurisdictions?.map((jur: string) => (
-                      <span
-                        key={jur}
-                        className="inline-flex items-center rounded-lg border border-accent/20 bg-accent/5 px-2 py-0.5 text-xs font-semibold text-accent"
-                      >
-                        {jur}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <StatusTag value={application.status} />
-              </div>
-              
-              <div className="mt-4 grid gap-3 border-t border-border-default pt-4">
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
-                    Credentials Summary
-                  </span>
-                  <p className="text-sm leading-relaxed text-foreground">
-                    {application.credentials_summary}
-                  </p>
-                </div>
-                {application.professional_references ? (
-                  <div className="grid gap-1">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-muted">
-                      Professional References
-                    </span>
-                    <p className="text-sm leading-relaxed text-foreground-muted">
-                      {application.professional_references}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-
-              {application.status === "rejected" ? (
-                <p className="mt-3 rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error font-medium">
-                  Rejected.{" "}
-                  {application.admin_feedback
-                    ? application.admin_feedback
-                    : "No reason was provided. You can submit a new application."}
-                </p>
-              ) : null}
-              {application.status === "active" ? (
-                <p className="mt-3 rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm text-success font-medium">
-                  Active.{" "}
-                  {application.admin_feedback ?? "Your attestor access is active."}
-                </p>
-              ) : null}
-              <div className="mt-4 flex flex-wrap gap-3">
-                {application.status !== "active" && application.status !== "rejected" ? (
-                  <>
-                    <button className="min-h-12 rounded-xl border border-error px-5 text-sm font-semibold text-error shadow-sm outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50" disabled={!hasTotp} onClick={() => handleReview(application)} type="button">
-                      Reject
-                    </button>
-                    {!hasTotp ? (
-                      <p className="w-full text-xs text-foreground-muted">
-                        Enter your 6-digit 2FA code above to reject.
-                      </p>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
-            </article>
+            <AttestorApplicationRow
+              application={application}
+              key={application.id}
+              onRejected={handleApplicationRejected}
+            />
           ))
         )}
       </div>
@@ -325,13 +226,30 @@ export function AdminAttestationPanel() {
                   </label>
                 </div>
               )}
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Resolution notes
+                <Input
+                  onChange={(event) => setDisputeReason(event.target.value)}
+                  placeholder="Explain this resolution for audit logs"
+                  value={disputeReason}
+                />
+              </label>
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+                Admin 2FA code
+                <Input
+                  inputMode="numeric"
+                  onChange={(event) => setDisputeTotp(event.target.value)}
+                  placeholder="6-digit code"
+                  value={disputeTotp}
+                />
+              </label>
             </div>
           </div>
           <div className="pt-4 border-t border-border-default/40">
-            <Button 
+            <Button
               className="w-full sm:w-auto"
-              disabled={!canResolveDispute} 
-              onClick={handleResolveDispute} 
+              disabled={!canResolveDispute}
+              onClick={handleResolveDispute}
               type="button"
             >
               Resolve dispute
