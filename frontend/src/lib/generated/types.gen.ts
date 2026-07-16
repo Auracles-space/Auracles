@@ -119,14 +119,13 @@ export type AdminAnalyticsWindowCounts = {
 };
 
 /**
- * Admin request body for manually assigning a needs-admin Attestation.
+ * Admin request body for dispatching a needs-admin Attestation to an org.
  *
- * The attestation is assigned to an attestor organization and staffed with a
- * reviewing member in the same call, mirroring org accept-and-staff.
+ * The admin picks the attestor organization only. The org then accepts the
+ * offer and staffs its own reviewing member through the normal offer flow.
  */
 export type AdminAttestationAssignRequest = {
     attestor_org_id: string;
-    reviewing_member_id: string;
     reason: string;
     totp_code: string;
 };

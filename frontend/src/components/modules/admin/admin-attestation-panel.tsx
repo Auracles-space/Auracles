@@ -13,12 +13,14 @@ import {
   adminAssignAttestation,
   adminRefundAttestation,
   listAdminAttestations,
+  listAttestorOrgs,
   listOrgAttestorApplicationsForAdmin,
   rejectOrgAttestor,
   resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
 import type {
   AttestationRequestResponse,
+  AttestorDirectoryEntry,
   OrgAttestorApplicationResponse,
 } from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
@@ -31,9 +33,9 @@ import {
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
   const [needsAdmin, setNeedsAdmin] = useState<AttestationRequestResponse[]>([]);
+  const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
   const [assignAttestationId, setAssignAttestationId] = useState("");
   const [assignAttestorOrgId, setAssignAttestorOrgId] = useState("");
-  const [assignReviewingMemberId, setAssignReviewingMemberId] = useState("");
   const [disputeId, setDisputeId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -47,7 +49,6 @@ export function AdminAttestationPanel() {
   const canAssign = allValid(
     isNonEmpty(assignAttestationId),
     isNonEmpty(assignAttestorOrgId),
-    isNonEmpty(assignReviewingMemberId),
     isNonEmpty(manualReason),
     hasTotp,
   );
@@ -67,7 +68,17 @@ export function AdminAttestationPanel() {
   useEffect(() => {
     void loadApplications();
     void loadNeedsAdmin();
+    void loadAttestorOrgs();
   }, []);
+
+  /** Load active attestor orgs for the manual-assign org picker. */
+  async function loadAttestorOrgs() {
+    configureBrowserClient();
+    const result = await listAttestorOrgs({ headers: getAccessTokenHeaders() });
+    if (result.response.ok && result.data) {
+      setAttestorOrgs(result.data.attestors);
+    }
+  }
 
   async function loadApplications() {
     configureBrowserClient();
@@ -117,7 +128,6 @@ export function AdminAttestationPanel() {
     const result = await adminAssignAttestation({
       body: {
         attestor_org_id: assignAttestorOrgId,
-        reviewing_member_id: assignReviewingMemberId,
         reason: manualReason,
         totp_code: totpCode,
       },
@@ -323,32 +333,32 @@ export function AdminAttestationPanel() {
               Attestation Controls
             </h3>
             <p className="text-xs text-foreground-muted mb-4 leading-relaxed">
-              Manually assign pending requests to qualified attestors, or cancel the request and refund operators.
+              Assign an unmatched request to an attestor org, or cancel and
+              refund the requestor. Assigning sends the org an offer — the org
+              then accepts and staffs its own reviewer.
             </p>
             <div className="grid gap-4 mb-6">
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
                 Attestation ID
-                <Input 
-                  onChange={(event) => setAssignAttestationId(event.target.value)} 
-                  placeholder="e.g. att-93f8e" 
-                  value={assignAttestationId} 
+                <Input
+                  onChange={(event) => setAssignAttestationId(event.target.value)}
+                  placeholder="Load one from the queue above"
+                  value={assignAttestationId}
                 />
               </label>
               <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Target Attestor Org ID
-                <Input 
-                  onChange={(event) => setAssignAttestorOrgId(event.target.value)} 
-                  placeholder="Required for manual assignment" 
-                  value={assignAttestorOrgId} 
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Target Reviewing Member ID
-                <Input 
-                  onChange={(event) => setAssignReviewingMemberId(event.target.value)} 
-                  placeholder="Required for manual assignment" 
-                  value={assignReviewingMemberId} 
-                />
+                Attestor org
+                <Select
+                  onChange={(event) => setAssignAttestorOrgId(event.target.value)}
+                  value={assignAttestorOrgId}
+                >
+                  <option value="">Select an attestor org</option>
+                  {attestorOrgs.map((org) => (
+                    <option key={org.org_id} value={org.org_id}>
+                      {org.name}
+                    </option>
+                  ))}
+                </Select>
               </label>
             </div>
           </div>

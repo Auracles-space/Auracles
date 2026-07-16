@@ -12700,10 +12700,6 @@ components:
           type: string
           format: uuid
           title: Attestor Org Id
-        reviewing_member_id:
-          type: string
-          format: uuid
-          title: Reviewing Member Id
         reason:
           type: string
           maxLength: 4000
@@ -12717,16 +12713,16 @@ components:
       type: object
       required:
       - attestor_org_id
-      - reviewing_member_id
       - reason
       - totp_code
       title: AdminAttestationAssignRequest
-      description: 'Admin request body for manually assigning a needs-admin Attestation.
+      description: 'Admin request body for dispatching a needs-admin Attestation to
+        an org.
 
 
-        The attestation is assigned to an attestor organization and staffed with a
+        The admin picks the attestor organization only. The org then accepts the
 
-        reviewing member in the same call, mirroring org accept-and-staff.'
+        offer and staffs its own reviewing member through the normal offer flow.'
     AdminAttestationDisputeResolveRequest:
       properties:
         outcome:

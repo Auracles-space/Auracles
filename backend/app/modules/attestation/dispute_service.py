@@ -320,19 +320,33 @@ async def assign_needs_admin_attestation(
     admin: User,
     attestation_id: UUID,
     attestor_org_id: UUID,
-    reviewing_member_id: UUID,
     reason: str,
     totp_code: str,
 ) -> Attestation:
-    """Manually assign a needs-admin Attestation to an attestor org + member.
+    """Admin dispatches an offer to a chosen attestor org for a needs-admin request.
 
-    The org-world admin fallback for a request that matching could not staff.
-    Mirrors accept-and-staff: the org's ``attestor`` capability must be active,
-    the reviewing member must belong to the org, have signed the current NDA,
-    and be under the per-member concurrency cap, and the org must not conflict
-    with the target (self-review guard). Writes ``attestor_org_id`` +
-    ``reviewing_member_id`` — never the legacy ``attestor_id``. The fee is
-    credited to the org at escrow release, not at assignment.
+    The org-world admin fallback for a request that auto-matching could not
+    staff. The admin picks the org only; the org then accepts the offer and
+    staffs its own reviewing member through the normal offer flow. Bypasses the
+    auto-match eligibility filter (sector/jurisdiction overlap) but keeps the
+    integrity guards: the org's ``attestor`` capability must be active and the
+    org must not conflict with the target (self-review guard).
+
+    Args:
+        db: Async database session.
+        redis: Redis client for admin TOTP verification.
+        admin: Authenticated admin performing the assignment.
+        attestation_id: The needs-admin Attestation to dispatch.
+        attestor_org_id: Attestor org to offer the request to.
+        reason: Audit reason for the manual dispatch.
+        totp_code: Admin TOTP code.
+
+    Returns:
+        The Attestation, now in ``offered`` status.
+
+    Raises:
+        HTTPException(409): The Attestation is not in ``needs_admin`` status.
+        HTTPException(422): The org has a conflict of interest with the target.
     """
     admin_id = admin.id
     if db.in_transaction():
@@ -356,47 +370,49 @@ async def assign_needs_admin_attestation(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Attestor org has a conflict of interest with this target.",
             )
-        member = await matching_service._load_assignable_member(
-            db,
-            org_id=attestor_org_id,
-            member_id=reviewing_member_id,
-        )
         current_time = datetime.now(UTC)
-        completion_days = await _completion_sla_days(db, attestation.target_type)
+        offer_hours = await matching_service._platform_int_config(
+            db,
+            key="attestation_offer_accept_hours",
+            default=matching_service.DEFAULT_OFFER_ACCEPT_HOURS,
+            minimum=1,
+        )
         cohort_index = await _next_cohort_index(db, attestation.id)
         offer = AttestationOffer(
             attestation_id=attestation.id,
             org_id=attestor_org_id,
             cohort_index=cohort_index,
-            status="accepted",
+            status="offered",
             offered_at=current_time,
-            responded_at=current_time,
-            expires_at=current_time,
+            expires_at=current_time + timedelta(hours=offer_hours),
         )
         db.add(offer)
-        attestation.status = "accepted"
-        attestation.attestor_org_id = attestor_org_id
-        attestation.reviewing_member_id = member.id
-        attestation.accepted_at = current_time
-        attestation.completion_due_at = current_time + timedelta(days=completion_days)
+        attestation.status = "offered"
         await write_audit(
             db=db,
             actor_id=admin_id,
-            action="attestation_accepted",
+            action="attestation_offered",
             target_type="attestation",
             target_id=attestation.id,
             metadata={
                 "reason": reason.strip(),
                 "admin_assigned": True,
                 "attestor_org_id": str(attestor_org_id),
-                "reviewing_member_id": str(member.id),
             },
         )
         await db.flush()
+        offer_id = offer.id
     await db.refresh(attestation)
-    attestation_notifications.notify_org_offer_accepted(
-        attestation, org_id=attestor_org_id
+    offers = list(
+        (
+            await db.execute(
+                select(AttestationOffer).where(AttestationOffer.id == offer_id)
+            )
+        )
+        .scalars()
+        .all()
     )
+    await matching_service.notify_new_offers(db, attestation, offers)
     return attestation
 
 

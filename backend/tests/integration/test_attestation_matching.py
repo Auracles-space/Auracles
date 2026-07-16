@@ -1661,13 +1661,13 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         "manual-assign-requestor@auracles.space",
         ["operator"],
     )
-    org_id, _attestor_id, member_id = await create_org_attestor(
+    org_id, _attestor_id, _member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
         slug_prefix="manual",
     )
     admin_id, totp_secret = await create_admin_user()
-    attestation_id, transaction_id, _ = await create_needs_admin_attestation(
+    attestation_id, _transaction_id, _ = await create_needs_admin_attestation(
         requestor_id
     )
 
@@ -1676,7 +1676,6 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         headers=auth_headers(admin_id, ["admin"]),
         json={
             "attestor_org_id": str(org_id),
-            "reviewing_member_id": str(member_id),
             "reason": "Manual assignment after cohort exhaustion.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
         },
@@ -1684,7 +1683,6 @@ async def test_admin_manually_assigns_needs_admin_attestation(
 
     async with async_session_factory() as session:
         attestation = await session.get(Attestation, attestation_id)
-        transaction = await session.get(Transaction, transaction_id)
         offer = await session.scalar(
             select(AttestationOffer).where(
                 AttestationOffer.attestation_id == attestation_id,
@@ -1693,29 +1691,25 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         )
         audit = await session.scalar(
             select(AuditLog).where(
-                AuditLog.action == "attestation_accepted",
+                AuditLog.action == "attestation_offered",
                 AuditLog.target_id == attestation_id,
             )
         )
 
     app.dependency_overrides.pop(get_redis, None)
 
+    # Admin assigns the org only; the org staffs its own reviewing member by
+    # accepting the offer through the normal flow.
     assert response.status_code == 200
-    assert response.json()["status"] == "accepted"
-    assert response.json()["attestor_org_id"] == str(org_id)
-    # Reviewing-member identity is internal and must never surface in the
-    # requestor-facing response schema.
-    assert "reviewing_member_id" not in response.json()
+    assert response.json()["status"] == "offered"
+    assert response.json()["attestor_org_id"] is None
     assert attestation is not None
-    assert attestation.status == "accepted"
-    assert attestation.attestor_org_id == org_id
-    assert attestation.reviewing_member_id == member_id
-    assert attestation.accepted_at is not None
-    assert attestation.completion_due_at is not None
-    assert transaction is not None
-    assert transaction.payee_id is None
+    assert attestation.status == "offered"
+    assert attestation.reviewing_member_id is None
+    assert attestation.accepted_at is None
     assert offer is not None
-    assert offer.status == "accepted"
+    assert offer.status == "offered"
+    assert offer.org_id == org_id
     assert audit is not None
 
 

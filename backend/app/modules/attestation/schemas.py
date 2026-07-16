@@ -287,14 +287,13 @@ class AdminAttestationDisputeResolveRequest(BaseModel):
 
 
 class AdminAttestationAssignRequest(BaseModel):
-    """Admin request body for manually assigning a needs-admin Attestation.
+    """Admin request body for dispatching a needs-admin Attestation to an org.
 
-    The attestation is assigned to an attestor organization and staffed with a
-    reviewing member in the same call, mirroring org accept-and-staff.
+    The admin picks the attestor organization only. The org then accepts the
+    offer and staffs its own reviewing member through the normal offer flow.
     """
 
     attestor_org_id: UUID
-    reviewing_member_id: UUID
     reason: str = Field(min_length=5, max_length=4000)
     totp_code: str = Field(min_length=6, max_length=16)
 

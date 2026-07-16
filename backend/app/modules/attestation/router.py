@@ -713,7 +713,6 @@ async def admin_assign_attestation(
         admin=admin,
         attestation_id=attestation_id,
         attestor_org_id=payload.attestor_org_id,
-        reviewing_member_id=payload.reviewing_member_id,
         reason=payload.reason,
         totp_code=payload.totp_code,
     )
