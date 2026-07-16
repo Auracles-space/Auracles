@@ -28,7 +28,10 @@ const publicAuthPaths = new Set([
 const protectedPathPrefixes: RoleProtectedPrefix[] = [
   { prefix: "/2fa-setup", requiredRoles: null },
   { prefix: "/admin", requiredRoles: ["admin"] },
-  { prefix: "/attestations", requiredRoles: ["attestor"] },
+  // Requestor workspace: contributors/operators request verification on their
+  // own frameworks, profiles, or credentials. Attestors receive work through
+  // the org offers queue, not here.
+  { prefix: "/attestations", requiredRoles: ["contributor", "operator"] },
   { prefix: "/attestor", requiredRoles: ["attestor"] },
   { prefix: "/checkout", requiredRoles: ["operator"] },
   { prefix: "/dashboard/developer", requiredRoles: null },
