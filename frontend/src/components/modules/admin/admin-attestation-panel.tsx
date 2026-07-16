@@ -10,8 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
-  adminAssignAttestation,
-  adminRefundAttestation,
   listAdminAttestations,
   listAttestorOrgs,
   listOrgAttestorApplicationsForAdmin,
@@ -29,13 +27,12 @@ import {
   HeaderCard,
   StatusTag,
 } from "@/components/modules/attestation/attestation-status";
+import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
   const [needsAdmin, setNeedsAdmin] = useState<AttestationRequestResponse[]>([]);
   const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
-  const [assignAttestationId, setAssignAttestationId] = useState("");
-  const [assignAttestorOrgId, setAssignAttestorOrgId] = useState("");
   const [disputeId, setDisputeId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -44,19 +41,8 @@ export function AdminAttestationPanel() {
     useState<"release" | "refund" | "split">("release");
   const [manualReason, setManualReason] = useState("");
   const [totpCode, setTotpCode] = useState("");
-  
+
   const hasTotp = totpCode.trim().length >= 6;
-  const canAssign = allValid(
-    isNonEmpty(assignAttestationId),
-    isNonEmpty(assignAttestorOrgId),
-    isNonEmpty(manualReason),
-    hasTotp,
-  );
-  const canRefund = allValid(
-    isNonEmpty(assignAttestationId),
-    isNonEmpty(manualReason),
-    hasTotp,
-  );
   const canResolveDispute = allValid(
     isNonEmpty(disputeId),
     isNonEmpty(manualReason),
@@ -122,34 +108,11 @@ export function AdminAttestationPanel() {
     setApplications((current) => current.filter((item) => item.id !== application.id));
   }
 
-  async function handleManualAssign() {
-    setError(null);
-    configureBrowserClient();
-    const result = await adminAssignAttestation({
-      body: {
-        attestor_org_id: assignAttestorOrgId,
-        reason: manualReason,
-        totp_code: totpCode,
-      },
-      headers: getAccessTokenHeaders(),
-      path: { attestation_id: assignAttestationId },
-    });
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
-    }
-  }
-
-  async function handleAdminRefund() {
-    setError(null);
-    configureBrowserClient();
-    const result = await adminRefundAttestation({
-      body: { reason: manualReason, totp_code: totpCode },
-      headers: getAccessTokenHeaders(),
-      path: { attestation_id: assignAttestationId },
-    });
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
-    }
+  /** Drop a request from the queue once it is assigned or refunded. */
+  function handleNeedsAdminResolved(attestationId: string) {
+    setNeedsAdmin((current) =>
+      current.filter((item) => item.id !== attestationId),
+    );
   }
 
   async function handleResolveDispute() {
@@ -289,8 +252,8 @@ export function AdminAttestationPanel() {
           Needs admin{needsAdmin.length > 0 ? ` (${needsAdmin.length})` : ""}
         </h3>
         <p className="mt-1 text-sm text-foreground-muted">
-          Requests auto-matching could not staff. Load one into the controls
-          below to assign an attestor or refund the fee.
+          Requests auto-matching could not staff. Assign each to an attestor org
+          (the org then staffs its own reviewer) or refund the fee — inline.
         </p>
         <div className="mt-4 grid gap-3">
           {needsAdmin.length === 0 ? (
@@ -299,88 +262,18 @@ export function AdminAttestationPanel() {
             </p>
           ) : (
             needsAdmin.map((item) => (
-              <article
-                className="grid gap-3 rounded-xl border border-border-default bg-surface-1 p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+              <NeedsAdminRow
+                attestation={item}
+                attestorOrgs={attestorOrgs}
                 key={item.id}
-              >
-                <div>
-                  <p className="font-heading text-sm font-bold text-foreground">
-                    {item.review_type
-                      ? `${item.review_type} review`
-                      : "Attestation request"}
-                  </p>
-                  <p className="mt-1 text-xs text-foreground-muted">
-                    {item.id} · {item.currency} {item.fee_amount}
-                  </p>
-                </div>
-                <button
-                  className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
-                  onClick={() => setAssignAttestationId(item.id)}
-                  type="button"
-                >
-                  Load into controls
-                </button>
-              </article>
+                onResolved={handleNeedsAdminResolved}
+              />
             ))
           )}
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="font-heading text-xl font-bold text-foreground mb-2">
-              Attestation Controls
-            </h3>
-            <p className="text-xs text-foreground-muted mb-4 leading-relaxed">
-              Assign an unmatched request to an attestor org, or cancel and
-              refund the requestor. Assigning sends the org an offer — the org
-              then accepts and staffs its own reviewer.
-            </p>
-            <div className="grid gap-4 mb-6">
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Attestation ID
-                <Input
-                  onChange={(event) => setAssignAttestationId(event.target.value)}
-                  placeholder="Load one from the queue above"
-                  value={assignAttestationId}
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Attestor org
-                <Select
-                  onChange={(event) => setAssignAttestorOrgId(event.target.value)}
-                  value={assignAttestorOrgId}
-                >
-                  <option value="">Select an attestor org</option>
-                  {attestorOrgs.map((org) => (
-                    <option key={org.org_id} value={org.org_id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3 pt-4 border-t border-border-default/40">
-            <Button 
-              disabled={!canAssign} 
-              onClick={handleManualAssign} 
-              type="button"
-            >
-              Manual assign
-            </Button>
-            <Button 
-              disabled={!canRefund} 
-              onClick={handleAdminRefund} 
-              type="button"
-              variant="destructive"
-            >
-              Refund request
-            </Button>
-          </div>
-        </div>
-
+      <div className="grid gap-6">
         <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
           <div>
             <h3 className="font-heading text-xl font-bold text-foreground mb-2">
