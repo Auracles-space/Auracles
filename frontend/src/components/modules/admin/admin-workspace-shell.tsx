@@ -8,7 +8,13 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+import {
+  configureBrowserClient,
+  getAccessTokenHeaders,
+} from "@/lib/auth/form-client";
+import { listAdminAttestations } from "@/lib/generated/sdk.gen";
 
 type AdminWorkspaceShellProps = {
   children: ReactNode;
@@ -79,6 +85,25 @@ const adminLinks = [
  */
 export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
+  const [needsAdminCount, setNeedsAdminCount] = useState(0);
+
+  useEffect(() => {
+    async function loadNeedsAdminCount() {
+      configureBrowserClient();
+      const result = await listAdminAttestations({
+        headers: getAccessTokenHeaders(),
+        query: { status: "needs_admin" },
+      });
+      if (result.response.ok && result.data) {
+        setNeedsAdminCount(result.data.attestations.length);
+      }
+    }
+    void loadNeedsAdminCount();
+  }, []);
+
+  const badgeCounts: Record<string, number> = {
+    "/admin/attestations": needsAdminCount,
+  };
 
   return (
     <section className="px-4 py-6 text-foreground md:px-8 md:py-8">
@@ -103,6 +128,7 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
           >
             {adminLinks.map((link) => {
               const isActive = pathname.startsWith(link.href);
+              const badge = badgeCounts[link.href] ?? 0;
               return (
                 <Link
                   className={[
@@ -114,7 +140,17 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
                   href={link.href}
                   key={link.href}
                 >
-                  <p className="text-sm font-semibold">{link.label}</p>
+                  <p className="flex items-center justify-between gap-2 text-sm font-semibold">
+                    {link.label}
+                    {badge > 0 ? (
+                      <span
+                        aria-label={`${badge} needing attention`}
+                        className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-background"
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="mt-1 text-xs leading-5 text-foreground-muted">
                     {link.summary}
                   </p>
