@@ -5,6 +5,7 @@ import {
   adminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePost as adminDecideTrial,
   adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet as adminGetTrialGrade,
   adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet as adminListCalibrationFixtures,
+  approveOrgAttestor,
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
   orgAttestorNeedsInfo,
@@ -331,6 +332,28 @@ describe("AdminOrgAttestorReviewPanel", () => {
     expect(screen.getByRole("button", { name: /^suspend$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^reinstate$/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /^revoke$/i })).toBeEnabled();
+  });
+
+  it("enables the capability controls right after an in-place approve, without a refetch", async () => {
+    // Approving from the queue activates the capability server-side. The row's
+    // stale capability_status ("pending") must flip to "active" locally, or all
+    // three controls stay disabled until the admin manually refetches.
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
+      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Fresh Org", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "pending", created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      total: 1, page: 1, page_size: 10,
+    }) as never);
+    vi.mocked(approveOrgAttestor).mockResolvedValue(
+      ok({ id: "app-1", status: "approved" }) as never,
+    );
+    render(<AdminOrgAttestorReviewPanel />);
+    await waitFor(() => screen.getByText(/Fresh Org/));
+
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await screen.findByText(/capability activated/i);
+
+    expect(screen.getByRole("button", { name: /^suspend$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^reinstate$/i })).toBeDisabled();
   });
 
   it("disables every capability control once the capability is revoked", async () => {

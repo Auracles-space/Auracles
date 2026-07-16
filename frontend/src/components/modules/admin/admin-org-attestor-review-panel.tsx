@@ -249,6 +249,9 @@ export function AdminOrgAttestorReviewPanel() {
             ? { kyb_verified_at: data.kyb_verified_at }
             : {}),
           ...(actionName === "start_trial" ? { trial_status: "assigned" } : {}),
+          // Approve activates the attestor capability server-side; reflect it
+          // here so the Capability Controls enable without a queue refetch.
+          ...(actionName === "approve" ? { capability_status: "active" } : {}),
         });
         setNotice(ACTION_SUCCESS[actionName] ?? "Done.");
       }
