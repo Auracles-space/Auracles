@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, ReactNode } from "react";
+import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import { listMyOrganizationsV1OrgsMineGet, getOrgNda } from "@/lib/generated/sdk.gen";
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -28,46 +29,55 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const result = await listMyOrganizationsV1OrgsMineGet({
-          headers: getAccessTokenHeaders(),
-        });
-        if (result.response.ok && result.data) {
-          const found = result.data.organizations.find((o: { org: { id: string } }) => o.org.id === orgId);
-          if (found) {
-            setMyOrg(found);
-          } else {
-            setError("Organization not found or you do not have access.");
-          }
+  // Reload the membership (drives capabilities + action-count badges). Does not
+  // toggle the full-page spinner, so it is safe to re-run on focus.
+  const loadOrg = useCallback(async () => {
+    try {
+      const result = await listMyOrganizationsV1OrgsMineGet({
+        headers: getAccessTokenHeaders(),
+      });
+      if (result.response.ok && result.data) {
+        const found = result.data.organizations.find((o: { org: { id: string } }) => o.org.id === orgId);
+        if (found) {
+          setMyOrg(found);
         } else {
-          setError("Failed to load organization.");
+          setError("Organization not found or you do not have access.");
         }
-      } catch {
-        setError("An error occurred.");
-      } finally {
-        setLoading(false);
+      } else {
+        setError("Failed to load organization.");
       }
+    } catch {
+      setError("An error occurred.");
+    } finally {
+      setLoading(false);
     }
-    loadOrg();
   }, [orgId]);
 
   // The NDA becomes required as soon as the org has a live attestor
   // application (before the capability exists), so drive the NDA tab off the
   // NDA-status endpoint rather than the capability map.
-  useEffect(() => {
-    async function loadNda() {
-      const res = await getOrgNda({
-        path: { org_id: orgId },
-        headers: getAccessTokenHeaders(),
-      });
-      const required = res.data?.required ?? false;
-      setNdaRequired(required);
-      setNdaUnsigned(required && !res.data?.signed_at);
-    }
-    loadNda();
+  const loadNda = useCallback(async () => {
+    const res = await getOrgNda({
+      path: { org_id: orgId },
+      headers: getAccessTokenHeaders(),
+    });
+    const required = res.data?.required ?? false;
+    setNdaRequired(required);
+    setNdaUnsigned(required && !res.data?.signed_at);
   }, [orgId]);
+
+  useEffect(() => {
+    void loadOrg();
+    void loadNda();
+  }, [loadOrg, loadNda]);
+
+  // Refresh badges when the owner returns to the tab, so a new offer or NDA
+  // requirement shows up without a manual reload.
+  const refresh = useCallback(() => {
+    void loadOrg();
+    void loadNda();
+  }, [loadOrg, loadNda]);
+  useRefetchOnFocus(refresh);
 
   if (loading) {
     return (

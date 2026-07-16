@@ -9,7 +9,7 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,7 @@ import {
   invalidateReceivedInvitations,
   loadReceivedInvitations,
 } from "@/lib/organizations/received-invitations";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 
 /**
  * Render organizations the user belongs to and invitations they can resolve.
@@ -85,6 +86,19 @@ export function OrganizationsPanel() {
       mounted = false;
     };
   }, []);
+
+  // Refresh org offer dots when the user returns to the tab (orgs only; the
+  // invitation list is cached and refreshed on its own actions).
+  const refreshOrganizations = useCallback(async () => {
+    configureBrowserClient();
+    const res = await listMyOrganizationsV1OrgsMineGet({
+      headers: getAccessTokenHeaders(),
+    });
+    if (res.response.ok && res.data) {
+      setOrganizations(res.data.organizations);
+    }
+  }, []);
+  useRefetchOnFocus(refreshOrganizations);
 
   async function handleAccept(invitation: MyInvitationResponse): Promise<void> {
     setPending({ id: invitation.id, action: "accept" });

@@ -124,6 +124,32 @@ describe("OrganizationShell action-count badges", () => {
     expect(screen.getByRole("tab", { name: /Invitations/i })).toHaveTextContent("1");
   });
 
+  it("refetches counts when the window regains focus", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            capabilities: { attestor: "active" },
+            counts: { offers: 0, queue: 0, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+    await screen.findByRole("tab", { name: /Offers/i });
+    const initialCalls = vi.mocked(listMyOrgs).mock.calls.length;
+
+    window.dispatchEvent(new Event("focus"));
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(listMyOrgs).mock.calls.length).toBeGreaterThan(initialCalls);
+    });
+  });
+
   it("renders no count badge when there is nothing to attend to", async () => {
     vi.mocked(listMyOrgs).mockResolvedValue({
       response: { ok: true },

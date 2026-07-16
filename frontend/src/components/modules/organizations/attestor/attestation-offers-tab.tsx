@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import { listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { OrgAttestationOfferItem } from "@/lib/generated/types.gen";
@@ -49,6 +50,20 @@ export function AttestationOffersTab() {
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  // Silently refresh the offer list when the owner returns to the tab, so a new
+  // cohort offer appears without a manual reload (no spinner flash).
+  const refreshOffers = useCallback(async () => {
+    if (!orgId) return;
+    const res = await listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet({
+      path: { org_id: orgId },
+      headers: getAccessTokenHeaders(),
+    });
+    if (res.response.ok && res.data) {
+      setOffers(res.data.offers);
+    }
+  }, [orgId]);
+  useRefetchOnFocus(refreshOffers);
 
   async function handleDecline(offerId: string) {
     if (!orgId) return;

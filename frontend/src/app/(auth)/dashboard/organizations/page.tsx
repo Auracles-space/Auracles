@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { listMyOrganizationsV1OrgsMineGet } from "@/lib/generated/sdk.gen";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
@@ -16,25 +17,29 @@ export default function OrganizationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  useEffect(() => {
-    async function loadOrgs() {
-      try {
-        const result = await listMyOrganizationsV1OrgsMineGet({
-          headers: getAccessTokenHeaders(),
-        });
-        if (result.response.ok && result.data) {
-          setOrgs(result.data.organizations);
-        } else {
-          setError("Failed to load organizations");
-        }
-      } catch {
-        setError("An error occurred while loading organizations.");
-      } finally {
-        setLoading(false);
+  const loadOrgs = useCallback(async () => {
+    try {
+      const result = await listMyOrganizationsV1OrgsMineGet({
+        headers: getAccessTokenHeaders(),
+      });
+      if (result.response.ok && result.data) {
+        setOrgs(result.data.organizations);
+      } else {
+        setError("Failed to load organizations");
       }
+    } catch {
+      setError("An error occurred while loading organizations.");
+    } finally {
+      setLoading(false);
     }
-    loadOrgs();
   }, []);
+
+  useEffect(() => {
+    void loadOrgs();
+  }, [loadOrgs]);
+
+  // Refresh the offer dots when the user returns to the tab.
+  useRefetchOnFocus(loadOrgs);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 md:py-16">
