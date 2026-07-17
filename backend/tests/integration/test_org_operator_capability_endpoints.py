@@ -46,7 +46,7 @@ async def test_activate_operator_capability_happy_path(
     clean_orgs: None,
     migrated_database: None,
 ) -> None:
-    """An org owner can activate operator capability and grant member roles."""
+    """An org owner can activate operator capability for the org."""
     del override_redis, clean_orgs, migrated_database
     owner_id = await create_user("owner")
     member_id = await create_user("member")
@@ -66,14 +66,22 @@ async def test_activate_operator_capability_happy_path(
     assert body["status"] == "active"
 
     async with async_session_factory() as session:
-        role = await session.scalar(
+        owner_role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == owner_id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+        member_role = await session.scalar(
             select(UserRole).where(
                 UserRole.user_id == member_id,
                 UserRole.role == "operator",
                 UserRole.source == "derived",
             )
         )
-    assert role is not None
+    assert owner_role is not None
+    assert member_role is None
 
 
 async def test_activate_operator_capability_requires_auth_and_admin_role(

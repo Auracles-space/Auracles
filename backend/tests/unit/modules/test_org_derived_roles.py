@@ -23,7 +23,14 @@ from app.main import app
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 from app.modules.organizations import service as org_service
-from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgMember,
+    OrgTeam,
+    OrgTeamCapability,
+    OrgTeamMember,
+)
 from tests.support.db_cleanup import clear_identity_state_async
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -54,6 +61,9 @@ async def org_derived_role_state() -> AsyncIterator[None]:
     async def cleanup() -> None:
         """Delete org-linked rows before shared identity cleanup."""
         async with async_session_factory() as session:
+            await session.execute(delete(OrgTeamCapability))
+            await session.execute(delete(OrgTeamMember))
+            await session.execute(delete(OrgTeam))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
             await session.execute(delete(Organization))
@@ -201,6 +211,10 @@ async def test_sync_removes_only_derived_contributor_role_when_self_role_exists(
             assert membership is not None
             await session.delete(membership)
 
+    roles = await _role_rows(owner.id, "contributor")
+    assert {role.source for role in roles} == {"self", "derived"}
+    assert len(roles) == 2
+
     async with async_session_factory() as session:
         await org_service.sync_derived_roles(session, user_id=owner.id)
 
@@ -266,6 +280,168 @@ async def test_sync_grants_attestor_role_for_active_org_member(
     assert len(roles) == 1
     assert roles[0].source == "derived"
     assert roles[0].approved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_owner_holds_operator_role_without_team(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """An owner holds the derived Operator role without any team membership."""
+    del migrated_database, org_derived_role_state
+    owner = await _create_user("owner-implicit")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Imp Org",
+                slug=f"imp-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            session.add(
+                OrgCapability(org_id=org.id, capability="operator", status="active")
+            )
+
+    async with async_session_factory() as session:
+        await org_service.sync_derived_roles(session, user_id=owner.id)
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == owner.id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is not None
+
+
+@pytest.mark.asyncio
+async def test_plain_member_without_team_has_no_operator_role(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """A plain member without an enabled team must not hold Operator."""
+    del migrated_database, org_derived_role_state
+    member = await _create_user("member-team-gated")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Gate Org",
+                slug=f"gate-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=member.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=member.id, role="member"))
+            session.add(
+                OrgCapability(org_id=org.id, capability="operator", status="active")
+            )
+
+    async with async_session_factory() as session:
+        await org_service.sync_derived_roles(session, user_id=member.id)
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == member.id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is None
+
+
+@pytest.mark.asyncio
+async def test_admin_holds_operator_role_without_team(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """An admin holds the derived Operator role implicitly, without a team."""
+    del migrated_database, org_derived_role_state
+    owner = await _create_user("owner-admin-implicit")
+    admin = await _create_user("admin-implicit")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Adm Org",
+                slug=f"adm-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            session.add(OrgMember(org_id=org.id, user_id=admin.id, role="admin"))
+            session.add(
+                OrgCapability(org_id=org.id, capability="operator", status="active")
+            )
+
+    async with async_session_factory() as session:
+        await org_service.sync_derived_roles(session, user_id=admin.id)
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == admin.id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is not None
+
+
+@pytest.mark.asyncio
+async def test_inactive_org_capability_revokes_operator_even_for_owner(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """A non-active Operator capability yields no derived role, even for owner."""
+    del migrated_database, org_derived_role_state
+    owner = await _create_user("owner-capability-off")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Off Org",
+                slug=f"off-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            session.add(
+                OrgCapability(
+                    org_id=org.id,
+                    capability="operator",
+                    status="suspended",
+                )
+            )
+
+    async with async_session_factory() as session:
+        await org_service.sync_derived_roles(session, user_id=owner.id)
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == owner.id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is None
 
 
 @pytest.mark.asyncio

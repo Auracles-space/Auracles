@@ -37,6 +37,7 @@ from app.modules.organizations.models import (
     OrgMember,
     OrgMemberNda,
     OrgTeam,
+    OrgTeamCapability,
     OrgTeamMember,
 )
 from app.modules.organizations.schemas import (
@@ -860,14 +861,31 @@ async def _guard_and_release_member_deliveries(
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
     """Grant or revoke org-derived user roles for one user's live memberships.
 
-    Derived roles are controlled solely by organization capability state, so
-    this sync selects and mutates only ``source="derived"`` rows. Self-selected
-    roles are intentionally left untouched.
+    A user holds a derived marketplace role only when an organization's
+    capability is active and the user is either an owner/admin in that org or
+    belongs to a team with the matching capability enabled. This sync selects
+    and mutates only ``source="derived"`` rows. Self-selected roles are left
+    untouched.
     """
     from app.modules.auth.models import UserRole
 
     should_have_role_by_name: dict[str, bool] = {}
     for capability, role in _DERIVED_ROLE_MAP.items():
+        team_grant = (
+            select(1)
+            .select_from(OrgTeamMember)
+            .join(OrgTeam, OrgTeam.id == OrgTeamMember.team_id)
+            .join(
+                OrgTeamCapability,
+                (OrgTeamCapability.team_id == OrgTeam.id)
+                & (OrgTeamCapability.capability == capability),
+            )
+            .where(
+                OrgTeamMember.member_id == OrgMember.id,
+                OrgTeam.org_id == Organization.id,
+            )
+            .exists()
+        )
         stmt = (
             select(1)
             .select_from(OrgMember)
@@ -882,6 +900,10 @@ async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
                 OrgMember.user_id == user_id,
                 Organization.suspended_at.is_(None),
                 Organization.deactivated_at.is_(None),
+                or_(
+                    OrgMember.role.in_(("owner", "admin")),
+                    team_grant,
+                ),
             )
             .limit(1)
         )
