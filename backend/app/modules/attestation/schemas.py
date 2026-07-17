@@ -177,8 +177,11 @@ class AttestationReportSubmitRequest(BaseModel):
     """Structured report fields submitted by the assigned Attestor."""
 
     outcome: Literal["approved", "conditional", "rejected"]
-    summary: str = Field(min_length=20, max_length=10000)
-    scope: str = Field(min_length=10, max_length=10000)
+    # Required, non-empty fields. Report body length is governed solely by the
+    # quality gate's word minimum (rubric comments + summary + conditions), so
+    # these carry no competing character floor beyond "must be present".
+    summary: str = Field(min_length=1, max_length=10000)
+    scope: str = Field(min_length=1, max_length=10000)
     conditions: str | None = Field(default=None, max_length=10000)
     evidence_references: dict[str, Any] = Field(default_factory=dict)
 

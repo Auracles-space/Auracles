@@ -15291,12 +15291,12 @@ components:
         summary:
           type: string
           maxLength: 10000
-          minLength: 20
+          minLength: 1
           title: Summary
         scope:
           type: string
           maxLength: 10000
-          minLength: 10
+          minLength: 1
           title: Scope
         conditions:
           anyOf:

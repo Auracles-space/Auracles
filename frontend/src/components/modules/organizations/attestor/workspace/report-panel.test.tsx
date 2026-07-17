@@ -76,24 +76,23 @@ describe("ReportPanel", () => {
     );
   }
 
-  it("keeps submit disabled until required fields meet their minimums", async () => {
+  it("keeps submit disabled until the required fields are present", async () => {
     render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
     const submit = screen.getByRole("button", { name: /Submit Report/i });
 
     // Nothing filled.
     expect(submit).toBeDisabled();
 
-    // Outcome + a too-short summary must not enable submit (backend min 20).
+    // Outcome + summary but no scope must not enable submit (scope required).
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "approved" },
     });
-    fireEvent.change(summaryInput(), { target: { value: "too short" } });
-    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
     expect(submit).toBeDisabled();
 
-    // A summary that clears the minimum enables submit (rubric words already
-    // satisfy the report-length minimum via the mocked rubric fetch).
-    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    // With every required field present and the word gate satisfied (rubric
+    // words from the mocked fetch), submit enables.
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
     await waitFor(() => expect(submit).toBeEnabled());
   });
 

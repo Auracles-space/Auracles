@@ -129,11 +129,12 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
     return s3Key;
   };
 
-  // Mirror the backend contract's required fields (schemas.py): outcome set,
-  // summary >= 20 chars, scope >= 10 chars, and conditions when the outcome is
-  // conditional. Plus the quality gate's report-length minimum (rubric comment
-  // words + summary words + conditions words >= 150). Gates the submit button so
-  // an incomplete report is never sent.
+  // Mirror the backend contract: outcome set; summary and scope present
+  // (non-empty required fields); conditions present when the outcome is
+  // conditional. Report body length is governed by the quality gate's word
+  // minimum (rubric comment words + summary words + conditions words >= 150),
+  // not by any per-field character floor. Gates the submit button so an
+  // incomplete report is never sent.
   const conditionsRequired = outcome === "conditional";
   const totalWords =
     rubricWords +
@@ -142,8 +143,8 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
   const meetsLength = totalWords >= MIN_REPORT_WORDS;
   const isValid =
     !!outcome &&
-    summary.length >= 20 &&
-    scope.length >= 10 &&
+    summary.trim().length > 0 &&
+    scope.trim().length > 0 &&
     (!conditionsRequired || conditions.trim().length > 0) &&
     meetsLength;
 
@@ -228,12 +229,11 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Summary <span className="text-error">*</span></label>
-          <p className="text-xs text-foreground-muted mb-2">Required field (at least 20 characters). Counts toward the report length below.</p>
-          <Textarea 
+          <p className="text-xs text-foreground-muted mb-2">Required. Counts toward the report length below.</p>
+          <Textarea
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
             required
-            minLength={20}
             className="min-h-[100px]"
             placeholder="This framework demonstrates excellent compliance with..."
           />
@@ -241,12 +241,11 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Scope <span className="text-error">*</span></label>
-          <p className="text-xs text-foreground-muted mb-2">Required field (at least 10 characters). What was reviewed and its limitations — not counted toward report length.</p>
-          <Textarea 
+          <p className="text-xs text-foreground-muted mb-2">Required. What was reviewed and its limitations — not counted toward report length.</p>
+          <Textarea
             value={scope}
             onChange={(e) => setScope(e.target.value)}
             required
-            minLength={10}
             className="min-h-[100px]"
             placeholder="Review covered version 2.1 of the framework..."
           />
