@@ -53,6 +53,23 @@ export function AttestationBadge({
   const reportLabel =
     attestationCount > 1 ? ` · ${attestationCount} reports` : "";
 
+  // An accepted (attested) framework needs no words — a check in a circle reads
+  // instantly. The label stays as an accessible name for screen readers.
+  if (badge.status === "attested") {
+    return (
+      <span
+        aria-label={statusConfig.label}
+        title={statusConfig.label}
+        className={[
+          "inline-flex h-7 w-7 items-center justify-center rounded-full border",
+          statusConfig.className,
+        ].join(" ")}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+    );
+  }
+
   return (
     <span
       className={[

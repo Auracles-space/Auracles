@@ -17,11 +17,12 @@ function badge(overrides: Partial<ExploreAttestationBadge>): ExploreAttestationB
 }
 
 describe("AttestationBadge", () => {
-  it("shows the outcome once the attestation is accepted", () => {
+  it("renders an icon-only circle with an accessible name when attested", () => {
     render(<AttestationBadge badge={badge({ status: "attested", outcome: "approved" })} />);
 
-    expect(screen.getByText(/Attested/i)).toBeInTheDocument();
-    expect(screen.getByText(/approved/i)).toBeInTheDocument();
+    // No visible outcome text — just the labelled check icon.
+    expect(screen.getByLabelText("Attested")).toBeInTheDocument();
+    expect(screen.queryByText(/approved/i)).not.toBeInTheDocument();
   });
 
   it("labels a conditional outcome", () => {
