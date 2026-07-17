@@ -17585,11 +17585,13 @@ components:
           - conditionally_attested
           title: Status
         outcome:
-          type: string
-          enum:
-          - approved
-          - conditional
-          - rejected
+          anyOf:
+          - type: string
+            enum:
+            - approved
+            - conditional
+            - rejected
+          - type: 'null'
           title: Outcome
         report_key:
           type: string
@@ -17608,7 +17610,6 @@ components:
       required:
       - id
       - status
-      - outcome
       - report_key
       - issued_at
       title: ExploreAttestationBadge

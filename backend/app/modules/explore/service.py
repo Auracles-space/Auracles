@@ -669,7 +669,11 @@ async def _public_attestation_badges(
         badges[target_id] = ExploreAttestationBadge(
             id=attestation.id,
             status=public_status,
-            outcome=attestation.outcome,
+            # Withhold the outcome until the requestor accepts. While pending the
+            # public only learns a review is in progress, not its verdict.
+            outcome=None
+            if public_status == "pending_acceptance"
+            else attestation.outcome,
             report_key=attestation.report_key,
             issued_at=attestation.issued_at,
             attestation_count=counts.get(target_id, 0),

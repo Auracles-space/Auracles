@@ -1863,7 +1863,7 @@ export type ExploreArtifactSummary = {
 export type ExploreAttestationBadge = {
     id: string;
     status: 'pending_acceptance' | 'attested' | 'conditionally_attested';
-    outcome: 'approved' | 'conditional' | 'rejected';
+    outcome?: ('approved' | 'conditional' | 'rejected' | null);
     report_key: string;
     issued_at: (string | null);
     attestation_count?: number;

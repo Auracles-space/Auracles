@@ -688,10 +688,12 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
     unattested_item = next(
         item for item in catalog_items if item["id"] != str(attested_framework_id)
     )
+    # A submitted-but-unaccepted report must not publicize its outcome; the
+    # public badge shows only that a review is pending, no approved/conditional.
     assert attested_item["attestation_badge"] == {
         "id": str(attestation_id),
         "status": "pending_acceptance",
-        "outcome": "approved",
+        "outcome": None,
         "report_key": attested_item["attestation_badge"]["report_key"],
         "issued_at": attested_item["attestation_badge"]["issued_at"],
         "attestation_count": 1,

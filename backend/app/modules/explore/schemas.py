@@ -32,7 +32,9 @@ class ExploreAttestationBadge(BaseModel):
 
     id: UUID
     status: Literal["pending_acceptance", "attested", "conditionally_attested"]
-    outcome: Literal["approved", "conditional", "rejected"]
+    # Null while pending_acceptance: a submitted-but-unaccepted report must not
+    # publicize its outcome. Set once the attestation is accepted (closed).
+    outcome: Literal["approved", "conditional", "rejected"] | None = None
     report_key: str
     issued_at: datetime | None
     attestation_count: int = 1

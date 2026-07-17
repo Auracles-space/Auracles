@@ -52,10 +52,13 @@ export function AttestationBadge({
     pending_acceptance: {
       className: "border-warning/30 bg-warning/10 text-warning",
       icon: ClockIcon,
-      label: "Pending acceptance",
+      label: "Under review",
     },
   }[badge.status];
   const Icon = statusConfig.icon;
+  // The outcome is withheld until the requestor accepts, so a pending badge
+  // shows only that a review is in progress — never its verdict.
+  const showOutcome = badge.status !== "pending_acceptance" && badge.outcome;
   const attestationCount = badge.attestation_count ?? 0;
   const reportLabel =
     attestationCount > 1 ? ` · ${attestationCount} reports` : "";
@@ -69,7 +72,8 @@ export function AttestationBadge({
       ].join(" ")}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {statusConfig.label}: {formatLabel(badge.outcome)}
+      {statusConfig.label}
+      {showOutcome ? `: ${formatLabel(badge.outcome)}` : ""}
       {reportLabel}
     </span>
   );
