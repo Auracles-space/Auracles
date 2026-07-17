@@ -64,4 +64,28 @@ describe("OrganizationCapabilities", () => {
       screen.getByRole("button", { name: "Activate Operator capability" }),
     ).toBeTruthy();
   });
+
+  it("shows an Active pill and no Activate button when the capability is active", () => {
+    setOrg({ capabilities: { operator: "active" } });
+    render(<OrganizationCapabilities />);
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Activate Operator capability" }),
+    ).toBeNull();
+  });
+
+  it("shows a Suspended pill and no Activate button when the capability is suspended", () => {
+    setOrg({ capabilities: { contributor: "suspended" } });
+    render(<OrganizationCapabilities />);
+    expect(screen.getByText("Suspended")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Activate Contributor capability" }),
+    ).toBeNull();
+  });
+
+  it("shows a Not active pill for a capability with no status", () => {
+    setOrg({ capabilities: {} });
+    render(<OrganizationCapabilities />);
+    expect(screen.getAllByText("Not active").length).toBe(2);
+  });
 });
