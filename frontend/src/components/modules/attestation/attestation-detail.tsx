@@ -29,6 +29,7 @@ import {
   StatusTag,
 } from "@/components/modules/attestation/attestation-status";
 import { AttestationFundingPanel } from "@/components/modules/attestation/attestation-funding-panel";
+import { RequestorClarificationsPanel } from "@/components/modules/attestation/requestor-clarifications-panel";
 
 type AttestationDetailProps = {
   /** Attestation id from the route. */
@@ -240,6 +241,8 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
           ))}
         </dl>
       </div>
+
+      <RequestorClarificationsPanel attestationId={attestationId} />
 
       {hasReport && (
         <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">

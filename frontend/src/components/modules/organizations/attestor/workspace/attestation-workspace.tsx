@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { 
+import { useRouter } from "next/navigation";
+import { ArrowLeftIcon } from "@radix-ui/react-icons";
+import {
   getAttestation,
   startAttestationReview,
   listOrgAttestations
@@ -24,6 +26,7 @@ type AttestationWorkspaceProps = {
 };
 
 export function AttestationWorkspace({ orgId, attestationId }: AttestationWorkspaceProps) {
+  const router = useRouter();
   const { memberId } = useOrganization() as { memberId?: string, role: string };
   const [attestation, setAttestation] = useState<AttestationRequestResponse | null>(null);
   const [queueItem, setQueueItem] = useState<OrgAttestationItem | null>(null);
@@ -110,6 +113,14 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
 
   return (
     <div className="space-y-6">
+      <button
+        className="inline-flex items-center gap-2 text-sm font-semibold text-foreground-muted outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+        onClick={() => router.push(`/dashboard/organizations/${orgId}/queue`)}
+        type="button"
+      >
+        <ArrowLeftIcon className="h-4 w-4" /> Back to queue
+      </button>
+
       {/* Header Card */}
       <div className="rounded-2xl border border-foreground/10 bg-background shadow-bento">
         <div className="flex flex-row items-center justify-between border-b border-foreground/5 p-6 pb-4">
