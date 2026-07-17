@@ -17,7 +17,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@/lib/auth/form-client", () => ({
+vi.mock("@/lib/auth/form-client", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/auth/form-client")>()),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer member" })),
 }));
 
@@ -91,6 +92,30 @@ describe("ReportPanel", () => {
       { target: { value: "Must add SOC2 mapping before full approval." } },
     );
     expect(submit).toBeEnabled();
+  });
+
+  it("surfaces quality-gate failures returned on submit", async () => {
+    vi.mocked(submitAttestationReport).mockResolvedValue({
+      data: undefined,
+      error: {
+        detail: ["Resolve the open clarification before submitting."],
+      },
+      request: new Request("http://test.local"),
+      response: new Response(null, { status: 422 }),
+    } as never);
+
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "approved" },
+    });
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    fireEvent.click(screen.getByRole("button", { name: /Submit Report/i }));
+
+    expect(
+      await screen.findByText(/Resolve the open clarification before submitting/i),
+    ).toBeInTheDocument();
   });
 
   it("submits uploaded evidence as file_keys", async () => {

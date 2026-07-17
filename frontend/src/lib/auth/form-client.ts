@@ -52,16 +52,21 @@ export function describeGeneratedError(error: unknown): string {
     if (typeof detail === "string") {
       return detail;
     }
-    // Pydantic 422: detail is an array of { msg, loc, ... } entries. Surface
-    // the messages so the user learns why the request was rejected instead of
-    // a generic fallback.
+    // detail may be an array of Pydantic 422 { msg, loc, ... } entries, or a
+    // list of plain-string failures raised by a handler (e.g. the report
+    // quality gate). Surface every message so the user learns why the request
+    // was rejected instead of a generic fallback.
     if (Array.isArray(detail)) {
       const messages = detail
-        .map((entry) =>
-          entry && typeof entry === "object" && "msg" in entry
-            ? String((entry as { msg: unknown }).msg)
-            : "",
-        )
+        .map((entry) => {
+          if (typeof entry === "string") {
+            return entry;
+          }
+          if (entry && typeof entry === "object" && "msg" in entry) {
+            return String((entry as { msg: unknown }).msg);
+          }
+          return "";
+        })
         .filter(Boolean);
       if (messages.length > 0) {
         return messages.join(" ");

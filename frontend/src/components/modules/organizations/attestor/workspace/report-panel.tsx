@@ -12,7 +12,7 @@ import {
   createAttestationEvidenceUpload,
   submitAttestationReport
 } from "@/lib/generated/sdk.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -120,7 +120,9 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       });
 
       if (res.error) {
-        throw new Error("Failed to submit report.");
+        // Surface the quality-gate failures (e.g. incomplete rubric, open
+        // clarification) so the reviewer knows exactly what to fix.
+        throw new Error(describeGeneratedError(res.error));
       }
 
       // Success
