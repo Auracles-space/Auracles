@@ -7,11 +7,13 @@
 
 "use client";
 
-import React, { useState } from "react";
-import { 
+import React, { useEffect, useState } from "react";
+import {
   createAttestationEvidenceUpload,
+  listRubricScores,
   submitAttestationReport
 } from "@/lib/generated/sdk.gen";
+import type { RubricScoreItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +26,18 @@ export interface ReportPanelProps {
   orgId: string;
 }
 
+// Mirrors the backend quality gate's `attestation_report_min_words` default.
+// The gate sums rubric comment words + summary words + conditions words (scope
+// is not counted). Kept in sync manually; the backend 422 remains the backstop
+// if an admin overrides the platform config.
+const MIN_REPORT_WORDS = 150;
+
+/** Count whitespace-delimited words, matching Python's `str.split()`. */
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
 export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps) {
   const router = useRouter();
   
@@ -33,9 +47,42 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
   const [conditions, setConditions] = useState("");
 
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
-  
+
+  // Rubric comment words count toward the report-length gate, but live in a
+  // separate tab. Fetch them so the word counter and submit gate mirror the
+  // backend total exactly.
+  const [rubricWords, setRubricWords] = useState(0);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await listRubricScores({
+          path: { attestation_id: attestationId },
+          headers: getAccessTokenHeaders(),
+        });
+        if (!active || res.error || !res.data) return;
+        // Match the gate: only dimensions with both a score and a comment count.
+        const words = res.data.scores.reduce(
+          (sum: number, s: RubricScoreItem) =>
+            s.score !== null && (s.comment ?? "").trim()
+              ? sum + countWords(s.comment ?? "")
+              : sum,
+          0,
+        );
+        setRubricWords(words);
+      } catch {
+        // Non-fatal: the counter falls back to summary/conditions words and the
+        // backend 422 still guards submission.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [attestationId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -82,13 +129,21 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
   // Mirror the backend contract's required fields (schemas.py): outcome set,
   // summary >= 20 chars, scope >= 10 chars, and conditions when the outcome is
-  // conditional. Gates the submit button so an incomplete report is never sent.
+  // conditional. Plus the quality gate's report-length minimum (rubric comment
+  // words + summary words + conditions words >= 150). Gates the submit button so
+  // an incomplete report is never sent.
   const conditionsRequired = outcome === "conditional";
+  const totalWords =
+    rubricWords +
+    countWords(summary) +
+    (conditionsRequired ? countWords(conditions) : 0);
+  const meetsLength = totalWords >= MIN_REPORT_WORDS;
   const isValid =
     !!outcome &&
     summary.length >= 20 &&
     scope.length >= 10 &&
-    (!conditionsRequired || conditions.trim().length > 0);
+    (!conditionsRequired || conditions.trim().length > 0) &&
+    meetsLength;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,8 +282,20 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
           )}
         </div>
 
-        <div className="flex justify-end pt-4 border-t border-border-default">
-          <Button type="submit" disabled={isSubmitting || !isValid}>
+        <div className="flex flex-col gap-3 pt-4 border-t border-border-default sm:flex-row sm:items-center sm:justify-between">
+          <p
+            className={`text-xs ${meetsLength ? "text-foreground-muted" : "text-error"}`}
+          >
+            Report length: {totalWords} / {MIN_REPORT_WORDS} words
+            <span className="block text-foreground-muted">
+              Counts rubric comments, summary, and conditions (scope excluded).
+            </span>
+          </p>
+          <Button
+            type="submit"
+            disabled={isSubmitting || !isValid}
+            className="w-full sm:w-auto"
+          >
             {isSubmitting ? "Submitting..." : "Submit Report"}
           </Button>
         </div>
