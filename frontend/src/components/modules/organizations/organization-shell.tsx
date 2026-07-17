@@ -158,6 +158,11 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     }
 
     tabs.push({ id: "offers", label: "Offers", count: counts?.offers });
+  }
+  // The Queue is where a staffed reviewing member reaches their assigned work,
+  // so it must be visible to plain members too — not just admins. The backend
+  // scopes a member to their own rows; the count badge stays admin-only.
+  if (isAdmin || attestorActive) {
     tabs.push({ id: "queue", label: "Queue", count: counts?.queue });
   }
   if (isOwner) {

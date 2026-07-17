@@ -177,6 +177,31 @@ def notify_org_offer_accepted(attestation: Attestation, *, org_id: UUID) -> None
     )
 
 
+def notify_reviewer_assigned(
+    attestation: Attestation, *, reviewer_user_id: UUID
+) -> None:
+    """Notify an org member when they are staffed as the reviewing member.
+
+    Fired both when an org accepts an offer and staffs a reviewer, and when a
+    reviewer is reassigned to a different member before the review starts.
+
+    Args:
+        attestation: The attestation the member is now assigned to review.
+        reviewer_user_id: User id of the newly assigned reviewing member.
+    """
+    _dispatch(
+        user_id=reviewer_user_id,
+        notification_type="attestation_assigned",
+        title="Attestation assigned to you",
+        body=(
+            "You have been assigned to review an attestation. "
+            "Open your queue to begin."
+        ),
+        attestation=attestation,
+        dedupe_suffix=f"reviewer:{reviewer_user_id}",
+    )
+
+
 def notify_reassigned(
     attestation: Attestation,
     *,

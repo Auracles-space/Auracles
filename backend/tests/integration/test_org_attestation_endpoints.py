@@ -339,6 +339,35 @@ async def test_accept_and_staff_happy_path(
         assert attestation.attestor_org_id == org_id
 
 
+async def test_accept_notifies_the_staffed_member(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepting an offer notifies the newly staffed reviewing member."""
+    from app.modules.attestation import matching_service
+
+    org_id, owner_user, _ = await _attestor_org()
+    member_id, member_user = await _add_member(org_id)
+    _, offer_id = await _offered_attestation(org_id)
+
+    notified: list[UUID] = []
+    monkeypatch.setattr(
+        matching_service.attestation_notifications,
+        "notify_reviewer_assigned",
+        lambda attestation, *, reviewer_user_id: notified.append(reviewer_user_id),
+    )
+
+    response = await client.post(
+        f"/v1/orgs/{org_id}/attestation-offers/{offer_id}/accept",
+        headers=auth(owner_user),
+        json={"reviewing_member_id": str(member_id)},
+    )
+    assert response.status_code == 200
+    assert notified == [member_user]
+
+
 async def test_accept_rejects_plain_member(
     client: AsyncClient, migrated_database: None, clean_state: None
 ) -> None:

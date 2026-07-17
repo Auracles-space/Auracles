@@ -268,6 +268,7 @@ async def accept_org_offer(
             )
 
         completion_days = await _completion_sla_days(db, attestation.target_type)
+        reviewer_user_id = member.user_id
         attestation.status = "accepted"
         attestation.attestor_org_id = org_id
         attestation.reviewing_member_id = member.id
@@ -301,6 +302,9 @@ async def accept_org_offer(
         )
     await db.refresh(attestation)
     attestation_notifications.notify_org_offer_accepted(attestation, org_id=org_id)
+    attestation_notifications.notify_reviewer_assigned(
+        attestation, reviewer_user_id=reviewer_user_id
+    )
     return attestation
 
 
@@ -396,6 +400,7 @@ async def reassign_reviewing_member(
             member_id=reviewing_member_id,
         )
         previous_member_id = attestation.reviewing_member_id
+        reviewer_user_id = member.user_id
         attestation.reviewing_member_id = member.id
         await write_audit(
             db=db,
@@ -412,6 +417,9 @@ async def reassign_reviewing_member(
             },
         )
     await db.refresh(attestation)
+    attestation_notifications.notify_reviewer_assigned(
+        attestation, reviewer_user_id=reviewer_user_id
+    )
     return attestation
 
 
