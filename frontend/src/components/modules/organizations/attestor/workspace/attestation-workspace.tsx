@@ -10,7 +10,6 @@ import {
 } from "@/lib/generated/sdk.gen";
 import type { AttestationRequestResponse, OrgAttestationItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
-import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +26,6 @@ type AttestationWorkspaceProps = {
 
 export function AttestationWorkspace({ orgId, attestationId }: AttestationWorkspaceProps) {
   const router = useRouter();
-  const { memberId } = useOrganization() as { memberId?: string, role: string };
   const [attestation, setAttestation] = useState<AttestationRequestResponse | null>(null);
   const [queueItem, setQueueItem] = useState<OrgAttestationItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,8 +82,9 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
     );
   }
 
-  // The current member can write if they are exactly the assigned reviewing member
-  const canWrite = Boolean(memberId && queueItem?.reviewing_member_id === memberId);
+  // Write access is decided server-side: the queue item is flagged when the
+  // caller is the assigned reviewing member.
+  const canWrite = Boolean(queueItem?.assigned_to_me);
   // The review is "started" once it moves past the freshly-accepted state.
   const isStarted = attestation.status !== "accepted";
   const showStartReview = canWrite && !isStarted;

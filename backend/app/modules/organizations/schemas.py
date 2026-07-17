@@ -1056,6 +1056,9 @@ class OrgAttestationItem(BaseModel):
     reviewing_member_id: UUID | None
     # Display name of the assigned reviewing member, for a friendly queue view.
     reviewing_member_name: str | None = None
+    # True when the requesting caller is the assigned reviewing member, so the
+    # workspace can grant write access without knowing internal member ids.
+    assigned_to_me: bool = False
     accepted_at: datetime | None
     completion_due_at: datetime | None
 

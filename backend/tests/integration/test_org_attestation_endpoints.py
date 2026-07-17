@@ -476,6 +476,34 @@ async def test_queue_shows_friendly_labels(
     assert item["reviewing_member_name"] == "member"
 
 
+async def test_queue_flags_assigned_to_me(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """assigned_to_me is true only for the caller who is the reviewing member."""
+    org_id, owner_user, _ = await _attestor_org()
+    member_id, member_user = await _add_member(org_id)
+    _, offer_id = await _offered_framework_attestation(org_id, title="Ops Playbook")
+
+    accept = await client.post(
+        f"/v1/orgs/{org_id}/attestation-offers/{offer_id}/accept",
+        headers=auth(owner_user),
+        json={"reviewing_member_id": str(member_id)},
+    )
+    assert accept.status_code == 200
+
+    # The assigned member sees the row flagged for write access.
+    member_res = await client.get(
+        f"/v1/orgs/{org_id}/attestations", headers=auth(member_user)
+    )
+    assert member_res.json()["attestations"][0]["assigned_to_me"] is True
+
+    # The owner (not the reviewer) sees the same row but not assigned to them.
+    owner_res = await client.get(
+        f"/v1/orgs/{org_id}/attestations", headers=auth(owner_user)
+    )
+    assert owner_res.json()["attestations"][0]["assigned_to_me"] is False
+
+
 async def test_decline_endpoint(
     client: AsyncClient, migrated_database: None, clean_state: None
 ) -> None:

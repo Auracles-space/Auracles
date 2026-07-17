@@ -20428,6 +20428,10 @@ components:
           - type: string
           - type: 'null'
           title: Reviewing Member Name
+        assigned_to_me:
+          type: boolean
+          title: Assigned To Me
+          default: false
         accepted_at:
           anyOf:
           - type: string

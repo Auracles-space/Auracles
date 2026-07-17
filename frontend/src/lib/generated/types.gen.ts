@@ -2779,6 +2779,7 @@ export type OrgAttestationItem = {
     outcome: (string | null);
     reviewing_member_id: (string | null);
     reviewing_member_name?: (string | null);
+    assigned_to_me?: boolean;
     accepted_at: (string | null);
     completion_due_at: (string | null);
 };

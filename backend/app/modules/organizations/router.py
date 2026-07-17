@@ -1398,6 +1398,7 @@ async def list_org_attestations(
     db: DatabaseSession,
 ) -> OrgAttestationsResponse:
     """List the org's attestations, scoped by the caller's role."""
+    caller_member_id = context.member.id
     reviewing_member_id = (
         None if context.member.role in ("owner", "admin") else context.member.id
     )
@@ -1444,6 +1445,7 @@ async def list_org_attestations(
                 reviewing_member_name=member_names.get(row.reviewing_member_id)
                 if row.reviewing_member_id
                 else None,
+                assigned_to_me=row.reviewing_member_id == caller_member_id,
                 accepted_at=row.accepted_at,
                 completion_due_at=row.completion_due_at,
             )
