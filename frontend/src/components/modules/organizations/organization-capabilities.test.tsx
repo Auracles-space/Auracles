@@ -61,6 +61,11 @@ describe("OrganizationCapabilities", () => {
     setOrg({ capabilities: {} });
     render(<OrganizationCapabilities />);
     expect(
+      screen.getByText(
+        "Activate what your organization can do on the marketplace. Members receive each right through the teams you assign it to.",
+      ),
+    ).toBeTruthy();
+    expect(
       screen.getByRole("button", { name: "Activate Contributor capability" }),
     ).toBeTruthy();
     expect(
@@ -114,6 +119,11 @@ describe("OrganizationCapabilities", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Activate Contributor capability" }),
     );
+    expect(
+      screen.getByText(
+        "Unlocks the Contributor capability for the organization. You then grant it to members by enabling it on their teams. Owners and admins hold it immediately.",
+      ),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Activate Contributor" }));
 
     await waitFor(() => expect(activateContributor).toHaveBeenCalledTimes(1));

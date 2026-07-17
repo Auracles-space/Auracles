@@ -147,7 +147,8 @@ export function OrganizationCapabilities() {
           Capabilities
         </h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Activate what your organization can do on the marketplace.
+          Activate what your organization can do on the marketplace. Members
+          receive each right through the teams you assign it to.
         </p>
       </div>
 
@@ -187,7 +188,7 @@ export function OrganizationCapabilities() {
         title={pendingMeta ? `Activate ${pendingMeta.label} capability?` : ""}
         description={
           pendingMeta
-            ? `Every current and future member gains the ${pendingMeta.label} role. Only a platform admin can reverse this.`
+            ? `Unlocks the ${pendingMeta.label} capability for the organization. You then grant it to members by enabling it on their teams. Owners and admins hold it immediately.`
             : ""
         }
         confirmLabel={pendingMeta ? `Activate ${pendingMeta.label}` : "Activate"}
