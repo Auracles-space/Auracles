@@ -62,7 +62,12 @@ function StatusPill({ status }: { status?: string }) {
  * Card of self-service capability rows for organization owners and admins.
  */
 export function OrganizationCapabilities() {
-  const { capabilities } = useOrganization();
+  const { role, capabilities, isSuspended } = useOrganization();
+
+  const isAdminOrOwner = role === "owner" || role === "admin";
+  if (!isAdminOrOwner || isSuspended) {
+    return null;
+  }
 
   return (
     <section className="max-w-3xl overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm">

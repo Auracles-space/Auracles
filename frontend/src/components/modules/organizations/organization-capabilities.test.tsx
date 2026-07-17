@@ -88,4 +88,16 @@ describe("OrganizationCapabilities", () => {
     render(<OrganizationCapabilities />);
     expect(screen.getAllByText("Not active").length).toBe(2);
   });
+
+  it("renders nothing for a non-admin member", () => {
+    setOrg({ role: "member" });
+    const { container } = render(<OrganizationCapabilities />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing when the org is suspended", () => {
+    setOrg({ role: "owner", isSuspended: true });
+    const { container } = render(<OrganizationCapabilities />);
+    expect(container).toBeEmptyDOMElement();
+  });
 });
