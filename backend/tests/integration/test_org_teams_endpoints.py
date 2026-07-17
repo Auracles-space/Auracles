@@ -12,7 +12,9 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
+from app.main import app
 from app.modules.auth.models import User
 from app.modules.organizations.models import (
     Organization,
@@ -23,6 +25,7 @@ from app.modules.organizations.models import (
     OrgTeamMember,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.integration.test_auth_sessions import FakeRedis
 
 
 @pytest.fixture
@@ -30,6 +33,15 @@ def migrated_database() -> Iterator[None]:
     """Ensure application tables exist."""
     command.upgrade(Config("alembic.ini"), "head")
     yield
+
+
+@pytest.fixture
+def override_redis() -> Iterator[FakeRedis]:
+    """Install a fake Redis for org capability activation rate limits."""
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+    yield fake_redis
+    app.dependency_overrides.pop(get_redis, None)
 
 
 @pytest.fixture
@@ -292,3 +304,42 @@ async def test_delete_team(
         f"/v1/orgs/{org['id']}/teams", headers=auth(owner_token)
     )
     assert len(list_res.json()["teams"]) == 0
+
+
+async def test_list_teams_includes_enabled_capabilities(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    migrated_database: None,
+    clean_teams: None,
+) -> None:
+    """A team's enabled capabilities appear in the teams list response."""
+    del override_redis, migrated_database, clean_teams
+    owner_id = await create_user("teamcaps-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "teamcaps")
+
+    activated = await client.post(
+        f"/v1/orgs/{org['id']}/operator-capability/activate",
+        headers=auth(owner_token),
+    )
+    assert activated.status_code == 200
+
+    team_resp = await client.post(
+        f"/v1/orgs/{org['id']}/teams",
+        headers=auth(owner_token),
+        json={"name": "Sellers"},
+    )
+    assert team_resp.status_code == 201
+    team_id = team_resp.json()["id"]
+
+    enabled = await client.put(
+        f"/v1/orgs/{org['id']}/teams/{team_id}/capabilities/operator",
+        headers=auth(owner_token),
+    )
+    assert enabled.status_code == 204
+
+    listing = await client.get(f"/v1/orgs/{org['id']}/teams", headers=auth(owner_token))
+    assert listing.status_code == 200
+    teams = listing.json()["teams"]
+    sellers = next(team for team in teams if team["id"] == team_id)
+    assert sellers["capabilities"] == ["operator"]

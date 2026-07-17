@@ -25,7 +25,13 @@ pytestmark = pytest.mark.asyncio
 __all__ = ["clean_orgs", "migrated_database"]
 
 
-async def _create_team(client: AsyncClient, *, org_id: str, token: str, name: str) -> str:
+async def _create_team(
+    client: AsyncClient,
+    *,
+    org_id: str,
+    token: str,
+    name: str,
+) -> str:
     """Create one team through the public org teams endpoint."""
     response = await client.post(
         f"/v1/orgs/{org_id}/teams",
@@ -140,7 +146,10 @@ async def test_enable_team_capability_requires_admin_and_active_org_capability(
         headers=auth(owner_token),
     )
     assert inactive.status_code == 422
-    assert inactive.json()["detail"] == "Activate this capability for the organization first."
+    assert (
+        inactive.json()["detail"]
+        == "Activate this capability for the organization first."
+    )
 
 
 async def test_team_capability_unknown_value_returns_422(

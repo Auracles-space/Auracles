@@ -1846,12 +1846,23 @@ async def list_teams(
         .order_by(OrgTeam.name)
     )
     rows = (await db.execute(stmt)).all()
+    cap_rows = (
+        await db.execute(
+            select(OrgTeamCapability.team_id, OrgTeamCapability.capability)
+            .join(OrgTeam, OrgTeam.id == OrgTeamCapability.team_id)
+            .where(OrgTeam.org_id == org_id)
+        )
+    ).all()
+    caps_by_team: dict[UUID, list[str]] = {}
+    for team_id_value, capability in cap_rows:
+        caps_by_team.setdefault(team_id_value, []).append(capability)
     return OrgTeamsResponse(
         teams=[
             OrgTeamResponse(
                 id=row.id,
                 name=row.name,
                 member_count=row.member_count,
+                capabilities=sorted(caps_by_team.get(row.id, [])),
                 created_at=row.created_at,
             )
             for row in rows
@@ -1895,11 +1906,21 @@ async def rename_team(
                 OrgTeamMember.team_id == team_id
             )
         )
+        capabilities = list(
+            (
+                await db.scalars(
+                    select(OrgTeamCapability.capability).where(
+                        OrgTeamCapability.team_id == team_id
+                    )
+                )
+            ).all()
+        )
 
         return OrgTeamResponse(
             id=team.id,
             name=team.name,
             member_count=member_count or 0,
+            capabilities=sorted(capabilities),
             created_at=team.created_at,
         )
 

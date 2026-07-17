@@ -97,7 +97,10 @@ def test_backfill_creates_all_members_team_and_enables_caps(
             assert caps == ["operator"]
     finally:
         with sync_engine.begin() as conn:
-            conn.execute(sa.text("DELETE FROM org_members WHERE org_id=:o"), {"o": org_id})
+            conn.execute(
+                sa.text("DELETE FROM org_members WHERE org_id=:o"),
+                {"o": org_id},
+            )
             conn.execute(
                 sa.text("DELETE FROM organizations WHERE id=:o"),
                 {"o": org_id},

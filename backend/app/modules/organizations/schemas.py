@@ -489,13 +489,14 @@ class OrgTeamRenameRequest(BaseModel):
 
 
 class OrgTeamResponse(BaseModel):
-    """One organization team row with member count."""
+    """One organization team row with member count and enabled capabilities."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
     member_count: int
+    capabilities: list[OrgCapabilityName] = Field(default_factory=list)
     created_at: datetime
 
 

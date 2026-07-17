@@ -22,8 +22,8 @@ from app.core.security import hash_password
 from app.main import app
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
-from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations import service as org_service
+from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,

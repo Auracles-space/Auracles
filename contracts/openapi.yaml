@@ -22181,6 +22181,15 @@ components:
         member_count:
           type: integer
           title: Member Count
+        capabilities:
+          items:
+            type: string
+            enum:
+            - contributor
+            - operator
+            - attestor
+          type: array
+          title: Capabilities
         created_at:
           type: string
           format: date-time
@@ -22190,9 +22199,10 @@ components:
       - id
       - name
       - member_count
+      - capabilities
       - created_at
       title: OrgTeamResponse
-      description: One organization team row with member count.
+      description: One organization team row with member count and enabled capabilities.
     OrgTeamsResponse:
       properties:
         teams:

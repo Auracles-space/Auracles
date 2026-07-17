@@ -16,14 +16,14 @@ from app.modules.organizations.models import (
     OrgTeam,
     OrgTeamMember,
 )
-from tests.unit.modules.test_org_derived_roles import (  # noqa: F401
-    _create_user,
-    _org_admin_context,
-    migrated_database,
-    org_derived_role_state,
+from tests.unit.modules import (
+    test_org_derived_roles as derived_role_fixtures,  # noqa: F401
 )
 
 pytestmark = pytest.mark.asyncio
+
+migrated_database = derived_role_fixtures.migrated_database
+org_derived_role_state = derived_role_fixtures.org_derived_role_state
 
 
 async def test_enable_requires_active_org_capability(
@@ -32,7 +32,7 @@ async def test_enable_requires_active_org_capability(
 ) -> None:
     """Enabling a team capability requires the org capability to be active."""
     del migrated_database, org_derived_role_state
-    owner = await _create_user("guard-owner")
+    owner = await derived_role_fixtures._create_user("guard-owner")
     async with async_session_factory() as session:
         async with session.begin():
             org = Organization(
@@ -49,7 +49,7 @@ async def test_enable_requires_active_org_capability(
             await session.flush()
             org_id, team_id = org.id, team.id
 
-    context = await _org_admin_context(org_id, owner.id)
+    context = await derived_role_fixtures._org_admin_context(org_id, owner.id)
 
     with pytest.raises(HTTPException) as exc:
         async with async_session_factory() as session:
@@ -69,8 +69,8 @@ async def test_enable_then_disable_grants_and_revokes(
 ) -> None:
     """Enabling grants the team member a role; disabling revokes it."""
     del migrated_database, org_derived_role_state
-    owner = await _create_user("flow-owner")
-    member = await _create_user("flow-member")
+    owner = await derived_role_fixtures._create_user("flow-owner")
+    member = await derived_role_fixtures._create_user("flow-member")
     async with async_session_factory() as session:
         async with session.begin():
             org = Organization(
@@ -93,7 +93,7 @@ async def test_enable_then_disable_grants_and_revokes(
             session.add(OrgTeamMember(team_id=team.id, member_id=member_row.id))
             org_id, team_id, member_user_id = org.id, team.id, member.id
 
-    context = await _org_admin_context(org_id, owner.id)
+    context = await derived_role_fixtures._org_admin_context(org_id, owner.id)
 
     async with async_session_factory() as session:
         await org_service.enable_team_capability(
