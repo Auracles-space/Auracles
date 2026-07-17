@@ -23,6 +23,8 @@ from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
     AttestationOffer,
+    AttestationRubricDimension,
+    AttestationRubricScore,
     Credential,
 )
 from app.modules.attestation.schemas import (
@@ -32,6 +34,7 @@ from app.modules.attestation.schemas import (
     AttestationFundingResponse,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
+    RequestorRubricItem,
 )
 from app.modules.auth.models import User
 from app.modules.financials.models import PlatformConfig, Transaction
@@ -96,6 +99,78 @@ async def list_attestations_for_user(
         .order_by(Attestation.created_at.desc(), Attestation.id.desc())
     )
     return list(rows.scalars().all())
+
+
+# Statuses in which a report has been submitted and its rubric may be shown to
+# the requestor. Never includes pre-submission states (accepted/in_review), so
+# the requestor cannot see draft scoring before the attestor commits a report.
+REPORT_RUBRIC_VISIBLE_STATUSES = {
+    "report_submitted",
+    "disputed",
+    "resolved",
+    "released",
+    "refunded",
+    "closed",
+}
+
+
+async def list_report_rubric_for_requestor(
+    db: AsyncSession,
+    *,
+    requestor: User,
+    attestation_id: UUID,
+) -> list[RequestorRubricItem]:
+    """Return the attestor's rubric scorecard for the report's requestor.
+
+    The requestor funds the attestation and decides whether to accept or
+    dispute the submitted report, so they see each rubric dimension's label,
+    score, and comment. Visibility is gated to the requestor and to statuses
+    where a report has actually been submitted.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated caller; must own the attestation.
+        attestation_id: Attestation whose report rubric is requested.
+
+    Returns:
+        One :class:`RequestorRubricItem` per scored dimension, in display order.
+
+    Raises:
+        HTTPException(404): The attestation does not exist, is not owned by the
+            caller, or has no submitted report yet.
+    """
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None or attestation.requestor_id != requestor.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    if attestation.status not in REPORT_RUBRIC_VISIBLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+
+    rows = await db.execute(
+        select(
+            AttestationRubricDimension.key,
+            AttestationRubricDimension.label,
+            AttestationRubricScore.score,
+            AttestationRubricScore.comment,
+        )
+        .join(
+            AttestationRubricDimension,
+            AttestationRubricDimension.id == AttestationRubricScore.dimension_id,
+        )
+        .where(AttestationRubricScore.attestation_id == attestation_id)
+        .order_by(AttestationRubricDimension.display_order)
+    )
+    return [
+        RequestorRubricItem(
+            dimension_key=key, label=label, score=score, comment=comment
+        )
+        for key, label, score, comment in rows.all()
+    ]
 
 
 async def list_admin_attestations(

@@ -30,6 +30,7 @@ import {
 } from "@/components/modules/attestation/attestation-status";
 import { AttestationFundingPanel } from "@/components/modules/attestation/attestation-funding-panel";
 import { RequestorClarificationsPanel } from "@/components/modules/attestation/requestor-clarifications-panel";
+import { ReportRubricPanel } from "@/components/modules/attestation/report-rubric-panel";
 
 type AttestationDetailProps = {
   /** Attestation id from the route. */
@@ -265,6 +266,7 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
               </p>
             </div>
           )}
+          <ReportRubricPanel attestationId={attestationId} />
         </div>
       )}
 

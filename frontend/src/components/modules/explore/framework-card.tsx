@@ -3,11 +3,7 @@
  *
  * Cards expose trust signals and pricing without leaking private artifact keys.
  */
-import {
-  CheckCircledIcon,
-  ClockIcon,
-  InfoCircledIcon,
-} from "@radix-ui/react-icons";
+import { CheckCircledIcon, InfoCircledIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 
 import type {
@@ -38,6 +34,8 @@ export function AttestationBadge({
 }: {
   badge: ExploreAttestationBadge;
 }) {
+  // Only accepted attestations reach a public badge; a pending report shows no
+  // badge at all, so the two positive states are the only ones handled here.
   const statusConfig = {
     attested: {
       className: "border-success/30 bg-success/10 text-success",
@@ -49,16 +47,8 @@ export function AttestationBadge({
       icon: InfoCircledIcon,
       label: "Conditional",
     },
-    pending_acceptance: {
-      className: "border-warning/30 bg-warning/10 text-warning",
-      icon: ClockIcon,
-      label: "Under review",
-    },
   }[badge.status];
   const Icon = statusConfig.icon;
-  // The outcome is withheld until the requestor accepts, so a pending badge
-  // shows only that a review is in progress — never its verdict.
-  const showOutcome = badge.status !== "pending_acceptance" && badge.outcome;
   const attestationCount = badge.attestation_count ?? 0;
   const reportLabel =
     attestationCount > 1 ? ` · ${attestationCount} reports` : "";
@@ -72,8 +62,7 @@ export function AttestationBadge({
       ].join(" ")}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {statusConfig.label}
-      {showOutcome ? `: ${formatLabel(badge.outcome)}` : ""}
+      {statusConfig.label}: {formatLabel(badge.outcome)}
       {reportLabel}
     </span>
   );

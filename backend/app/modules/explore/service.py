@@ -586,11 +586,14 @@ async def _framework_seller_identities(
 
 
 def _public_attestation_status(status_: str, outcome: str | None) -> str | None:
-    """Map an internal Attestation report to a positive public badge status."""
+    """Map an internal Attestation report to a positive public badge status.
+
+    A submitted-but-unaccepted report produces no public badge: nothing is
+    shown until the requestor accepts (status closed). This keeps an unaccepted
+    outcome fully private until the review is done.
+    """
     if outcome not in PUBLIC_POSITIVE_ATTESTATION_OUTCOMES:
         return None
-    if status_ == "report_submitted":
-        return "pending_acceptance"
     if status_ == "closed" and outcome == "approved":
         return "attested"
     if status_ == "closed" and outcome == "conditional":
@@ -605,10 +608,6 @@ def _public_attestation_rank(status_: str, outcome: str | None) -> int | None:
         return 0
     if public_status == "conditionally_attested":
         return 1
-    if public_status == "pending_acceptance" and outcome == "approved":
-        return 2
-    if public_status == "pending_acceptance" and outcome == "conditional":
-        return 3
     return None
 
 
@@ -649,6 +648,11 @@ async def _public_attestation_badges(
     selected: dict[UUID, tuple[int, Attestation]] = {}
     counts: dict[UUID, int] = {}
     for attestation in rows:
+        # A submitted-but-unaccepted report is fully private: it neither shows a
+        # badge nor counts toward the public report tally. Accepted (closed)
+        # reports count regardless of outcome, matching the "N reports" total.
+        if attestation.status == "report_submitted":
+            continue
         counts[attestation.target_id] = counts.get(attestation.target_id, 0) + 1
         rank = _public_attestation_rank(attestation.status, attestation.outcome)
         if rank is None:
@@ -669,11 +673,7 @@ async def _public_attestation_badges(
         badges[target_id] = ExploreAttestationBadge(
             id=attestation.id,
             status=public_status,
-            # Withhold the outcome until the requestor accepts. While pending the
-            # public only learns a review is in progress, not its verdict.
-            outcome=None
-            if public_status == "pending_acceptance"
-            else attestation.outcome,
+            outcome=attestation.outcome,
             report_key=attestation.report_key,
             issued_at=attestation.issued_at,
             attestation_count=counts.get(target_id, 0),

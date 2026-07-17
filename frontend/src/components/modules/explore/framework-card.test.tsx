@@ -17,17 +17,20 @@ function badge(overrides: Partial<ExploreAttestationBadge>): ExploreAttestationB
 }
 
 describe("AttestationBadge", () => {
-  it("does not reveal the outcome while a review is pending acceptance", () => {
-    render(<AttestationBadge badge={badge({ status: "pending_acceptance", outcome: null })} />);
-
-    expect(screen.getByText(/Under review/i)).toBeInTheDocument();
-    expect(screen.queryByText(/approved/i)).not.toBeInTheDocument();
-  });
-
   it("shows the outcome once the attestation is accepted", () => {
     render(<AttestationBadge badge={badge({ status: "attested", outcome: "approved" })} />);
 
     expect(screen.getByText(/Attested/i)).toBeInTheDocument();
     expect(screen.getByText(/approved/i)).toBeInTheDocument();
+  });
+
+  it("labels a conditional outcome", () => {
+    render(
+      <AttestationBadge
+        badge={badge({ status: "conditionally_attested", outcome: "conditional" })}
+      />,
+    );
+
+    expect(screen.getByText(/Conditional/i)).toBeInTheDocument();
   });
 });

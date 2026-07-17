@@ -31,10 +31,10 @@ class ExploreAttestationBadge(BaseModel):
     """Public trust badge for a Framework or Contributor-target Attestation."""
 
     id: UUID
-    status: Literal["pending_acceptance", "attested", "conditionally_attested"]
-    # Null while pending_acceptance: a submitted-but-unaccepted report must not
-    # publicize its outcome. Set once the attestation is accepted (closed).
-    outcome: Literal["approved", "conditional", "rejected"] | None = None
+    # Only accepted (closed) attestations produce a public badge; a submitted-
+    # but-unaccepted report shows nothing until the review is done.
+    status: Literal["attested", "conditionally_attested"]
+    outcome: Literal["approved", "conditional", "rejected"]
     report_key: str
     issued_at: datetime | None
     attestation_count: int = 1

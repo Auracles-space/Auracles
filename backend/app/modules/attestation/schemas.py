@@ -223,6 +223,28 @@ class RubricScoresResponse(BaseModel):
     scores: list[RubricScoreItem]
 
 
+class RequestorRubricItem(BaseModel):
+    """One rubric dimension result shown to the requestor on a submitted report.
+
+    Unlike the workspace view (keyed for rehydration), this carries the human
+    dimension label so the requestor sees a readable scorecard when deciding
+    whether to accept or dispute.
+    """
+
+    dimension_key: str
+    label: str
+    score: int | None = None
+    comment: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RequestorReportRubricResponse(BaseModel):
+    """The attestor's rubric scorecard exposed to the report's requestor."""
+
+    scores: list[RequestorRubricItem]
+
+
 class AnnotationCreateRequest(BaseModel):
     """Request body for creating one free-anchor workspace annotation."""
 

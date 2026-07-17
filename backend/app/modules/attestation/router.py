@@ -70,6 +70,7 @@ from app.modules.attestation.schemas import (
     CredentialResponse,
     CredentialsResponse,
     CredentialUpdateRequest,
+    RequestorReportRubricResponse,
     RubricScoreItem,
     RubricScoreResponse,
     RubricScoresResponse,
@@ -673,6 +674,29 @@ async def accept_attestation_report(
         attestation_id=attestation_id,
     )
     return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.get(
+    "/attestations/{attestation_id}/report/rubric",
+    response_model=RequestorReportRubricResponse,
+    summary="Report rubric scorecard (requestor)",
+    description=(
+        "Return the attestor's per-dimension rubric scores and comments for a "
+        "submitted report. Visible only to the attestation's requestor."
+    ),
+)
+async def get_report_rubric(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> RequestorReportRubricResponse:
+    """Return the submitted report's rubric scorecard to the requestor."""
+    scores = await attestation_service.list_report_rubric_for_requestor(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+    )
+    return RequestorReportRubricResponse(scores=scores)
 
 
 @router.post(

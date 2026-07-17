@@ -1708,6 +1708,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/report/rubric:
+    get:
+      tags:
+      - Attestation
+      summary: Report rubric scorecard (requestor)
+      description: Return the attestor's per-dimension rubric scores and comments
+        for a submitted report. Visible only to the attestation's requestor.
+      operationId: get_report_rubric_v1_attestations__attestation_id__report_rubric_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestorReportRubricResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/disputes:
     post:
       tags:
@@ -17580,18 +17611,15 @@ components:
         status:
           type: string
           enum:
-          - pending_acceptance
           - attested
           - conditionally_attested
           title: Status
         outcome:
-          anyOf:
-          - type: string
-            enum:
-            - approved
-            - conditional
-            - rejected
-          - type: 'null'
+          type: string
+          enum:
+          - approved
+          - conditional
+          - rejected
           title: Outcome
         report_key:
           type: string
@@ -17610,6 +17638,7 @@ components:
       required:
       - id
       - status
+      - outcome
       - report_key
       - issued_at
       title: ExploreAttestationBadge
@@ -24450,6 +24479,50 @@ components:
         Numeric ``score`` is suppressed while ``is_provisional`` so low-evidence
 
         subjects render as "New" rather than a misleading number.'
+    RequestorReportRubricResponse:
+      properties:
+        scores:
+          items:
+            $ref: '#/components/schemas/RequestorRubricItem'
+          type: array
+          title: Scores
+      type: object
+      required:
+      - scores
+      title: RequestorReportRubricResponse
+      description: The attestor's rubric scorecard exposed to the report's requestor.
+    RequestorRubricItem:
+      properties:
+        dimension_key:
+          type: string
+          title: Dimension Key
+        label:
+          type: string
+          title: Label
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - dimension_key
+      - label
+      title: RequestorRubricItem
+      description: 'One rubric dimension result shown to the requestor on a submitted
+        report.
+
+
+        Unlike the workspace view (keyed for rehydration), this carries the human
+
+        dimension label so the requestor sees a readable scorecard when deciding
+
+        whether to accept or dispute.'
     ResendVerificationRequest:
       properties:
         email:

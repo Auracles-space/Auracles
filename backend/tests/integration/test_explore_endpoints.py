@@ -688,20 +688,12 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
     unattested_item = next(
         item for item in catalog_items if item["id"] != str(attested_framework_id)
     )
-    # A submitted-but-unaccepted report must not publicize its outcome; the
-    # public badge shows only that a review is pending, no approved/conditional.
-    assert attested_item["attestation_badge"] == {
-        "id": str(attestation_id),
-        "status": "pending_acceptance",
-        "outcome": None,
-        "report_key": attested_item["attestation_badge"]["report_key"],
-        "issued_at": attested_item["attestation_badge"]["issued_at"],
-        "attestation_count": 1,
-    }
-    assert attested_item["attestation_badge"]["report_key"].startswith(
-        "attestation-reports/"
-    )
+    # A submitted-but-unaccepted report produces no public badge at all; nothing
+    # is shown until the requestor accepts the report (status closed).
+    assert attested_item["attestation_badge"] is None
     assert unattested_item["attestation_badge"] is None
+    # The pending filter still finds a framework under review (existence only,
+    # no outcome exposed).
     assert filtered_response.status_code == 200
     assert filtered_response.json()["total"] == 1
     assert filtered_response.json()["items"][0]["id"] == str(attested_framework_id)
@@ -711,9 +703,10 @@ async def test_public_catalog_returns_and_filters_framework_attestation_badges(
         "Unattested Board Framework"
     )
     assert detail_response.status_code == 200
-    assert detail_response.json()["attestation_badge"]["id"] == str(attestation_id)
+    assert detail_response.json()["attestation_badge"] is None
     assert detail_response.json()["contributor_id"] == str(contributor_id)
     assert detail_response.json()["contributor_name"] == "attested-seller"
+    del attestation_id
 
 
 async def test_rejected_framework_attestation_does_not_render_positive_badge(

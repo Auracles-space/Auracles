@@ -448,3 +448,62 @@ async def test_late_submission_increments_org_profile(db_session) -> None:
             )
         )
     assert count == 1
+
+
+async def test_requestor_sees_report_rubric_after_submission(
+    client: AsyncClient, clean_state
+) -> None:
+    """The requestor can read the attestor's rubric once a report is submitted.
+
+    The rubric is the attestor's per-dimension scoring; the paying requestor
+    needs it to decide whether to accept or dispute, so a submitted report
+    exposes each dimension's label, score, and comment to the requestor.
+    """
+    org_id, _owner = await _attestor_org()
+    member_id, _member_user = await _add_member(org_id)
+    attestation = await _staffed_attestation(
+        org_id,
+        member_id,
+        status="report_submitted",
+        seed_rubric=True,
+    )
+
+    token = create_access_token(
+        user_id=attestation.requestor_id, roles=["operator"]
+    )
+    response = await client.get(
+        f"/v1/attestations/{attestation.id}/report/rubric",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    scores = response.json()["scores"]
+    assert len(scores) > 0
+    first = scores[0]
+    assert set(first) == {"dimension_key", "label", "score", "comment"}
+    assert first["score"] == 5
+    assert first["label"]
+    assert "approval" in first["comment"]
+
+
+async def test_report_rubric_hidden_from_non_requestor(
+    client: AsyncClient, clean_state
+) -> None:
+    """A caller who is not the requestor cannot read the report rubric."""
+    org_id, _owner = await _attestor_org()
+    member_id, _member_user = await _add_member(org_id)
+    attestation = await _staffed_attestation(
+        org_id,
+        member_id,
+        status="report_submitted",
+        seed_rubric=True,
+    )
+    stranger = await _new_user("rubric-stranger")
+    token = create_access_token(user_id=stranger, roles=["operator"])
+
+    response = await client.get(
+        f"/v1/attestations/{attestation.id}/report/rubric",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404

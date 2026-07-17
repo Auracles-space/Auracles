@@ -1862,14 +1862,14 @@ export type ExploreArtifactSummary = {
  */
 export type ExploreAttestationBadge = {
     id: string;
-    status: 'pending_acceptance' | 'attested' | 'conditionally_attested';
-    outcome?: ('approved' | 'conditional' | 'rejected' | null);
+    status: 'attested' | 'conditionally_attested';
+    outcome: 'approved' | 'conditional' | 'rejected';
     report_key: string;
     issued_at: (string | null);
     attestation_count?: number;
 };
 
-export type status3 = 'pending_acceptance' | 'attested' | 'conditionally_attested';
+export type status3 = 'attested' | 'conditionally_attested';
 
 /**
  * Paginated mixed catalog response for Framework and Collection cards.
@@ -4175,6 +4175,27 @@ export type ReputationSummary = {
 };
 
 /**
+ * The attestor's rubric scorecard exposed to the report's requestor.
+ */
+export type RequestorReportRubricResponse = {
+    scores: Array<RequestorRubricItem>;
+};
+
+/**
+ * One rubric dimension result shown to the requestor on a submitted report.
+ *
+ * Unlike the workspace view (keyed for rehydration), this carries the human
+ * dimension label so the requestor sees a readable scorecard when deciding
+ * whether to accept or dispute.
+ */
+export type RequestorRubricItem = {
+    dimension_key: string;
+    label: string;
+    score?: (number | null);
+    comment?: (string | null);
+};
+
+/**
  * Request body for requesting a new verification email.
  */
 export type ResendVerificationRequest = {
@@ -5061,6 +5082,16 @@ export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostDa
 export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostResponse = (AttestationRequestResponse);
 
 export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostError = (HTTPValidationError);
+
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetResponse = (RequestorReportRubricResponse);
+
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetError = (HTTPValidationError);
 
 export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostData = {
     body: AttestationDisputeCreateRequest;
