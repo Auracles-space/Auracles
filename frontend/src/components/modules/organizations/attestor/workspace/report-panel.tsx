@@ -228,7 +228,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Summary <span className="text-error">*</span></label>
-          <p className="text-xs text-foreground-muted mb-2">Provide a high-level summary of your findings (min 20 chars).</p>
+          <p className="text-xs text-foreground-muted mb-2">Required field (at least 20 characters). Counts toward the report length below.</p>
           <Textarea 
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
@@ -241,7 +241,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Scope <span className="text-error">*</span></label>
-          <p className="text-xs text-foreground-muted mb-2">Define what was reviewed and the limitations of this attestation.</p>
+          <p className="text-xs text-foreground-muted mb-2">Required field (at least 10 characters). What was reviewed and its limitations — not counted toward report length.</p>
           <Textarea 
             value={scope}
             onChange={(e) => setScope(e.target.value)}
@@ -254,8 +254,8 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
         {outcome === "conditional" && (
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Conditions</label>
-            <p className="text-xs text-foreground-muted mb-2">What conditions must be met for full approval?</p>
+            <label className="block text-sm font-medium text-foreground mb-1">Conditions <span className="text-error">*</span></label>
+            <p className="text-xs text-foreground-muted mb-2">Required for a conditional outcome. Counts toward the report length below.</p>
             <Textarea
               value={conditions}
               onChange={(e) => setConditions(e.target.value)}
