@@ -11,10 +11,12 @@
  */
 import { useEffect, useState } from "react";
 import {
-  listTeamsV1OrgsOrgIdTeamsGet,
   createTeamV1OrgsOrgIdTeamsPost,
-  renameTeamV1OrgsOrgIdTeamsTeamIdPatch,
   deleteTeamV1OrgsOrgIdTeamsTeamIdDelete,
+  disableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDelete,
+  enableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPut,
+  listTeamsV1OrgsOrgIdTeamsGet,
+  renameTeamV1OrgsOrgIdTeamsTeamIdPatch,
 } from "@/lib/generated/sdk.gen";
 import type { OrgTeamResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -22,19 +24,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { useOrganization } from "./organization-context";
 import { TeamMemberManager } from "./team-member-manager";
 import {
+  TeamCapabilityToggles,
+  type TeamCapabilityKey,
+} from "./team-capability-toggles";
+import {
+  ChevronDownIcon,
   Pencil1Icon,
-  TrashIcon,
   PersonIcon,
   PlusIcon,
-  ChevronDownIcon,
+  TrashIcon,
 } from "@radix-ui/react-icons";
 
+type PendingTeamCapabilityAction = {
+  teamId: string;
+  teamName: string;
+  capability: TeamCapabilityKey;
+  enabled: boolean;
+};
+
 export function OrganizationTeams() {
-  const { orgId, role, isSuspended } = useOrganization();
+  const { orgId, role, isSuspended, capabilities, refreshOrganization } =
+    useOrganization();
   const isAdmin = role === "admin" || role === "owner";
+  const toast = useToast();
 
   const [teams, setTeams] = useState<OrgTeamResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +74,12 @@ export function OrganizationTeams() {
   const [teamToDelete, setTeamToDelete] = useState<OrgTeamResponse | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Capability toggle state
+  const [pendingCapabilityAction, setPendingCapabilityAction] =
+    useState<PendingTeamCapabilityAction | null>(null);
+  const [capabilityLoading, setCapabilityLoading] = useState(false);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
 
   async function loadTeams() {
     if (!isAdmin) {
@@ -86,6 +108,28 @@ export function OrganizationTeams() {
     loadTeams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
+
+  function openCapabilityConfirm(
+    team: OrgTeamResponse,
+    capability: TeamCapabilityKey,
+    enabled: boolean,
+  ) {
+    setCapabilityError(null);
+    setPendingCapabilityAction({
+      teamId: team.id,
+      teamName: team.name,
+      capability,
+      enabled,
+    });
+  }
+
+  function closeCapabilityConfirm() {
+    if (capabilityLoading) {
+      return;
+    }
+    setCapabilityError(null);
+    setPendingCapabilityAction(null);
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -167,6 +211,55 @@ export function OrganizationTeams() {
       setDeleteError("Unexpected error occurred while deleting team.");
       setDeleteLoading(false);
       setTeamToDelete(null);
+    }
+  }
+
+  async function handleConfirmCapabilityAction() {
+    if (!pendingCapabilityAction) {
+      return;
+    }
+
+    setCapabilityLoading(true);
+    setCapabilityError(null);
+
+    try {
+      const result = pendingCapabilityAction.enabled
+        ? await disableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDelete(
+            {
+              path: {
+                org_id: orgId,
+                team_id: pendingCapabilityAction.teamId,
+                capability: pendingCapabilityAction.capability,
+              },
+              headers: getAccessTokenHeaders(),
+            },
+          )
+        : await enableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPut({
+            path: {
+              org_id: orgId,
+              team_id: pendingCapabilityAction.teamId,
+              capability: pendingCapabilityAction.capability,
+            },
+            headers: getAccessTokenHeaders(),
+          });
+
+      if (!result.response.ok) {
+        setCapabilityError(
+          result.error?.detail?.error_code || "Failed to update team capability",
+        );
+        return;
+      }
+
+      await refreshOrganization();
+      await loadTeams();
+      toast.success(
+        `${pendingCapabilityAction.capability[0].toUpperCase()}${pendingCapabilityAction.capability.slice(1)} updated for ${pendingCapabilityAction.teamName}.`,
+      );
+      setPendingCapabilityAction(null);
+    } catch {
+      setCapabilityError("Unexpected error occurred while updating the team.");
+    } finally {
+      setCapabilityLoading(false);
     }
   }
 
@@ -320,33 +413,43 @@ export function OrganizationTeams() {
                   </form>
                 ) : (
                   <>
-                    {/* ── Team info (toggles the member roster) ── */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedTeamId((prev) =>
-                          prev === team.id ? null : team.id,
-                        )
-                      }
-                      aria-expanded={expandedTeamId === team.id}
-                      className="flex flex-1 items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {/* Avatar / icon */}
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 font-heading text-sm font-bold text-foreground-muted">
-                        {team.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-foreground">{team.name}</p>
-                        <p className="mt-0.5 text-sm text-foreground-muted">
-                          {team.member_count} {team.member_count === 1 ? "member" : "members"}
-                        </p>
-                      </div>
-                      <ChevronDownIcon
-                        className={`h-4 w-4 shrink-0 text-foreground-muted transition-transform ${
-                          expandedTeamId === team.id ? "rotate-180" : ""
-                        }`}
+                    <div className="flex-1">
+                      {/* ── Team info (toggles the member roster) ── */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedTeamId((prev) =>
+                            prev === team.id ? null : team.id,
+                          )
+                        }
+                        aria-expanded={expandedTeamId === team.id}
+                        className="flex w-full items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        {/* Avatar / icon */}
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 font-heading text-sm font-bold text-foreground-muted">
+                          {team.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground">{team.name}</p>
+                          <p className="mt-0.5 text-sm text-foreground-muted">
+                            {team.member_count} {team.member_count === 1 ? "member" : "members"}
+                          </p>
+                        </div>
+                        <ChevronDownIcon
+                          className={`h-4 w-4 shrink-0 text-foreground-muted transition-transform ${
+                            expandedTeamId === team.id ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                      <TeamCapabilityToggles
+                        isBusy={capabilityLoading}
+                        onToggle={(capability, enabled) =>
+                          openCapabilityConfirm(team, capability, enabled)
+                        }
+                        team={team}
+                        orgCapabilities={capabilities}
                       />
-                    </button>
+                    </div>
 
                     {/* ── Actions ── */}
                     <div className="flex shrink-0 items-center gap-2">
@@ -416,6 +519,38 @@ export function OrganizationTeams() {
         busy={deleteLoading}
         onConfirm={handleDelete}
         onClose={() => setTeamToDelete(null)}
+      />
+      <ConfirmDialog
+        open={pendingCapabilityAction !== null}
+        eyebrow="Capability"
+        title={
+          pendingCapabilityAction
+            ? `${pendingCapabilityAction.enabled ? "Disable" : "Enable"} ${pendingCapabilityAction.capability[0].toUpperCase()}${pendingCapabilityAction.capability.slice(1)} on ${pendingCapabilityAction.teamName}?`
+            : ""
+        }
+        description={
+          pendingCapabilityAction ? (
+            pendingCapabilityAction.enabled ? (
+              <>Members of this team will lose this marketplace right.</>
+            ) : (
+              <>
+                Every member of this team gains the{" "}
+                {pendingCapabilityAction.capability} role.
+              </>
+            )
+          ) : (
+            ""
+          )
+        }
+        confirmLabel={
+          pendingCapabilityAction
+            ? `${pendingCapabilityAction.enabled ? "Disable" : "Enable"} ${pendingCapabilityAction.capability[0].toUpperCase()}${pendingCapabilityAction.capability.slice(1)}`
+            : "Confirm"
+        }
+        busy={capabilityLoading}
+        error={capabilityError}
+        onConfirm={handleConfirmCapabilityAction}
+        onClose={closeCapabilityConfirm}
       />
     </div>
   );

@@ -3347,12 +3347,13 @@ export type OrgTeamRenameRequest = {
 };
 
 /**
- * One organization team row with member count.
+ * One organization team row with member count and enabled capabilities.
  */
 export type OrgTeamResponse = {
     id: string;
     name: string;
     member_count: number;
+    capabilities: Array<('contributor' | 'operator' | 'attestor')>;
     created_at: string;
 };
 
@@ -6745,6 +6746,30 @@ export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
 export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
 
 export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutData = {
+    path: {
+        capability: 'contributor' | 'operator' | 'attestor';
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutResponse = (void);
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutError = (unknown | HTTPValidationError);
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteData = {
+    path: {
+        capability: 'contributor' | 'operator' | 'attestor';
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteResponse = (void);
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteError = (unknown);
 
 export type GetNdaStatusV1OrgsOrgIdNdaGetData = {
     path: {
