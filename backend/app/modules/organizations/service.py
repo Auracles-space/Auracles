@@ -953,6 +953,19 @@ async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
                 )
 
 
+async def _sync_team_member_roles(db: AsyncSession, team_id: UUID) -> None:
+    """Re-evaluate derived roles for every member of one team."""
+    user_ids = (
+        await db.scalars(
+            select(OrgMember.user_id)
+            .join(OrgTeamMember, OrgTeamMember.member_id == OrgMember.id)
+            .where(OrgTeamMember.team_id == team_id)
+        )
+    ).all()
+    for user_id in user_ids:
+        await sync_derived_roles(db, user_id=user_id)
+
+
 async def change_member_role(
     db: AsyncSession,
     *,
@@ -977,6 +990,8 @@ async def change_member_role(
     """
     org_id = context.org.id
     actor_id = context.user.id
+    synced_user_id: UUID | None = None
+    response: OrgMemberResponse | None = None
     if db.in_transaction():
         await db.rollback()
 
@@ -1010,7 +1025,8 @@ async def change_member_role(
                     "to_role": new_role,
                 },
             )
-        return OrgMemberResponse(
+        synced_user_id = target.user_id
+        response = OrgMemberResponse(
             id=target.id,
             user_id=target.user_id,
             display_name=user_row.display_name,
@@ -1018,6 +1034,11 @@ async def change_member_role(
             role=target.role,
             joined_at=target.joined_at,
         )
+
+    assert synced_user_id is not None
+    assert response is not None
+    await sync_derived_roles(db, user_id=synced_user_id)
+    return response
 
 
 async def transfer_ownership(
@@ -1892,6 +1913,7 @@ async def delete_team(
     """Delete a team in the organization."""
     org_id = context.org.id
     user_id = context.user.id
+    member_user_ids: list[UUID] = []
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -1901,6 +1923,15 @@ async def delete_team(
         if not team:
             raise HTTPException(status_code=404, detail="Team not found.")
 
+        member_user_ids = list(
+            (
+                await db.scalars(
+                    select(OrgMember.user_id)
+                    .join(OrgTeamMember, OrgTeamMember.member_id == OrgMember.id)
+                    .where(OrgTeamMember.team_id == team_id)
+                )
+            ).all()
+        )
         team_name = team.name
         await db.delete(team)
 
@@ -1912,6 +1943,9 @@ async def delete_team(
             target_id=org_id,
             metadata={"team_id": str(team_id), "team_name": team_name},
         )
+
+    for member_user_id in member_user_ids:
+        await sync_derived_roles(db, user_id=member_user_id)
 
 
 async def list_team_members(
@@ -1976,6 +2010,7 @@ async def add_team_member(
 ) -> None:
     """Add a member to a team."""
     org_id = context.org.id
+    added_user_id: UUID | None = None
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -1985,7 +2020,8 @@ async def add_team_member(
         if not team:
             raise HTTPException(status_code=404, detail="Team not found.")
 
-        await _get_member_row(db, org_id=org_id, member_id=member_id)
+        member = await _get_member_row(db, org_id=org_id, member_id=member_id)
+        added_user_id = member.user_id
 
         stmt = (
             pg_insert(OrgTeamMember)
@@ -1993,6 +2029,9 @@ async def add_team_member(
             .on_conflict_do_nothing()
         )
         await db.execute(stmt)
+
+    assert added_user_id is not None
+    await sync_derived_roles(db, user_id=added_user_id)
 
 
 async def remove_team_member(
@@ -2004,6 +2043,7 @@ async def remove_team_member(
 ) -> None:
     """Remove a member from a team."""
     org_id = context.org.id
+    removed_user_id: UUID | None = None
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -2021,7 +2061,12 @@ async def remove_team_member(
         if not member_row:
             raise HTTPException(status_code=404, detail="Member is not in this team.")
 
+        target = await _get_member_row(db, org_id=org_id, member_id=member_id)
+        removed_user_id = target.user_id
         await db.delete(member_row)
+
+    assert removed_user_id is not None
+    await sync_derived_roles(db, user_id=removed_user_id)
 
 
 async def admin_list_orgs(

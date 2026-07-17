@@ -22,6 +22,7 @@ from app.core.security import hash_password
 from app.main import app
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
+from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations import service as org_service
 from app.modules.organizations.models import (
     Organization,
@@ -130,6 +131,22 @@ async def _seed_capability(
                     status=status,
                 )
             )
+
+
+async def _org_admin_context(org_id: UUID, user_id: UUID) -> OrgContext:
+    """Build an OrgContext for an owner/admin to call org services in tests."""
+    async with async_session_factory() as session:
+        org = await session.get(Organization, org_id)
+        member = await session.scalar(
+            select(OrgMember).where(
+                OrgMember.org_id == org_id,
+                OrgMember.user_id == user_id,
+            )
+        )
+        user = await session.get(User, user_id)
+
+    assert org is not None and member is not None and user is not None
+    return OrgContext(org=org, member=member, user=user)
 
 
 async def _role_rows(user_id: UUID, role: str) -> list[UserRole]:
@@ -475,3 +492,118 @@ async def test_sync_is_idempotent_for_contributor_derived_role(
         )
 
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_adding_member_to_enabled_team_grants_operator_role(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """Adding a member to an enabled team grants the derived Operator role."""
+    del migrated_database, org_derived_role_state
+    owner = await _create_user("team-owner")
+    member = await _create_user("team-member")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Team Org",
+                slug=f"team-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            member_row = OrgMember(org_id=org.id, user_id=member.id, role="member")
+            session.add(member_row)
+            session.add(
+                OrgCapability(org_id=org.id, capability="operator", status="active")
+            )
+            team = OrgTeam(org_id=org.id, name="Sellers")
+            session.add(team)
+            await session.flush()
+            session.add(OrgTeamCapability(team_id=team.id, capability="operator"))
+            org_id, team_id, member_row_id = org.id, team.id, member_row.id
+
+    context = await _org_admin_context(org_id, owner.id)
+    async with async_session_factory() as session:
+        await org_service.add_team_member(
+            db=session,
+            context=context,
+            team_id=team_id,
+            member_id=member_row_id,
+        )
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == member.id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is not None
+
+
+@pytest.mark.asyncio
+async def test_removing_member_from_team_revokes_operator_role(
+    migrated_database: None,
+    org_derived_role_state: None,
+) -> None:
+    """Removing a member from the only enabled team revokes Operator."""
+    del migrated_database, org_derived_role_state
+    owner = await _create_user("team-owner-revoke")
+    member = await _create_user("team-member-revoke")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Rev Org",
+                slug=f"rev-org-{uuid4().hex[:8]}",
+                country="US",
+                created_by=owner.id,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=owner.id, role="owner"))
+            member_row = OrgMember(org_id=org.id, user_id=member.id, role="member")
+            session.add(member_row)
+            session.add(
+                OrgCapability(org_id=org.id, capability="operator", status="active")
+            )
+            team = OrgTeam(org_id=org.id, name="Sellers")
+            session.add(team)
+            await session.flush()
+            session.add(OrgTeamCapability(team_id=team.id, capability="operator"))
+            session.add(OrgTeamMember(team_id=team.id, member_id=member_row.id))
+            org_id, team_id, member_row_id, member_user_id = (
+                org.id,
+                team.id,
+                member_row.id,
+                member.id,
+            )
+
+    async with async_session_factory() as session:
+        await org_service.sync_derived_roles(session, user_id=member_user_id)
+
+    context = await _org_admin_context(org_id, owner.id)
+    async with async_session_factory() as session:
+        await org_service.remove_team_member(
+            db=session,
+            context=context,
+            team_id=team_id,
+            member_id=member_row_id,
+        )
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == member_user_id,
+                UserRole.role == "operator",
+                UserRole.source == "derived",
+            )
+        )
+
+    assert role is None
