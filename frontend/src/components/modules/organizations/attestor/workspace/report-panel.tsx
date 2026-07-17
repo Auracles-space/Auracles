@@ -25,7 +25,14 @@ export interface ReportPanelProps {
   attestationId: string;
   canWrite: boolean;
   orgId: string;
+  /** Current attestation status; the form is editable only while submittable. */
+  status?: string;
 }
+
+// Statuses the backend accepts a report submission in (report.py). Outside
+// these (e.g. already report_submitted, disputed, resolved) the form is locked
+// so a resubmit can't 409.
+const SUBMITTABLE_STATUSES = ["in_review", "revision_requested"];
 
 // Mirrors the backend quality gate's `attestation_report_min_words` default.
 // The gate sums rubric comment words + summary words + conditions words (scope
@@ -39,7 +46,12 @@ function countWords(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps) {
+export function ReportPanel({
+  attestationId,
+  canWrite,
+  orgId,
+  status = "in_review",
+}: ReportPanelProps) {
   const router = useRouter();
   const toast = useToast();
 
@@ -197,6 +209,20 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
     return (
       <div className="rounded-xl border border-dashed border-border-default p-8 text-center text-foreground-muted text-sm">
         Report submission is only available to the assigned attestor.
+      </div>
+    );
+  }
+
+  // Once the report is in (or the attestation moved past the review states),
+  // lock the form so a resubmit can't 409. Revision requests reopen it.
+  if (!SUBMITTABLE_STATUSES.includes(status)) {
+    return (
+      <div className="rounded-xl border border-border-default bg-surface-elevated p-8 text-center space-y-2 shadow-bento">
+        <h2 className="text-lg font-semibold text-foreground">Final Report</h2>
+        <p className="text-sm text-foreground-muted">
+          This report has already been submitted. It can only be edited if the
+          operator requests a revision.
+        </p>
       </div>
     );
   }

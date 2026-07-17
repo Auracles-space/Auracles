@@ -137,6 +137,22 @@ describe("ReportPanel", () => {
     await waitFor(() => expect(submit).toBeEnabled());
   });
 
+  it("shows a submitted state instead of the form once the report is in", () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        status="report_submitted"
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Submit Report/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/already been submitted/i)).toBeInTheDocument();
+  });
+
   it("surfaces quality-gate failures returned on submit", async () => {
     vi.mocked(submitAttestationReport).mockResolvedValue({
       data: undefined,

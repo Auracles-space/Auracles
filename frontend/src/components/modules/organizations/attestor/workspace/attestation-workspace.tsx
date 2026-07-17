@@ -242,10 +242,11 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
               attestationId={attestationId} 
               canWrite={canWrite} 
             />
-            <ReportPanel 
+            <ReportPanel
               attestationId={attestationId}
               canWrite={canWrite}
               orgId={orgId}
+              status={attestation.status}
             />
           </div>
         </div>
