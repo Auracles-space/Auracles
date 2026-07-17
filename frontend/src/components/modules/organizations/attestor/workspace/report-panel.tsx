@@ -290,7 +290,9 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
           >
             Report length: {totalWords} / {MIN_REPORT_WORDS} words
             <span className="block text-foreground-muted">
-              Counts rubric comments, summary, and conditions (scope excluded).
+              Rubric comments {rubricWords} + summary {countWords(summary)}
+              {conditionsRequired ? ` + conditions ${countWords(conditions)}` : ""}
+              {" "}(scope excluded).
             </span>
           </p>
           <Button
