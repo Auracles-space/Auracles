@@ -7,7 +7,7 @@ import {
   markClarificationsSeen
 } from "@/lib/generated/sdk.gen";
 import type { ClarificationResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
@@ -26,6 +26,8 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
   const [isAsking, setIsAsking] = useState(false);
   const [question, setQuestion] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Inline error for the ask-question action, shown without hiding the thread.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchClarifications = async () => {
     try {
@@ -33,7 +35,7 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
         path: { attestation_id: attestationId },
         headers: getAccessTokenHeaders()
       });
-      if (res.error) throw new Error("Failed to load clarifications");
+      if (res.error) throw new Error(describeGeneratedError(res.error));
       setClarifications(res.data);
       // The reviewer opening this panel has now seen any answered
       // clarifications, so clear the queue's "answer received" dot. Idempotent
@@ -45,7 +47,7 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
         });
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : "Failed to load clarifications.");
     } finally {
       setLoading(false);
     }
@@ -61,19 +63,20 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
     if (!question) return;
 
     setSubmitting(true);
+    setActionError(null);
     try {
       const res = await createAttestationClarification({
         path: { attestation_id: attestationId },
         body: { question },
         headers: getAccessTokenHeaders()
       });
-      if (res.error) throw new Error("Failed to ask clarification");
-      
+      if (res.error) throw new Error(describeGeneratedError(res.error));
+
       await fetchClarifications();
       setQuestion("");
       setIsAsking(false);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "An error occurred");
+      setActionError(err instanceof Error ? err.message : "Failed to ask clarification.");
     } finally {
       setSubmitting(false);
     }
@@ -105,6 +108,11 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
         </div>
       ) : (
         <div className="space-y-6">
+          {actionError && (
+            <div className="p-4 text-sm text-error bg-error/5 rounded-xl border border-error/50">
+              {actionError}
+            </div>
+          )}
           {isAsking && canWrite && (
             <div className="rounded-xl border border-border-default bg-surface-elevated p-6">
               <h3 className="text-sm font-semibold mb-4 text-foreground">New Clarification</h3>

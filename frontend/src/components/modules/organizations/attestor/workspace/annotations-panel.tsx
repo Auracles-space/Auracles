@@ -7,7 +7,7 @@ import {
   deleteAttestationAnnotation
 } from "@/lib/generated/sdk.gen";
 import type { AnnotationResponse, AnnotationCreateRequest } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
   const [newExcerpt, setNewExcerpt] = useState("");
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Inline error for create/delete actions, shown without hiding the list.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchAnnotations = async () => {
     try {
@@ -46,10 +48,10 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
         path: { attestation_id: attestationId },
         headers: getAccessTokenHeaders()
       });
-      if (res.error) throw new Error("Failed to load annotations");
+      if (res.error) throw new Error(describeGeneratedError(res.error));
       setAnnotations(res.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : "Failed to load annotations.");
     } finally {
       setLoading(false);
     }
@@ -65,6 +67,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
     if (!newLocation || !newComment) return;
 
     setSubmitting(true);
+    setActionError(null);
     try {
       const res = await createAttestationAnnotation({
         path: { attestation_id: attestationId },
@@ -77,17 +80,17 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
         },
         headers: getAccessTokenHeaders()
       });
-      if (res.error) throw new Error("Failed to add annotation");
-      
+      if (res.error) throw new Error(describeGeneratedError(res.error));
+
       await fetchAnnotations();
-      
+
       // Reset form
       setNewLocation("");
       setNewExcerpt("");
       setNewComment("");
       setIsAdding(false);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "An error occurred");
+      setActionError(err instanceof Error ? err.message : "Failed to add annotation.");
     } finally {
       setSubmitting(false);
     }
@@ -95,6 +98,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
 
   const handleDelete = async (annotationId: string) => {
     if (!confirm("Are you sure you want to delete this annotation?")) return;
+    setActionError(null);
     try {
       const res = await deleteAttestationAnnotation({
         path: {
@@ -103,10 +107,10 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
         },
         headers: getAccessTokenHeaders()
       });
-      if (res.error) throw new Error("Failed to delete annotation");
+      if (res.error) throw new Error(describeGeneratedError(res.error));
       setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "An error occurred");
+      setActionError(err instanceof Error ? err.message : "Failed to delete annotation.");
     }
   };
 
@@ -136,6 +140,11 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
         </div>
       ) : (
         <div className="space-y-6">
+          {actionError && (
+            <div className="p-4 text-sm text-error bg-error/5 rounded-xl border border-error/50">
+              {actionError}
+            </div>
+          )}
           {isAdding && canWrite && (
             <div className="rounded-xl border border-border-default bg-surface-elevated p-6">
               <h3 className="text-sm font-semibold mb-4 text-foreground">New Annotation</h3>
