@@ -157,6 +157,40 @@ async def test_user_lists_and_reads_only_own_notifications(
     assert notification.read_at is not None
 
 
+@pytest.mark.parametrize(
+    "notification_type",
+    ["attestation_clarification_requested", "attestation_clarification_answered"],
+)
+async def test_clarification_notification_types_persist(
+    client: AsyncClient,
+    migrated_database: None,
+    notifications_context: dict[str, Any],
+    notification_type: str,
+) -> None:
+    """Clarification notification labels must be storable and listable.
+
+    The attestor-to-requestor question and the requestor's answer each raise a
+    durable notification typed by ``notification_type_enum``. If the enum omits
+    the label the worker insert fails and the recipient's bell stays empty, so
+    both labels must round-trip through the notifications table and endpoint.
+    """
+    user_id = await create_user("clarify@auracles.space", ["operator"])
+    notification_id = await create_notification(
+        user_id=user_id,
+        notification_type=notification_type,
+        title="Clarification update",
+        body="A clarification changed.",
+    )
+
+    listed = await client.get(
+        "/v1/notifications", headers=auth_headers(user_id, ["operator"])
+    )
+
+    assert listed.status_code == 200
+    listed_ids = {item["id"] for item in listed.json()["notifications"]}
+    assert str(notification_id) in listed_ids
+
+
 async def test_user_can_mark_all_own_notifications_read(
     client: AsyncClient,
     migrated_database: None,

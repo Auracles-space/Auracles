@@ -65,6 +65,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "attestation_reassigned",
     "attestation_needs_admin",
     "attestation_report_submitted",
+    "attestation_clarification_requested",
+    "attestation_clarification_answered",
     "attestation_published",
     "attestation_rejected",
     "attestation_released",

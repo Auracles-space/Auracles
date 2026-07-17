@@ -81,6 +81,8 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "attestation_reassigned": "attestation",
     "attestation_needs_admin": "attestation",
     "attestation_report_submitted": "attestation",
+    "attestation_clarification_requested": "attestation",
+    "attestation_clarification_answered": "attestation",
     "attestation_published": "attestation",
     "attestation_rejected": "attestation",
     "attestation_released": "attestation",
