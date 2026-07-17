@@ -114,6 +114,7 @@ from app.modules.organizations.schemas import (
     OrgLicenseGrantRequest,
     OrgLicenseGrantResponse,
     OrgLicenseGrantsResponse,
+    OrgCapabilityName,
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
     OrgMembersResponse,
@@ -915,6 +916,55 @@ async def remove_team_member(
     del org_id
     await service.remove_team_member(
         db=db, context=context, team_id=team_id, member_id=member_id
+    )
+
+
+@router.put(
+    "/{org_id}/teams/{team_id}/capabilities/{capability}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Enable a capability on a team",
+    description=(
+        "Grant a marketplace capability to every member of a team. Requires "
+        "the org capability to already be active. Owner/admin only."
+    ),
+)
+async def enable_team_capability(
+    org_id: UUID,
+    team_id: UUID,
+    capability: OrgCapabilityName,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Enable one marketplace capability on a team."""
+    del org_id
+    await service.enable_team_capability(
+        db=db,
+        context=context,
+        team_id=team_id,
+        capability=capability,
+    )
+
+
+@router.delete(
+    "/{org_id}/teams/{team_id}/capabilities/{capability}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Disable a capability on a team",
+    description="Revoke a marketplace capability from a team. Owner/admin only.",
+)
+async def disable_team_capability(
+    org_id: UUID,
+    team_id: UUID,
+    capability: OrgCapabilityName,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> None:
+    """Disable one marketplace capability on a team."""
+    del org_id
+    await service.disable_team_capability(
+        db=db,
+        context=context,
+        team_id=team_id,
+        capability=capability,
     )
 
 

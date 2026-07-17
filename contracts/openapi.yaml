@@ -7449,6 +7449,96 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/teams/{team_id}/capabilities/{capability}:
+    put:
+      tags:
+      - Organizations
+      summary: Enable a capability on a team
+      description: >
+        Grant a marketplace capability (contributor/operator/attestor) to every
+        member of a team. Requires the org capability to already be active.
+        Owner/admin only.
+      operationId: enable_team_capability_v1_orgs__org_id__teams__team_id__capabilities__capability__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: capability
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - contributor
+          - operator
+          - attestor
+          title: Capability
+      responses:
+        '204':
+          description: Successful Response
+        '403':
+          description: Not an org admin
+        '404':
+          description: Team not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Organizations
+      summary: Disable a capability on a team
+      description: Revoke a marketplace capability from a team. Owner/admin only.
+      operationId: disable_team_capability_v1_orgs__org_id__teams__team_id__capabilities__capability__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: team_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Team Id
+      - name: capability
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - contributor
+          - operator
+          - attestor
+          title: Capability
+      responses:
+        '204':
+          description: Successful Response
+        '403':
+          description: Not an org admin
+        '404':
+          description: Team not found
   /v1/orgs/{org_id}/nda:
     get:
       tags:

@@ -36,6 +36,7 @@ from app.shared.taxonomy import (
 # whitespace people type in multi-line textareas: tab (0x09), newline (0x0a),
 # and carriage return (0x0d).
 _PROSE_FORBIDDEN = re.compile(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+OrgCapabilityName = Literal["contributor", "operator", "attestor"]
 
 
 def _logo_public_url(logo_key: str | None) -> str | None:
