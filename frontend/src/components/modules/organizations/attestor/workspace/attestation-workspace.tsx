@@ -6,8 +6,12 @@ import { ArrowLeftIcon } from "@radix-ui/react-icons";
 import {
   getAttestation,
   startAttestationReview,
+  ackAttestationContent,
   listOrgAttestations
 } from "@/lib/generated/sdk.gen";
+
+// Version label recorded with the reviewing member's content-use acknowledgment.
+const CONTENT_ACK_VERSION = "1.0";
 import type { AttestationRequestResponse, OrgAttestationItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Spinner } from "@/components/ui/spinner";
@@ -31,6 +35,7 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [ackChecked, setAckChecked] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
@@ -96,6 +101,15 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
     setActionError(null);
     setActionSuccess(null);
     try {
+      // Record the binding content-use acknowledgment first — the backend
+      // requires it before a review can start. Idempotent if already recorded.
+      const ack = await ackAttestationContent({
+        path: { attestation_id: attestationId },
+        body: { content_ack: true, ack_version: CONTENT_ACK_VERSION },
+        headers: getAccessTokenHeaders(),
+      });
+      if (ack.error) throw new Error(describeGeneratedError(ack.error));
+
       const res = await startAttestationReview({
         path: { attestation_id: attestationId },
         headers: getAccessTokenHeaders()
@@ -133,11 +147,6 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
           </div>
           <div className="flex items-center gap-3">
             <Badge variant="default" className="capitalize">{attestation.status.replace("_", " ")}</Badge>
-            {showStartReview && (
-              <Button onClick={handleStartReview} disabled={starting} loading={starting}>
-                Start Review
-              </Button>
-            )}
           </div>
         </div>
         {actionError && (
@@ -177,6 +186,40 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
           </div>
         </div>
       </div>
+
+      {showStartReview && (
+        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+          <h3 className="font-heading text-lg font-bold text-foreground">
+            Begin review
+          </h3>
+          <p className="mt-1 text-sm text-foreground-muted">
+            Before opening the framework content, confirm the content-use terms.
+            Starting the review unlocks the full artifacts and the rubric,
+            annotations, clarifications, and report tools.
+          </p>
+          <label className="mt-4 flex items-start gap-3 text-sm text-foreground">
+            <input
+              checked={ackChecked}
+              className="mt-0.5 h-4 w-4"
+              onChange={(event) => setAckChecked(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              I acknowledge the content-use terms and will keep this
+              framework&apos;s content confidential, using it solely to perform
+              this attestation.
+            </span>
+          </label>
+          <Button
+            className="mt-4"
+            disabled={!ackChecked || starting}
+            loading={starting}
+            onClick={handleStartReview}
+          >
+            Start review
+          </Button>
+        </div>
+      )}
 
       {/* Workspace Panels Stub */}
       {isStarted && (
