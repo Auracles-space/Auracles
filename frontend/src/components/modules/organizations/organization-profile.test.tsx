@@ -41,6 +41,7 @@ beforeEach(() => {
     },
     capabilities: {},
     isSuspended: false,
+    refreshOrganization: vi.fn().mockResolvedValue(undefined),
   } as never);
 });
 

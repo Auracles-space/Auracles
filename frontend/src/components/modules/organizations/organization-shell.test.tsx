@@ -1,24 +1,32 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   listMyOrganizationsV1OrgsMineGet as listMyOrgs,
   getOrgNda,
+  activateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePost as activateOperator,
 } from "@/lib/generated/sdk.gen";
 import { OrganizationShell } from "./organization-shell";
+import { OrganizationCapabilities } from "./organization-capabilities";
 
 let mockPathname = "/dashboard/organizations/org-1";
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => mockPathname,
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listMyOrganizationsV1OrgsMineGet: vi.fn(),
   getOrgNda: vi.fn(),
+  activateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePost: vi.fn(),
+  activateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePost: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
   getAccessTokenHeaders: () => ({ Authorization: "Bearer test" }),
+}));
+
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
 function mockOrg(capabilities: Record<string, string>) {
@@ -265,5 +273,64 @@ describe("OrganizationShell action-count badges", () => {
 
     const offersTab = await screen.findByRole("tab", { name: /Offers/i });
     expect(offersTab).toHaveTextContent(/^Offers$/);
+  });
+});
+
+describe("OrganizationShell capability activation refresh", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+  });
+
+  it("shows the new Operator tab immediately after activating the operator capability", async () => {
+    vi.mocked(listMyOrgs)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: {
+          organizations: [
+            {
+              org: { id: "org-1", name: "Test Org" },
+              role: "owner",
+              capabilities: {},
+              counts: { offers: 0, queue: 0, invitations: 0 },
+            },
+          ],
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: {
+          organizations: [
+            {
+              org: { id: "org-1", name: "Test Org" },
+              role: "owner",
+              capabilities: { operator: "active" },
+              counts: { offers: 0, queue: 0, invitations: 0 },
+            },
+          ],
+        },
+      } as never);
+    vi.mocked(activateOperator).mockResolvedValue({
+      response: { ok: true },
+    } as never);
+
+    render(
+      <OrganizationShell orgId="org-1">
+        <OrganizationCapabilities />
+      </OrganizationShell>,
+    );
+
+    await screen.findByRole("tab", { name: /Profile/i });
+    expect(screen.queryByRole("tab", { name: /^Operator$/i })).toBeNull();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Activate Operator capability" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Activate Operator" }));
+
+    expect(await screen.findByRole("tab", { name: /^Operator$/i })).toBeInTheDocument();
   });
 });

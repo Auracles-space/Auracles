@@ -10,6 +10,7 @@ type OrganizationContextType = {
   capabilities: MyOrganizationResponse["capabilities"];
   isSuspended: boolean;
   markSuspended: () => void;
+  refreshOrganization: () => Promise<void>;
 };
 
 const OrganizationContext = createContext<OrganizationContextType | null>(null);
@@ -28,12 +29,14 @@ export function OrganizationProvider({
   role,
   org,
   capabilities,
+  refreshOrganization,
 }: {
   children: ReactNode;
   orgId: string;
   role: string;
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
+  refreshOrganization?: () => Promise<void>;
 }) {
   // Seed from the org's persisted suspension state so the banner shows on load;
   // markSuspended() lets a child that hits a 403 org_suspended flip it live.
@@ -48,6 +51,7 @@ export function OrganizationProvider({
         capabilities,
         isSuspended,
         markSuspended: () => setIsSuspended(true),
+        refreshOrganization: refreshOrganization ?? (async () => {}),
       }}
     >
       {children}

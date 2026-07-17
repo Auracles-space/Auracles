@@ -72,7 +72,7 @@ function StatusPill({ status }: { status?: string }) {
  * Card of self-service capability rows for organization owners and admins.
  */
 export function OrganizationCapabilities() {
-  const { orgId, role, capabilities, isSuspended } = useOrganization();
+  const { orgId, role, capabilities, isSuspended, refreshOrganization } = useOrganization();
   const router = useRouter();
   const toast = useToast();
 
@@ -129,6 +129,7 @@ export function OrganizationCapabilities() {
         return;
       }
 
+      await refreshOrganization();
       toast.success(`${pendingMeta.label} capability activated.`);
       setPending(null);
       router.refresh();

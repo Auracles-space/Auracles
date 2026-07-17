@@ -13,8 +13,9 @@ import {
 } from "@/lib/generated/sdk.gen";
 import { OrganizationCapabilities } from "./organization-capabilities";
 
-const { refresh, toastSuccess, toastError } = vi.hoisted(() => ({
+const { refresh, refreshOrganization, toastSuccess, toastError } = vi.hoisted(() => ({
   refresh: vi.fn(),
+  refreshOrganization: vi.fn().mockResolvedValue(undefined),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -45,12 +46,14 @@ function setOrg(
     role: "owner",
     capabilities: {},
     isSuspended: false,
+    refreshOrganization,
     ...overrides,
   } as never);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  refreshOrganization.mockResolvedValue(undefined);
 });
 
 describe("OrganizationCapabilities", () => {
@@ -119,6 +122,7 @@ describe("OrganizationCapabilities", () => {
       headers: { Authorization: "Bearer test" },
     });
     expect(activateOperator).not.toHaveBeenCalled();
+    expect(refreshOrganization).toHaveBeenCalledTimes(1);
     expect(toastSuccess).toHaveBeenCalledWith(
       "Contributor capability activated.",
     );

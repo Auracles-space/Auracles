@@ -185,7 +185,13 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   }
 
   return (
-    <OrganizationProvider orgId={orgId} role={role} org={myOrg.org} capabilities={myOrg.capabilities}>
+    <OrganizationProvider
+      orgId={orgId}
+      role={role}
+      org={myOrg.org}
+      capabilities={myOrg.capabilities}
+      refreshOrganization={loadOrg}
+    >
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">
         <div className="relative mb-8 overflow-hidden rounded-3xl border border-border-default bg-surface-1 p-8 shadow-sm">
           <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
