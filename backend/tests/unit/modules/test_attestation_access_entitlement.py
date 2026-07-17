@@ -261,11 +261,19 @@ async def test_assigned_accepted_with_ack_is_full(
     assert scope == "full"
 
 
-@pytest.mark.parametrize("status_value", ["report_submitted", "disputed"])
+@pytest.mark.parametrize(
+    "status_value",
+    ["in_review", "revision_requested", "report_submitted", "disputed"],
+)
 async def test_review_states_are_full(
     db_session, operator, attestor, attestor_org, published_framework, status_value
 ):
-    """Report-submitted and disputed keep full access for the reviewing member."""
+    """Active review statuses keep full access for the reviewing member.
+
+    The assigned member must retain framework-content access for the whole
+    review window — from starting review (in_review) through a requested
+    revision, report submission, and dispute.
+    """
     org_id, member_id = attestor_org
     att = await _make_attestation(
         requestor=operator,

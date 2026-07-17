@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ExclamationTriangleIcon, CheckCircledIcon } from "@radix-ui/react-icons";
+import { FrameworkFilesPanel } from "./framework-files-panel";
 import { RubricPanel } from "./rubric-panel";
 import { AnnotationsPanel } from "./annotations-panel";
 import { ClarificationsPanel } from "./clarifications-panel";
@@ -225,7 +226,8 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
       {isStarted && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <RubricPanel 
+            <FrameworkFilesPanel attestationId={attestationId} />
+            <RubricPanel
               attestationId={attestationId} 
               reviewType={attestation.review_type || ""} 
               canWrite={canWrite} 

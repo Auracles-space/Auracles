@@ -39,7 +39,9 @@ from app.modules.organizations.models import OrgMember
 
 AccessScope = Literal["preview", "full", "none"]
 
-FULL_ACCESS_STATUSES = frozenset({"accepted", "report_submitted", "disputed"})
+FULL_ACCESS_STATUSES = frozenset(
+    {"accepted", "in_review", "revision_requested", "report_submitted", "disputed"}
+)
 
 
 async def attestation_access_scope(

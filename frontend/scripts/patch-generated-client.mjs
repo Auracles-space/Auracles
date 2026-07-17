@@ -162,6 +162,7 @@ const compatibilityAliases = {
   giveAttestationConsent: "decideOwnerConsentV1AttestationsAttestationIdConsentPost",
   ackAttestationContent: "acknowledgeAttestationContentV1AttestationsAttestationIdContentAckPost",
   getAttestationArtifactAccess: "requestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPost",
+  getAttestationPackage: "getAttestationPackageV1AttestationsAttestationIdPackageGet",
   upsertRubricScore: "upsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPut",
   listAttestationAnnotations: "listAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGet",
   createAttestationAnnotation: "createAttestationAnnotationV1AttestationsAttestationIdAnnotationsPost",
