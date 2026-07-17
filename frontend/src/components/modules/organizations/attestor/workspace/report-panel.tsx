@@ -1,3 +1,10 @@
+/**
+ * Report submission panel for one attestation review workspace.
+ *
+ * Lets the assigned attestor upload private evidence and submit the final
+ * structured determination.
+ */
+
 "use client";
 
 import React, { useState } from "react";
@@ -52,7 +59,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       throw new Error("Failed to get upload session for " + file.name);
     }
 
-    const { url, fields, id } = res.data;
+    const { url, fields, s3_key: s3Key } = res.data;
 
     // 2. Upload to S3
     const formData = new FormData();
@@ -70,22 +77,32 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       throw new Error("Failed to upload " + file.name + " to storage.");
     }
 
-    return id;
+    return s3Key;
   };
+
+  // Mirror the backend contract's required fields (schemas.py): outcome set,
+  // summary >= 20 chars, scope >= 10 chars, and conditions when the outcome is
+  // conditional. Gates the submit button so an incomplete report is never sent.
+  const conditionsRequired = outcome === "conditional";
+  const isValid =
+    !!outcome &&
+    summary.length >= 20 &&
+    scope.length >= 10 &&
+    (!conditionsRequired || conditions.trim().length > 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!outcome || !summary || !scope) return;
-    
+    if (!isValid) return;
+
     setIsSubmitting(true);
     setError(null);
 
     try {
       // Upload all files first
-      const references: Record<string, string> = {};
+      const fileKeys: string[] = [];
       for (const file of evidenceFiles) {
-        const uploadId = await uploadFile(file);
-        references[file.name] = uploadId;
+        const fileKey = await uploadFile(file);
+        fileKeys.push(fileKey);
       }
 
       // Submit report
@@ -96,7 +113,8 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
           summary,
           scope,
           conditions: conditions || null,
-          evidence_references: Object.keys(references).length > 0 ? references : undefined
+          evidence_references:
+            fileKeys.length > 0 ? { file_keys: fileKeys } : undefined,
         },
         headers: getAccessTokenHeaders()
       });
@@ -179,11 +197,12 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Conditions</label>
             <p className="text-xs text-foreground-muted mb-2">What conditions must be met for full approval?</p>
-            <Textarea 
+            <Textarea
               value={conditions}
               onChange={(e) => setConditions(e.target.value)}
               required
               className="min-h-[100px]"
+              placeholder="Conditions that must be met for full approval..."
             />
           </div>
         )}
@@ -207,7 +226,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
         </div>
 
         <div className="flex justify-end pt-4 border-t border-border-default">
-          <Button type="submit" disabled={isSubmitting || !outcome || !summary || !scope}>
+          <Button type="submit" disabled={isSubmitting || !isValid}>
             {isSubmitting ? "Submitting..." : "Submit Report"}
           </Button>
         </div>
