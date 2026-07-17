@@ -66,7 +66,12 @@ function RubricDimensionCard({
   const [comment, setComment] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  const saveToBackend = async (data: { score: number; comment: string }) => {
+  // Persist whatever the reviewer has entered so far. The backend accepts a
+  // partial rubric row (score and comment are both nullable), so a lone score
+  // or a lone comment is saved immediately and survives a reload — the final
+  // report submission is what enforces that every dimension is complete.
+  const saveToBackend = async (data: { score: number | null; comment: string }) => {
+    if (data.score === null && data.comment.trim() === "") return;
     setSaveStatus("saving");
     try {
       const res = await upsertRubricScore({
@@ -91,16 +96,12 @@ function RubricDimensionCard({
   const handleScoreChange = (newScore: number) => {
     if (!canWrite) return;
     setScore(newScore);
-    if (comment) {
-      saveToBackend({ score: newScore, comment });
-    }
+    saveToBackend({ score: newScore, comment });
   };
 
   const handleCommentBlur = () => {
     if (!canWrite) return;
-    if (score && comment) {
-      saveToBackend({ score, comment });
-    }
+    saveToBackend({ score, comment });
   };
 
   return (
