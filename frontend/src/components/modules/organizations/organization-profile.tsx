@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useOrganization } from "./organization-context";
 import { OrganizationLogoUploader } from "./organization-logo-uploader";
 import { useToast } from "@/components/ui/toast";
+import { OrganizationCapabilities } from "./organization-capabilities";
 
 export function OrganizationProfile() {
   const { orgId, org, role, isSuspended } = useOrganization();
@@ -59,83 +60,86 @@ export function OrganizationProfile() {
   }
 
   return (
-    <div className="max-w-3xl overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
-      <div className="border-b border-border-default bg-surface-2/50 px-8 py-6">
-        <h2 className="font-heading text-xl font-bold text-foreground tracking-tight">
-          Organization Profile
-        </h2>
-        <p className="mt-1 text-sm text-foreground-muted">
-          Manage your organization&apos;s public details.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="flex flex-col gap-6 px-8 py-8">
-        <div>
-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
-            Logo
-          </span>
-          <OrganizationLogoUploader
-            orgId={orgId}
-            logoUrl={logoUrl}
-            name={org.name}
-            canEdit={isAdminOrOwner && !isSuspended}
-            onUploaded={(url) => {
-              setLogoUrl(url);
-              router.refresh();
-            }}
-          />
+    <div className="flex max-w-3xl flex-col gap-6">
+      <div className="overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
+        <div className="border-b border-border-default bg-surface-2/50 px-8 py-6">
+          <h2 className="font-heading text-xl font-bold text-foreground tracking-tight">
+            Organization Profile
+          </h2>
+          <p className="mt-1 text-sm text-foreground-muted">
+            Manage your organization&apos;s public details.
+          </p>
         </div>
 
-        <div>
-          <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-foreground">
-            Organization Name <span className="text-error">*</span>
-          </label>
-          <Input
-            id="name"
-            required
-            disabled={!isAdminOrOwner || isSuspended}
-            value={formData.name || ""}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="rounded-xl bg-background shadow-sm"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="website" className="mb-1.5 block text-sm font-semibold text-foreground">
-            Website
-          </label>
-          <Input
-            id="website"
-            type="url"
-            disabled={!isAdminOrOwner || isSuspended}
-            value={formData.website || ""}
-            onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-            placeholder="https://..."
-            className="rounded-xl bg-background shadow-sm"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="description" className="mb-1.5 block text-sm font-semibold text-foreground">
-            Description
-          </label>
-          <Textarea
-            id="description"
-            disabled={!isAdminOrOwner || isSuspended}
-            value={formData.description || ""}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="min-h-32 rounded-xl bg-background shadow-sm"
-          />
-        </div>
-
-        {isAdminOrOwner && (
-          <div className="mt-2 flex justify-end border-t border-border-default pt-6">
-            <Button type="submit" loading={loading} disabled={isSuspended || !isDirty} className="min-h-12 w-full sm:w-auto rounded-xl shadow-sm">
-              Save Changes
-            </Button>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6 px-8 py-8">
+          <div>
+            <span className="mb-1.5 block text-sm font-semibold text-foreground">
+              Logo
+            </span>
+            <OrganizationLogoUploader
+              orgId={orgId}
+              logoUrl={logoUrl}
+              name={org.name}
+              canEdit={isAdminOrOwner && !isSuspended}
+              onUploaded={(url) => {
+                setLogoUrl(url);
+                router.refresh();
+              }}
+            />
           </div>
-        )}
-      </form>
+
+          <div>
+            <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-foreground">
+              Organization Name <span className="text-error">*</span>
+            </label>
+            <Input
+              id="name"
+              required
+              disabled={!isAdminOrOwner || isSuspended}
+              value={formData.name || ""}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="rounded-xl bg-background shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="website" className="mb-1.5 block text-sm font-semibold text-foreground">
+              Website
+            </label>
+            <Input
+              id="website"
+              type="url"
+              disabled={!isAdminOrOwner || isSuspended}
+              value={formData.website || ""}
+              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+              placeholder="https://..."
+              className="rounded-xl bg-background shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="description" className="mb-1.5 block text-sm font-semibold text-foreground">
+              Description
+            </label>
+            <Textarea
+              id="description"
+              disabled={!isAdminOrOwner || isSuspended}
+              value={formData.description || ""}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="min-h-32 rounded-xl bg-background shadow-sm"
+            />
+          </div>
+
+          {isAdminOrOwner && (
+            <div className="mt-2 flex justify-end border-t border-border-default pt-6">
+              <Button type="submit" loading={loading} disabled={isSuspended || !isDirty} className="min-h-12 w-full sm:w-auto rounded-xl shadow-sm">
+                Save Changes
+              </Button>
+            </div>
+          )}
+        </form>
+      </div>
+      <OrganizationCapabilities />
     </div>
   );
 }
