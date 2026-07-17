@@ -33,7 +33,7 @@ def test_backfill_creates_all_members_team_and_enables_caps(
     alembic_config: Config,
 ) -> None:
     """Upgrading creates an All members team with active capabilities enabled."""
-    command.upgrade(alembic_config, DOWN)
+    command.downgrade(alembic_config, DOWN)
     sync_engine = create_engine(
         __import__("app.main", fromlist=["app"]).app.state.settings.sync_database_url
     )
