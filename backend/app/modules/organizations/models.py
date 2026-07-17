@@ -262,6 +262,26 @@ class OrgTeamMember(CreatedAtMixin, Base):
     )
 
 
+class OrgTeamCapability(CreatedAtMixin, Base):
+    """A marketplace capability granted to every member of one team.
+
+    A member holds the derived role for a capability when the org capability is
+    active and the member is owner/admin or sits on a team with a matching row.
+    """
+
+    __tablename__ = "org_team_capabilities"
+
+    team_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("org_teams.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    capability: Mapped[str] = mapped_column(
+        ORG_CAPABILITY_ENUM,
+        primary_key=True,
+    )
+
+
 class OrgAttestorApplication(UpdatedAtMixin, Base):
     """Org application for the attestor capability with per-gate stamps.
 
