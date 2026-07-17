@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -52,6 +52,36 @@ async def open_clarification_attestation_ids(
         .where(
             AttestationClarification.attestation_id.in_(attestation_ids),
             AttestationClarification.status == "open",
+        )
+        .distinct()
+    )
+    return set(rows.scalars().all())
+
+
+async def unread_answer_attestation_ids(
+    db: AsyncSession, attestation_ids: list[UUID]
+) -> set[UUID]:
+    """Return attestations with an answered clarification the reviewer has not read.
+
+    Used to flag reviewer-facing queue cards whose requestor has answered a
+    clarification the assigned reviewer has not yet opened.
+
+    Args:
+        db: Async database session.
+        attestation_ids: Attestations to check for unread answers.
+
+    Returns:
+        The ids that have at least one ``answered`` clarification with a null
+        ``reviewer_seen_at``. Empty when the input is empty.
+    """
+    if not attestation_ids:
+        return set()
+    rows = await db.execute(
+        select(AttestationClarification.attestation_id)
+        .where(
+            AttestationClarification.attestation_id.in_(attestation_ids),
+            AttestationClarification.status == "answered",
+            AttestationClarification.reviewer_seen_at.is_(None),
         )
         .distinct()
     )
@@ -335,6 +365,61 @@ async def respond_to_clarification(
             clarification_id=clarification.id,
         )
     return clarification
+
+
+async def mark_clarifications_seen(
+    db: AsyncSession,
+    *,
+    reviewer: User,
+    attestation_id: UUID,
+    now: datetime | None = None,
+) -> int:
+    """Stamp answered clarifications as read by the assigned reviewer.
+
+    Clears the reviewer queue's unread-answer flag for one attestation. Only the
+    staffed reviewing member may mark answers seen; the stamp is idempotent and
+    only touches answered clarifications that are still unseen.
+
+    Args:
+        db: Async database session.
+        reviewer: Authenticated user, expected to be the reviewing member.
+        attestation_id: Attestation whose answered clarifications are being read.
+        now: Optional timestamp override for deterministic tests.
+
+    Returns:
+        The number of clarifications newly stamped as seen.
+
+    Raises:
+        HTTPException: 404 when the attestation is not visible to the caller or
+            the caller is not the assigned reviewing member.
+    """
+    current_time = now or datetime.now(UTC)
+    attestation = await db.get(Attestation, attestation_id)
+    if attestation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    actor = await attestor_actor(db, attestation=attestation, user_id=reviewer.id)
+    if not actor.is_reviewing_member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        result = await db.execute(
+            update(AttestationClarification)
+            .where(
+                AttestationClarification.attestation_id == attestation_id,
+                AttestationClarification.status == "answered",
+                AttestationClarification.reviewer_seen_at.is_(None),
+            )
+            .values(reviewer_seen_at=current_time)
+        )
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def expire_clarifications(

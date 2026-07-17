@@ -1061,6 +1061,10 @@ class OrgAttestationItem(BaseModel):
     assigned_to_me: bool = False
     accepted_at: datetime | None
     completion_due_at: datetime | None
+    updated_at: datetime | None = None
+    # True when the requestor answered a clarification the assigned reviewer has
+    # not yet opened, driving the queue card's "answer received" dot.
+    unread_answer: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

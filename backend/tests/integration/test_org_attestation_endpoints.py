@@ -22,7 +22,11 @@ from sqlalchemy import delete
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
-from app.modules.attestation.models import Attestation, AttestationOffer
+from app.modules.attestation.models import (
+    Attestation,
+    AttestationClarification,
+    AttestationOffer,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.organizations.models import (
     Organization,
@@ -57,6 +61,7 @@ async def clean_state() -> AsyncIterator[None]:
             from app.modules.frameworks.models import Framework
 
             await session.execute(delete(AuditLog))
+            await session.execute(delete(AttestationClarification))
             await session.execute(delete(AttestationOffer))
             await session.execute(delete(Attestation))
             await session.execute(delete(Framework))
@@ -581,3 +586,69 @@ async def test_org_queue_scopes_by_role(
     }
     assert member_view.status_code == 200
     assert {row["id"] for row in member_view.json()["attestations"]} == {str(a1)}
+
+
+async def _in_review_with_answered_clarification(
+    org_id: UUID, member_id: UUID
+) -> UUID:
+    """Create an in_review attestation staffed to a member with an answered,
+    reviewer-unseen clarification. Return the attestation id."""
+    requestor = await _new_user("req")
+    now = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="contributor",
+                target_id=uuid4(),
+                requestor_id=requestor,
+                attestor_org_id=org_id,
+                reviewing_member_id=member_id,
+                status="in_review",
+                review_type="quality",
+                fee_amount=Decimal("500.00"),
+                currency="USD",
+                requested_specializations=["tax"],
+                requested_jurisdictions=["US"],
+            )
+            session.add(attestation)
+            await session.flush()
+            session.add(
+                AttestationClarification(
+                    attestation_id=attestation.id,
+                    question="Which version?",
+                    response="Version 2.",
+                    sent_at=now,
+                    response_due_at=now + timedelta(hours=48),
+                    responded_at=now,
+                    status="answered",
+                )
+            )
+            return attestation.id
+
+
+async def test_queue_flags_unread_answer(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: None,
+) -> None:
+    """An answered, reviewer-unseen clarification flags the queue card.
+
+    Drives the reviewer queue's "answer received" dot: unread_answer is True
+    while an answered clarification has not been seen by the reviewer.
+    """
+    org_id, owner_user, owner_member = await _attestor_org()
+    attestation_id = await _in_review_with_answered_clarification(
+        org_id, owner_member
+    )
+
+    listed = await client.get(
+        f"/v1/orgs/{org_id}/attestations", headers=auth(owner_user)
+    )
+
+    assert listed.status_code == 200
+    item = next(
+        row
+        for row in listed.json()["attestations"]
+        if row["id"] == str(attestation_id)
+    )
+    assert item["unread_answer"] is True

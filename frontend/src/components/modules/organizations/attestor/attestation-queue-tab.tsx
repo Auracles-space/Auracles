@@ -105,6 +105,13 @@ export function AttestationQueueTab() {
           <div key={att.id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
+                {att.unread_answer ? (
+                  <span
+                    aria-label="Clarification answer awaiting your review"
+                    role="img"
+                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-error"
+                  />
+                ) : null}
                 <span className="font-semibold text-foreground">
                   {att.target_title ?? (
                     <span className="capitalize">{att.target_type}</span>
@@ -113,6 +120,9 @@ export function AttestationQueueTab() {
                 <Badge variant={queueStatusVariant(att.status)}>
                   {att.status.replace("_", " ")}
                 </Badge>
+                {att.unread_answer ? (
+                  <Badge variant="error">Answer received</Badge>
+                ) : null}
               </div>
               <div className="text-sm text-foreground-muted">
                 {att.review_type ? `${att.review_type} review` : "Attestation"}

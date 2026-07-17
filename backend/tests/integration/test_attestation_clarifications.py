@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, select
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
@@ -252,6 +252,64 @@ async def test_requestor_list_flags_open_clarification(
         "/v1/attestations?role=requestor", headers=requestor_headers
     )
     assert resolved.json()["attestations"][0]["open_clarification"] is False
+
+
+async def test_reviewer_marks_answered_clarification_seen(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """The assigned reviewer can stamp an answered clarification as seen.
+
+    Clears the reviewer queue's "answer received" dot: mark-seen sets
+    ``reviewer_seen_at`` on answered clarifications for the reviewing member.
+    """
+    del clean_state
+    attestor, requestor, attestation = await _in_review_attestation()
+    attestor_headers = _auth_headers(attestor.id, ["attestor"])
+    requestor_headers = _auth_headers(requestor.id, ["operator"])
+
+    created = await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications",
+        headers=attestor_headers,
+        json={"question": "Which framework version is in scope?"},
+    )
+    clarification_id = created.json()["id"]
+    await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications/{clarification_id}/respond",
+        headers=requestor_headers,
+        json={"response": "Version 2."},
+    )
+
+    seen = await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications/mark-seen",
+        headers=attestor_headers,
+    )
+
+    assert seen.status_code == 200
+    async with async_session_factory() as session:
+        row = await session.scalar(
+            select(AttestationClarification).where(
+                AttestationClarification.id == UUID(clarification_id)
+            )
+        )
+    assert row is not None
+    assert row.reviewer_seen_at is not None
+
+
+async def test_mark_seen_rejects_non_reviewer(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """A user who is not the assigned reviewer cannot mark answers seen."""
+    del clean_state
+    _attestor, requestor, attestation = await _in_review_attestation()
+
+    response = await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications/mark-seen",
+        headers=_auth_headers(requestor.id, ["operator"]),
+    )
+
+    assert response.status_code == 404
 
 
 async def test_clarification_response_is_hidden_from_third_parties(

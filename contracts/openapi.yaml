@@ -1539,6 +1539,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/clarifications/mark-seen:
+    post:
+      tags:
+      - Attestation
+      summary: Mark answered clarifications as read
+      description: Let the assigned reviewer stamp answered clarifications as read,
+        clearing the reviewer queue's answer-received indicator.
+      operationId: mark_attestation_clarifications_seen_v1_attestations__attestation_id__clarifications_mark_seen_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                title: Response Mark Attestation Clarifications Seen V1 Attestations  Attestation
+                  Id  Clarifications Mark Seen Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/uploads:
     post:
       tags:
@@ -20448,6 +20483,16 @@ components:
             format: date-time
           - type: 'null'
           title: Completion Due At
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+        unread_answer:
+          type: boolean
+          title: Unread Answer
+          default: false
       type: object
       required:
       - id

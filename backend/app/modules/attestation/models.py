@@ -819,6 +819,12 @@ class AttestationClarification(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # When the assigned reviewer viewed the requestor's answer. Null while the
+    # answer is unread, which drives the reviewer queue's "answer received" dot.
+    reviewer_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(
         ATTESTATION_CLARIFICATION_STATUS_ENUM,
         nullable=False,

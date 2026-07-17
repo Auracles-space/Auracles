@@ -569,6 +569,28 @@ async def respond_to_attestation_clarification(
 
 
 @router.post(
+    "/attestations/{attestation_id}/clarifications/mark-seen",
+    summary="Mark answered clarifications as read",
+    description=(
+        "Let the assigned reviewer stamp answered clarifications as read, "
+        "clearing the reviewer queue's answer-received indicator."
+    ),
+)
+async def mark_attestation_clarifications_seen(
+    attestation_id: UUID,
+    reviewer: CurrentUser,
+    db: DatabaseSession,
+) -> dict[str, int]:
+    """Mark this attestation's answered clarifications seen by the reviewer."""
+    seen_count = await clarification_service.mark_clarifications_seen(
+        db=db,
+        reviewer=reviewer,
+        attestation_id=attestation_id,
+    )
+    return {"seen": seen_count}
+
+
+@router.post(
     "/attestations/{attestation_id}/uploads",
     response_model=AttestationEvidenceUploadSessionResponse,
     status_code=status.HTTP_201_CREATED,

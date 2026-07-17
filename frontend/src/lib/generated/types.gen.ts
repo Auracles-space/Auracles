@@ -2783,6 +2783,8 @@ export type OrgAttestationItem = {
     assigned_to_me?: boolean;
     accepted_at: (string | null);
     completion_due_at: (string | null);
+    updated_at?: (string | null);
+    unread_answer?: boolean;
 };
 
 /**
@@ -4985,6 +4987,18 @@ export type RespondToAttestationClarificationV1AttestationsAttestationIdClarific
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostResponse = (ClarificationResponse);
 
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostResponse = ({
+    [key: string]: (number);
+});
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostError = (HTTPValidationError);
 
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
     body: AttestationEvidenceUploadCreateRequest;

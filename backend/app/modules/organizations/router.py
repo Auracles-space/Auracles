@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
-from app.modules.attestation import matching_service
+from app.modules.attestation import clarification_service, matching_service
 from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
@@ -1429,6 +1429,9 @@ async def list_org_attestations(
             .where(OrgMember.id.in_(member_ids))
         )
         member_names = {mid: name for mid, name in member_rows.all()}
+    unread_answer_ids = await clarification_service.unread_answer_attestation_ids(
+        db, [row.id for row in rows]
+    )
     return OrgAttestationsResponse(
         attestations=[
             OrgAttestationItem(
@@ -1448,6 +1451,8 @@ async def list_org_attestations(
                 assigned_to_me=row.reviewing_member_id == caller_member_id,
                 accepted_at=row.accepted_at,
                 completion_due_at=row.completion_due_at,
+                updated_at=row.updated_at,
+                unread_answer=row.id in unread_answer_ids,
             )
             for row in rows
         ]

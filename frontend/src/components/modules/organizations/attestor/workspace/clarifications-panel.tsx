@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { 
+import {
   listAttestationClarifications,
-  createAttestationClarification
+  createAttestationClarification,
+  markClarificationsSeen
 } from "@/lib/generated/sdk.gen";
 import type { ClarificationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -34,6 +35,15 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
       });
       if (res.error) throw new Error("Failed to load clarifications");
       setClarifications(res.data);
+      // The reviewer opening this panel has now seen any answered
+      // clarifications, so clear the queue's "answer received" dot. Idempotent
+      // server-side (only stamps unseen answers); fire-and-forget.
+      if (canWrite && res.data.some((clar: ClarificationResponse) => clar.status === "answered")) {
+        void markClarificationsSeen({
+          path: { attestation_id: attestationId },
+          headers: getAccessTokenHeaders()
+        });
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
