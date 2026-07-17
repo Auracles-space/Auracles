@@ -75,6 +75,32 @@ describe("AttestationQueueTab", () => {
     expect(screen.queryByText("Active Review")).not.toBeInTheDocument();
   });
 
+  it("shows a submitted report in History, not Active", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({
+            id: "a-submitted",
+            status: "report_submitted",
+            outcome: "approved",
+            target_title: "Submitted Review",
+          }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    // Not in the default Active view.
+    await screen.findByRole("tab", { name: /history/i });
+    expect(screen.queryByText("Submitted Review")).not.toBeInTheDocument();
+
+    // Appears under History once the reviewer has submitted.
+    fireEvent.click(screen.getByRole("tab", { name: /history/i }));
+    expect(await screen.findByText("Submitted Review")).toBeInTheDocument();
+  });
+
   it("flags an active review that has an unread clarification answer", async () => {
     vi.mocked(listQueue).mockResolvedValue({
       response: { ok: true },

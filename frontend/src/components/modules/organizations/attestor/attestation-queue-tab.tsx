@@ -13,18 +13,25 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, tabPanelId, tabId } from "@/components/ui/tabs";
 import { ReassignReviewerDialog } from "./reassign-reviewer-dialog";
 
-// In-flight assignment statuses — mirrors the backend _IN_FLIGHT_REVIEW_STATUSES
-// used for the Queue tab count, so the badge and the list always agree.
+// "Active" = the review still needs reviewer/org action. Once the report is
+// submitted the reviewer's work is done (it moves to History), so this is a
+// narrower set than the backend's _IN_FLIGHT_REVIEW_STATUSES, which counts
+// report_submitted as still in flight for the org-level nav badge.
 const ACTIVE_QUEUE_STATUSES = [
   "accepted",
   "in_review",
-  "report_submitted",
   "revision_requested",
   "disputed",
 ];
 
-// Terminal statuses shown in the History tab — a review the org has finished.
-const COMPLETED_QUEUE_STATUSES = ["released", "resolved", "refunded", "closed"];
+// History tab — reviews the reviewer has submitted plus terminal outcomes.
+const COMPLETED_QUEUE_STATUSES = [
+  "report_submitted",
+  "released",
+  "resolved",
+  "refunded",
+  "closed",
+];
 
 /** Badge variant for an in-flight attestation status. */
 function queueStatusVariant(
