@@ -18,6 +18,7 @@ import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-c
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { useRouter } from "next/navigation";
 
 export interface ReportPanelProps {
@@ -40,7 +41,8 @@ function countWords(text: string): number {
 
 export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps) {
   const router = useRouter();
-  
+  const toast = useToast();
+
   const [outcome, setOutcome] = useState<"approved" | "conditional" | "rejected" | "">("");
   const [summary, setSummary] = useState("");
   const [scope, setScope] = useState("");
@@ -181,7 +183,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
       }
 
       // Success
-      alert("Report submitted successfully.");
+      toast.success("Report submitted successfully.");
       router.push(`/dashboard/organizations/${orgId}/queue`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");

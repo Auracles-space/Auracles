@@ -18,6 +18,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+}));
+
 vi.mock("@/lib/auth/form-client", async (importActual) => ({
   ...(await importActual<typeof import("@/lib/auth/form-client")>()),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer member" })),
