@@ -364,6 +364,9 @@ class AttestationRequestResponse(BaseModel):
     closed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # True when a clarification is awaiting the requestor's answer. Drives the
+    # requestor list card's attention indicator; not an ORM column.
+    open_clarification: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

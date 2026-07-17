@@ -1072,6 +1072,7 @@ export type AttestationRequestResponse = {
     closed_at?: (string | null);
     created_at: string;
     updated_at: string;
+    open_clarification?: boolean;
 };
 
 /**

@@ -210,6 +210,50 @@ async def test_clarification_endpoints_round_trip(
     assert responded.json()["response"] == "Version 2."
 
 
+async def test_requestor_list_flags_open_clarification(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """An open clarification flags the requestor's attestation for attention.
+
+    Drives the requestor list card's attention dot: the flag is True only while
+    a question is awaiting the requestor's answer, and clears once answered.
+    """
+    del clean_state
+    attestor, requestor, attestation = await _in_review_attestation()
+    attestor_headers = _auth_headers(attestor.id, ["attestor"])
+    requestor_headers = _auth_headers(requestor.id, ["operator"])
+
+    before = await client.get(
+        "/v1/attestations?role=requestor", headers=requestor_headers
+    )
+    assert before.status_code == 200
+    assert before.json()["attestations"][0]["open_clarification"] is False
+
+    created = await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications",
+        headers=attestor_headers,
+        json={"question": "Which framework version is in scope?"},
+    )
+    assert created.status_code == 201
+    clarification_id = created.json()["id"]
+
+    after = await client.get(
+        "/v1/attestations?role=requestor", headers=requestor_headers
+    )
+    assert after.json()["attestations"][0]["open_clarification"] is True
+
+    await client.post(
+        f"/v1/attestations/{attestation.id}/clarifications/{clarification_id}/respond",
+        headers=requestor_headers,
+        json={"response": "Version 2."},
+    )
+    resolved = await client.get(
+        "/v1/attestations?role=requestor", headers=requestor_headers
+    )
+    assert resolved.json()["attestations"][0]["open_clarification"] is False
+
+
 async def test_clarification_response_is_hidden_from_third_parties(
     client: AsyncClient,
     clean_state,

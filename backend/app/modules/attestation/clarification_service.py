@@ -29,6 +29,35 @@ CLARIFICATION_RESPONSE_HOURS_DEFAULT = 48
 MAX_CLARIFICATIONS = 2
 
 
+async def open_clarification_attestation_ids(
+    db: AsyncSession, attestation_ids: list[UUID]
+) -> set[UUID]:
+    """Return the subset of attestations with a clarification awaiting a reply.
+
+    Used to flag requestor-facing list items whose attestor has asked a
+    question that the requestor has not yet answered.
+
+    Args:
+        db: Async database session.
+        attestation_ids: Attestations to check for open clarifications.
+
+    Returns:
+        The ids that have at least one ``open`` clarification. Empty when the
+        input is empty.
+    """
+    if not attestation_ids:
+        return set()
+    rows = await db.execute(
+        select(AttestationClarification.attestation_id)
+        .where(
+            AttestationClarification.attestation_id.in_(attestation_ids),
+            AttestationClarification.status == "open",
+        )
+        .distinct()
+    )
+    return set(rows.scalars().all())
+
+
 async def _attestor_recipient_id(
     db: AsyncSession, attestation: Attestation
 ) -> UUID | None:

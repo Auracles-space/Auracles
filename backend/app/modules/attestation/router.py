@@ -217,12 +217,17 @@ async def list_attestations(
         user=user,
         role=role,
     )
-    return AttestationsResponse(
-        attestations=[
-            AttestationRequestResponse.model_validate(attestation)
-            for attestation in attestations
-        ]
+    open_clarification_ids = (
+        await clarification_service.open_clarification_attestation_ids(
+            db, [attestation.id for attestation in attestations]
+        )
     )
+    items: list[AttestationRequestResponse] = []
+    for attestation in attestations:
+        item = AttestationRequestResponse.model_validate(attestation)
+        item.open_clarification = attestation.id in open_clarification_ids
+        items.append(item)
+    return AttestationsResponse(attestations=items)
 
 
 @router.get(

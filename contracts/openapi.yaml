@@ -15414,6 +15414,10 @@ components:
           type: string
           format: date-time
           title: Updated At
+        open_clarification:
+          type: boolean
+          title: Open Clarification
+          default: false
       type: object
       required:
       - id

@@ -131,7 +131,14 @@ export function AttestationCard({
     <article className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-heading text-lg font-bold text-foreground">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-foreground">
+            {attestation.open_clarification ? (
+              <span
+                aria-label="Question awaiting your answer"
+                className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-error"
+                role="img"
+              />
+            ) : null}
             {formatLabel(attestation.target_type)} · {attestation.target_id}
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
@@ -141,6 +148,11 @@ export function AttestationCard({
         </div>
         <StatusTag value={attestation.status} />
       </div>
+      {attestation.open_clarification ? (
+        <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-error/40 bg-error/5 px-3 py-1.5 text-sm font-semibold text-error">
+          The attestor asked a question — open details to answer.
+        </p>
+      ) : null}
       {attestation.summary ? (
         <p className="mt-4 text-sm leading-6 text-foreground-muted">
           {attestation.summary}
