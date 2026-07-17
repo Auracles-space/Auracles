@@ -83,8 +83,11 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
 
   // The current member can write if they are exactly the assigned reviewing member
   const canWrite = Boolean(memberId && queueItem?.reviewing_member_id === memberId);
-  const isStarted = attestation.status !== "assigned";
+  // The review is "started" once it moves past the freshly-accepted state.
+  const isStarted = attestation.status !== "accepted";
   const showStartReview = canWrite && !isStarted;
+  const frameworkLabel = queueItem?.target_title ?? attestation.target_type;
+  const reviewerLabel = queueItem?.reviewing_member_name ?? "Unassigned";
 
   async function handleStartReview() {
     setStarting(true);
@@ -111,11 +114,11 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
       <div className="rounded-2xl border border-foreground/10 bg-background shadow-bento">
         <div className="flex flex-row items-center justify-between border-b border-foreground/5 p-6 pb-4">
           <div>
-            <h2 className="text-xl font-bold font-heading">
-              Attestation {attestationId.substring(0, 8)}
-            </h2>
-            <p className="text-sm text-foreground-muted mt-1">
-              Target Framework: {attestation.target_id}
+            <h2 className="text-xl font-bold font-heading">{frameworkLabel}</h2>
+            <p className="text-sm text-foreground-muted mt-1 capitalize">
+              {attestation.review_type ? `${attestation.review_type} review` : "Attestation"}
+              {" · "}
+              {attestation.target_type}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -147,7 +150,7 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
             </div>
             <div>
               <span className="block text-foreground-muted mb-1">Assigned Member</span>
-              <span className="font-semibold">{queueItem?.reviewing_member_id || "Unassigned"}</span>
+              <span className="font-semibold">{reviewerLabel}</span>
             </div>
             <div>
               <span className="block text-foreground-muted mb-1">Started</span>

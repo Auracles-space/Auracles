@@ -168,7 +168,11 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const pathParts = pathname.split("/");
   // /dashboard/organizations/[orgId]/members -> "members"
   // /dashboard/organizations/[orgId] -> ""
-  const activeSegment = pathParts.length > 4 ? pathParts[4] : "";
+  const rawSegment = pathParts.length > 4 ? pathParts[4] : "";
+  // Drill-in routes that live under a tab keep that tab highlighted. The
+  // attestation workspace sits at /attestations/[id] but belongs to Queue.
+  const SUB_ROUTE_TABS: Record<string, string> = { attestations: "queue" };
+  const activeSegment = SUB_ROUTE_TABS[rawSegment] ?? rawSegment;
   const activeId = tabs.some((t) => t.id === activeSegment) ? activeSegment : "";
 
   function handleTabChange(id: string) {

@@ -6,9 +6,10 @@ import {
 } from "@/lib/generated/sdk.gen";
 import { OrganizationShell } from "./organization-shell";
 
+let mockPathname = "/dashboard/organizations/org-1";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => "/dashboard/organizations/org-1",
+  usePathname: () => mockPathname,
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -123,9 +124,36 @@ describe("OrganizationShell NDA tab", () => {
 describe("OrganizationShell action-count badges", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
     vi.mocked(getOrgNda).mockResolvedValue({
       data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
     } as never);
+  });
+
+  it("keeps the Queue tab active on the attestation workspace sub-route", async () => {
+    mockPathname = "/dashboard/organizations/org-1/attestations/att-9";
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            capabilities: { attestor: "active" },
+            counts: { offers: 0, queue: 1, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    const queueTab = await screen.findByRole("tab", { name: /Queue/i });
+    expect(queueTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Profile/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
   });
 
   it("shows offer, queue, and invitation counts on the admin tabs", async () => {
