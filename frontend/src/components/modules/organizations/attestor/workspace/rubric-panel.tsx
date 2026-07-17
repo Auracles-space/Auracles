@@ -108,7 +108,7 @@ function RubricDimensionCard({
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-base font-medium text-foreground">
-            {dimension.label}
+            {dimension.label} <span className="text-error">*</span>
           </h3>
           <p className="mt-1 text-sm text-foreground-muted">
             Weight: {(dimension.weight * 100).toFixed(0)}%
@@ -141,7 +141,7 @@ function RubricDimensionCard({
 
       <div className="mt-4">
         <label className="mb-2 block text-sm font-medium text-foreground">
-          Comment
+          Comment <span className="text-error">*</span>
         </label>
         <Textarea
           disabled={!canWrite}
