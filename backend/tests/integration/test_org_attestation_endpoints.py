@@ -372,6 +372,31 @@ async def test_accept_offer_of_another_org_404(
     assert response.status_code == 404
 
 
+async def test_queue_shows_friendly_labels(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """The org queue exposes framework title, review type, and reviewer name."""
+    org_id, owner_user, _ = await _attestor_org()
+    member_id, _ = await _add_member(org_id)
+    _, offer_id = await _offered_framework_attestation(org_id, title="Ops Playbook")
+
+    accept = await client.post(
+        f"/v1/orgs/{org_id}/attestation-offers/{offer_id}/accept",
+        headers=auth(owner_user),
+        json={"reviewing_member_id": str(member_id)},
+    )
+    assert accept.status_code == 200
+
+    res = await client.get(
+        f"/v1/orgs/{org_id}/attestations", headers=auth(owner_user)
+    )
+    assert res.status_code == 200
+    item = res.json()["attestations"][0]
+    assert item["target_title"] == "Ops Playbook"
+    assert item["review_type"] == "quality"
+    assert item["reviewing_member_name"] == "member"
+
+
 async def test_decline_endpoint(
     client: AsyncClient, migrated_database: None, clean_state: None
 ) -> None:

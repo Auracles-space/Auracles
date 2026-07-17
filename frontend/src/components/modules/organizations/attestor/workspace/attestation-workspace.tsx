@@ -50,7 +50,9 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
       if (res.error) throw new Error(describeGeneratedError(res.error));
       if (queueRes.error) throw new Error(describeGeneratedError(queueRes.error));
       
-      const foundQueueItem = queueRes.data.find((item: OrgAttestationItem) => item.id === attestationId);
+      const foundQueueItem = queueRes.data.attestations.find(
+        (item: OrgAttestationItem) => item.id === attestationId,
+      );
       
       setAttestation(res.data);
       setQueueItem(foundQueueItem || null);

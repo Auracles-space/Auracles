@@ -2773,9 +2773,12 @@ export type OrgAttestationItem = {
     id: string;
     target_type: string;
     target_id: string;
+    target_title?: (string | null);
+    review_type?: (string | null);
     status: string;
     outcome: (string | null);
     reviewing_member_id: (string | null);
+    reviewing_member_name?: (string | null);
     accepted_at: (string | null);
     completion_due_at: (string | null);
 };

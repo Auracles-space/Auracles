@@ -1048,9 +1048,14 @@ class OrgAttestationItem(BaseModel):
     id: UUID
     target_type: str
     target_id: UUID
+    # Human-readable target name (framework title); null for non-framework targets.
+    target_title: str | None = None
+    review_type: str | None = None
     status: str
     outcome: str | None
     reviewing_member_id: UUID | None
+    # Display name of the assigned reviewing member, for a friendly queue view.
+    reviewing_member_name: str | None = None
     accepted_at: datetime | None
     completion_due_at: datetime | None
 

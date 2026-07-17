@@ -55,7 +55,11 @@ from app.modules.organizations.dependencies import (
     require_org_capability,
     require_org_role,
 )
-from app.modules.organizations.models import OrgAttestorApplication, OrgLegalProfile
+from app.modules.organizations.models import (
+    OrgAttestorApplication,
+    OrgLegalProfile,
+    OrgMember,
+)
 from app.modules.organizations.schemas import (
     AdminOrgsResponse,
     AdminStartTrialRequest,
@@ -1382,8 +1386,49 @@ async def list_org_attestations(
         org_id=org_id,
         reviewing_member_id=reviewing_member_id,
     )
+    # Resolve friendly labels so the queue shows a framework title and reviewer
+    # name instead of raw UUIDs.
+    framework_ids = {
+        row.target_id for row in rows if row.target_type == "framework"
+    }
+    titles: dict[UUID, str] = {}
+    if framework_ids:
+        title_rows = await db.execute(
+            select(Framework.id, Framework.title).where(
+                Framework.id.in_(framework_ids)
+            )
+        )
+        titles = {fid: title for fid, title in title_rows.all()}
+    member_ids = {row.reviewing_member_id for row in rows if row.reviewing_member_id}
+    member_names: dict[UUID, str] = {}
+    if member_ids:
+        member_rows = await db.execute(
+            select(OrgMember.id, User.display_name)
+            .join(User, User.id == OrgMember.user_id)
+            .where(OrgMember.id.in_(member_ids))
+        )
+        member_names = {mid: name for mid, name in member_rows.all()}
     return OrgAttestationsResponse(
-        attestations=[OrgAttestationItem.model_validate(row) for row in rows]
+        attestations=[
+            OrgAttestationItem(
+                id=row.id,
+                target_type=row.target_type,
+                target_id=row.target_id,
+                target_title=titles.get(row.target_id)
+                if row.target_type == "framework"
+                else None,
+                review_type=row.review_type,
+                status=row.status,
+                outcome=row.outcome,
+                reviewing_member_id=row.reviewing_member_id,
+                reviewing_member_name=member_names.get(row.reviewing_member_id)
+                if row.reviewing_member_id
+                else None,
+                accepted_at=row.accepted_at,
+                completion_due_at=row.completion_due_at,
+            )
+            for row in rows
+        ]
     )
 
 

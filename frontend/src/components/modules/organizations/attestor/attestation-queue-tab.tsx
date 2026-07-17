@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { listOrgAttestationsV1OrgsOrgIdAttestationsGet } from "@/lib/generated/sdk.gen";
@@ -32,6 +33,7 @@ function queueStatusVariant(
 }
 
 export function AttestationQueueTab() {
+  const router = useRouter();
   const { orgId, role } = useOrganization();
   const [attestations, setAttestations] = useState<OrgAttestationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,18 +104,24 @@ export function AttestationQueueTab() {
         {activeAttestations.map((att) => (
           <div key={att.id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-foreground capitalize">{att.target_type}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-foreground">
+                  {att.target_title ?? (
+                    <span className="capitalize">{att.target_type}</span>
+                  )}
+                </span>
                 <Badge variant={queueStatusVariant(att.status)}>
                   {att.status.replace("_", " ")}
                 </Badge>
               </div>
-              <div className="text-sm text-foreground-muted font-mono">
-                Attestation ID: {att.id}
+              <div className="text-sm text-foreground-muted">
+                {att.review_type ? `${att.review_type} review` : "Attestation"}
+                {" · "}
+                <span className="capitalize">{att.target_type}</span>
               </div>
               {isAdmin && (
                 <div className="text-sm text-foreground-muted">
-                  Assigned to: {att.reviewing_member_id || "Unassigned"}
+                  Assigned to: {att.reviewing_member_name ?? "Unassigned"}
                 </div>
               )}
             </div>
@@ -128,7 +136,11 @@ export function AttestationQueueTab() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => window.location.href = `/dashboard/organizations/${orgId}/attestations/${att.id}`}
+                onClick={() =>
+                  router.push(
+                    `/dashboard/organizations/${orgId}/attestations/${att.id}`,
+                  )
+                }
               >
                 Workspace
               </Button>
