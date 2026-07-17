@@ -2069,6 +2069,101 @@ async def remove_team_member(
     await sync_derived_roles(db, user_id=removed_user_id)
 
 
+async def enable_team_capability(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+    capability: str,
+) -> None:
+    """Enable one marketplace capability on a team.
+
+    The org-level capability must already be active; team-scoped rights are a
+    second eligibility layer, not a way to bypass org capability gating.
+    """
+    org_id = context.org.id
+    actor_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        active = await db.scalar(
+            select(1)
+            .select_from(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == capability,
+                OrgCapability.status == "active",
+            )
+            .limit(1)
+        )
+        if active is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Activate this capability for the organization first.",
+            )
+
+        await db.execute(
+            pg_insert(OrgTeamCapability)
+            .values(team_id=team_id, capability=capability)
+            .on_conflict_do_nothing()
+        )
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_team_capability_enabled",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"team_id": str(team_id), "capability": capability},
+        )
+
+    await _sync_team_member_roles(db, team_id)
+
+
+async def disable_team_capability(
+    db: AsyncSession,
+    *,
+    context: OrgContext,
+    team_id: UUID,
+    capability: str,
+) -> None:
+    """Disable one marketplace capability on a team."""
+    org_id = context.org.id
+    actor_id = context.user.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        team = await db.scalar(
+            select(OrgTeam).where(OrgTeam.id == team_id, OrgTeam.org_id == org_id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found.")
+
+        row = await db.scalar(
+            select(OrgTeamCapability).where(
+                OrgTeamCapability.team_id == team_id,
+                OrgTeamCapability.capability == capability,
+            )
+        )
+        if row is not None:
+            await db.delete(row)
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="org_team_capability_disabled",
+                target_type="organization",
+                target_id=org_id,
+                metadata={"team_id": str(team_id), "capability": capability},
+            )
+
+    await _sync_team_member_roles(db, team_id)
+
+
 async def admin_list_orgs(
     db: AsyncSession,
     *,
