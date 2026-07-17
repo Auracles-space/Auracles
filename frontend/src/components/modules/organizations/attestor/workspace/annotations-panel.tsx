@@ -150,7 +150,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
                     </Select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Location Label *</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">Location Label <span className="text-error">*</span></label>
                     <Input 
                       placeholder="e.g. Section 2.1, Article 4" 
                       value={newLocation} 
@@ -171,7 +171,7 @@ export function AnnotationsPanel({ attestationId, canWrite }: AnnotationsPanelPr
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Comment *</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">Comment <span className="text-error">*</span></label>
                   <Textarea 
                     placeholder="Your finding or suggestion..." 
                     value={newComment} 

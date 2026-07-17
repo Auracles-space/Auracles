@@ -100,7 +100,7 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
               <h3 className="text-sm font-semibold mb-4 text-foreground">New Clarification</h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Question *</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">Question <span className="text-error">*</span></label>
                   <Textarea 
                     placeholder="Describe what you need clarified..." 
                     value={question} 

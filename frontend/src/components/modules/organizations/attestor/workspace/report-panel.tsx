@@ -140,7 +140,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Outcome *</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Outcome <span className="text-error">*</span></label>
           <Select value={outcome} onChange={(e) => setOutcome(e.target.value as "approved" | "conditional" | "rejected")} required>
             <option value="" disabled>Select an outcome...</option>
             <option value="approved">Approved</option>
@@ -150,7 +150,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Summary *</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Summary <span className="text-error">*</span></label>
           <p className="text-xs text-foreground-muted mb-2">Provide a high-level summary of your findings (min 20 chars).</p>
           <Textarea 
             value={summary}
@@ -163,7 +163,7 @@ export function ReportPanel({ attestationId, canWrite, orgId }: ReportPanelProps
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Scope *</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Scope <span className="text-error">*</span></label>
           <p className="text-xs text-foreground-muted mb-2">Define what was reviewed and the limitations of this attestation.</p>
           <Textarea 
             value={scope}
