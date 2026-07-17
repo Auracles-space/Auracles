@@ -124,4 +124,22 @@ describe("OrganizationCapabilities", () => {
     );
     expect(refresh).toHaveBeenCalledTimes(1);
   });
+
+  it("surfaces the error and keeps the dialog open when activation fails", async () => {
+    setOrg({ capabilities: {} });
+    vi.mocked(activateOperator).mockResolvedValue({
+      response: { ok: false },
+      error: { detail: { error_code: "rate_limited" } },
+    } as never);
+    render(<OrganizationCapabilities />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate Operator capability" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Activate Operator" }));
+
+    expect(await screen.findByText("rate_limited")).toBeTruthy();
+    expect(screen.getByText("Activate Operator capability?")).toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
