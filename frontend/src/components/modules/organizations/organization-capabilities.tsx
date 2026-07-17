@@ -10,6 +10,16 @@
  *
  * Maps to: test-guide OC-1, OO-1.
  */
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
+import {
+  activateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePost as activateContributor,
+  activateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePost as activateOperator,
+} from "@/lib/generated/sdk.gen";
 import { useOrganization } from "./organization-context";
 
 type CapabilityKey = "contributor" | "operator";
@@ -62,11 +72,71 @@ function StatusPill({ status }: { status?: string }) {
  * Card of self-service capability rows for organization owners and admins.
  */
 export function OrganizationCapabilities() {
-  const { role, capabilities, isSuspended } = useOrganization();
+  const { orgId, role, capabilities, isSuspended } = useOrganization();
+  const router = useRouter();
+  const toast = useToast();
+
+  const [pending, setPending] = useState<CapabilityKey | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isAdminOrOwner = role === "owner" || role === "admin";
   if (!isAdminOrOwner || isSuspended) {
     return null;
+  }
+
+  const pendingMeta = CAPABILITIES.find((cap) => cap.key === pending) ?? null;
+
+  function openConfirm(key: CapabilityKey) {
+    setError(null);
+    setPending(key);
+  }
+
+  function closeConfirm() {
+    if (busy) {
+      return;
+    }
+
+    setPending(null);
+    setError(null);
+  }
+
+  async function handleConfirm() {
+    if (!pendingMeta) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const result =
+        pendingMeta.key === "contributor"
+          ? await activateContributor({
+              path: { org_id: orgId },
+              headers: getAccessTokenHeaders(),
+            })
+          : await activateOperator({
+              path: { org_id: orgId },
+              headers: getAccessTokenHeaders(),
+            });
+
+      if (!result.response.ok) {
+        setError(
+          result.error?.detail?.error_code ||
+            `Failed to activate ${pendingMeta.label} capability`,
+        );
+        return;
+      }
+
+      toast.success(`${pendingMeta.label} capability activated.`);
+      setPending(null);
+      router.refresh();
+    } catch {
+      setError("An unexpected error occurred.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -99,6 +169,7 @@ export function OrganizationCapabilities() {
                 <button
                   type="button"
                   aria-label={`Activate ${cap.label} capability`}
+                  onClick={() => openConfirm(cap.key)}
                   className="min-h-11 rounded-xl bg-foreground px-5 py-2 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90"
                 >
                   Activate
@@ -108,6 +179,22 @@ export function OrganizationCapabilities() {
           </li>
         ))}
       </ul>
+
+      <ConfirmDialog
+        open={pendingMeta !== null}
+        eyebrow="Capability"
+        title={pendingMeta ? `Activate ${pendingMeta.label} capability?` : ""}
+        description={
+          pendingMeta
+            ? `Every current and future member gains the ${pendingMeta.label} role. Only a platform admin can reverse this.`
+            : ""
+        }
+        confirmLabel={pendingMeta ? `Activate ${pendingMeta.label}` : "Activate"}
+        busy={busy}
+        error={error}
+        onConfirm={handleConfirm}
+        onClose={closeConfirm}
+      />
     </section>
   );
 }

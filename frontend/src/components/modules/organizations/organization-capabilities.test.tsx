@@ -100,4 +100,28 @@ describe("OrganizationCapabilities", () => {
     const { container } = render(<OrganizationCapabilities />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("activates a capability after confirmation, then toasts and refreshes", async () => {
+    setOrg({ capabilities: {} });
+    vi.mocked(activateContributor).mockResolvedValue({
+      response: { ok: true },
+    } as never);
+    render(<OrganizationCapabilities />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate Contributor capability" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Activate Contributor" }));
+
+    await waitFor(() => expect(activateContributor).toHaveBeenCalledTimes(1));
+    expect(activateContributor).toHaveBeenCalledWith({
+      path: { org_id: "org-1" },
+      headers: { Authorization: "Bearer test" },
+    });
+    expect(activateOperator).not.toHaveBeenCalled();
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Contributor capability activated.",
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 });
