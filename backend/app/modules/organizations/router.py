@@ -252,7 +252,27 @@ async def list_my_organizations(
         for organization, role, _caps in organizations
         if role in {"owner", "admin"}
     ]
-    counts_by_org = await service.count_org_actions(db, admin_org_ids=admin_org_ids)
+    # Non-admin members get a queue count scoped to their own assignments, so
+    # resolve this user's membership id in each such org.
+    member_org_ids = [
+        organization.id
+        for organization, role, _caps in organizations
+        if role not in {"owner", "admin"}
+    ]
+    member_queue_scope: dict[UUID, UUID] = {}
+    if member_org_ids:
+        member_rows = await db.execute(
+            select(OrgMember.org_id, OrgMember.id).where(
+                OrgMember.user_id == user.id,
+                OrgMember.org_id.in_(member_org_ids),
+            )
+        )
+        member_queue_scope = {org_id: mid for org_id, mid in member_rows.all()}
+    counts_by_org = await service.count_org_actions(
+        db,
+        admin_org_ids=admin_org_ids,
+        member_queue_scope=member_queue_scope,
+    )
     return MyOrganizationsResponse(
         organizations=[
             MyOrganizationResponse(

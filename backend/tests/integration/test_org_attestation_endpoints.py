@@ -303,6 +303,56 @@ async def test_orgs_mine_counts_zero_for_plain_member(
     assert org["counts"] == {"offers": 0, "queue": 0, "invitations": 0}
 
 
+async def test_orgs_mine_member_queue_counts_own_assignments(
+    client: AsyncClient, migrated_database: None, clean_state: None
+) -> None:
+    """A member's queue count reflects only attestations assigned to them."""
+    org_id, _, _ = await _attestor_org()
+    member_id, member_user = await _add_member(org_id)
+    other_member_id, _ = await _add_member(org_id)
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            requestor = await _new_user("q-req")
+            # Assigned to this member -> counts toward their queue.
+            session.add(
+                Attestation(
+                    target_type="contributor",
+                    target_id=uuid4(),
+                    requestor_id=requestor,
+                    attestor_org_id=org_id,
+                    reviewing_member_id=member_id,
+                    status="accepted",
+                    review_type="quality",
+                    fee_amount=Decimal("500.00"),
+                    currency="USD",
+                    requested_specializations=["tax"],
+                    requested_jurisdictions=["US"],
+                )
+            )
+            # Assigned to a different member -> must NOT count for this member.
+            session.add(
+                Attestation(
+                    target_type="contributor",
+                    target_id=uuid4(),
+                    requestor_id=requestor,
+                    attestor_org_id=org_id,
+                    reviewing_member_id=other_member_id,
+                    status="in_review",
+                    review_type="quality",
+                    fee_amount=Decimal("500.00"),
+                    currency="USD",
+                    requested_specializations=["tax"],
+                    requested_jurisdictions=["US"],
+                )
+            )
+
+    res = await client.get("/v1/orgs/mine", headers=auth(member_user))
+    assert res.status_code == 200
+    org = next(o for o in res.json()["organizations"] if o["org"]["id"] == str(org_id))
+    assert org["counts"] == {"offers": 0, "queue": 1, "invitations": 0}
+
+
 async def test_offers_endpoint_requires_admin(
     client: AsyncClient, migrated_database: None, clean_state: None
 ) -> None:

@@ -226,6 +226,26 @@ describe("OrganizationShell action-count badges", () => {
     expect(screen.queryByRole("tab", { name: /Offers/i })).toBeNull();
   });
 
+  it("shows a member's own assigned-task count on the Queue tab", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "member",
+            capabilities: { attestor: "active" },
+            counts: { offers: 0, queue: 2, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(await screen.findByRole("tab", { name: /Queue/i })).toHaveTextContent("2");
+  });
+
   it("renders no count badge when there is nothing to attend to", async () => {
     vi.mocked(listMyOrgs).mockResolvedValue({
       response: { ok: true },
