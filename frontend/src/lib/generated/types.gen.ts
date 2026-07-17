@@ -979,6 +979,7 @@ export type AttestationPackageResponse = {
     framework_title: string;
     framework_category: string;
     framework_industry: (string | null);
+    framework_version?: (string | null);
     brief: ({
     [key: string]: unknown;
 } | null);

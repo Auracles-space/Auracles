@@ -415,6 +415,10 @@ async def test_package_full_lists_all_artifacts(
     body = resp.json()
     assert body["entitlement"] == "full"
     assert any(a["id"] == str(framework_artifact.id) for a in body["artifacts"])
+    # The framework version is resolved server-side so the reviewer sees it
+    # without entering it by hand (falls back to the framework's current
+    # version when none is pinned to the attestation).
+    assert body["framework_version"] == "1.0.0"
 
 
 async def test_package_preview_lists_only_preview(

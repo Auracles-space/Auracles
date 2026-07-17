@@ -34,6 +34,7 @@ export interface FrameworkFilesPanelProps {
 export function FrameworkFilesPanel({ attestationId }: FrameworkFilesPanelProps) {
   const [artifacts, setArtifacts] = useState<AttestationPackageArtifact[]>([]);
   const [entitlement, setEntitlement] = useState<string>("none");
+  const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function FrameworkFilesPanel({ attestationId }: FrameworkFilesPanelProps)
         if (res.error) throw new Error(describeGeneratedError(res.error));
         setArtifacts(res.data.artifacts);
         setEntitlement(res.data.entitlement);
+        setFrameworkVersion(res.data.framework_version ?? null);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Failed to load files.");
       } finally {
@@ -78,7 +80,14 @@ export function FrameworkFilesPanel({ attestationId }: FrameworkFilesPanelProps)
   return (
     <div className="space-y-6">
       <div className="border-b border-border-default pb-4">
-        <h2 className="text-xl font-semibold text-foreground">Framework files</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xl font-semibold text-foreground">Framework files</h2>
+          {frameworkVersion ? (
+            <span className="inline-flex items-center rounded-full border border-border-default bg-surface-elevated px-2.5 py-0.5 text-xs font-semibold text-foreground-muted">
+              Version {frameworkVersion}
+            </span>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-foreground-muted">
           The artifacts submitted for review. Downloads are time-limited to you.
         </p>

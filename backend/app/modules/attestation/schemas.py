@@ -572,6 +572,8 @@ class AttestationPackageResponse(BaseModel):
     framework_title: str
     framework_category: str
     framework_industry: str | None
+    # Version of the framework under review, resolved server-side.
+    framework_version: str | None = None
     brief: dict[str, Any] | None
     entitlement: str
     artifacts: list[AttestationPackageArtifact]

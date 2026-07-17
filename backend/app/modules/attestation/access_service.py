@@ -33,7 +33,11 @@ from app.modules.attestation.schemas import (
     AttestationPackageResponse,
 )
 from app.modules.auth.models import User
-from app.modules.frameworks.models import Framework, FrameworkVersionArtifact
+from app.modules.frameworks.models import (
+    Framework,
+    FrameworkVersion,
+    FrameworkVersionArtifact,
+)
 from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations.models import OrgMember
 
@@ -261,11 +265,24 @@ async def get_attestation_package(
                 AttestationPackageArtifact(id=a.id, filename=a.name)
                 for a in rows.scalars().all()
             ]
+    # Show the exact framework version under review so the reviewer never has
+    # to identify it manually. Prefer the version pinned to the attestation;
+    # fall back to the framework's current version when none was pinned.
+    framework_version: str | None = None
+    if attestation.framework_version_id is not None:
+        framework_version = await db.scalar(
+            select(FrameworkVersion.version).where(
+                FrameworkVersion.id == attestation.framework_version_id
+            )
+        )
+    if framework_version is None:
+        framework_version = framework.version
     return AttestationPackageResponse(
         attestation_id=attestation.id,
         framework_title=framework.title,
         framework_category=framework.category,
         framework_industry=framework.industry,
+        framework_version=framework_version,
         brief=attestation.brief,
         entitlement=scope,
         artifacts=artifacts,

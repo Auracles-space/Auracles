@@ -15192,6 +15192,11 @@ components:
           - type: string
           - type: 'null'
           title: Framework Industry
+        framework_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Version
         brief:
           anyOf:
           - additionalProperties: true
