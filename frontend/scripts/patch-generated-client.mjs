@@ -164,6 +164,7 @@ const compatibilityAliases = {
   getAttestationArtifactAccess: "requestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPost",
   getAttestationPackage: "getAttestationPackageV1AttestationsAttestationIdPackageGet",
   upsertRubricScore: "upsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPut",
+  listRubricScores: "listAttestationRubricScoresV1AttestationsAttestationIdRubricGet",
   listAttestationAnnotations: "listAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGet",
   createAttestationAnnotation: "createAttestationAnnotationV1AttestationsAttestationIdAnnotationsPost",
   updateAttestationAnnotation: "updateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatch",

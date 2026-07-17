@@ -9,6 +9,7 @@ Maps to: design spec sections 4.1 to 4.3.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -239,6 +240,71 @@ async def acknowledge_content(
 
     await db.refresh(attestation)
     return attestation
+
+
+@dataclass(frozen=True)
+class RubricScoreView:
+    """One saved rubric score resolved to its stable dimension key.
+
+    Attributes:
+        dimension_key: Stable rubric key within the attestation review type.
+        score: Persisted draft score (1-5), or None if only a comment exists.
+        comment: Persisted draft comment, or None.
+    """
+
+    dimension_key: str
+    score: int | None
+    comment: str | None
+
+
+async def list_rubric_scores(
+    db: AsyncSession,
+    *,
+    attestor: User,
+    attestation_id: UUID,
+) -> list[RubricScoreView]:
+    """List the attestation's saved rubric scores keyed by dimension.
+
+    Lets the review workspace rehydrate the rubric panel on reload. Reads are
+    limited to the assigned reviewer and org managers; the score rows are joined
+    to their dimension so the caller sees the stable dimension key rather than
+    the internal dimension id.
+
+    Args:
+        db: Async database session.
+        attestor: Authenticated caller, expected to be the reviewing member.
+        attestation_id: Attestation whose saved rubric scores are requested.
+
+    Returns:
+        One :class:`RubricScoreView` per saved dimension score.
+
+    Raises:
+        HTTPException: 404 on assignee mismatch or 409 outside readable states.
+    """
+    await load_workspace_attestation(
+        db,
+        attestation_id=attestation_id,
+        user_id=attestor.id,
+        allowed_statuses={"in_review", "revision_requested", "report_submitted"},
+        lock=False,
+        allow_managers=True,
+    )
+    rows = await db.execute(
+        select(
+            AttestationRubricDimension.key,
+            AttestationRubricScore.score,
+            AttestationRubricScore.comment,
+        )
+        .join(
+            AttestationRubricDimension,
+            AttestationRubricDimension.id == AttestationRubricScore.dimension_id,
+        )
+        .where(AttestationRubricScore.attestation_id == attestation_id)
+    )
+    return [
+        RubricScoreView(dimension_key=key, score=score, comment=comment)
+        for key, score, comment in rows.all()
+    ]
 
 
 async def upsert_rubric_score(

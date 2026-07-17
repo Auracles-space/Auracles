@@ -292,6 +292,33 @@ async def test_upsert_rubric_score_creates_then_updates(db_session) -> None:
     assert second.score == 5
 
 
+async def test_list_rubric_scores_returns_saved_by_key(db_session) -> None:
+    """Saved rubric scores are listable by dimension key for panel hydration.
+
+    Backs the workspace rubric panel reload: without a read path the reviewer's
+    saved scores vanish on refresh.
+    """
+    attestor, attestation = await _in_review_attestation(db_session)
+    await workspace_service.upsert_rubric_score(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+        dimension_key="completeness",
+        score=4,
+        comment="Thorough.",
+    )
+
+    scores = await workspace_service.list_rubric_scores(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+    )
+
+    by_key = {view.dimension_key: view for view in scores}
+    assert by_key["completeness"].score == 4
+    assert by_key["completeness"].comment == "Thorough."
+
+
 async def test_upsert_rubric_score_rejects_foreign_dimension(db_session) -> None:
     """A dimension key outside the attestation review type is rejected."""
     attestor, attestation = await _in_review_attestation(db_session)

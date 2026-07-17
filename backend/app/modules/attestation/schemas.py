@@ -200,6 +200,26 @@ class RubricScoreResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RubricScoreItem(BaseModel):
+    """One saved rubric score keyed by its stable dimension key.
+
+    Used to rehydrate the workspace rubric panel on reload, matching the
+    frontend's static dimension keys rather than internal dimension ids.
+    """
+
+    dimension_key: str
+    score: int | None
+    comment: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RubricScoresResponse(BaseModel):
+    """All saved rubric scores for one attestation workspace."""
+
+    scores: list[RubricScoreItem]
+
+
 class AnnotationCreateRequest(BaseModel):
     """Request body for creating one free-anchor workspace annotation."""
 

@@ -1233,6 +1233,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/attestations/{attestation_id}/rubric:
+    get:
+      tags:
+      - Attestation
+      summary: List saved rubric scores
+      description: Return the assigned Attestor's saved rubric scores for the workspace,
+        keyed by dimension, so the rubric panel can rehydrate on reload.
+      operationId: list_attestation_rubric_scores_v1_attestations__attestation_id__rubric_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RubricScoresResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/rubric/{dimension_key}:
     put:
       tags:
@@ -24460,6 +24491,33 @@ components:
       - approved
       title: RoleAssignmentResponse
       description: Response body for role assignment endpoints.
+    RubricScoreItem:
+      properties:
+        dimension_key:
+          type: string
+          title: Dimension Key
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score
+        comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Comment
+      type: object
+      required:
+      - dimension_key
+      - score
+      - comment
+      title: RubricScoreItem
+      description: 'One saved rubric score keyed by its stable dimension key.
+
+
+        Used to rehydrate the workspace rubric panel on reload, matching the
+
+        frontend''s static dimension keys rather than internal dimension ids.'
     RubricScoreResponse:
       properties:
         dimension_id:
@@ -24501,6 +24559,18 @@ components:
       type: object
       title: RubricScoreUpsertRequest
       description: Draft score and comment for one rubric dimension.
+    RubricScoresResponse:
+      properties:
+        scores:
+          items:
+            $ref: '#/components/schemas/RubricScoreItem'
+          type: array
+          title: Scores
+      type: object
+      required:
+      - scores
+      title: RubricScoresResponse
+      description: All saved rubric scores for one attestation workspace.
     SavedSearchCreateRequest:
       properties:
         name:

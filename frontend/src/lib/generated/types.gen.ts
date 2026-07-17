@@ -4198,12 +4198,31 @@ export type RoleAssignmentResponse = {
 };
 
 /**
+ * One saved rubric score keyed by its stable dimension key.
+ *
+ * Used to rehydrate the workspace rubric panel on reload, matching the
+ * frontend's static dimension keys rather than internal dimension ids.
+ */
+export type RubricScoreItem = {
+    dimension_key: string;
+    score: (number | null);
+    comment: (string | null);
+};
+
+/**
  * One persisted attestation rubric-score row.
  */
 export type RubricScoreResponse = {
     dimension_id: string;
     score: (number | null);
     comment: (string | null);
+};
+
+/**
+ * All saved rubric scores for one attestation workspace.
+ */
+export type RubricScoresResponse = {
+    scores: Array<RubricScoreItem>;
 };
 
 /**
@@ -4898,6 +4917,16 @@ export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPo
 export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostResponse = (AttestationRequestResponse);
 
 export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostError = (HTTPValidationError);
+
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetResponse = (RubricScoresResponse);
+
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetError = (HTTPValidationError);
 
 export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutData = {
     body: RubricScoreUpsertRequest;

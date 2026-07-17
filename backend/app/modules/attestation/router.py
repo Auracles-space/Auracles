@@ -70,7 +70,9 @@ from app.modules.attestation.schemas import (
     CredentialResponse,
     CredentialsResponse,
     CredentialUpdateRequest,
+    RubricScoreItem,
     RubricScoreResponse,
+    RubricScoresResponse,
     RubricScoreUpsertRequest,
 )
 from app.modules.auth.models import User
@@ -353,6 +355,31 @@ async def acknowledge_attestation_content(
         ack_version=payload.ack_version,
     )
     return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.get(
+    "/attestations/{attestation_id}/rubric",
+    response_model=RubricScoresResponse,
+    summary="List saved rubric scores",
+    description=(
+        "Return the assigned Attestor's saved rubric scores for the workspace, "
+        "keyed by dimension, so the rubric panel can rehydrate on reload."
+    ),
+)
+async def list_attestation_rubric_scores(
+    attestation_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> RubricScoresResponse:
+    """List the workspace's saved rubric scores keyed by dimension."""
+    views = await workspace_service.list_rubric_scores(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+    )
+    return RubricScoresResponse(
+        scores=[RubricScoreItem.model_validate(view) for view in views]
+    )
 
 
 @router.put(

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
-import { upsertRubricScore } from "@/lib/generated/sdk.gen";
+import React, { useEffect, useState } from "react";
+import { upsertRubricScore, listRubricScores } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { RUBRICS, RubricDimension } from "./rubrics";
 import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
 
 export interface RubricPanelProps {
   attestationId: string;
@@ -12,17 +13,54 @@ export interface RubricPanelProps {
   canWrite: boolean;
 }
 
+/** Saved score/comment for one dimension, keyed by its stable dimension key. */
+type SavedScore = { score: number | null; comment: string };
+
 export function RubricPanel({
   attestationId,
   reviewType,
   canWrite,
 }: RubricPanelProps) {
   const dimensions = RUBRICS[reviewType] || [];
+  const [saved, setSaved] = useState<Record<string, SavedScore>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSaved = async () => {
+      const res = await listRubricScores({
+        path: { attestation_id: attestationId },
+        headers: getAccessTokenHeaders(),
+      });
+      if (!mounted) return;
+      if (!res.error && res.data) {
+        const map: Record<string, SavedScore> = {};
+        for (const item of res.data.scores) {
+          map[item.dimension_key] = {
+            score: item.score ?? null,
+            comment: item.comment ?? "",
+          };
+        }
+        setSaved(map);
+      }
+      setLoading(false);
+    };
+    loadSaved();
+    return () => { mounted = false; };
+  }, [attestationId]);
 
   if (!dimensions.length) {
     return (
       <div className="text-sm text-foreground-muted">
         No rubric dimensions configured for review type: {reviewType}
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 p-4 text-sm text-foreground-muted">
+        <Spinner className="h-4 w-4" /> Loading rubric...
       </div>
     );
   }
@@ -46,6 +84,8 @@ export function RubricPanel({
             attestationId={attestationId}
             dimension={dim}
             canWrite={canWrite}
+            initialScore={saved[dim.key]?.score ?? null}
+            initialComment={saved[dim.key]?.comment ?? ""}
           />
         ))}
       </div>
@@ -57,13 +97,17 @@ function RubricDimensionCard({
   attestationId,
   dimension,
   canWrite,
+  initialScore,
+  initialComment,
 }: {
   attestationId: string;
   dimension: RubricDimension;
   canWrite: boolean;
+  initialScore: number | null;
+  initialComment: string;
 }) {
-  const [score, setScore] = useState<number | null>(null);
-  const [comment, setComment] = useState("");
+  const [score, setScore] = useState<number | null>(initialScore);
+  const [comment, setComment] = useState(initialComment);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Persist whatever the reviewer has entered so far. The backend accepts a
