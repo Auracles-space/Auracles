@@ -642,6 +642,7 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         "attestation_offer_received",
         "attestation_offer_received",
         "attestation_accepted",
+        "attestation_assigned",
     ]
     assert notification_calls[0]["user_id"] == str(requestor_id)
     assert {call["user_id"] for call in notification_calls[1:3]} == {
@@ -649,6 +650,8 @@ async def test_attestation_matching_offers_and_first_accept_wins(
         str(second_owner),
     }
     assert notification_calls[3]["user_id"] == str(requestor_id)
+    # The staffed reviewing member (here the accepting owner) is notified.
+    assert notification_calls[4]["user_id"] == str(first_owner)
 
 
 async def test_attestation_decline_advances_to_next_cohort(
