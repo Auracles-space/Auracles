@@ -1963,6 +1963,42 @@ async def list_artifacts(
     return [_artifact_to_response(artifact) for artifact in artifacts]
 
 
+async def list_artifacts_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> list[ArtifactResponse]:
+    """Return current Artifacts for a Framework owned by one owner context.
+
+    This owner-aware counterpart to :func:`list_artifacts` supports
+    organization-owned Frameworks without weakening ownership checks.
+
+    Args:
+        db: Database session used to load the Framework and Artifacts.
+        owner: Personal or organization Framework owner context.
+        framework_id: Framework whose current Artifacts are requested.
+
+    Returns:
+        Current Artifact responses ordered by creation time.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    artifacts = (
+        (
+            await db.execute(
+                select(Artifact)
+                .where(
+                    Artifact.framework_id == framework.id,
+                    Artifact.current_for_framework.is_(True),
+                )
+                .order_by(Artifact.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_artifact_to_response(artifact) for artifact in artifacts]
+
+
 async def _load_owned_artifact(
     db: AsyncSession,
     framework: Framework,

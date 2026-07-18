@@ -240,6 +240,38 @@ async def test_org_create_stamps_org_and_authoring_member(
 
 
 @pytest.mark.asyncio
+async def test_list_artifacts_for_owner_returns_org_framework_artifacts(
+    migrated_database: None,
+    org_framework_state: None,
+) -> None:
+    """Owner-aware artifact listing returns current org Framework artifacts."""
+    del migrated_database, org_framework_state
+    author = await _create_user("org-artifact-list-author")
+    org_id, member_id = await _create_org_member(author)
+    framework = await _create_framework(
+        contributor_id=None,
+        contributor_org_id=org_id,
+        authoring_member_id=member_id,
+    )
+    artifact = await _create_artifact(framework.id)
+
+    async with async_session_factory() as session:
+        artifacts = await service.list_artifacts_for_owner(
+            db=session,
+            owner=FrameworkOwner(
+                actor_id=author.id,
+                user_id=None,
+                org_id=org_id,
+                authoring_member_id=member_id,
+                can_manage_live_state=True,
+            ),
+            framework_id=framework.id,
+        )
+
+    assert [response.id for response in artifacts] == [artifact.id]
+
+
+@pytest.mark.asyncio
 async def test_org_member_cannot_publish_org_framework(
     migrated_database: None,
     org_framework_state: None,

@@ -404,6 +404,69 @@ async def test_org_member_can_upload_confirm_and_submit_framework(
     assert submit.json()["status"] == "submitted"
 
 
+async def test_org_list_artifacts_endpoint(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Contributor-authorized members can list current org Framework artifacts."""
+    owner_id = await create_user("org-framework-artifact-list-owner")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "org-framework-artifact-list")
+    await _activate_contributor_capability(str(org["id"]))
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+
+    response = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["framework_id"] == framework_id
+
+
+async def test_org_list_artifacts_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without contributor grants cannot list org Framework artifacts."""
+    del org_framework_test_context
+    owner_id = await create_user("org-framework-artifact-list-owner")
+    member_id = await create_user("org-framework-artifact-list-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-artifact-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+
+    response = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{created.json()['id']}/artifacts",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
 async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],

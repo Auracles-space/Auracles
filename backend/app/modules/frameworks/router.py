@@ -680,6 +680,30 @@ async def request_org_artifact_upload_url(
     )
 
 
+@org_router.get(
+    "/{framework_id}/artifacts",
+    response_model=list[ArtifactResponse],
+    summary="List organization Framework artifacts",
+    description=(
+        "List current Artifacts attached to an organization-owned Framework for "
+        "an organization member holding the contributor capability grant."
+    ),
+)
+async def list_org_framework_artifacts(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> list[ArtifactResponse]:
+    """List current Artifacts for one organization-owned Framework."""
+    del org_id
+    return await service.list_artifacts_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+    )
+
+
 @router.get("/{framework_id}/artifacts", response_model=list[ArtifactResponse])
 async def list_artifacts(
     framework_id: UUID,

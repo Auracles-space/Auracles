@@ -5794,6 +5794,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts:
+    get:
+      tags:
+      - Frameworks
+      summary: List organization Framework artifacts
+      description: List current Artifacts attached to an organization-owned Framework
+        for an organization member holding the contributor capability grant.
+      operationId: list_org_framework_artifacts_v1_orgs__org_id__frameworks__framework_id__artifacts_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArtifactResponse'
+                title: Response List Org Framework Artifacts V1 Orgs  Org Id  Frameworks
+                  Framework Id  Artifacts Get
+        '403':
+          description: Contributor capability grant required
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:
