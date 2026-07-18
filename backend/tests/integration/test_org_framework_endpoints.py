@@ -537,6 +537,65 @@ async def test_org_relist_denied_for_non_admin(
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize("blocked_state", ["pii", "virus", "missing_file"])
+async def test_org_relist_rejects_artifact_trust_gate_failures(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+    blocked_state: str,
+) -> None:
+    """Org relist returns 409 for PII, virus, and missing-file blockers."""
+    owner_id = await create_user(f"org-framework-relist-{blocked_state}")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(
+        client,
+        owner_token,
+        f"org-relist-{blocked_state.replace('_', '-')}",
+    )
+    await _activate_contributor_capability(str(org["id"]))
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+    file_key = f"frameworks/{framework_id}/artifacts/publishable.pdf"
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await session.get(Framework, UUID(framework_id))
+            artifact = await session.scalar(
+                select(Artifact).where(Artifact.framework_id == UUID(framework_id))
+            )
+            assert framework is not None and artifact is not None
+            framework.status = "unpublished"
+            if blocked_state == "pii":
+                artifact.processing_status = "flagged_pii"
+                artifact.pii_review_needed = True
+            elif blocked_state == "virus":
+                artifact.scan_status = "infected"
+
+    if blocked_state == "missing_file":
+        org_framework_test_context["storage"].existing_keys.discard(file_key)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/relist",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 409
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+    assert framework is not None
+    assert framework.status == "unpublished"
+
+
 async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],
