@@ -150,10 +150,12 @@ async def require_approved_attestor(
 ) -> User:
     """Require an authenticated Attestor.
 
-    The ``attestor`` role is a derived role granted only to members of an
-    organization whose ``attestor`` capability is active, so requiring the role
-    is sufficient proof of an approved attestor relationship. Per-attestation
-    authority is resolved separately via :func:`resolve_attestor_actor`.
+    The ``attestor`` role is a derived role granted to owners and admins of an
+    organization whose ``attestor`` capability is active, and to members on a
+    team with that capability enabled. Holding it proves an approved attestor
+    relationship exists, but not per-attestation authority (resolved separately
+    via :func:`resolve_attestor_actor`) nor that the caller is currently staffed
+    on any review.
     """
     del db
     return user
