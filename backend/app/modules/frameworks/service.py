@@ -2198,14 +2198,43 @@ async def set_preview_artifact(
     framework_id: UUID,
     payload: PreviewArtifactRequest,
 ) -> FrameworkResponse:
-    """Designate one owned Artifact as the Framework preview artifact."""
-    framework = await _load_owned_framework(db, contributor, framework_id)
+    """Designate one owned Artifact as the Framework preview artifact.
+
+    Thin personal wrapper over :func:`set_preview_artifact_for_owner`; org
+    callers use the owner-aware function directly.
+    """
+    return await set_preview_artifact_for_owner(
+        db,
+        FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id,
+        payload,
+    )
+
+
+async def set_preview_artifact_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: PreviewArtifactRequest,
+) -> FrameworkResponse:
+    """Designate one owned Artifact as the Framework preview artifact.
+
+    Owner-aware counterpart to :func:`set_preview_artifact` that supports
+    organization-owned Frameworks (authoring gate) without weakening ownership.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
     _require_draft(framework)
     artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
     framework.preview_artifact_id = artifact.id
     await write_audit(
         db=db,
-        actor_id=contributor.id,
+        actor_id=owner.actor_id,
         action="framework_preview_artifact_set",
         target_type="framework",
         target_id=framework.id,

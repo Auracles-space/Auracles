@@ -560,6 +560,111 @@ async def test_org_delete_artifact_denied_for_plain_member(
     assert response.status_code == 403
 
 
+async def test_org_member_can_set_preview_artifact(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A contributor-team member can set the preview on an org draft Framework.
+
+    Regression for the org authoring gap where set_preview_artifact routed
+    through the personal-ownership endpoint and 404'd on an org-owned Framework.
+    """
+    owner_id = await create_user("org-framework-preview-owner")
+    member_id = await create_user("org-framework-preview-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-preview")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+    # Preview selection is draft-gated; the seed leaves the Framework in
+    # pipeline_passed, so return it to draft with the processed artifact intact.
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(Framework)
+                .where(Framework.id == UUID(framework_id))
+                .values(status="draft")
+            )
+
+    listed = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(member_token),
+    )
+    assert listed.status_code == 200
+    artifact_id = listed.json()[0]["id"]
+
+    response = await client.patch(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["preview_artifact_id"] == artifact_id
+
+
+async def test_org_set_preview_artifact_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot set an org Framework preview."""
+    owner_id = await create_user("org-framework-preview-denied-owner")
+    member_id = await create_user("org-framework-preview-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-preview-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(Framework)
+                .where(Framework.id == UUID(framework_id))
+                .values(status="draft")
+            )
+    listed = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(owner_token),
+    )
+    artifact_id = listed.json()[0]["id"]
+
+    response = await client.patch(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
 async def test_org_relist_endpoint_admin(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],

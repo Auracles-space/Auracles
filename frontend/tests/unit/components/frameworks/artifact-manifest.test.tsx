@@ -1,23 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ArtifactManifest } from "@/components/modules/frameworks/artifact-manifest";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
-import { setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch } from "@/lib/generated/sdk.gen";
-
-vi.mock("@/lib/auth/form-client", () => ({
-  configureBrowserClient: vi.fn(),
-  describeGeneratedError: () => "The request could not be completed.",
-  getAccessTokenHeaders: () => ({ Authorization: "Bearer access-token" }),
-}));
-
-vi.mock("@/lib/generated/sdk.gen", () => ({
-  setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch: vi.fn(),
-}));
-
-const setPreview = vi.mocked(
-  setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch,
-);
 
 /** Build an ArtifactResponse fixture with safe processed defaults. */
 function artifact(overrides: Partial<ArtifactResponse> = {}): ArtifactResponse {
@@ -44,16 +29,11 @@ function artifact(overrides: Partial<ArtifactResponse> = {}): ArtifactResponse {
 }
 
 describe("ArtifactManifest preview controls", () => {
-  beforeEach(() => {
-    setPreview.mockReset();
-  });
-
   it("sets a processed non-PII artifact as preview on a draft framework", async () => {
-    setPreview.mockResolvedValue({
-      data: { id: "framework-1", preview_artifact_id: "artifact-1" },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as never);
+    const setPreviewArtifact = vi.fn().mockResolvedValue({
+      id: "framework-1",
+      preview_artifact_id: "artifact-1",
+    });
     const onPreviewSet = vi.fn();
 
     render(
@@ -65,6 +45,7 @@ describe("ArtifactManifest preview controls", () => {
         onPreviewSet={onPreviewSet}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={setPreviewArtifact}
       />,
     );
 
@@ -73,13 +54,36 @@ describe("ArtifactManifest preview controls", () => {
     );
 
     await waitFor(() => {
-      expect(setPreview).toHaveBeenCalledWith({
-        body: { artifact_id: "artifact-1" },
-        headers: { Authorization: "Bearer access-token" },
-        path: { framework_id: "framework-1" },
-      });
+      expect(setPreviewArtifact).toHaveBeenCalledWith("artifact-1");
     });
     expect(onPreviewSet).toHaveBeenCalled();
+  });
+
+  it("surfaces a safe error when the preview request fails", async () => {
+    const setPreviewArtifact = vi
+      .fn()
+      .mockRejectedValue(new Error("Request failed"));
+
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+        setPreviewArtifact={setPreviewArtifact}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /set .*as preview/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Request failed")).toBeInTheDocument();
+    });
   });
 
   it("marks the current preview artifact and offers no set button for it", () => {
@@ -92,6 +96,7 @@ describe("ArtifactManifest preview controls", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId="artifact-1"
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -114,6 +119,7 @@ describe("ArtifactManifest preview controls", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -132,6 +138,7 @@ describe("ArtifactManifest preview controls", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -153,6 +160,7 @@ describe("ArtifactManifest no-preview nudge", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -171,6 +179,7 @@ describe("ArtifactManifest no-preview nudge", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId="artifact-1"
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -189,6 +198,7 @@ describe("ArtifactManifest no-preview nudge", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
       />,
     );
 
@@ -207,6 +217,7 @@ describe("ArtifactManifest no-preview nudge", () => {
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
       />,
     );
 

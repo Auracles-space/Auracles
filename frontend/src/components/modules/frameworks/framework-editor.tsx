@@ -338,6 +338,9 @@ export function FrameworkEditor({
           onPreviewSet={setFramework}
           onRemove={handleRemoveArtifact}
           previewArtifactId={framework.preview_artifact_id}
+          setPreviewArtifact={(artifactId) =>
+            api.setPreviewArtifact(framework.id, artifactId)
+          }
         />
         <PipelineStatusPanel
           artifacts={artifacts}

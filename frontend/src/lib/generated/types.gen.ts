@@ -6292,6 +6292,18 @@ export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsA
 
 export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
 
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchData = {
+    body: PreviewArtifactRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchResponse = (FrameworkResponse);
+
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
+
 export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {

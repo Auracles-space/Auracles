@@ -163,6 +163,54 @@ describe("frameworkApiFor", () => {
     ).rejects.toMatchObject({ code: "capability_grant_required" });
   });
 
+  it("sets an org preview through the organization preview endpoint", async () => {
+    vi.mocked(
+      sdk.setOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatch,
+    ).mockResolvedValue({
+      data: { id: "framework-1", preview_artifact_id: "artifact-1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "org", orgId: "org-1" }).setPreviewArtifact(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(
+      sdk.setOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatch,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { artifact_id: "artifact-1" },
+        path: { org_id: "org-1", framework_id: "framework-1" },
+      }),
+    );
+  });
+
+  it("sets a personal preview through the personal preview endpoint", async () => {
+    vi.mocked(
+      sdk.setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch,
+    ).mockResolvedValue({
+      data: { id: "framework-1", preview_artifact_id: "artifact-1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "user" }).setPreviewArtifact(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(
+      sdk.setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { artifact_id: "artifact-1" },
+        path: { framework_id: "framework-1" },
+      }),
+    );
+  });
+
   it("preserves a backend capability grant denial as a safe error code", async () => {
     vi.mocked(
       sdk.listOrgFrameworksV1OrgsOrgIdFrameworksGet,

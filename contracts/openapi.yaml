@@ -5921,6 +5921,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/preview-artifact:
+    patch:
+      tags:
+      - Frameworks
+      summary: Set organization Framework preview artifact
+      description: Designate one Artifact as the public preview on an organization-owned
+        draft Framework for a member holding the contributor capability grant.
+      operationId: set_org_framework_preview_artifact_v1_orgs__org_id__frameworks__framework_id__preview_artifact_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewArtifactRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:

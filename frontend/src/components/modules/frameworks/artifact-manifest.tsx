@@ -12,12 +12,6 @@
 import { useState } from "react";
 
 import { SourcePreviewBadge } from "@/components/modules/frameworks/source-preview-badge";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
-import { setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch } from "@/lib/generated/sdk.gen";
 import type {
   ArtifactResponse,
   FrameworkResponse,
@@ -32,6 +26,8 @@ type ArtifactManifestProps = {
   previewArtifactId: string | null;
   onPreviewSet: (framework: FrameworkResponse) => void;
   onRemove: (artifactId: string) => void;
+  /** Persist the chosen preview via the seller-scoped Framework API adapter. */
+  setPreviewArtifact: (artifactId: string) => Promise<FrameworkResponse>;
 };
 
 /** Processing state where the pipeline is actively running on the artifact. */
@@ -68,6 +64,7 @@ export function ArtifactManifest({
   previewArtifactId,
   onPreviewSet,
   onRemove,
+  setPreviewArtifact,
 }: ArtifactManifestProps) {
   // Preview selection is only legal while the Framework is a draft, matching the
   // backend `_require_draft` gate. Published frameworks must start a new draft
@@ -77,21 +74,22 @@ export function ArtifactManifest({
   const [error, setError] = useState<string | null>(null);
 
   async function handleSetPreview(artifactId: string) {
-    configureBrowserClient();
     setPendingId(artifactId);
     setError(null);
-    const result =
-      await setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch({
-        body: { artifact_id: artifactId },
-        headers: getAccessTokenHeaders(),
-        path: { framework_id: frameworkId },
-      });
-    setPendingId(null);
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
+    try {
+      const framework = await setPreviewArtifact(artifactId);
+      onPreviewSet(framework);
+    } catch (caught) {
+      // The adapter raises a safe FrameworkApiError; show its message and keep
+      // the current preview unchanged.
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
+    } finally {
+      setPendingId(null);
     }
-    onPreviewSet(result.data);
   }
 
   return (

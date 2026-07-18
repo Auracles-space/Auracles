@@ -757,6 +757,32 @@ async def delete_org_framework_artifact(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@org_router.patch(
+    "/{framework_id}/preview-artifact",
+    response_model=FrameworkResponse,
+    summary="Set organization Framework preview artifact",
+    description=(
+        "Designate one Artifact as the public preview on an organization-owned "
+        "draft Framework for a member holding the contributor capability grant."
+    ),
+)
+async def set_org_framework_preview_artifact(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: PreviewArtifactRequest,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Set the preview Artifact on one organization-owned Framework."""
+    del org_id
+    return await service.set_preview_artifact_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
 @router.get("/{framework_id}/artifacts", response_model=list[ArtifactResponse])
 async def list_artifacts(
     framework_id: UUID,

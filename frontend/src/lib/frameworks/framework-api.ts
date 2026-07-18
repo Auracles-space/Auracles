@@ -73,6 +73,10 @@ export interface FrameworkApi {
   relist(id: string): Promise<FrameworkResponse>;
   listArtifacts(id: string): Promise<ArtifactResponse[]>;
   deleteArtifact(id: string, artifactId: string): Promise<void>;
+  setPreviewArtifact(
+    id: string,
+    artifactId: string,
+  ): Promise<FrameworkResponse>;
   createArtifactUpload(
     id: string,
     body: ArtifactUploadUrlRequest,
@@ -216,6 +220,14 @@ function personalFrameworkApi(): FrameworkApi {
           path: { framework_id: id, artifact_id: artifactId },
         }),
       ),
+    setPreviewArtifact: (id, artifactId) =>
+      unwrap(
+        sdk.setPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatch({
+          body: { artifact_id: artifactId },
+          headers: authorizedHeaders(),
+          path: { framework_id: id },
+        }),
+      ),
     createArtifactUpload: (id, body) =>
       unwrap(
         sdk.requestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPost(
@@ -334,6 +346,16 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
           {
             headers: authorizedHeaders(),
             path: { ...orgPath, framework_id: id, artifact_id: artifactId },
+          },
+        ),
+      ),
+    setPreviewArtifact: (id, artifactId) =>
+      unwrap(
+        sdk.setOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatch(
+          {
+            body: { artifact_id: artifactId },
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id },
           },
         ),
       ),
