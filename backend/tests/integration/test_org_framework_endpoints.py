@@ -467,6 +467,76 @@ async def test_org_list_artifacts_denied_for_plain_member(
     assert response.status_code == 403
 
 
+async def test_org_relist_endpoint_admin(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An org owner can relist a delisted organization Framework."""
+    owner_id = await create_user("org-framework-relist-owner")
+    from app.core.security import create_access_token
+    from app.modules.frameworks import service as framework_service
+
+    async def _noop_index(*args: object, **kwargs: object) -> None:
+        """Avoid external indexing while asserting the relist response."""
+        return None
+
+    monkeypatch.setattr(framework_service, "index_framework_artifacts", _noop_index)
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "org-framework-relist")
+    await _activate_contributor_capability(str(org["id"]))
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+    framework_id = UUID(created.json()["id"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await session.get(Framework, framework_id)
+            assert framework is not None
+            framework.status = "unpublished"
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/relist",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+
+
+async def test_org_relist_denied_for_non_admin(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A non-admin member cannot relist an organization Framework."""
+    del org_framework_test_context
+    owner_id = await create_user("org-framework-relist-owner")
+    member_id = await create_user("org-framework-relist-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-relist-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{created.json()['id']}/relist",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
 async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],

@@ -5628,6 +5628,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/relist:
+    post:
+      tags:
+      - Frameworks
+      summary: Relist organization Framework
+      description: Return a delisted organization-owned Framework to the public catalog.
+        Requires organization owner/admin access and an active contributor capability.
+      operationId: relist_org_framework_v1_orgs__org_id__frameworks__framework_id__relist_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '403':
+          description: Organization owner/admin and contributor capability required
+        '409':
+          description: Framework cannot be relisted in its current state
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/version:
     post:
       tags:

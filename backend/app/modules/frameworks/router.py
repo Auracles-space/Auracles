@@ -450,6 +450,32 @@ async def unpublish_org_framework(
     )
 
 
+@org_router.post(
+    "/{framework_id}/relist",
+    response_model=FrameworkResponse,
+    summary="Relist organization Framework",
+    description=(
+        "Return a delisted organization-owned Framework to the public catalog. "
+        "Requires organization owner/admin access and an active contributor "
+        "capability."
+    ),
+)
+async def relist_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Relist one delisted organization-owned Framework."""
+    del org_id
+    return await service.relist_framework_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+    )
+
+
 @router.post("/{framework_id}/relist", response_model=FrameworkResponse)
 async def relist_framework(
     framework_id: UUID,

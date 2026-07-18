@@ -1120,6 +1120,89 @@ async def relist_framework(
     return framework_to_response(framework)
 
 
+async def relist_framework_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Return an owned delisted Framework to the public catalog.
+
+    Rechecks the current Artifact trust and storage gates before changing an
+    unpublished Framework back to published, resolving ownership through the
+    supplied personal or organization owner context.
+
+    Args:
+        db: Database session used for the relist transaction.
+        owner: Personal or organization Framework owner context.
+        framework_id: Delisted Framework to relist.
+
+    Returns:
+        The published Framework response.
+
+    Raises:
+        HTTPException(403): If the owner context cannot manage live state.
+        HTTPException(404): If the Framework is not owned by the context.
+        HTTPException(409): If relisting state or trust checks fail.
+    """
+    _require_live_state_access(owner)
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    if framework.status == "published":
+        return framework_to_response(framework)
+    if framework.status != "unpublished":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only unpublished Frameworks can be relisted.",
+        )
+    if await current_artifacts_block_publish(db, framework.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This framework can't be relisted because an artifact failed a "
+                "trust check (virus or PII). Start a new version to resolve it."
+            ),
+        )
+    if await current_artifact_file_missing(db, framework.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "An artifact file is no longer available in storage. "
+                "Re-upload the affected artifact in a new version to relist."
+            ),
+        )
+
+    framework.status = "published"
+    framework.published_at = datetime.now(UTC)
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="framework_relisted",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={
+            "version": framework.version,
+            "org_id": str(owner.org_id) if owner.org_id is not None else None,
+        },
+    )
+    await db.commit()
+    try:
+        await index_framework_artifacts(framework.id)
+    except Exception as exc:
+        logger.bind(
+            module="frameworks",
+            action="index_framework_artifacts",
+            user_id=owner.actor_id,
+            framework_id=framework.id,
+        ).error("artifact_lsh_index_failed", error=str(exc))
+    await db.refresh(framework)
+    logger.bind(
+        module="frameworks",
+        action="relist_framework",
+        user_id=owner.actor_id,
+        framework_id=framework.id,
+    ).info("framework_relisted")
+    return framework_to_response(framework)
+
+
 async def submit_framework(
     db: AsyncSession,
     owner: FrameworkOwner,
