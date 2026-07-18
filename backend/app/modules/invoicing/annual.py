@@ -102,11 +102,6 @@ _ANNUAL_TEMPLATE = _TEMPLATE_ENV.from_string(
 )
 
 
-def annual_summary_key(attestor_id: UUID, year: int) -> str:
-    """Return the deterministic S3 key for one annual summary PDF."""
-    return f"annual-summaries/{attestor_id}/{year}.pdf"
-
-
 async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     """Return the configured attestation commission rate."""
     value = await db.scalar(

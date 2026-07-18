@@ -2321,35 +2321,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /v1/attestations/earnings/annual/{year}:
-    get:
-      tags:
-      - Attestation
-      summary: Fetch the caller's annual attestation earnings summary
-      description: Return the approved attestor's annual earnings summary PDF for
-        the requested year when the Jan-2 batch has generated it.
-      operationId: get_attestation_annual_summary_v1_attestations_earnings_annual__year__get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: year
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Year
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/auth/google/start:
     get:
       tags:

@@ -5277,16 +5277,6 @@ export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsSt
 
 export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
 
-export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetData = {
-    path: {
-        year: number;
-    };
-};
-
-export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetResponse = (unknown);
-
-export type GetAttestationAnnualSummaryV1AttestationsEarningsAnnualYearGetError = (HTTPValidationError);
-
 export type GoogleStartV1AuthGoogleStartGetData = {
     query?: {
         next?: (string | null);

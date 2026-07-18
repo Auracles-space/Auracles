@@ -28,7 +28,6 @@ from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.financials.service import INVOICE_URL_TTL_SECONDS
 from app.modules.invoicing import service as invoicing_service
-from app.modules.invoicing.annual import annual_summary_key
 from app.modules.organizations.models import (
     Organization,
     OrgMember,
@@ -308,24 +307,3 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     return Decimal(value)
 
 
-async def get_annual_summary(
-    db: AsyncSession,
-    *,
-    user: User,
-    year: int,
-) -> Response:
-    """Deliver an approved attestor's annual earnings summary PDF."""
-    del db
-    settings = get_settings()
-    key = annual_summary_key(user.id, year)
-    if not s3.storage.object_exists(settings.s3_reports_bucket, key):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No earnings summary for that year.",
-        )
-    document_url = s3.storage.presigned_get(
-        settings.s3_reports_bucket,
-        key,
-        INVOICE_URL_TTL_SECONDS,
-    )
-    return RedirectResponse(url=document_url, status_code=status.HTTP_302_FOUND)
