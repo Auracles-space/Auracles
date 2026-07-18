@@ -66,10 +66,12 @@ export function ArtifactManifest({
   onRemove,
   setPreviewArtifact,
 }: ArtifactManifestProps) {
-  // Preview selection is only legal while the Framework is a draft, matching the
-  // backend `_require_draft` gate. Published frameworks must start a new draft
-  // version to change their preview.
-  const canSetPreview = frameworkStatus === "draft";
+  // Preview selection is legal while the Framework is still pre-publish and
+  // artifact-editable — a draft or a pipeline_failed run being fixed — matching
+  // the backend `_require_preview_editable` gate. Published frameworks must
+  // start a new draft version to change their preview.
+  const canSetPreview =
+    frameworkStatus === "draft" || frameworkStatus === "pipeline_failed";
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

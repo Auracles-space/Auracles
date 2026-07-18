@@ -924,6 +924,51 @@ async def test_contributor_can_set_preview_artifact_and_delete_draft_artifact(
     assert listed.json() == []
 
 
+async def test_contributor_can_set_preview_on_pipeline_failed_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Preview stays selectable after a failed check so publish prep can finish.
+
+    A failed publishing check moves a draft to pipeline_failed; the Contributor
+    must still be able to designate a sample file before fixing the block and
+    re-running, so preview selection is allowed in both editable states.
+    """
+    contributor_id = await create_user_with_roles(
+        "artifact-preview-failed@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    upload = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/upload-url",
+        json={
+            "filename": "preview.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 2048,
+        },
+        headers=headers,
+    )
+    artifact_id = upload.json()["artifact_id"]
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(Framework)
+                .where(Framework.id == UUID(framework_id))
+                .values(status="pipeline_failed")
+            )
+
+    preview = await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["preview_artifact_id"] == artifact_id
+
+
 async def test_published_framework_artifact_delete_is_rejected(
     client: AsyncClient,
     migrated_database: None,

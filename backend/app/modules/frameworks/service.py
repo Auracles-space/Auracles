@@ -353,6 +353,21 @@ def _require_draft(framework: Framework) -> None:
         )
 
 
+# States where a Contributor may still choose the preview Artifact: the draft,
+# and a pipeline_failed Framework being fixed for a re-run. Both are pre-publish
+# and artifact-editable, so preview selection stays available in each.
+_PREVIEW_EDITABLE_STATUSES = {"draft", "pipeline_failed"}
+
+
+def _require_preview_editable(framework: Framework) -> None:
+    """Reject preview changes unless the Framework is draft or pipeline_failed."""
+    if framework.status not in _PREVIEW_EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Preview can only be set on a draft or failed Framework.",
+        )
+
+
 # Statuses whose listing metadata (title, price, description, tags, taxonomy)
 # may be edited in place. These fields live on the Framework row, not the
 # immutable published-version snapshot, so a live edit never rewrites version
@@ -2229,7 +2244,7 @@ async def set_preview_artifact_for_owner(
     organization-owned Frameworks (authoring gate) without weakening ownership.
     """
     framework = await _load_owned_framework_by_owner(db, owner, framework_id)
-    _require_draft(framework)
+    _require_preview_editable(framework)
     artifact = await _load_owned_artifact(db, framework, payload.artifact_id)
     framework.preview_artifact_id = artifact.id
     await write_audit(

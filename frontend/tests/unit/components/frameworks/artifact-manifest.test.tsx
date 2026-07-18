@@ -86,6 +86,25 @@ describe("ArtifactManifest preview controls", () => {
     });
   });
 
+  it("still offers preview selection on a pipeline_failed framework", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="pipeline_failed"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /set .*as preview/i }),
+    ).toBeInTheDocument();
+  });
+
   it("marks the current preview artifact and offers no set button for it", () => {
     render(
       <ArtifactManifest
