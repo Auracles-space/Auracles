@@ -18,6 +18,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   getAttestationFeePayment: vi.fn(),
   acceptAttestationReport: vi.fn(),
   createAttestationDispute: vi.fn(),
+  // The requestor clarifications panel loads on mount; without this export the
+  // mocked module rejects with "no export defined" as an unhandled rejection.
+  listAttestationClarifications: vi.fn(() =>
+    Promise.resolve({ data: [], error: undefined, response: { ok: true } }),
+  ),
 }));
 
 // Stub the Stripe-backed funding panel so tests avoid mounting Stripe Elements.
