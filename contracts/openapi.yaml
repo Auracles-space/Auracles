@@ -5880,6 +5880,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/{artifact_id}:
+    delete:
+      tags:
+      - Frameworks
+      summary: Delete organization Framework artifact
+      description: Delete an Artifact from an organization-owned draft Framework for
+        an organization member holding the contributor capability grant.
+      operationId: delete_org_framework_artifact_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:

@@ -2222,8 +2222,37 @@ async def delete_artifact(
     framework_id: UUID,
     artifact_id: UUID,
 ) -> None:
-    """Delete an Artifact from an owned draft or pipeline_failed Framework."""
-    framework = await _load_owned_framework(db, contributor, framework_id)
+    """Delete an Artifact from a personally owned Framework.
+
+    Thin personal wrapper over :func:`delete_artifact_for_owner`; org callers
+    use the owner-aware function directly.
+    """
+    await delete_artifact_for_owner(
+        db,
+        FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id,
+        artifact_id,
+    )
+
+
+async def delete_artifact_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> None:
+    """Delete an Artifact from an owned draft or pipeline_failed Framework.
+
+    Owner-aware counterpart to :func:`delete_artifact` that supports
+    organization-owned Frameworks (authoring gate) without weakening ownership.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
     _require_editable_artifacts(framework)
     if framework.status == "pipeline_passed":
         framework.status = "draft"
@@ -2255,7 +2284,7 @@ async def delete_artifact(
     )
     await write_audit(
         db=db,
-        actor_id=contributor.id,
+        actor_id=owner.actor_id,
         action="artifact_deleted",
         target_type="artifact",
         target_id=artifact.id,
@@ -2294,7 +2323,7 @@ async def delete_artifact(
     logger.bind(
         module="frameworks",
         action="delete_artifact",
-        user_id=contributor.id,
+        user_id=owner.actor_id,
         framework_id=framework.id,
         artifact_id=artifact.id,
     ).info("artifact_deleted")

@@ -72,6 +72,7 @@ export interface FrameworkApi {
   unpublish(id: string): Promise<FrameworkResponse>;
   relist(id: string): Promise<FrameworkResponse>;
   listArtifacts(id: string): Promise<ArtifactResponse[]>;
+  deleteArtifact(id: string, artifactId: string): Promise<void>;
   createArtifactUpload(
     id: string,
     body: ArtifactUploadUrlRequest,
@@ -112,6 +113,21 @@ async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
     );
   }
   return data;
+}
+
+/** Await a no-content (204) operation, raising a safe error on failure.
+ *
+ * Delete endpoints return an empty body, so `unwrap` cannot be used: its
+ * `data === undefined` guard would treat a successful 204 as a failure.
+ */
+async function unwrapVoid(promise: Promise<ApiResult<unknown>>): Promise<void> {
+  const { error } = await promise;
+  if (error !== undefined) {
+    throw new FrameworkApiError(
+      describeGeneratedError(error),
+      errorCode(error),
+    );
+  }
 }
 
 function personalFrameworkApi(): FrameworkApi {
@@ -191,6 +207,13 @@ function personalFrameworkApi(): FrameworkApi {
         sdk.listArtifactsV1FrameworksFrameworkIdArtifactsGet({
           headers: authorizedHeaders(),
           path: { framework_id: id },
+        }),
+      ),
+    deleteArtifact: (id, artifactId) =>
+      unwrapVoid(
+        sdk.deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete({
+          headers: authorizedHeaders(),
+          path: { framework_id: id, artifact_id: artifactId },
         }),
       ),
     createArtifactUpload: (id, body) =>
@@ -302,6 +325,15 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
           {
             headers: authorizedHeaders(),
             path: { ...orgPath, framework_id: id },
+          },
+        ),
+      ),
+    deleteArtifact: (id, artifactId) =>
+      unwrapVoid(
+        sdk.deleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDelete(
+          {
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id, artifact_id: artifactId },
           },
         ),
       ),

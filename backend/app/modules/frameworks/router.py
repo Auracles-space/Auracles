@@ -730,6 +730,33 @@ async def list_org_framework_artifacts(
     )
 
 
+@org_router.delete(
+    "/{framework_id}/artifacts/{artifact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete organization Framework artifact",
+    description=(
+        "Delete an Artifact from an organization-owned draft Framework for an "
+        "organization member holding the contributor capability grant."
+    ),
+)
+async def delete_org_framework_artifact(
+    org_id: UUID,
+    framework_id: UUID,
+    artifact_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> Response:
+    """Delete an Artifact from one organization-owned Framework."""
+    del org_id
+    await service.delete_artifact_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{framework_id}/artifacts", response_model=list[ArtifactResponse])
 async def list_artifacts(
     framework_id: UUID,

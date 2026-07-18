@@ -467,6 +467,99 @@ async def test_org_list_artifacts_denied_for_plain_member(
     assert response.status_code == 403
 
 
+async def test_org_member_can_delete_artifact(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A contributor-team member can delete an artifact from an org Framework.
+
+    Regression for the org authoring gap where delete_artifact routed through
+    the personal-ownership endpoint and 404'd on an org-owned Framework.
+    """
+    owner_id = await create_user("org-framework-artifact-delete-owner")
+    member_id = await create_user("org-framework-artifact-delete-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-artifact-delete")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+
+    listed = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(member_token),
+    )
+    assert listed.status_code == 200
+    artifact_id = listed.json()[0]["id"]
+
+    deleted = await client.delete(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts/{artifact_id}",
+        headers=auth(member_token),
+    )
+
+    assert deleted.status_code == 204
+
+    remaining = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(member_token),
+    )
+    assert remaining.status_code == 200
+    assert remaining.json() == []
+
+
+async def test_org_delete_artifact_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot delete org Framework artifacts."""
+    owner_id = await create_user("org-framework-artifact-delete-denied-owner")
+    member_id = await create_user("org-framework-artifact-delete-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-artifact-delete-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    assert created.status_code == 201
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id,
+        storage=org_framework_test_context["storage"],
+    )
+    listed = await client.get(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts",
+        headers=auth(owner_token),
+    )
+    artifact_id = listed.json()[0]["id"]
+
+    response = await client.delete(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/artifacts/{artifact_id}",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
 async def test_org_relist_endpoint_admin(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],

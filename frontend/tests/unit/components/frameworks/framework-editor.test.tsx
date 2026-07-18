@@ -10,7 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FrameworkEditor } from "@/components/modules/frameworks/framework-editor";
 import { ToastProvider } from "@/components/ui/toast";
-import { deleteArtifact } from "@/lib/generated/sdk.gen";
 import type {
   ArtifactResponse,
   FrameworkResponse,
@@ -26,6 +25,7 @@ const { api, frameworkApiFor } = vi.hoisted(() => ({
     confirmArtifact: vi.fn(),
     create: vi.fn(),
     createArtifactUpload: vi.fn(),
+    deleteArtifact: vi.fn(),
     get: vi.fn(),
     list: vi.fn(),
     listArtifacts: vi.fn(),
@@ -305,11 +305,7 @@ describe("FrameworkEditor", () => {
     mockLoad(makeFramework({ status: "draft" }), [
       makeArtifact({ id: "art_1", name: "Operating Model.pdf" }),
     ]);
-    vi.mocked(deleteArtifact).mockResolvedValue({
-      data: undefined,
-      error: undefined,
-      response: new Response(null, { status: 204 }),
-    } as never);
+    api.deleteArtifact.mockResolvedValue(undefined);
 
     renderPersonalEditor();
 
@@ -321,11 +317,9 @@ describe("FrameworkEditor", () => {
     await waitFor(() => {
       expect(screen.queryByText("Operating Model.pdf")).not.toBeInTheDocument();
     });
-    expect(deleteArtifact).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: { framework_id: "fw_1", artifact_id: "art_1" },
-      }),
-    );
+    // Delete must go through the seller adapter so org Frameworks reach the
+    // organization endpoint rather than the personal-ownership one.
+    expect(api.deleteArtifact).toHaveBeenCalledWith("fw_1", "art_1");
   });
 
   it("hides the artifact remove control while the artifact is still processing", async () => {

@@ -20,17 +20,11 @@ import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-st
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
 import { SoftFailAcknowledgement } from "@/components/modules/frameworks/soft-fail-acknowledgement";
 import { VersionRadios } from "@/components/modules/frameworks/version-radios";
-import { deleteArtifact } from "@/lib/generated/sdk.gen";
 import type {
   ArtifactResponse,
   FrameworkCreate,
   FrameworkResponse,
 } from "@/lib/generated/types.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
 import { useToast } from "@/components/ui/toast";
 import {
   CONTRIBUTOR_GRANT_REQUIRED_MESSAGE,
@@ -183,15 +177,18 @@ export function FrameworkEditor({
   }
 
   async function handleRemoveArtifact(artifactId: string) {
-    configureBrowserClient();
-    const result = await deleteArtifact({
-      headers: getAccessTokenHeaders(),
-      path: { artifact_id: artifactId, framework_id: frameworkId },
-    });
-    // A failed delete used to blank the whole editor; keep the workspace and
-    // report the failure in a toast instead.
-    if (!result.response.ok) {
-      toast.error(describeGeneratedError(result.error));
+    // Route through the seller adapter so org-owned Frameworks hit the
+    // organization delete endpoint; the personal SDK path 404s on them.
+    try {
+      await api.deleteArtifact(frameworkId, artifactId);
+    } catch (caught) {
+      // A failed delete used to blank the whole editor; keep the workspace and
+      // report the failure in a toast instead.
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
       return;
     }
     setArtifacts((current) =>

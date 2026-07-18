@@ -6280,6 +6280,18 @@ export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGe
 
 export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (unknown | HTTPValidationError);
 
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
+
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
+
 export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {

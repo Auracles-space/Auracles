@@ -93,6 +93,76 @@ describe("frameworkApiFor", () => {
     );
   });
 
+  it("deletes an org artifact through the organization delete endpoint", async () => {
+    // A 204 has no body: data and error are both undefined. unwrapVoid must
+    // treat this as success rather than a missing-data failure.
+    vi.mocked(
+      sdk.deleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDelete,
+    ).mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+    } as never);
+
+    await expect(
+      frameworkApiFor({ kind: "org", orgId: "org-1" }).deleteArtifact(
+        "framework-1",
+        "artifact-1",
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(
+      sdk.deleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDelete,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: {
+          org_id: "org-1",
+          framework_id: "framework-1",
+          artifact_id: "artifact-1",
+        },
+      }),
+    );
+  });
+
+  it("deletes a personal artifact through the personal delete endpoint", async () => {
+    vi.mocked(
+      sdk.deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete,
+    ).mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "user" }).deleteArtifact(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(
+      sdk.deleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDelete,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { framework_id: "framework-1", artifact_id: "artifact-1" },
+      }),
+    );
+  });
+
+  it("raises a safe error when an artifact delete fails", async () => {
+    vi.mocked(
+      sdk.deleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDelete,
+    ).mockResolvedValue({
+      error: { detail: { error_code: "capability_grant_required" } },
+      response: new Response(null, { status: 403 }),
+    } as never);
+
+    await expect(
+      frameworkApiFor({ kind: "org", orgId: "org-1" }).deleteArtifact(
+        "framework-1",
+        "artifact-1",
+      ),
+    ).rejects.toMatchObject({ code: "capability_grant_required" });
+  });
+
   it("preserves a backend capability grant denial as a safe error code", async () => {
     vi.mocked(
       sdk.listOrgFrameworksV1OrgsOrgIdFrameworksGet,
