@@ -73,6 +73,25 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   relistFramework: vi.fn(),
 }));
 
+// Stub the uploader so a test can fire onUploaded deterministically without
+// driving the real file-input + presign + confirm flow.
+vi.mock("@/components/modules/frameworks/artifact-uploader", () => ({
+  ArtifactUploader: ({
+    onUploaded,
+  }: {
+    onUploaded: (artifact: ArtifactResponse) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onUploaded(makeArtifact({ id: "art_dup", name: "Dup.pdf" }))
+      }
+    >
+      stub-upload
+    </button>
+  ),
+}));
+
 /** Render the editor beneath the toast provider its actions depend on. */
 function renderWithToast(ui: ReactElement): RenderResult {
   return render(<ToastProvider>{ui}</ToastProvider>);
@@ -320,6 +339,23 @@ describe("FrameworkEditor", () => {
     // Delete must go through the seller adapter so org Frameworks reach the
     // organization endpoint rather than the personal-ownership one.
     expect(api.deleteArtifact).toHaveBeenCalledWith("fw_1", "art_1");
+  });
+
+  it("does not duplicate an artifact already present when an upload resolves", async () => {
+    // A pipeline poll can replace the list with the server copy that already
+    // includes the artifact before onUploaded fires; the prepend must dedupe.
+    mockLoad(makeFramework({ status: "draft" }), [
+      makeArtifact({ id: "art_dup", name: "Dup.pdf" }),
+    ]);
+
+    renderPersonalEditor();
+
+    await screen.findByText("Dup.pdf");
+    fireEvent.click(screen.getByRole("button", { name: /stub-upload/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Dup.pdf")).toHaveLength(1);
+    });
   });
 
   it("hides the artifact remove control while the artifact is still processing", async () => {

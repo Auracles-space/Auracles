@@ -316,7 +316,14 @@ export function FrameworkEditor({
           )}
           frameworkId={framework.id}
           onUploaded={(artifact) =>
-            setArtifacts((current) => [artifact, ...current])
+            // A background pipeline poll can replace the list with the server
+            // copy that already includes this artifact before onUploaded fires;
+            // dedupe by id so the manifest never renders duplicate React keys.
+            setArtifacts((current) =>
+              current.some((existing) => existing.id === artifact.id)
+                ? current
+                : [artifact, ...current],
+            )
           }
         />
         <ArtifactManifest
