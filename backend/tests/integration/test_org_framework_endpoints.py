@@ -27,7 +27,14 @@ from app.modules.frameworks.models_artifact import (
     ArtifactPiiAudit,
     ArtifactRarityAudit,
 )
-from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgMember,
+    OrgTeam,
+    OrgTeamCapability,
+    OrgTeamMember,
+)
 from app.shared.models.audit_log import AuditLog
 from tests.integration.test_frameworks_crud import FakeArtifactStorage, FakeRedis
 from tests.integration.test_organizations_endpoints import (
@@ -97,6 +104,17 @@ async def _activate_contributor_capability(org_id: str) -> None:
             )
 
 
+async def _grant_contributor_to_member(org_id: str, member_id: UUID) -> None:
+    """Place one member on a team with the contributor capability enabled."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            team = OrgTeam(org_id=UUID(org_id), name="Contributors")
+            session.add(team)
+            await session.flush()
+            session.add(OrgTeamMember(team_id=team.id, member_id=member_id))
+            session.add(OrgTeamCapability(team_id=team.id, capability="contributor"))
+
+
 async def _seed_publishable_framework(
     framework_id: str,
     *,
@@ -155,7 +173,7 @@ async def test_org_member_can_create_framework_under_org_identity(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],
 ) -> None:
-    """A plain org member can create a Framework under the org seller identity."""
+    """A contributor-team member can create a Framework under the org identity."""
     del org_framework_test_context
     owner_id = await create_user("org-framework-owner")
     member_id = await create_user("org-framework-member")
@@ -166,6 +184,7 @@ async def test_org_member_can_create_framework_under_org_identity(
     org = await create_org(client, owner_token, "org-framework")
     member_row_id = await add_member(str(org["id"]), member_id, "member")
     await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
 
     response = await client.post(
         f"/v1/orgs/{org['id']}/frameworks",
@@ -187,6 +206,32 @@ async def test_org_member_can_create_framework_under_org_identity(
     assert framework.authoring_member_id == member_row_id
 
 
+async def test_plain_member_cannot_create_org_framework(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A member outside contributor teams is denied when authoring a Framework."""
+    del org_framework_test_context
+    owner_id = await create_user("org-framework-owner")
+    member_id = await create_user("org-framework-ungranted-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-framework-ungranted")
+    await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "capability_grant_required"
+
+
 async def test_org_publish_requires_admin_role(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],
@@ -201,8 +246,9 @@ async def test_org_publish_requires_admin_role(
     owner_token = create_access_token(owner_id, [])
     member_token = create_access_token(member_id, [])
     org = await create_org(client, owner_token, "org-framework-publish")
-    await add_member(str(org["id"]), member_id, "member")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
     await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
 
     created = await client.post(
         f"/v1/orgs/{org['id']}/frameworks",
@@ -247,7 +293,7 @@ async def test_org_member_can_list_and_read_own_frameworks_only(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],
 ) -> None:
-    """Members can list and read their org Frameworks, but not another org's."""
+    """Contributor-team members can read their org Frameworks, not another org's."""
     del org_framework_test_context
     owner_id = await create_user("org-framework-owner")
     member_id = await create_user("org-framework-member")
@@ -259,8 +305,9 @@ async def test_org_member_can_list_and_read_own_frameworks_only(
     outsider_token = create_access_token(outsider_id, [])
 
     org = await create_org(client, owner_token, "org-framework-read")
-    await add_member(str(org["id"]), member_id, "member")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
     await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
 
     other_org = await create_org(client, outsider_token, "org-framework-other")
     await _activate_contributor_capability(str(other_org["id"]))
@@ -299,7 +346,7 @@ async def test_org_member_can_upload_confirm_and_submit_framework(
     org_framework_test_context: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An org member can upload artifacts and submit an org-owned Framework."""
+    """A contributor-team member can upload artifacts and submit a Framework."""
     owner_id = await create_user("org-framework-owner")
     member_id = await create_user("org-framework-member")
     from app.core.security import create_access_token
@@ -308,8 +355,9 @@ async def test_org_member_can_upload_confirm_and_submit_framework(
     owner_token = create_access_token(owner_id, [])
     member_token = create_access_token(member_id, [])
     org = await create_org(client, owner_token, "org-framework-submit")
-    await add_member(str(org["id"]), member_id, "member")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
     await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
 
     created = await client.post(
         f"/v1/orgs/{org['id']}/frameworks",
@@ -360,7 +408,7 @@ async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],
 ) -> None:
-    """Metadata edits are member-level, while pricing changes are admin-only."""
+    """Team-granted metadata edits remain distinct from admin-only pricing."""
     del org_framework_test_context
     owner_id = await create_user("org-framework-owner")
     member_id = await create_user("org-framework-member")
@@ -369,8 +417,9 @@ async def test_org_member_can_edit_metadata_but_only_admin_can_change_pricing(
     owner_token = create_access_token(owner_id, [])
     member_token = create_access_token(member_id, [])
     org = await create_org(client, owner_token, "org-framework-edit")
-    await add_member(str(org["id"]), member_id, "member")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
     await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
 
     created = await client.post(
         f"/v1/orgs/{org['id']}/frameworks",

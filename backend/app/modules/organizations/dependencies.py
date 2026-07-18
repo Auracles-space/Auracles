@@ -19,7 +19,14 @@ from app.core.audit import write_audit
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from app.modules.organizations.models import (
+    Organization,
+    OrgCapability,
+    OrgMember,
+    OrgTeam,
+    OrgTeamCapability,
+    OrgTeamMember,
+)
 
 _ROLE_RANK = {"member": 0, "admin": 1, "owner": 2}
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -149,5 +156,85 @@ def require_org_capability(capability: str) -> Callable[..., object]:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"error_code": "capability_required", "capability": capability},
             )
+
+    return checker
+
+
+def require_org_capability_grant(capability: str) -> Callable[..., object]:
+    """Build a dependency enforcing a caller's team-scoped capability grant.
+
+    A caller holds a grant only when the organization capability is active and
+    the caller is an owner/admin or belongs to a team with the matching
+    capability enabled.
+
+    Args:
+        capability: Capability slug required by the organization action.
+
+    Returns:
+        A dependency returning :class:`OrgContext` when the caller holds the
+        active capability grant.
+    """
+
+    async def checker(
+        org_id: UUID,
+        db: DatabaseSession,
+        user: Annotated[User, Depends(get_current_user)],
+    ) -> OrgContext:
+        """Return organization context when the caller holds the grant."""
+        organization, membership = await _load_org_context(db, org_id, user)
+        if membership is None:
+            await _deny(db, user, org_id, {"required_capability": capability})
+        assert membership is not None
+
+        if organization.suspended_at is not None:
+            await _deny(
+                db,
+                user,
+                org_id,
+                {"reason": "org_suspended"},
+                error_code="org_suspended",
+            )
+
+        active = await db.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == capability,
+                OrgCapability.status == "active",
+            )
+        )
+        if active is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error_code": "capability_required", "capability": capability},
+            )
+
+        if membership.role in {"owner", "admin"}:
+            return OrgContext(org=organization, member=membership, user=user)
+
+        team_grant = await db.scalar(
+            select(OrgTeamMember.member_id)
+            .join(OrgTeam, OrgTeam.id == OrgTeamMember.team_id)
+            .join(
+                OrgTeamCapability,
+                (OrgTeamCapability.team_id == OrgTeam.id)
+                & (OrgTeamCapability.capability == capability),
+            )
+            .where(
+                OrgTeamMember.member_id == membership.id,
+                OrgTeam.org_id == org_id,
+            )
+            .limit(1)
+        )
+        if team_grant is not None:
+            return OrgContext(org=organization, member=membership, user=user)
+
+        await _deny(
+            db,
+            user,
+            org_id,
+            {"required_capability": capability, "member_role": membership.role},
+            error_code="capability_grant_required",
+        )
+        raise AssertionError("unreachable")
 
     return checker

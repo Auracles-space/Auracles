@@ -49,6 +49,7 @@ from app.modules.frameworks.schemas import (
 from app.modules.organizations.dependencies import (
     OrgContext,
     require_org_capability,
+    require_org_capability_grant,
     require_org_role,
 )
 
@@ -62,6 +63,9 @@ KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 ProfileCompleteUser = Annotated[User, Depends(require_profile_complete)]
 OrgMemberContext = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdminContext = Annotated[OrgContext, Depends(require_org_role("admin"))]
+OrgContributorContext = Annotated[
+    OrgContext, Depends(require_org_capability_grant("contributor"))
+]
 optional_bearer = HTTPBearer(auto_error=False)
 
 
@@ -136,8 +140,7 @@ async def create_framework(
 async def create_org_framework(
     org_id: UUID,
     payload: FrameworkCreate,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> FrameworkResponse:
     """Create a draft Framework owned by the organization."""
@@ -169,8 +172,7 @@ async def list_frameworks(
 )
 async def list_org_frameworks(
     org_id: UUID,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> list[FrameworkListItem]:
     """List Frameworks owned by one organization."""
@@ -265,8 +267,7 @@ async def get_framework(
 async def get_org_framework(
     org_id: UUID,
     framework_id: UUID,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> FrameworkResponse:
     """Return one Framework owned by the organization."""
@@ -354,8 +355,7 @@ async def update_org_framework(
     org_id: UUID,
     framework_id: UUID,
     payload: FrameworkMetadataUpdate,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> FrameworkResponse:
     """Update organization-owned Framework metadata."""
@@ -540,8 +540,7 @@ async def submit_framework(
 async def submit_org_framework(
     org_id: UUID,
     framework_id: UUID,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> FrameworkResponse:
     """Submit one organization-owned Framework."""
@@ -668,8 +667,7 @@ async def request_org_artifact_upload_url(
     org_id: UUID,
     framework_id: UUID,
     payload: ArtifactUploadUrlRequest,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> ArtifactUploadUrlResponse:
     """Create a private upload target for an organization Framework artifact."""
@@ -847,8 +845,7 @@ async def confirm_org_artifact_upload(
     org_id: UUID,
     framework_id: UUID,
     payload: ArtifactConfirmRequest,
-    context: OrgMemberContext,
-    _: Annotated[None, Depends(require_org_capability("contributor"))],
+    context: OrgContributorContext,
     db: DatabaseSession,
 ) -> ArtifactResponse:
     """Confirm an uploaded organization Framework artifact."""
