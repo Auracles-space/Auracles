@@ -17,7 +17,7 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/generated/sdk.gen");
 
 beforeEach(() => {
-  vi.resetAllMocks();
+  vi.clearAllMocks();
 });
 
 describe("frameworkApiFor", () => {
@@ -91,5 +91,23 @@ describe("frameworkApiFor", () => {
         path: { org_id: "org-1", framework_id: "framework-1" },
       }),
     );
+  });
+
+  it("preserves a backend capability grant denial as a safe error code", async () => {
+    vi.mocked(
+      sdk.listOrgFrameworksV1OrgsOrgIdFrameworksGet,
+    ).mockResolvedValue({
+      error: {
+        detail: { error_code: "capability_grant_required" },
+      },
+      response: new Response(null, { status: 403 }),
+    } as never);
+
+    await expect(
+      frameworkApiFor({ kind: "org", orgId: "org-1" }).list(),
+    ).rejects.toMatchObject({
+      code: "capability_grant_required",
+      message: "Request failed",
+    });
   });
 });

@@ -33,7 +33,9 @@ import {
 } from "@/lib/auth/form-client";
 import { useToast } from "@/components/ui/toast";
 import {
+  CONTRIBUTOR_GRANT_REQUIRED_MESSAGE,
   frameworkApiFor,
+  isFrameworkApiErrorCode,
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
@@ -62,6 +64,7 @@ export function FrameworkEditor({
   const [changeLog, setChangeLog] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [framework, setFramework] = useState<FrameworkResponse | null>(null);
+  const [grantRequired, setGrantRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
   const api = useMemo(() => frameworkApiFor(seller), [seller]);
@@ -82,6 +85,13 @@ export function FrameworkEditor({
         setArtifacts(loadedArtifacts);
       } catch (caught) {
         if (!quiet) {
+          if (
+            isFrameworkApiErrorCode(caught, "capability_grant_required")
+          ) {
+            setGrantRequired(true);
+            setLoading(false);
+            return;
+          }
           setError(
             caught instanceof Error
               ? caught.message
@@ -191,6 +201,19 @@ export function FrameworkEditor({
 
   if (loading) {
     return <TableSkeleton />;
+  }
+
+  if (grantRequired) {
+    return (
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 text-center shadow-sm sm:p-8">
+        <h1 className="font-heading text-xl font-bold text-foreground">
+          Contributor right required
+        </h1>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-foreground-muted">
+          {CONTRIBUTOR_GRANT_REQUIRED_MESSAGE}
+        </p>
+      </div>
+    );
   }
 
   if (error || !framework) {

@@ -28,6 +28,31 @@ export type FrameworkSeller =
   | { kind: "user" }
   | { kind: "org"; orgId: string };
 
+/** Friendly guidance shown when an organization member lacks contributor rights. */
+export const CONTRIBUTOR_GRANT_REQUIRED_MESSAGE =
+  "You need the Contributor right for this organization. Ask an admin to add you to a team with the Contributor capability.";
+
+/** Safe API failure carrying a machine-readable backend error code. */
+export class FrameworkApiError extends Error {
+  /** Stable backend error code, when one was provided. */
+  readonly code: string | undefined;
+
+  /** Build a safe adapter error without retaining a raw response payload. */
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "FrameworkApiError";
+    this.code = code;
+  }
+}
+
+/** Determine whether an unknown failure has a specific Framework API code. */
+export function isFrameworkApiErrorCode(
+  error: unknown,
+  code: string,
+): boolean {
+  return error instanceof FrameworkApiError && error.code === code;
+}
+
 /** Uniform authenticated Framework management operations for one seller. */
 export interface FrameworkApi {
   list(): Promise<FrameworkListItem[]>;
@@ -60,6 +85,19 @@ export interface FrameworkApi {
 
 type ApiResult<T> = { data?: T; error?: unknown };
 
+/** Extract a stable code from FastAPI's structured HTTPException detail. */
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("detail" in error)) {
+    return undefined;
+  }
+  const { detail } = error as { detail: unknown };
+  if (!detail || typeof detail !== "object" || !("error_code" in detail)) {
+    return undefined;
+  }
+  const { error_code: code } = detail as { error_code: unknown };
+  return typeof code === "string" ? code : undefined;
+}
+
 function authorizedHeaders(): ReturnType<typeof getAccessTokenHeaders> {
   configureBrowserClient();
   return getAccessTokenHeaders();
@@ -68,7 +106,10 @@ function authorizedHeaders(): ReturnType<typeof getAccessTokenHeaders> {
 async function unwrap<T>(promise: Promise<ApiResult<T>>): Promise<T> {
   const { data, error } = await promise;
   if (data === undefined || error !== undefined) {
-    throw new Error(describeGeneratedError(error));
+    throw new FrameworkApiError(
+      describeGeneratedError(error),
+      errorCode(error),
+    );
   }
   return data;
 }

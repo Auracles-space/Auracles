@@ -44,6 +44,87 @@ function mockOrg(capabilities: Record<string, string>) {
   } as never);
 }
 
+describe("OrganizationShell contributor Frameworks tab", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: {
+        required: false,
+        current_version: "1.0",
+        signed_version: null,
+        signed_at: null,
+      },
+    } as never);
+  });
+
+  it("shows Frameworks to a plain member with the contributor grant", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "member",
+            capabilities: { contributor: "active" },
+            grants: { contributor: true },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(
+      await screen.findByRole("tab", { name: /^Frameworks$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Frameworks from an ungranted plain member", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "member",
+            capabilities: { contributor: "active" },
+            grants: { contributor: false },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    await screen.findByRole("tab", { name: /Members/i });
+    expect(
+      screen.queryByRole("tab", { name: /^Frameworks$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Frameworks to an admin when contributor is active", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "admin",
+            capabilities: { contributor: "active" },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(
+      await screen.findByRole("tab", { name: /^Frameworks$/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("OrganizationShell NDA tab", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,7 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminAttestationPanel } from "@/components/modules/admin/admin-attestation-panel";
-import { adminAssignAttestation, listOrgAttestorApplicationsForAdmin } from "@/lib/generated/sdk.gen";
+import {
+  adminAssignAttestation,
+  listAdminAttestations,
+  listAttestorOrgs,
+  listOrgAttestorApplicationsForAdmin,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -10,8 +21,11 @@ vi.mock("@/lib/auth/form-client", () => ({
 }));
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listOrgAttestorApplicationsForAdmin: vi.fn(),
+  listAdminAttestations: vi.fn(),
+  listAttestorOrgs: vi.fn(),
   adminAssignAttestation: vi.fn(),
   adminRefundAttestation: vi.fn(),
+  resolveAttestationDispute: vi.fn(),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -22,30 +36,67 @@ const ok = <T,>(data: T) => ({
 describe("AdminAttestationPanel", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("posts attestor_org_id and reviewing_member_id when assigning", async () => {
+  it("dispatches a needs-admin request to the selected attestor org", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(
       ok({ applications: [] }) as never,
     );
+    vi.mocked(listAttestorOrgs).mockResolvedValue(
+      ok({ attestors: [{ org_id: "org-2", name: "Assurance Partners" }] }) as never,
+    );
+    vi.mocked(listAdminAttestations).mockResolvedValue(
+      ok({
+        attestations: [
+          {
+            id: "att-1",
+            target_type: "framework",
+            target_id: "fw-1",
+            requestor_id: "user-1",
+            attestor_org_id: null,
+            status: "needs_admin",
+            outcome: null,
+            review_type: "quality",
+            requested_specializations: [],
+            requested_jurisdictions: [],
+            fee_amount: "500.00",
+            currency: "USD",
+            escrow_id: "esc-1",
+            created_at: "2026-07-16T00:00:00Z",
+            updated_at: "2026-07-16T00:00:00Z",
+          },
+        ],
+      }) as never,
+    );
     vi.mocked(adminAssignAttestation).mockResolvedValue(ok({ id: "att-1" }) as never);
     render(<AdminAttestationPanel />);
-    await waitFor(() => screen.getByText(/Admin attestation/));
-    
-    // Fill out the required 2FA code and reason to enable the assign button
-    fireEvent.change(screen.getByPlaceholderText(/Enter 6-digit code/), { target: { value: "123456" } });
-    fireEvent.change(screen.getByPlaceholderText(/Explain this action/), { target: { value: "reason" } });
-    
-    // Fill out attestation ID, org ID, and member ID
-    fireEvent.change(screen.getByLabelText(/Attestation ID/i), { target: { value: "att-1" } });
-    fireEvent.change(screen.getByLabelText(/Target Attestor Org ID/i), { target: { value: "org-2" } });
-    fireEvent.change(screen.getByLabelText(/Target Reviewing Member ID/i), { target: { value: "mem-3" } });
-    
-    fireEvent.click(screen.getByRole("button", { name: /Manual assign/i }));
+    const row = (await screen.findByText("att-1")).closest("article");
+    expect(row).not.toBeNull();
+    const rowQueries = within(row as HTMLElement);
+
+    fireEvent.change(rowQueries.getByLabelText(/Attestor org/i), {
+      target: { value: "org-2" },
+    });
+    fireEvent.change(rowQueries.getByPlaceholderText("Reason for this action"), {
+      target: { value: "Manual dispatch." },
+    });
+    fireEvent.change(rowQueries.getByPlaceholderText("6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(rowQueries.getByRole("button", { name: /Assign to org/i }));
+
     await waitFor(() =>
       expect(vi.mocked(adminAssignAttestation)).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { attestor_org_id: "org-2", reviewing_member_id: "mem-3", reason: "reason", totp_code: "123456" },
+          path: { attestation_id: "att-1" },
+          body: {
+            attestor_org_id: "org-2",
+            reason: "Manual dispatch.",
+            totp_code: "123456",
+          },
         }),
       ),
     );
+    expect(
+      vi.mocked(adminAssignAttestation).mock.calls[0][0].body,
+    ).not.toHaveProperty("reviewing_member_id");
   });
 });

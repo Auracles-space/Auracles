@@ -5,6 +5,8 @@ import { FrameworkList } from "@/components/modules/frameworks/framework-list";
 import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
 
 const listFrameworks = vi.fn();
+const grantRequiredMessage =
+  "You need the Contributor right for this organization. Ask an admin to add you to a team with the Contributor capability.";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -18,7 +20,13 @@ vi.mock("@/lib/auth/current-user-session", () => ({
 }));
 
 vi.mock("@/lib/frameworks/framework-api", () => ({
+  CONTRIBUTOR_GRANT_REQUIRED_MESSAGE:
+    "You need the Contributor right for this organization. Ask an admin to add you to a team with the Contributor capability.",
   frameworkApiFor: vi.fn(() => ({ list: listFrameworks })),
+  isFrameworkApiErrorCode: (error: unknown, code: string) =>
+    error instanceof Error &&
+    "code" in error &&
+    error.code === code,
 }));
 
 describe("FrameworkList", () => {
@@ -72,6 +80,24 @@ describe("FrameworkList", () => {
     expect(
       await screen.findByText(/frameworks are unavailable/i),
     ).toBeInTheDocument();
+  });
+
+  it("renders a friendly empty state for a missing organization grant", async () => {
+    listFrameworks.mockRejectedValue(
+      Object.assign(new Error("Request failed"), {
+        code: "capability_grant_required",
+      }),
+    );
+
+    render(
+      <FrameworkList
+        seller={{ kind: "org", orgId: "org-1" }}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    expect(await screen.findByText(grantRequiredMessage)).toBeInTheDocument();
+    expect(screen.queryByText(/^request failed$/i)).not.toBeInTheDocument();
   });
 
   it("lists owned frameworks with status and open link", async () => {

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AttestationWorkspace } from "@/components/modules/organizations/attestor/workspace/attestation-workspace";
 import { getAttestation, listOrgAttestations } from "@/lib/generated/sdk.gen";
@@ -15,6 +15,21 @@ vi.mock("@/components/modules/organizations/organization-context", () => ({
 vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({ push: vi.fn(), refresh: vi.fn() }))
 }));
+vi.mock("@/components/modules/organizations/attestor/workspace/framework-files-panel", () => ({
+  FrameworkFilesPanel: () => <div>Framework files</div>,
+}));
+vi.mock("@/components/modules/organizations/attestor/workspace/rubric-panel", () => ({
+  RubricPanel: () => <div>Rubric</div>,
+}));
+vi.mock("@/components/modules/organizations/attestor/workspace/annotations-panel", () => ({
+  AnnotationsPanel: () => <div>Annotations</div>,
+}));
+vi.mock("@/components/modules/organizations/attestor/workspace/clarifications-panel", () => ({
+  ClarificationsPanel: () => <div>Clarifications</div>,
+}));
+vi.mock("@/components/modules/organizations/attestor/workspace/report-panel", () => ({
+  ReportPanel: () => <div>Report</div>,
+}));
 vi.mock("@/lib/generated/sdk.gen", () => ({
   getAttestation: vi.fn(),
   listOrgAttestations: vi.fn(),
@@ -29,24 +44,60 @@ describe("AttestationWorkspace", () => {
 
   it("offers Start review to the assigned reviewing member before review starts", async () => {
     vi.mocked(getAttestation).mockResolvedValue(
-      ok({ id: "att-1", status: "assigned" }) as never,
+      ok({
+        id: "att-1",
+        status: "accepted",
+        target_type: "framework",
+        review_type: "quality",
+      }) as never,
     );
     vi.mocked(listOrgAttestations).mockResolvedValue(
-      ok([{ id: "att-1", status: "assigned", reviewing_member_id: "mem-1", review_started_at: null }]) as never,
+      ok({
+        attestations: [
+          {
+            id: "att-1",
+            status: "accepted",
+            assigned_to_me: true,
+            target_title: "Framework One",
+            reviewing_member_name: "Reviewing Member",
+          },
+        ],
+      }) as never,
     );
     render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
-    await waitFor(() => expect(screen.getByRole("button", { name: /start review/i })).toBeEnabled());
+    const startButton = await screen.findByRole("button", {
+      name: /start review/i,
+    });
+    expect(startButton).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(startButton).toBeEnabled();
   });
 
   it("is read-only for an owner who is not the reviewing member", async () => {
     vi.mocked(getAttestation).mockResolvedValue(
-      ok({ id: "att-1", status: "in_review" }) as never,
+      ok({
+        id: "att-1",
+        status: "in_review",
+        target_type: "framework",
+        review_type: "quality",
+      }) as never,
     );
     vi.mocked(listOrgAttestations).mockResolvedValue(
-      ok([{ id: "att-1", status: "in_review", reviewing_member_id: "mem-9", review_started_at: "2026-07-05T00:00:00Z" }]) as never,
+      ok({
+        attestations: [
+          {
+            id: "att-1",
+            status: "in_review",
+            assigned_to_me: false,
+            target_title: "Framework One",
+            reviewing_member_name: "Another Reviewer",
+          },
+        ],
+      }) as never,
     );
     render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
-    await waitFor(() => screen.getByText(/att-1/));
+    await screen.findByText("Framework One");
+    expect(screen.getByText("Read-only")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /start review/i })).toBeNull();
   });
 });

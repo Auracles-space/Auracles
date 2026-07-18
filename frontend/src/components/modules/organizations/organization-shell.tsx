@@ -121,6 +121,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   const contributorCap = myOrg.capabilities?.["contributor"];
   const contributorActive = contributorCap === "active";
+  const contributorGrant = myOrg.grants?.["contributor"] === true;
 
   const tabs: TabItem[] = [
     { id: "", label: "Profile" },
@@ -136,6 +137,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       dot: ndaUnsigned,
       dotLabel: "NDA signature required",
     });
+  }
+  if (contributorActive && (isAdmin || contributorGrant)) {
+    tabs.push({ id: "frameworks", label: "Frameworks" });
   }
   
   const counts = myOrg.counts;

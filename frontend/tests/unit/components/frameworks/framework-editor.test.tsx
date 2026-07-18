@@ -40,7 +40,16 @@ const { api, frameworkApiFor } = vi.hoisted(() => ({
   frameworkApiFor: vi.fn(),
 }));
 
-vi.mock("@/lib/frameworks/framework-api", () => ({ frameworkApiFor }));
+const grantRequiredMessage =
+  "You need the Contributor right for this organization. Ask an admin to add you to a team with the Contributor capability.";
+
+vi.mock("@/lib/frameworks/framework-api", () => ({
+  CONTRIBUTOR_GRANT_REQUIRED_MESSAGE:
+    "You need the Contributor right for this organization. Ask an admin to add you to a team with the Contributor capability.",
+  frameworkApiFor,
+  isFrameworkApiErrorCode: (error: unknown, code: string) =>
+    error instanceof Error && "code" in error && error.code === code,
+}));
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -156,6 +165,27 @@ describe("FrameworkEditor", () => {
     expect(
       screen.queryByRole("button", { name: /start draft version/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders a friendly empty state for a missing organization grant", async () => {
+    api.get.mockRejectedValue(
+      Object.assign(new Error("Request failed"), {
+        code: "capability_grant_required",
+      }),
+    );
+    api.listArtifacts.mockResolvedValue([]);
+
+    renderWithToast(
+      <FrameworkEditor
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org-1" }}
+        canManageLiveState={false}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    expect(await screen.findByText(grantRequiredMessage)).toBeInTheDocument();
+    expect(screen.queryByText(/^request failed$/i)).not.toBeInTheDocument();
   });
 
   it("shows the new-version action once the framework is published", async () => {

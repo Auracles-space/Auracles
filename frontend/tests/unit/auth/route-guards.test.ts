@@ -56,7 +56,7 @@ describe("auth route guards", () => {
 
   it.each([
     ["/admin", ["operator"], "/explore"],
-    ["/attestations", ["operator"], "/explore"],
+    ["/attestations", ["attestor"], "/settings/identity"],
     ["/dashboard/frameworks", ["operator"], "/explore"],
     ["/library", ["contributor"], "/dashboard"],
     ["/checkout/checkout-1", ["contributor"], "/dashboard"],
@@ -74,7 +74,8 @@ describe("auth route guards", () => {
 
   it.each([
     ["/admin", ["admin"]],
-    ["/attestations", ["attestor"]],
+    ["/attestations", ["contributor"]],
+    ["/attestations", ["operator"]],
     ["/dashboard/organizations", ["admin"]],
     ["/dashboard/organizations", ["operator"]],
     ["/dashboard/organizations/org-1", ["attestor"]],

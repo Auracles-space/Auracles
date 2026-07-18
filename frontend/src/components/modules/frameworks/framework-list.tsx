@@ -21,7 +21,9 @@ import {
 import type { FrameworkListItem } from "@/lib/generated/types.gen";
 import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
 import {
+  CONTRIBUTOR_GRANT_REQUIRED_MESSAGE,
   frameworkApiFor,
+  isFrameworkApiErrorCode,
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
 import {
@@ -66,6 +68,7 @@ export function FrameworkList({
     [seller],
   );
   const [frameworks, setFrameworks] = useState<FrameworkListItem[]>([]);
+  const [grantRequired, setGrantRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,6 +88,12 @@ export function FrameworkList({
         }
         setFrameworks(await api.list());
       } catch (caught) {
+        if (
+          isFrameworkApiErrorCode(caught, "capability_grant_required")
+        ) {
+          setGrantRequired(true);
+          return;
+        }
         setError(
           caught instanceof Error
             ? caught.message
@@ -104,6 +113,19 @@ export function FrameworkList({
 
   if (error) {
     return <p className="text-sm text-error">{error}</p>;
+  }
+
+  if (grantRequired) {
+    return (
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 text-center shadow-sm sm:p-8">
+        <h2 className="font-heading text-xl font-bold text-foreground">
+          Contributor right required
+        </h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-foreground-muted">
+          {CONTRIBUTOR_GRANT_REQUIRED_MESSAGE}
+        </p>
+      </div>
+    );
   }
 
   if (frameworks.length === 0) {
