@@ -8,7 +8,7 @@
  */
 import Link from "next/link";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   UploadIcon,
   ClockIcon,
@@ -18,14 +18,12 @@ import {
   Cross2Icon,
 } from "@radix-ui/react-icons";
 
-import { listContributorFrameworks } from "@/lib/generated/sdk.gen";
 import type { FrameworkListItem } from "@/lib/generated/types.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
 import { ensureBrowserAccessToken } from "@/lib/auth/current-user-session";
+import {
+  frameworkApiFor,
+  type FrameworkSeller,
+} from "@/lib/frameworks/framework-api";
 import {
   formatFrameworkStatus,
   formatLabel,
@@ -54,9 +52,19 @@ function getStatusTheme(status: FrameworkListItem["status"]) {
 }
 
 /**
- * Render Contributor-owned Framework summaries.
+ * Render Framework summaries for one personal or organization seller.
  */
-export function FrameworkList() {
+export function FrameworkList({
+  seller,
+  basePath,
+}: {
+  seller: FrameworkSeller;
+  basePath: string;
+}) {
+  const api = useMemo(
+    () => frameworkApiFor(seller),
+    [seller],
+  );
   const [frameworks, setFrameworks] = useState<FrameworkListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +74,6 @@ export function FrameworkList() {
   useEffect(() => {
     async function loadFrameworks() {
       try {
-        configureBrowserClient();
         // Access tokens are memory-only, so a hard reload (e.g. straight after
         // login) leaves a valid refresh session with no bearer token. Rehydrate
         // before the call or the backend rejects it with "Missing access token".
@@ -76,25 +83,20 @@ export function FrameworkList() {
           setLoading(false);
           return;
         }
-        const result = await listContributorFrameworks({
-          headers: getAccessTokenHeaders(),
-        });
-        if (!result.response.ok || !result.data) {
-          setError(describeGeneratedError(result.error));
-          setLoading(false);
-          return;
-        }
-        setFrameworks(result.data);
-
-      } catch {
-        setError("Network error or API unavailable.");
+        setFrameworks(await api.list());
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Network error or API unavailable.",
+        );
       } finally {
         setLoading(false);
       }
     }
 
     void loadFrameworks();
-  }, []);
+  }, [api]);
 
   if (loading) {
     return <CardSkeleton />;
@@ -243,7 +245,7 @@ export function FrameworkList() {
                     </span>
                   </div>
 
-                  <Link href={`/dashboard/frameworks/${framework.id}`} className="block">
+                  <Link href={`${basePath}/${framework.id}`} className="block">
                     <h2 className="font-heading text-lg font-bold tracking-tight text-foreground line-clamp-2 group-hover:text-accent transition-colors">
                       {framework.title}
                     </h2>
@@ -261,7 +263,7 @@ export function FrameworkList() {
 
                   <Link
                     className="inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
-                    href={`/dashboard/frameworks/${framework.id}`}
+                    href={`${basePath}/${framework.id}`}
                   >
                     Open Workspace
                     <ArrowRightIcon className="h-4 w-4 stroke-[1.5]" />

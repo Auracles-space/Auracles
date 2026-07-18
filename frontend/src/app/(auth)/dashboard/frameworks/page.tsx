@@ -33,7 +33,10 @@ export default function ContributorFrameworksPage() {
             Create framework
           </Link>
         </header>
-        <FrameworkList />
+        <FrameworkList
+          seller={{ kind: "user" }}
+          basePath="/dashboard/frameworks"
+        />
       </div>
     </main>
   );

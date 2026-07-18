@@ -84,7 +84,11 @@ export default async function NewFrameworkPage({
           
           <div>
             <section className="rounded-2xl border border-border-default bg-surface-1 p-6 sm:p-8 shadow-sm">
-              <CreateFrameworkPanel prefill={prefill} />
+              <CreateFrameworkPanel
+                seller={{ kind: "user" }}
+                basePath="/dashboard/frameworks"
+                prefill={prefill}
+              />
             </section>
           </div>
         </div>

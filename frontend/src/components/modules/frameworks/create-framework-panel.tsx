@@ -7,18 +7,17 @@
  * creates the draft.
  */
 import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 
 import {
   FrameworkForm,
   type FrameworkDraftPrefill,
 } from "@/components/modules/frameworks/framework-form";
-import { createFramework } from "@/lib/generated/sdk.gen";
 import type { FrameworkCreate } from "@/lib/generated/types.gen";
 import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
+  frameworkApiFor,
+  type FrameworkSeller,
+} from "@/lib/frameworks/framework-api";
 
 type FrameworkCreateWithProjectSource = FrameworkCreate & {
   source_project_id?: string | null;
@@ -29,6 +28,8 @@ export type ProjectDeliverablePrefill = FrameworkDraftPrefill & {
 };
 
 type CreateFrameworkPanelProps = {
+  seller: FrameworkSeller;
+  basePath: string;
   prefill?: ProjectDeliverablePrefill;
 };
 
@@ -37,27 +38,26 @@ type CreateFrameworkPanelProps = {
  *
  * @param props - Optional Project deliverable prefill values.
  */
-export function CreateFrameworkPanel({ prefill = {} }: CreateFrameworkPanelProps) {
+export function CreateFrameworkPanel({
+  seller,
+  basePath,
+  prefill = {},
+}: CreateFrameworkPanelProps) {
   const router = useRouter();
+  const api = useMemo(
+    () => frameworkApiFor(seller),
+    [seller],
+  );
 
   async function handleCreate(payload: FrameworkCreate) {
-    configureBrowserClient();
     const body: FrameworkCreateWithProjectSource = {
       ...payload,
       ...(prefill.sourceProjectId
         ? { source_project_id: prefill.sourceProjectId }
         : {}),
     };
-    const result = await createFramework({
-      body,
-      headers: getAccessTokenHeaders(),
-    });
-
-    if (!result.response.ok || !result.data) {
-      throw new Error(describeGeneratedError(result.error));
-    }
-
-    router.push(`/dashboard/frameworks/${result.data.id}`);
+    const created = await api.create(body);
+    router.push(`${basePath}/${created.id}`);
   }
 
   return (
