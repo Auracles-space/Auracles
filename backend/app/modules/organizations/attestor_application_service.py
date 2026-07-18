@@ -23,7 +23,6 @@ from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,9 +52,6 @@ from app.modules.organizations.models import (
     OrgAttestorProfile,
     OrgCapability,
     OrgMember,
-    OrgTeam,
-    OrgTeamCapability,
-    OrgTeamMember,
 )
 from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
@@ -1462,47 +1458,6 @@ async def _sync_org_member_roles(db: AsyncSession, org_id: UUID) -> None:
         await org_service.sync_derived_roles(db, user_id=user_id)
 
 
-_ATTESTORS_TEAM_NAME = "Attestors"
-
-
-async def _place_nominee_on_attestor_team(
-    db: AsyncSession, *, org_id: UUID, member_id: UUID
-) -> None:
-    """Ensure the nominated member holds the org's derived attestor role.
-
-    Under team-scoped capability rights the derived ``attestor`` role is granted
-    through team membership, not org-wide. Approval nominates one member as the
-    org's reviewing attestor, so this places that member on a dedicated
-    "Attestors" team with the attestor capability enabled (creating the team on
-    first approval). The post-commit member re-sync then grants the role.
-
-    Runs inside the caller's transaction; the derived-role sync happens after
-    commit via ``_sync_org_member_roles``.
-    """
-    team_id = await db.scalar(
-        select(OrgTeam.id).where(
-            OrgTeam.org_id == org_id,
-            OrgTeam.name == _ATTESTORS_TEAM_NAME,
-        )
-    )
-    if team_id is None:
-        team = OrgTeam(org_id=org_id, name=_ATTESTORS_TEAM_NAME)
-        db.add(team)
-        await db.flush()
-        team_id = team.id
-
-    await db.execute(
-        pg_insert(OrgTeamCapability)
-        .values(team_id=team_id, capability="attestor")
-        .on_conflict_do_nothing()
-    )
-    await db.execute(
-        pg_insert(OrgTeamMember)
-        .values(team_id=team_id, member_id=member_id)
-        .on_conflict_do_nothing()
-    )
-
-
 async def admin_approve(
     db: AsyncSession,
     *,
@@ -1562,7 +1517,9 @@ async def admin_approve(
             capability.activated_at = now
 
         if application.trial_member_id is not None:
-            await _place_nominee_on_attestor_team(
+            from app.modules.organizations import service as org_service
+
+            await org_service.ensure_member_on_attestor_team(
                 db,
                 org_id=application.org_id,
                 member_id=application.trial_member_id,

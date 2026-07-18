@@ -269,6 +269,14 @@ async def accept_org_offer(
 
         completion_days = await _completion_sla_days(db, attestation.target_type)
         reviewer_user_id = member.user_id
+        # Being staffed to perform an attestation makes the member an attestor:
+        # place them on the org's Attestors team so the post-commit derived-role
+        # sync grants the ``attestor`` role.
+        from app.modules.organizations import service as org_service
+
+        await org_service.ensure_member_on_attestor_team(
+            db, org_id=org_id, member_id=member.id
+        )
         attestation.status = "accepted"
         attestation.attestor_org_id = org_id
         attestation.reviewing_member_id = member.id
@@ -300,6 +308,10 @@ async def accept_org_offer(
                 "completion_due_at": attestation.completion_due_at.isoformat(),
             },
         )
+    # sync_derived_roles manages its own transaction, so it runs after commit.
+    from app.modules.organizations import service as org_service
+
+    await org_service.sync_derived_roles(db, user_id=reviewer_user_id)
     await db.refresh(attestation)
     attestation_notifications.notify_org_offer_accepted(attestation, org_id=org_id)
     attestation_notifications.notify_reviewer_assigned(

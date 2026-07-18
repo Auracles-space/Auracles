@@ -858,6 +858,47 @@ async def _guard_and_release_member_deliveries(
         )
 
 
+ATTESTORS_TEAM_NAME = "Attestors"
+
+
+async def ensure_member_on_attestor_team(
+    db: AsyncSession, *, org_id: UUID, member_id: UUID
+) -> None:
+    """Place one member on the org's Attestors team, enabling attestor on it.
+
+    Under team-scoped capability rights the derived ``attestor`` role is granted
+    through team membership. Being assigned to perform an attestation (nominated
+    at approval, or staffed on an accepted offer) makes the member an attestor,
+    so this ensures a dedicated "Attestors" team exists (creating it on first
+    use), enables the attestor capability on it, and adds the member.
+
+    Runs inside the caller's transaction; the caller triggers the derived-role
+    sync (``sync_derived_roles``) after its transaction commits.
+    """
+    team_id = await db.scalar(
+        select(OrgTeam.id).where(
+            OrgTeam.org_id == org_id,
+            OrgTeam.name == ATTESTORS_TEAM_NAME,
+        )
+    )
+    if team_id is None:
+        team = OrgTeam(org_id=org_id, name=ATTESTORS_TEAM_NAME)
+        db.add(team)
+        await db.flush()
+        team_id = team.id
+
+    await db.execute(
+        pg_insert(OrgTeamCapability)
+        .values(team_id=team_id, capability="attestor")
+        .on_conflict_do_nothing()
+    )
+    await db.execute(
+        pg_insert(OrgTeamMember)
+        .values(team_id=team_id, member_id=member_id)
+        .on_conflict_do_nothing()
+    )
+
+
 async def sync_derived_roles(db: AsyncSession, *, user_id: UUID) -> None:
     """Grant or revoke org-derived user roles for one user's live memberships.
 

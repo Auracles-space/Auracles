@@ -544,6 +544,40 @@ async def test_accept_sets_org_and_member_never_attestor_id(db_session) -> None:
     assert attestation.completion_due_at is not None
 
 
+async def test_accept_grants_staffed_member_the_attestor_role(db_session) -> None:
+    """Staffing a plain member on an accepted offer grants the derived attestor role.
+
+    Model A: being assigned to perform an attestation makes the member an
+    attestor. The accept path places the staffed member on the org's Attestors
+    team so the derived-role sync grants ``attestor``.
+    """
+    requestor = await _new_user("req")
+    org_id, owner_id = await _attestor_org()
+    member_id, member_user_id = await _add_member(org_id)
+    attestation_id = await _make_attestation(
+        requestor, target_id=uuid4(), status_value="offered"
+    )
+    offer_id = await _make_offer(attestation_id, org_id)
+
+    await matching_service.accept_org_offer(
+        db_session,
+        offer_id=offer_id,
+        org_id=org_id,
+        actor_id=owner_id,
+        reviewing_member_id=member_id,
+    )
+
+    async with async_session_factory() as session:
+        role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == member_user_id,
+                UserRole.role == "attestor",
+                UserRole.source == "derived",
+            )
+        )
+    assert role is not None
+
+
 async def test_accept_unsigned_member_rejected(db_session) -> None:
     """Accept with an NDA-unsigned member raises 422 nda_required."""
     requestor = await _new_user("req")
