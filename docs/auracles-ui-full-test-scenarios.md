@@ -336,6 +336,35 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 | OO-13 | Org dispute | Org Owner raises → Admin | dispute on org-operated project | Surfaces in admin dispute queue with org name; resolution + refund route to org. |
 | OO-14 | Member exit | Admin/GDPR on Delete-me | remove/GDPR-delete a member holding grants | Their grants + team links removed; team-level grants for others survive. |
 
+## 15b. Organizations — Team-scoped capability rights (`Northwind Ops`)
+
+**Model under test.** Activating a capability (OC-1/OO-1) only makes the org
+*eligible*. The derived role (Contributor / Operator / Attestor) is held by an
+**owner/admin automatically**, and by a **plain member only through a team** that
+has the capability enabled. Leaving that team (or disabling the capability on it)
+revokes the role. UI: org → **Profile** tab → **Capabilities** card (activate);
+org → **Teams** → per-team capability toggles + confirm dialog; expand a team to
+add/remove members.
+
+| # | Flow | As | Inputs | Expect |
+|---|------|----|--------|--------|
+| TC-1 | Owner/admin implicit | Org Owner → Org Admin | after OC-1/OO-1 activation, with no team assignment | Owner **and** admin already hold the role (Contributor can create as org; Operator sees Operator/Projects tabs). No team needed. |
+| TC-2 | Plain member NOT auto-granted | Org Member (on no capability team) | after activation, inspect member's own dashboard | Member does **not** get the role from activation alone — no Contributor create / no Operator tabs. (Behavior change from the old org-wide grant.) |
+| TC-3 | Enable before activate blocked | Org Owner | Teams → a team → toggle **Contributor** while org Contributor capability is **not** active | Toggle disabled with hint "Activate this capability for the organization first"; forcing the call returns **422**. |
+| TC-4 | Enable on a team | Org Owner | activate Contributor (OC-1) → Teams → create/pick team `Delivery` → toggle **Contributor** on → confirm | Success toast; team row shows the Contributor chip; `refreshOrganization` updates pills live. |
+| TC-5 | Member gains role via team | Org Owner → Org Member | add Org Member to `Delivery` (expand team → add member) | Member now holds Contributor: can create/publish a framework under the org identity. |
+| TC-6 | Second member | Org Owner → Org Member 2 | add Org Member 2 to the same enabled team | Member 2 also gains the role — team grants apply to every member. |
+| TC-7 | Remove from team revokes | Org Owner → Org Member | remove Org Member from `Delivery` | Role revoked immediately — member loses Contributor create ability. |
+| TC-8 | Disable capability revokes all | Org Owner | toggle **Contributor** off on `Delivery` → confirm | Every remaining member of that team loses the role; owner/admin keep it (implicit). |
+| TC-9 | Operator via team | Org Owner → Org Member | activate Operator (OO-1) → enable **Operator** on `Delivery` → member already on team | Member gains Operator: Operator/Projects surfaces appear for them. |
+| TC-10 | Backfill (existing orgs) | tester | on an org that had a capability active **before** the team-scoping upgrade | An **"All members"** team exists holding the previously-active capabilities, with every pre-existing member on it → nobody lost access at cutover. |
+| TC-11 | Attestor nominee auto-team | Org Owner → Admin | complete org attestor application nominating a plain member (§12) → admin approves | On approval, an **"Attestors"** team is created (if none) and the nominated member is added with attestor enabled → that member holds the attestor role. |
+| TC-12 | Attestor staffing auto-team | Org Owner | accept an attestation offer (§13/OA flow) staffing a plain member as reviewing member | The staffed member is auto-added to the **"Attestors"** team → holds the attestor role; they can act on the review either way (review surfaces gate on staffing, not the role). |
+
+> Authoritative role check (if UI is ambiguous): the derived grant is a
+> `user_roles` row with `source='derived'` for that user and role
+> (`contributor` / `operator` / `attestor`). Present ⇒ granted; absent ⇒ not.
+
 ## 16. Credentials
 
 | # | Flow | As | Inputs | Expect |
