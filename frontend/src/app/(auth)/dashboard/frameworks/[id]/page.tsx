@@ -20,7 +20,12 @@ export default async function FrameworkEditPage({
   return (
     <main className="px-4 py-8 text-foreground md:px-8">
       <div className="mx-auto max-w-[1280px]">
-        <FrameworkEditor frameworkId={id} />
+        <FrameworkEditor
+          basePath="/dashboard/frameworks"
+          canManageLiveState
+          frameworkId={id}
+          seller={{ kind: "user" }}
+        />
       </div>
     </main>
   );

@@ -3,10 +3,10 @@
 /**
  * Contributor Framework edit workspace.
  *
- * Loads Framework metadata and artifacts, then composes the smaller action
- * components that call generated backend endpoints.
+ * Loads Framework metadata and artifacts through a seller-scoped adapter, then
+ * composes the smaller workflow controls.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 import { ArtifactManifest } from "@/components/modules/frameworks/artifact-manifest";
@@ -14,19 +14,13 @@ import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploa
 import { DelistButton } from "@/components/modules/frameworks/delist-button";
 import { RelistButton } from "@/components/modules/frameworks/relist-button";
 import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
+import { FrameworkPricingForm } from "@/components/modules/frameworks/framework-pricing-form";
 import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-resolution";
 import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-status-panel";
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
 import { SoftFailAcknowledgement } from "@/components/modules/frameworks/soft-fail-acknowledgement";
 import { VersionRadios } from "@/components/modules/frameworks/version-radios";
-import {
-  createFrameworkVersion,
-  deleteArtifact,
-  getContributorFramework,
-  listFrameworkArtifacts,
-  submitFramework,
-  updateFramework,
-} from "@/lib/generated/sdk.gen";
+import { deleteArtifact } from "@/lib/generated/sdk.gen";
 import type {
   ArtifactResponse,
   FrameworkCreate,
@@ -38,10 +32,17 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { useToast } from "@/components/ui/toast";
+import {
+  frameworkApiFor,
+  type FrameworkSeller,
+} from "@/lib/frameworks/framework-api";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
 
 type FrameworkEditorProps = {
+  basePath: string;
+  canManageLiveState: boolean;
   frameworkId: string;
+  seller: FrameworkSeller;
 };
 
 /**
@@ -49,7 +50,11 @@ type FrameworkEditorProps = {
  *
  * @param props - Framework id from the route.
  */
-export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
+export function FrameworkEditor({
+  canManageLiveState,
+  frameworkId,
+  seller,
+}: FrameworkEditorProps) {
   const [artifacts, setArtifacts] = useState<ArtifactResponse[]>([]);
   const [changeType, setChangeType] = useState<"fix" | "improvement" | "major">(
     "improvement",
@@ -59,41 +64,38 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   const [framework, setFramework] = useState<FrameworkResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
+  const api = useMemo(() => frameworkApiFor(seller), [seller]);
 
   // Reload framework + artifacts. `quiet` skips the loading skeleton so the
   // background poll never flashes the spinner over a populated workspace.
   const loadWorkspace = useCallback(
     async (quiet = false) => {
-      configureBrowserClient();
       if (!quiet) {
         setLoading(true);
       }
-      const [frameworkResult, artifactsResult] = await Promise.all([
-        getContributorFramework({
-          headers: getAccessTokenHeaders(),
-          path: { framework_id: frameworkId },
-        }),
-        listFrameworkArtifacts({
-          headers: getAccessTokenHeaders(),
-          path: { framework_id: frameworkId },
-        }),
-      ]);
-
-      if (!frameworkResult.response.ok || !frameworkResult.data) {
+      try {
+        const [loadedFramework, loadedArtifacts] = await Promise.all([
+          api.get(frameworkId),
+          api.listArtifacts(frameworkId),
+        ]);
+        setFramework(loadedFramework);
+        setArtifacts(loadedArtifacts);
+      } catch (caught) {
         if (!quiet) {
-          setError(describeGeneratedError(frameworkResult.error));
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "The request could not be completed.",
+          );
           setLoading(false);
         }
         return;
       }
-
-      setFramework(frameworkResult.data);
-      setArtifacts(artifactsResult.data ?? []);
       if (!quiet) {
         setLoading(false);
       }
     },
-    [frameworkId],
+    [api, frameworkId],
   );
 
   useEffect(() => {
@@ -125,39 +127,31 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
   }, [isPipelineActive, loadWorkspace]);
 
   async function handleUpdate(payload: FrameworkCreate) {
-    configureBrowserClient();
-    const result = await updateFramework({
-      body: payload,
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-    if (!result.response.ok || !result.data) {
-      throw new Error(describeGeneratedError(result.error));
-    }
-    setFramework(result.data);
+    const updated = await api.update(frameworkId, payload);
+    setFramework(updated);
   }
 
   async function handleSubmitGate() {
-    configureBrowserClient();
-    const result = await submitFramework({
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
     // This action lives at the bottom of a long form; route the outcome to a
     // toast rather than a page-level error that would replace the whole editor
     // off-screen from the button.
-    if (!result.response.ok || !result.data) {
-      toast.error(describeGeneratedError(result.error));
+    try {
+      const updated = await api.submit(frameworkId);
+      setFramework(updated);
+    } catch (caught) {
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
       return;
     }
-    setFramework(result.data);
     toast.success("Publishing checks started.");
   }
 
   async function handleCreateVersion() {
-    configureBrowserClient();
-    const result = await createFrameworkVersion({
-      body: {
+    try {
+      const updated = await api.startVersion(frameworkId, {
         artifact_inheritance: Object.fromEntries(
           artifacts.map((artifact) => [artifact.id, true]),
         ),
@@ -165,15 +159,16 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
           changeLog.trim() ||
           "Contributor draft version created from dashboard.",
         change_type: changeType,
-      },
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-    if (!result.response.ok || !result.data) {
-      toast.error(describeGeneratedError(result.error));
+      });
+      setFramework(updated);
+    } catch (caught) {
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
       return;
     }
-    setFramework(result.data);
     toast.success("Draft version started.");
   }
 
@@ -243,16 +238,19 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         <FrameworkForm
           framework={framework}
           onSubmit={handleUpdate}
+          pricingInline={seller.kind === "user"}
           submitLabel="Save changes"
           readOnly={!isMetadataEditable}
           leftActions={
-            isLive ? (
+            canManageLiveState && isLive ? (
               <DelistButton
+                api={api}
                 frameworkId={framework.id}
                 onCompleted={() => void loadWorkspace(true)}
               />
-            ) : isDelisted ? (
+            ) : canManageLiveState && isDelisted ? (
               <RelistButton
+                api={api}
                 frameworkId={framework.id}
                 onCompleted={() => void loadWorkspace(true)}
               />
@@ -271,8 +269,9 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
               Run publishing checks
             </button>
           )}
-          {framework.status === "pipeline_passed" && (
+          {canManageLiveState && framework.status === "pipeline_passed" && (
             <PublishButton
+              api={api}
               frameworkId={framework.id}
               onCompleted={() => void loadWorkspace(true)}
             />
@@ -280,7 +279,16 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         </FrameworkForm>
       </section>
       <aside className="grid gap-4 min-w-0">
+        {seller.kind === "org" && canManageLiveState ? (
+          <FrameworkPricingForm
+            api={api}
+            framework={framework}
+            onUpdated={setFramework}
+          />
+        ) : null}
         <ArtifactUploader
+          api={api}
+          allowConnectorImport={seller.kind === "user"}
           artifactCount={artifacts.length}
           existingBytes={artifacts.reduce(
             (total, artifact) => total + artifact.file_size,
@@ -316,7 +324,7 @@ export function FrameworkEditor({ frameworkId }: FrameworkEditorProps) {
         {/* Versioning applies once a Framework has been published at least once
             (live or delisted); a never-published draft is edited in place, so
             the new-version action stays hidden. */}
-        {isLive || isDelisted ? (
+        {canManageLiveState && (isLive || isDelisted) ? (
           <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
             <h2 className="font-heading text-lg font-bold text-foreground">
               New version

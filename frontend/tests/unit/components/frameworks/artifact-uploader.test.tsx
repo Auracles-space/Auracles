@@ -2,30 +2,21 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ArtifactUploader } from "@/components/modules/frameworks/artifact-uploader";
-import {
-  confirmArtifactUpload,
-  requestArtifactUploadUrl,
-} from "@/lib/generated/sdk.gen";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
 const MAX_TOTAL_BYTES = 500 * 1024 * 1024;
 
-vi.mock("@/lib/auth/form-client", () => ({
-  configureBrowserClient: vi.fn(),
-  getAccessTokenHeaders: () => ({ Authorization: "Bearer access-token" }),
-  describeGeneratedError: () => "The request could not be completed.",
-}));
-
-vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn(), interceptors: { response: { use: vi.fn() } } },
-  requestArtifactUploadUrl: vi.fn(),
-  confirmArtifactUpload: vi.fn(),
-}));
+const api = {
+  confirmArtifact: vi.fn(),
+  createArtifactUpload: vi.fn(),
+} as unknown as FrameworkApi;
 
 describe("ArtifactUploader", () => {
   it("blocks an over-limit upload before calling the API", async () => {
-    vi.mocked(requestArtifactUploadUrl).mockReset();
+    vi.mocked(api.createArtifactUpload).mockReset();
     const { container } = render(
       <ArtifactUploader
+        api={api}
         artifactCount={1}
         existingBytes={MAX_TOTAL_BYTES}
         frameworkId="fw_1"
@@ -42,13 +33,14 @@ describe("ArtifactUploader", () => {
     expect(
       await screen.findByText(/exceed the 500 ?MB limit/i),
     ).toBeInTheDocument();
-    expect(requestArtifactUploadUrl).not.toHaveBeenCalled();
+    expect(api.createArtifactUpload).not.toHaveBeenCalled();
   });
 
   it("blocks an unsupported file type before calling the API", async () => {
-    vi.mocked(requestArtifactUploadUrl).mockReset();
+    vi.mocked(api.createArtifactUpload).mockReset();
     const { container } = render(
       <ArtifactUploader
+        api={api}
         artifactCount={0}
         existingBytes={0}
         frameworkId="fw_1"
@@ -65,21 +57,18 @@ describe("ArtifactUploader", () => {
     expect(
       await screen.findByText(/file type is not supported/i),
     ).toBeInTheDocument();
-    expect(requestArtifactUploadUrl).not.toHaveBeenCalled();
+    expect(api.createArtifactUpload).not.toHaveBeenCalled();
   });
 
   it("surfaces an error and clears the spinner when the S3 upload throws", async () => {
     // Reproduces the prod hang: a CORS-blocked S3 POST makes `fetch` reject.
     // Without a catch the control stayed on "Uploading..." forever. It must
     // recover to an error message and a re-armed picker instead.
-    vi.mocked(requestArtifactUploadUrl).mockReset();
-    vi.mocked(requestArtifactUploadUrl).mockResolvedValue({
-      response: { ok: true } as Response,
-      data: {
-        artifact_id: "art_1",
-        upload_url: "https://s3.example.com/bucket",
-        fields: { key: "artifacts/art_1" },
-      },
+    vi.mocked(api.createArtifactUpload).mockReset();
+    vi.mocked(api.createArtifactUpload).mockResolvedValue({
+      artifact_id: "art_1",
+      upload_url: "https://s3.example.com/bucket",
+      fields: { key: "artifacts/art_1" },
     } as never);
     const fetchMock = vi
       .fn()
@@ -89,6 +78,7 @@ describe("ArtifactUploader", () => {
     try {
       const { container } = render(
         <ArtifactUploader
+          api={api}
           artifactCount={0}
           existingBytes={0}
           frameworkId="fw_1"
@@ -104,7 +94,7 @@ describe("ArtifactUploader", () => {
 
       expect(await screen.findByText(/upload failed/i)).toBeInTheDocument();
       expect(screen.queryByText(/uploading/i)).not.toBeInTheDocument();
-      expect(confirmArtifactUpload).not.toHaveBeenCalled();
+      expect(api.confirmArtifact).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -113,6 +103,7 @@ describe("ArtifactUploader", () => {
   it("constrains the file picker to accepted types", () => {
     const { container } = render(
       <ArtifactUploader
+        api={api}
         artifactCount={0}
         existingBytes={0}
         frameworkId="fw_1"
@@ -130,6 +121,7 @@ describe("ArtifactUploader", () => {
   it("shows the total size limit and accepted file types", () => {
     render(
       <ArtifactUploader
+        api={api}
         artifactCount={0}
         existingBytes={0}
         frameworkId="fw_1"
@@ -144,6 +136,7 @@ describe("ArtifactUploader", () => {
   it("prompts to choose the first artifact when none exist", () => {
     render(
       <ArtifactUploader
+        api={api}
         artifactCount={0}
         existingBytes={0}
         frameworkId="fw_1"
@@ -157,6 +150,7 @@ describe("ArtifactUploader", () => {
   it("invites adding another artifact and clarifies it does not replace", () => {
     render(
       <ArtifactUploader
+        api={api}
         artifactCount={2}
         existingBytes={0}
         frameworkId="fw_1"

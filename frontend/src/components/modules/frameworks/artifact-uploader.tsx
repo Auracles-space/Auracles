@@ -8,18 +8,10 @@
  */
 import { useState } from "react";
 
-import {
-  confirmArtifactUpload,
-  requestArtifactUploadUrl,
-} from "@/lib/generated/sdk.gen";
 import { Button } from "@/components/ui/button";
 import { GoogleDrivePicker } from "@/components/modules/artifacts/google-drive-picker";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
 /** Total artifact byte cap per Framework, mirroring the backend limit. */
 const ARTIFACT_MAX_TOTAL_BYTES = 500 * 1024 * 1024;
@@ -44,7 +36,9 @@ const ARTIFACT_ALLOWED_MIME_TYPES = [
 const ARTIFACT_ACCEPT_ATTRIBUTE = ARTIFACT_ALLOWED_MIME_TYPES.join(",");
 
 type ArtifactUploaderProps = {
+  api: FrameworkApi;
   artifactCount: number;
+  allowConnectorImport?: boolean;
   existingBytes: number;
   frameworkId: string;
   onUploaded: (artifact: ArtifactResponse) => void;
@@ -56,7 +50,9 @@ type ArtifactUploaderProps = {
  * @param props - Framework id, current artifact count, and success callback.
  */
 export function ArtifactUploader({
+  api,
   artifactCount,
+  allowConnectorImport = true,
   existingBytes,
   frameworkId,
   onUploaded,
@@ -90,28 +86,26 @@ export function ArtifactUploader({
       return;
     }
 
-    configureBrowserClient();
     setMessage(null);
     setUploading(true);
 
-    const requestResult = await requestArtifactUploadUrl({
-      body: {
+    let uploadTarget;
+    try {
+      uploadTarget = await api.createArtifactUpload(frameworkId, {
         file_size: file.size,
         filename: file.name,
         mime_type: file.type as never,
-      },
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-
-    if (!requestResult.response.ok || !requestResult.data) {
-      setMessage(describeGeneratedError(requestResult.error));
+      });
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error ? caught.message : "The request could not be completed.",
+      );
       setUploading(false);
       return;
     }
 
     const formData = new FormData();
-    for (const [key, value] of Object.entries(requestResult.data.fields)) {
+    for (const [key, value] of Object.entries(uploadTarget.fields)) {
       formData.append(key, String(value));
     }
     formData.append("file", file);
@@ -122,7 +116,7 @@ export function ArtifactUploader({
     // "Uploading..." forever with the real failure swallowed.
     let uploadResponse: Response;
     try {
-      uploadResponse = await fetch(requestResult.data.upload_url, {
+      uploadResponse = await fetch(uploadTarget.upload_url, {
         body: formData,
         method: "POST",
       });
@@ -140,27 +134,26 @@ export function ArtifactUploader({
       return;
     }
 
-    let confirmResult: Awaited<ReturnType<typeof confirmArtifactUpload>>;
+    let artifact: ArtifactResponse;
     try {
-      confirmResult = await confirmArtifactUpload({
-        body: { artifact_id: requestResult.data.artifact_id },
-        headers: getAccessTokenHeaders(),
-        path: { framework_id: frameworkId },
-      });
-    } catch {
-      setMessage("Artifact upload failed before confirmation.");
+      artifact = await api.confirmArtifact(
+        frameworkId,
+        uploadTarget.artifact_id,
+        { artifact_id: uploadTarget.artifact_id },
+      );
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error
+          ? caught.message
+          : "Artifact upload failed before confirmation.",
+      );
       setUploading(false);
       return;
     }
 
     setUploading(false);
-    if (!confirmResult.response.ok || !confirmResult.data) {
-      setMessage(describeGeneratedError(confirmResult.error));
-      return;
-    }
-
     setMessage("Artifact uploaded. Processing has started.");
-    onUploaded(confirmResult.data);
+    onUploaded(artifact);
   }
 
   return (
@@ -232,7 +225,7 @@ export function ArtifactUploader({
           type="file"
         />
       </label>
-      {!showDrivePicker && (
+      {allowConnectorImport && !showDrivePicker && (
         <>
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
@@ -261,7 +254,7 @@ export function ArtifactUploader({
         </>
       )}
 
-      {showDrivePicker && (
+      {allowConnectorImport && showDrivePicker && (
         <div className="mt-5 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="mb-3 flex items-center justify-between rounded-xl bg-surface-3 p-3 pl-4 border border-border-default">
             <span className="text-sm font-semibold text-foreground">Importing from Google Drive</span>

@@ -13,14 +13,10 @@ import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
-import { unpublishFramework } from "@/lib/generated/sdk.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
 type DelistButtonProps = {
+  api: FrameworkApi;
   frameworkId: string;
   /** Called after a successful delist so the editor re-fetches its state. */
   onCompleted?: () => void;
@@ -31,7 +27,7 @@ type DelistButtonProps = {
  *
  * @param props - Framework id and completion hook.
  */
-export function DelistButton({ frameworkId, onCompleted }: DelistButtonProps) {
+export function DelistButton({ api, frameworkId, onCompleted }: DelistButtonProps) {
   const router = useRouter();
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
@@ -41,13 +37,10 @@ export function DelistButton({ frameworkId, onCompleted }: DelistButtonProps) {
   async function handleDelist() {
     setBusy(true);
     setError(null);
-    configureBrowserClient();
-    const result = await unpublishFramework({
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+    try {
+      await api.unpublish(frameworkId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Delist failed.");
       setBusy(false);
       return;
     }

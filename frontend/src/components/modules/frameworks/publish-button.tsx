@@ -9,15 +9,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { publishFramework } from "@/lib/generated/sdk.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
 import { useToast } from "@/components/ui/toast";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
 type PublishButtonProps = {
+  api: FrameworkApi;
   disabled?: boolean;
   frameworkId: string;
   /**
@@ -35,6 +31,7 @@ type PublishButtonProps = {
  * @param props - Framework id, advisory disabled state, and completion hook.
  */
 export function PublishButton({
+  api,
   disabled = false,
   frameworkId,
   onCompleted,
@@ -45,19 +42,16 @@ export function PublishButton({
   const [submitting, setSubmitting] = useState(false);
 
   async function handlePublish() {
-    configureBrowserClient();
     setSubmitting(true);
     setError(null);
-    const result = await publishFramework({
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-
-    setSubmitting(false);
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+    try {
+      await api.publish(frameworkId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Publish failed.");
+      setSubmitting(false);
       return;
     }
+    setSubmitting(false);
     // Publishing flips the status banner at the top of a long editor and
     // unmounts this button, so a toast is the only feedback the Contributor
     // reliably sees where their cursor is.

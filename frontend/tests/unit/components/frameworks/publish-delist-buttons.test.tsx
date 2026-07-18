@@ -12,11 +12,13 @@ import { DelistButton } from "@/components/modules/frameworks/delist-button";
 import { RelistButton } from "@/components/modules/frameworks/relist-button";
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
 import { ToastProvider } from "@/components/ui/toast";
-import {
-  publishFramework,
-  relistFramework,
-  unpublishFramework,
-} from "@/lib/generated/sdk.gen";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
+
+const api = {
+  publish: vi.fn(),
+  relist: vi.fn(),
+  unpublish: vi.fn(),
+} as unknown as FrameworkApi;
 
 /** Render a component beneath the toast provider it now depends on. */
 function renderWithToast(ui: ReactElement): RenderResult {
@@ -29,34 +31,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
 }));
 
-vi.mock("@/lib/auth/form-client", () => ({
-  configureBrowserClient: vi.fn(),
-  describeGeneratedError: (error: { detail?: string } | undefined) =>
-    error?.detail ?? "The request could not be completed.",
-  getAccessTokenHeaders: () => ({ Authorization: "Bearer access-token" }),
-}));
-
-vi.mock("@/lib/generated/sdk.gen", () => ({
-  client: { setConfig: vi.fn() },
-  publishFramework: vi.fn(),
-  relistFramework: vi.fn(),
-  unpublishFramework: vi.fn(),
-}));
-
 describe("PublishButton", () => {
   beforeEach(() => {
-    vi.mocked(publishFramework).mockReset();
+    vi.mocked(api.publish).mockReset();
     refresh.mockReset();
   });
 
   it("publishes and refreshes the route on success", async () => {
-    vi.mocked(publishFramework).mockResolvedValue({
-      data: { id: "fw-1", status: "published" },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+    vi.mocked(api.publish).mockResolvedValue({ id: "fw-1" } as never);
 
-    renderWithToast(<PublishButton frameworkId="fw-1" />);
+    renderWithToast(<PublishButton api={api} frameworkId="fw-1" />);
     fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
@@ -66,13 +50,11 @@ describe("PublishButton", () => {
   });
 
   it("shows the gate error when publish is blocked", async () => {
-    vi.mocked(publishFramework).mockResolvedValue({
-      data: undefined,
-      error: { detail: "Framework must pass pipeline checks before publish." },
-      response: new Response(null, { status: 409 }),
-    });
+    vi.mocked(api.publish).mockRejectedValue(
+      new Error("Framework must pass pipeline checks before publish."),
+    );
 
-    renderWithToast(<PublishButton frameworkId="fw-1" />);
+    renderWithToast(<PublishButton api={api} frameworkId="fw-1" />);
     fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
 
     expect(
@@ -84,24 +66,20 @@ describe("PublishButton", () => {
 
 describe("DelistButton", () => {
   beforeEach(() => {
-    vi.mocked(unpublishFramework).mockReset();
+    vi.mocked(api.unpublish).mockReset();
     refresh.mockReset();
   });
 
   it("opens a confirm modal before delisting, then refreshes", async () => {
-    vi.mocked(unpublishFramework).mockResolvedValue({
-      data: { id: "fw-1", status: "unpublished" },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+    vi.mocked(api.unpublish).mockResolvedValue({ id: "fw-1" } as never);
 
-    renderWithToast(<DelistButton frameworkId="fw-1" />);
+    renderWithToast(<DelistButton api={api} frameworkId="fw-1" />);
     // No request fires until the modal confirm is clicked.
     fireEvent.click(
       screen.getByRole("button", { name: /delist from marketplace/i }),
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(unpublishFramework).not.toHaveBeenCalled();
+    expect(api.unpublish).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: /delist framework/i }));
 
@@ -110,13 +88,11 @@ describe("DelistButton", () => {
   });
 
   it("surfaces a delist error", async () => {
-    vi.mocked(unpublishFramework).mockResolvedValue({
-      data: undefined,
-      error: { detail: "Only published frameworks can be delisted." },
-      response: new Response(null, { status: 409 }),
-    });
+    vi.mocked(api.unpublish).mockRejectedValue(
+      new Error("Only published frameworks can be delisted."),
+    );
 
-    renderWithToast(<DelistButton frameworkId="fw-1" />);
+    renderWithToast(<DelistButton api={api} frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /delist from marketplace/i }),
     );
@@ -131,23 +107,19 @@ describe("DelistButton", () => {
 
 describe("RelistButton", () => {
   beforeEach(() => {
-    vi.mocked(relistFramework).mockReset();
+    vi.mocked(api.relist).mockReset();
     refresh.mockReset();
   });
 
   it("opens a confirm modal before relisting, then refreshes", async () => {
-    vi.mocked(relistFramework).mockResolvedValue({
-      data: { id: "fw-1", status: "published" },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+    vi.mocked(api.relist).mockResolvedValue({ id: "fw-1" } as never);
 
-    renderWithToast(<RelistButton frameworkId="fw-1" />);
+    renderWithToast(<RelistButton api={api} frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /relist on marketplace/i }),
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(relistFramework).not.toHaveBeenCalled();
+    expect(api.relist).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: /relist framework/i }));
 
@@ -156,13 +128,11 @@ describe("RelistButton", () => {
   });
 
   it("surfaces a relist error", async () => {
-    vi.mocked(relistFramework).mockResolvedValue({
-      data: undefined,
-      error: { detail: "Only unpublished Frameworks can be relisted." },
-      response: new Response(null, { status: 409 }),
-    });
+    vi.mocked(api.relist).mockRejectedValue(
+      new Error("Only unpublished Frameworks can be relisted."),
+    );
 
-    renderWithToast(<RelistButton frameworkId="fw-1" />);
+    renderWithToast(<RelistButton api={api} frameworkId="fw-1" />);
     fireEvent.click(
       screen.getByRole("button", { name: /relist on marketplace/i }),
     );

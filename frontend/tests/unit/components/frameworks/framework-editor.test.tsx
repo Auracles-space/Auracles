@@ -10,11 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FrameworkEditor } from "@/components/modules/frameworks/framework-editor";
 import { ToastProvider } from "@/components/ui/toast";
-import {
-  deleteArtifact,
-  getContributorFramework,
-  listFrameworkArtifacts,
-} from "@/lib/generated/sdk.gen";
+import { deleteArtifact } from "@/lib/generated/sdk.gen";
 import type {
   ArtifactResponse,
   FrameworkResponse,
@@ -24,6 +20,27 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/dashboard/frameworks/fw_1",
 }));
+
+const { api, frameworkApiFor } = vi.hoisted(() => ({
+  api: {
+    confirmArtifact: vi.fn(),
+    create: vi.fn(),
+    createArtifactUpload: vi.fn(),
+    get: vi.fn(),
+    list: vi.fn(),
+    listArtifacts: vi.fn(),
+    publish: vi.fn(),
+    relist: vi.fn(),
+    startVersion: vi.fn(),
+    submit: vi.fn(),
+    unpublish: vi.fn(),
+    update: vi.fn(),
+    updatePricing: vi.fn(),
+  },
+  frameworkApiFor: vi.fn(),
+}));
+
+vi.mock("@/lib/frameworks/framework-api", () => ({ frameworkApiFor }));
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -50,6 +67,18 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 /** Render the editor beneath the toast provider its actions depend on. */
 function renderWithToast(ui: ReactElement): RenderResult {
   return render(<ToastProvider>{ui}</ToastProvider>);
+}
+
+/** Render the personal seller editor used by regression tests. */
+function renderPersonalEditor(): RenderResult {
+  return renderWithToast(
+    <FrameworkEditor
+      basePath="/dashboard/frameworks"
+      canManageLiveState
+      frameworkId="fw_1"
+      seller={{ kind: "user" }}
+    />,
+  );
 }
 
 function makeFramework(
@@ -106,29 +135,24 @@ function mockLoad(
   framework: FrameworkResponse,
   artifacts: ArtifactResponse[] = [],
 ): void {
-  vi.mocked(getContributorFramework).mockResolvedValue({
-    data: framework,
-    error: undefined,
-    response: new Response(null, { status: 200 }),
-  } as never);
-  vi.mocked(listFrameworkArtifacts).mockResolvedValue({
-    data: artifacts,
-    error: undefined,
-    response: new Response(null, { status: 200 }),
-  } as never);
+  api.get.mockResolvedValue(framework);
+  api.listArtifacts.mockResolvedValue(artifacts);
 }
 
 describe("FrameworkEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    frameworkApiFor.mockReturnValue(api);
   });
 
   it("hides the new-version action for an unpublished draft", async () => {
     mockLoad(makeFramework({ status: "draft" }));
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Test Framework");
+    expect(api.get).toHaveBeenCalledWith("fw_1");
+    expect(api.listArtifacts).toHaveBeenCalledWith("fw_1");
     expect(
       screen.queryByRole("button", { name: /start draft version/i }),
     ).not.toBeInTheDocument();
@@ -137,7 +161,7 @@ describe("FrameworkEditor", () => {
   it("shows the new-version action once the framework is published", async () => {
     mockLoad(makeFramework({ status: "published" }));
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Test Framework");
     expect(
@@ -145,10 +169,77 @@ describe("FrameworkEditor", () => {
     ).toBeInTheDocument();
   });
 
+  it("starts a new version through the selected seller adapter", async () => {
+    const updated = makeFramework({ status: "draft", version: "1.1.0" });
+    mockLoad(makeFramework({ status: "published" }));
+    api.startVersion.mockResolvedValue(updated);
+
+    renderPersonalEditor();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /start draft version/i }),
+    );
+
+    await waitFor(() => {
+      expect(api.startVersion).toHaveBeenCalledWith(
+        "fw_1",
+        expect.objectContaining({ change_type: "improvement" }),
+      );
+    });
+  });
+
+  it("hides live-state controls from a non-admin organization author", async () => {
+    mockLoad(makeFramework({ status: "published" }));
+
+    renderWithToast(
+      <FrameworkEditor
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org-1" }}
+        canManageLiveState={false}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    await screen.findByText("Test Framework");
+    expect(
+      screen.queryByRole("button", { name: /delist from marketplace/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /start draft version/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/^pricing$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows organization pricing to admins and surfaces adapter failures", async () => {
+    mockLoad(makeFramework({ status: "published" }));
+    api.updatePricing.mockRejectedValue(
+      new Error("Organization pricing could not be updated."),
+    );
+
+    renderWithToast(
+      <FrameworkEditor
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org-1" }}
+        canManageLiveState
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    await screen.findByText("Test Framework");
+    fireEvent.click(screen.getByRole("button", { name: /save pricing/i }));
+
+    expect(
+      await screen.findByText(/organization pricing could not be updated/i),
+    ).toBeInTheDocument();
+    expect(api.updatePricing).toHaveBeenCalledWith(
+      "fw_1",
+      expect.objectContaining({ pricing: expect.any(Object) }),
+    );
+  });
+
   it("lets a delisted framework edit metadata, relist, or start a new version", async () => {
     mockLoad(makeFramework({ status: "unpublished" }));
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Test Framework");
     // Metadata edits save in place; relist and new version are also offered.
@@ -165,7 +256,7 @@ describe("FrameworkEditor", () => {
 
   it("keeps metadata editable on a live framework but locks it mid-pipeline", async () => {
     mockLoad(makeFramework({ status: "published" }));
-    const { unmount } = renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    const { unmount } = renderPersonalEditor();
     await screen.findByText("Test Framework");
     expect(
       screen.getByRole("button", { name: /save changes/i }),
@@ -173,7 +264,7 @@ describe("FrameworkEditor", () => {
     unmount();
 
     mockLoad(makeFramework({ status: "submitted" }));
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
     await screen.findByText("Test Framework");
     expect(
       screen.queryByRole("button", { name: /save changes/i }),
@@ -190,7 +281,7 @@ describe("FrameworkEditor", () => {
       response: new Response(null, { status: 204 }),
     } as never);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Operating Model.pdf");
     fireEvent.click(
@@ -217,7 +308,7 @@ describe("FrameworkEditor", () => {
       }),
     ]);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Operating Model.pdf");
     expect(
@@ -228,7 +319,7 @@ describe("FrameworkEditor", () => {
   it("disables Run publishing checks when no artifact is attached", async () => {
     mockLoad(makeFramework({ status: "draft" }), []);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     const button = await screen.findByRole("button", {
       name: /run publishing checks/i,
@@ -241,12 +332,47 @@ describe("FrameworkEditor", () => {
       makeArtifact({ id: "art_1", processing_status: "processed" }),
     ]);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     const button = await screen.findByRole("button", {
       name: /run publishing checks/i,
     });
     expect(button).toBeEnabled();
+  });
+
+  it("submits publishing checks through the selected seller adapter", async () => {
+    const framework = makeFramework({ status: "draft" });
+    mockLoad(framework, [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+    api.submit.mockResolvedValue(
+      makeFramework({ status: "submitted" }),
+    );
+
+    renderPersonalEditor();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /run publishing checks/i }),
+    );
+
+    await waitFor(() => expect(api.submit).toHaveBeenCalledWith("fw_1"));
+  });
+
+  it("updates metadata through the selected seller adapter", async () => {
+    const framework = makeFramework({ status: "draft" });
+    mockLoad(framework);
+    api.update.mockResolvedValue(framework);
+
+    renderPersonalEditor();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /save changes/i }),
+    );
+
+    await waitFor(() => {
+      expect(api.update).toHaveBeenCalledWith(
+        "fw_1",
+        expect.objectContaining({ title: "Test Framework" }),
+      );
+    });
   });
 
   it("shows the artifact remove control on a pipeline_failed framework", async () => {
@@ -259,7 +385,7 @@ describe("FrameworkEditor", () => {
       }),
     ]);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     expect(
       await screen.findByRole("button", {
@@ -279,7 +405,7 @@ describe("FrameworkEditor", () => {
         }),
       ]);
 
-      renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+      renderPersonalEditor();
       await screen.findByText("Test Framework");
 
       // Worker finishes: artifact gets PII-flagged, framework fails the gate.
@@ -307,7 +433,7 @@ describe("FrameworkEditor", () => {
       makeArtifact({ id: "art_1", name: "Operating Model.pdf" }),
     ]);
 
-    renderWithToast(<FrameworkEditor frameworkId="fw_1" />);
+    renderPersonalEditor();
 
     await screen.findByText("Operating Model.pdf");
     expect(

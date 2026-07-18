@@ -81,6 +81,8 @@ type FrameworkFormProps = {
    * mid-pipeline); editing those requires starting a new version.
    */
   readOnly?: boolean;
+  /** Render pricing and license fields inside this metadata form. */
+  pricingInline?: boolean;
 };
 
 export type FrameworkDraftPrefill = {
@@ -171,6 +173,7 @@ export function FrameworkForm({
   leftActions,
   children,
   readOnly = false,
+  pricingInline = true,
 }: FrameworkFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -201,8 +204,8 @@ export function FrameworkForm({
   const canSubmit = allValid(
     isNonEmpty(form.title),
     isNonEmpty(form.description),
-    isPositiveNumber(form.price),
-    form.licenseTypes.length > 0,
+    !pricingInline || isPositiveNumber(form.price),
+    !pricingInline || form.licenseTypes.length > 0,
     isNonEmpty(form.category),
     isNonEmpty(form.function),
     isNonEmpty(form.industry),
@@ -378,111 +381,114 @@ export function FrameworkForm({
           options={JURISDICTION_OPTIONS}
           value={form.jurisdiction}
         />
-
       </div>
 
-      <fieldset className="block">
-        <legend className="mb-1.5 block text-sm font-semibold text-foreground">
-          License types
-          <span aria-hidden="true" className="ml-1 text-accent">
-            *
-          </span>
-        </legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {LICENSE_TYPE_OPTIONS.map((option) => {
-            const checked = form.licenseTypes.includes(option.value);
-            return (
-              <label
-                key={option.value}
-                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
-                  checked
-                    ? "border-accent bg-accent/10 text-foreground"
-                    : "border-border-default bg-surface-1 text-foreground-muted hover:border-accent/50 hover:bg-surface-2"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 shrink-0 accent-accent"
-                  checked={checked}
-                  onChange={() => toggleLicenseType(option.value)}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-        <span className="mt-1.5 block text-xs text-foreground-muted">
-          Choose at least one tier operators can license. Pricing scales per tier
-          at checkout.
-        </span>
-      </fieldset>
-
-      <div className="grid gap-6 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-semibold text-foreground">
-            Base Price
-            <span aria-hidden="true" className="ml-1 text-accent">
-              *
-            </span>
-          </span>
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-              <span className="text-sm font-medium">$</span>
-            </div>
-            <input
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="250.00"
-              className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  price: sanitizePriceInput(event.target.value),
-                }))
-              }
-              required
-              value={form.price}
-            />
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-              <span className="text-xs uppercase">USD</span>
-            </div>
-          </div>
-        </label>
-
-        {form.licenseTypes.includes("organizational") ? (
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-foreground">
-              Organization price
-            </span>
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-                <span className="text-sm font-medium">$</span>
-              </div>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="Same as single-user price"
-                className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    orgPrice: sanitizePriceInput(event.target.value),
-                  }))
-                }
-                value={form.orgPrice}
-              />
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-                <span className="text-xs uppercase">USD</span>
-              </div>
+      {pricingInline ? (
+        <>
+          <fieldset className="block">
+            <legend className="mb-1.5 block text-sm font-semibold text-foreground">
+              License types
+              <span aria-hidden="true" className="ml-1 text-accent">
+                *
+              </span>
+            </legend>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {LICENSE_TYPE_OPTIONS.map((option) => {
+                const checked = form.licenseTypes.includes(option.value);
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all ${
+                      checked
+                        ? "border-accent bg-accent/10 text-foreground"
+                        : "border-border-default bg-surface-1 text-foreground-muted hover:border-accent/50 hover:bg-surface-2"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 accent-accent"
+                      checked={checked}
+                      onChange={() => toggleLicenseType(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
             </div>
             <span className="mt-1.5 block text-xs text-foreground-muted">
-              Leave blank to charge the same as the single-user price.
+              Choose at least one tier operators can license. Pricing scales per
+              tier at checkout.
             </span>
-          </label>
-        ) : null}
-      </div>
+          </fieldset>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                Base Price
+                <span aria-hidden="true" className="ml-1 text-accent">
+                  *
+                </span>
+              </span>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+                  <span className="text-sm font-medium">$</span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="250.00"
+                  className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      price: sanitizePriceInput(event.target.value),
+                    }))
+                  }
+                  required
+                  value={form.price}
+                />
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+                  <span className="text-xs uppercase">USD</span>
+                </div>
+              </div>
+            </label>
+
+            {form.licenseTypes.includes("organizational") ? (
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                  Organization price
+                </span>
+                <div className="relative">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+                    <span className="text-sm font-medium">$</span>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="Same as single-user price"
+                    className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        orgPrice: sanitizePriceInput(event.target.value),
+                      }))
+                    }
+                    value={form.orgPrice}
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+                    <span className="text-xs uppercase">USD</span>
+                  </div>
+                </div>
+                <span className="mt-1.5 block text-xs text-foreground-muted">
+                  Leave blank to charge the same as the single-user price.
+                </span>
+              </label>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
       <TagChipInput
         label="Tags"
