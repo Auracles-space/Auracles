@@ -2599,6 +2599,9 @@ export type MyOrganizationResponse = {
     capabilities: {
         [key: string]: (string);
     };
+    grants?: {
+        [key: string]: (boolean);
+    };
     nda_required?: boolean;
     counts?: OrgActionCounts;
 };
@@ -6209,6 +6212,17 @@ export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostRe
 
 export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
 
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
+
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostError = (unknown | HTTPValidationError);
+
 export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostData = {
     body: FrameworkVersionCreate;
     path: {
@@ -6254,6 +6268,17 @@ export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifacts
 export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
 
 export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetResponse = (Array<ArtifactResponse>);
+
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (unknown | HTTPValidationError);
 
 export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
