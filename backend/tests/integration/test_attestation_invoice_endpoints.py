@@ -474,12 +474,44 @@ async def test_other_approved_attestor_gets_404_for_missing_own_annual_summary(
     assert response.json()["detail"] == "No earnings summary for that year."
 
 
+async def test_user_without_attestor_role_gets_own_annual_summary(
+    client: AsyncClient,
+    clean_state,
+    fake_document_storage: FakeDocumentStorage,
+) -> None:
+    """A caller without the attestor role still fetches their own generated summary.
+
+    The route is self-scoped by the user-keyed S3 object, so a legitimate past
+    earner who no longer holds the derived ``attestor`` role must still resolve
+    their own summary rather than be 403'd by a role gate.
+    """
+    del clean_state
+    user = await _make_user("operator", "annual-past-earner")
+    key = f"annual-summaries/{user.id}/2026.pdf"
+    fake_document_storage.existing_keys.add(key)
+
+    response = await client.get(
+        "/v1/attestations/earnings/annual/2026",
+        headers=_auth_headers(user.id, []),
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        f"https://s3.test/auracles-reports-dev/{key}?expires=900"
+    )
+
+
 async def test_non_attestor_cannot_fetch_annual_summary(
     client: AsyncClient,
     clean_state,
     fake_document_storage: FakeDocumentStorage,
 ) -> None:
-    """A non-attestor role is rejected before annual-summary delivery logic runs."""
+    """Without a generated summary the caller gets a self-scoped 404, not a role 403.
+
+    The route no longer carries a role gate: access is scoped by whether the
+    user-keyed summary object exists. A caller with no summary object of their
+    own resolves nothing and receives 404.
+    """
     del clean_state, fake_document_storage
     operator = await _make_user("operator", "annual-operator")
 
@@ -488,4 +520,5 @@ async def test_non_attestor_cannot_fetch_annual_summary(
         headers=_auth_headers(operator.id, ["operator"]),
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No earnings summary for that year."

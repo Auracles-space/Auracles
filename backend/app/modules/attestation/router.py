@@ -31,7 +31,6 @@ from app.modules.attestation import (
     report as report_service,
 )
 from app.modules.attestation import service as attestation_service
-from app.modules.attestation.dependencies import require_approved_attestor
 from app.modules.attestation.models import Credential as _CredentialModel
 from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
@@ -83,7 +82,6 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
-ApprovedAttestorUser = Annotated[User, Depends(require_approved_attestor)]
 
 
 def _credential_response(credential: _CredentialModel) -> CredentialResponse:
@@ -1079,7 +1077,7 @@ async def get_attestation_earnings_statement(
 )
 async def get_attestation_annual_summary(
     year: int,
-    user: ApprovedAttestorUser,
+    user: CurrentUser,
     db: DatabaseSession,
 ) -> Response:
     """Deliver the caller's annual attestation earnings summary."""

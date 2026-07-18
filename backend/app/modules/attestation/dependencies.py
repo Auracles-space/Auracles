@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.dependencies import require_role
 from app.modules.attestation.models import Attestation
-from app.modules.auth.models import User
 from app.modules.organizations.models import OrgMember
-
-DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 
 _ATTESTOR_ORG_MANAGER_ROLES = ("owner", "admin")
 
@@ -142,20 +136,3 @@ async def _in_attestor_org(
         )
     )
     return membership_id is not None
-
-
-async def require_approved_attestor(
-    db: DatabaseSession,
-    user: Annotated[User, Depends(require_role("attestor"))],
-) -> User:
-    """Require an authenticated Attestor.
-
-    The ``attestor`` role is a derived role granted to owners and admins of an
-    organization whose ``attestor`` capability is active, and to members on a
-    team with that capability enabled. Holding it proves an approved attestor
-    relationship exists, but not per-attestation authority (resolved separately
-    via :func:`resolve_attestor_actor`) nor that the caller is currently staffed
-    on any review.
-    """
-    del db
-    return user
