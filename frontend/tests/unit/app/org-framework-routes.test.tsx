@@ -7,7 +7,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OrgFrameworkEditor } from "@/app/(auth)/dashboard/organizations/[orgId]/frameworks/[id]/page";
+import { OrgFrameworkEditor } from "@/components/modules/frameworks/org-framework-editor";
 import NewOrgFrameworkPage from "@/app/(auth)/dashboard/organizations/[orgId]/frameworks/new/page";
 import OrgFrameworksPage from "@/app/(auth)/dashboard/organizations/[orgId]/frameworks/page";
 
