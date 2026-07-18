@@ -273,6 +273,27 @@ Org member opens /dashboard/organizations/[orgId]/frameworks
   already cover via shared components — include only if it comes free with the
   extraction, otherwise defer).
 
+## Discovered backend gaps (planning)
+
+The spec assumed org backend parity was complete. Planning found two org
+endpoints missing; both are added by the implementation plan:
+
+- **Org list-artifacts** — no way to list an org-owned Framework's artifacts
+  (the personal `GET /frameworks/{id}/artifacts` is `ContributorUser`-scoped).
+  Plan adds `GET /orgs/{org_id}/frameworks/{id}/artifacts` (grant-gated) +
+  `list_artifacts_for_owner`.
+- **Org relist** — org has publish + unpublish but no relist; org `publish`
+  requires `pipeline_passed` so it does not subsume relisting a delisted
+  Framework. Plan adds `POST /orgs/{org_id}/frameworks/{id}/relist`
+  (admin/owner, a commercial act) + `relist_framework_for_owner`.
+
+**Pricing** is not a gap: personal edits pricing inside `updateFramework`
+(combined form); org has a separate admin-only pricing endpoint. Resolved in the
+adapter — personal `updatePricing` → `updateFramework({pricing})` (personal form
+unchanged); org `updatePricing` → the org pricing endpoint via a separate
+admin-only control, and the shared metadata form renders pricing inline only for
+personal.
+
 ## Risks
 
 - **Refactor regression** on personal Framework flows during the extraction.
