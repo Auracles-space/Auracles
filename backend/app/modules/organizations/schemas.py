@@ -168,6 +168,7 @@ class MyOrganizationResponse(BaseModel):
     org: OrganizationResponse
     role: str
     capabilities: dict[str, str]
+    grants: dict[str, bool] = Field(default_factory=dict)
     # True when the org's attestor capability is pending/active, so the
     # frontend can chain invitation acceptance straight into NDA signing.
     nda_required: bool = False

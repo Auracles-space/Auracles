@@ -20344,6 +20344,12 @@ components:
             type: string
           type: object
           title: Capabilities
+        grants:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Grants
+          default: {}
         nda_required:
           type: boolean
           title: Nda Required

@@ -207,6 +207,72 @@ async def list_my_organizations(
     ]
 
 
+async def caller_capability_grants(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    org_ids: list[UUID],
+) -> dict[UUID, set[str]]:
+    """Return active capabilities the caller personally holds in each org.
+
+    Args:
+        db: Async database session.
+        user_id: Caller whose organization memberships determine entitlement.
+        org_ids: Organizations included in the caller's response.
+
+    Returns:
+        Active capability names held by the caller, keyed by organization id.
+    """
+    if not org_ids:
+        return {}
+
+    grants: dict[UUID, set[str]] = {org_id: set() for org_id in org_ids}
+    active_rows = await db.execute(
+        select(OrgCapability.org_id, OrgCapability.capability).where(
+            OrgCapability.org_id.in_(org_ids),
+            OrgCapability.status == "active",
+        )
+    )
+    active_by_org: dict[UUID, set[str]] = defaultdict(set)
+    for org_id, capability in active_rows.all():
+        active_by_org[org_id].add(capability)
+
+    member_rows = await db.execute(
+        select(OrgMember.org_id, OrgMember.id, OrgMember.role).where(
+            OrgMember.user_id == user_id,
+            OrgMember.org_id.in_(org_ids),
+        )
+    )
+    memberships = {
+        org_id: (member_id, role)
+        for org_id, member_id, role in member_rows.all()
+    }
+    member_ids = [member_id for member_id, _role in memberships.values()]
+    team_caps_by_member: dict[UUID, set[str]] = defaultdict(set)
+    if member_ids:
+        team_rows = await db.execute(
+            select(OrgTeamMember.member_id, OrgTeamCapability.capability)
+            .join(OrgTeam, OrgTeam.id == OrgTeamMember.team_id)
+            .join(OrgTeamCapability, OrgTeamCapability.team_id == OrgTeam.id)
+            .where(OrgTeamMember.member_id.in_(member_ids))
+        )
+        for member_id, capability in team_rows.all():
+            team_caps_by_member[member_id].add(capability)
+
+    for org_id in org_ids:
+        membership = memberships.get(org_id)
+        if membership is None:
+            continue
+        member_id, role = membership
+        active = active_by_org.get(org_id, set())
+        grants[org_id] = (
+            set(active)
+            if role in {"owner", "admin"}
+            else active & team_caps_by_member.get(member_id, set())
+        )
+    return grants
+
+
 # Membership roles allowed to act on offers, the queue, and invitations. Plain
 # members never see these tabs, so their counts stay zero.
 _ADMIN_ROLES = {"owner", "admin"}

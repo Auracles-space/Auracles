@@ -22,6 +22,9 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgMember,
     OrgMemberNda,
+    OrgTeam,
+    OrgTeamCapability,
+    OrgTeamMember,
 )
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
@@ -195,6 +198,92 @@ async def test_list_my_orgs_returns_role_and_capabilities(
     assert len(orgs) == 1
     assert orgs[0]["role"] == "owner"
     assert orgs[0]["capabilities"] == {"attestor": "pending"}
+
+
+async def test_my_orgs_grants_owner(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """An owner's my-orgs entry reports each active capability grant as true."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-grant-owner")
+    token = create_access_token(owner_id, [])
+    org = await create_org(client, token, "org-grant-owner")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgCapability(
+                    org_id=UUID(str(org["id"])),
+                    capability="contributor",
+                    status="active",
+                )
+            )
+
+    response = await client.get("/v1/orgs/mine", headers=auth(token))
+
+    assert response.status_code == 200
+    assert response.json()["organizations"][0]["grants"]["contributor"] is True
+
+
+async def test_my_orgs_grants_plain_member_false(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """A plain member outside contributor teams has no contributor grant."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-grant-owner")
+    member_id = await create_user("org-grant-member")
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-grant-plain")
+    await add_member(str(org["id"]), member_id, "member")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                OrgCapability(
+                    org_id=UUID(str(org["id"])),
+                    capability="contributor",
+                    status="active",
+                )
+            )
+
+    response = await client.get("/v1/orgs/mine", headers=auth(member_token))
+
+    assert response.status_code == 200
+    assert response.json()["organizations"][0].get("grants", {}).get(
+        "contributor", False
+    ) is False
+
+
+async def test_my_orgs_grants_team_member_true(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """A contributor-team member's my-orgs entry reports the grant as true."""
+    del migrated_database, clean_orgs
+    owner_id = await create_user("org-grant-owner")
+    member_id = await create_user("org-grant-team-member")
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-grant-team")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    async with async_session_factory() as session:
+        async with session.begin():
+            org_id = UUID(str(org["id"]))
+            session.add(
+                OrgCapability(
+                    org_id=org_id,
+                    capability="contributor",
+                    status="active",
+                )
+            )
+            team = OrgTeam(org_id=org_id, name="Contributors")
+            session.add(team)
+            await session.flush()
+            session.add(OrgTeamMember(team_id=team.id, member_id=member_row_id))
+            session.add(OrgTeamCapability(team_id=team.id, capability="contributor"))
+
+    response = await client.get("/v1/orgs/mine", headers=auth(member_token))
+
+    assert response.status_code == 200
+    assert response.json()["organizations"][0]["grants"]["contributor"] is True
 
 
 async def test_list_my_orgs_excludes_deactivated(

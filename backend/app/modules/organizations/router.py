@@ -274,6 +274,12 @@ async def list_my_organizations(
         admin_org_ids=admin_org_ids,
         member_queue_scope=member_queue_scope,
     )
+    org_ids = [organization.id for organization, _role, _caps in organizations]
+    grants_by_org = await service.caller_capability_grants(
+        db,
+        user_id=user.id,
+        org_ids=org_ids,
+    )
     return MyOrganizationsResponse(
         organizations=[
             MyOrganizationResponse(
@@ -282,6 +288,10 @@ async def list_my_organizations(
                 capabilities={
                     capability.capability: capability.status
                     for capability in capabilities
+                },
+                grants={
+                    capability: True
+                    for capability in grants_by_org.get(organization.id, set())
                 },
                 counts=counts_by_org.get(organization.id, OrgActionCounts()),
             )
