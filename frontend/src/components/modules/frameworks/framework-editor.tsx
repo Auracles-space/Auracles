@@ -7,6 +7,7 @@
  * composes the smaller workflow controls.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 import { ArtifactManifest } from "@/components/modules/frameworks/artifact-manifest";
@@ -33,6 +34,7 @@ import {
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
+import { deriveSubmitBlock } from "@/lib/frameworks/submit-block";
 
 type FrameworkEditorProps = {
   basePath: string;
@@ -47,6 +49,7 @@ type FrameworkEditorProps = {
  * @param props - Framework id from the route.
  */
 export function FrameworkEditor({
+  basePath,
   canManageLiveState,
   frameworkId,
   seller,
@@ -139,8 +142,9 @@ export function FrameworkEditor({
     // This action lives at the bottom of a long form; route the outcome to a
     // toast rather than a page-level error that would replace the whole editor
     // off-screen from the button.
+    let updated: FrameworkResponse;
     try {
-      const updated = await api.submit(frameworkId);
+      updated = await api.submit(frameworkId);
       setFramework(updated);
     } catch (caught) {
       toast.error(
@@ -148,6 +152,13 @@ export function FrameworkEditor({
           ? caught.message
           : "The request could not be completed.",
       );
+      return;
+    }
+    // The submit runs the gate synchronously, so an already-failed run comes
+    // back here. Keep the toast short — the specific reason lives in the
+    // inline summary by the button and the pipeline panel below.
+    if (updated.status === "pipeline_failed") {
+      toast.error("Publishing checks failed.");
       return;
     }
     toast.success("Publishing checks started.");
@@ -220,6 +231,12 @@ export function FrameworkEditor({
   const hasRaritySoftFail = artifacts.some(
     (artifact) => artifact.processing_status === "flagged_rarity",
   );
+  // Hard blocks (near-duplicate, virus, PII, processing failure) can only be
+  // cleared by changing an artifact, so re-running checks is pointless until
+  // then. Drive the disabled state and inline guidance from them.
+  const submitBlock = deriveSubmitBlock(artifacts);
+  const canRunChecks =
+    framework.status === "draft" || framework.status === "pipeline_failed";
   const isLive = framework.status === "published";
   const isDelisted = framework.status === "unpublished";
   // Listing metadata (title, price, description, tags, taxonomy) is editable in
@@ -232,6 +249,25 @@ export function FrameworkEditor({
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
       <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
+        <Link
+          className="mb-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground"
+          href={basePath}
+        >
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <line x1="19" x2="5" y1="12" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          Back to frameworks
+        </Link>
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
@@ -277,17 +313,41 @@ export function FrameworkEditor({
             ) : null
           }
         >
-          {(framework.status === "draft" || framework.status === "pipeline_failed") && (
-            <button
-              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
-              // Nothing to submit without an artifact, and submitting mid-scan
-              // would just re-pick the in-flight job — gate on both.
-              disabled={artifacts.length === 0 || isPipelineActive}
-              onClick={handleSubmitGate}
-              type="button"
-            >
-              Run publishing checks
-            </button>
+          {canRunChecks && (
+            <div className="flex flex-col gap-3">
+              {submitBlock.reasons.length > 0 ? (
+                <div className="rounded-xl border border-error/30 bg-error/10 p-4">
+                  <p className="text-sm font-semibold text-error">
+                    Resolve before running checks
+                  </p>
+                  <ul className="mt-2 grid gap-1.5">
+                    {submitBlock.reasons.map((reason) => (
+                      <li className="text-sm text-foreground-muted" key={reason.code}>
+                        <span className="font-medium text-foreground">
+                          {reason.label}.
+                        </span>{" "}
+                        {reason.hint}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <button
+                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 disabled:cursor-not-allowed"
+                // Nothing to submit without an artifact, submitting mid-scan
+                // would re-pick the in-flight job, and a hard block cannot pass
+                // on retry until an artifact changes — gate on all three.
+                disabled={
+                  artifacts.length === 0 ||
+                  isPipelineActive ||
+                  submitBlock.hardBlocked
+                }
+                onClick={handleSubmitGate}
+                type="button"
+              >
+                Run publishing checks
+              </button>
+            </div>
           )}
           {canManageLiveState && framework.status === "pipeline_passed" && (
             <PublishButton

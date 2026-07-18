@@ -93,4 +93,17 @@ describe("CreateFrameworkPanel", () => {
     });
     expect(createFramework).toHaveBeenCalled();
   });
+
+  it("offers a back link to the frameworks list", () => {
+    render(
+      <CreateFrameworkPanel
+        seller={{ kind: "org", orgId: "org-1" }}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: /back to frameworks/i }),
+    ).toHaveAttribute("href", "/dashboard/organizations/org-1/frameworks");
+  });
 });

@@ -6,6 +6,7 @@
  * Handles draft creation and redirects to the edit workspace once the backend
  * creates the draft.
  */
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 
@@ -61,10 +62,31 @@ export function CreateFrameworkPanel({
   }
 
   return (
-    <FrameworkForm
-      onSubmit={handleCreate}
-      prefill={prefill}
-      submitLabel="Create draft"
-    />
+    <div className="grid gap-4">
+      <Link
+        className="inline-flex min-h-11 w-fit items-center gap-1.5 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground"
+        href={basePath}
+      >
+        <svg
+          aria-hidden="true"
+          className="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <line x1="19" x2="5" y1="12" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+        Back to frameworks
+      </Link>
+      <FrameworkForm
+        onSubmit={handleCreate}
+        prefill={prefill}
+        submitLabel="Create draft"
+      />
+    </div>
   );
 }

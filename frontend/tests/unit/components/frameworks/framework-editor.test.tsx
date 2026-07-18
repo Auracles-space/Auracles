@@ -417,6 +417,50 @@ describe("FrameworkEditor", () => {
     await waitFor(() => expect(api.submit).toHaveBeenCalledWith("fw_1"));
   });
 
+  it("blocks re-running checks and names the reason for a near-duplicate", async () => {
+    mockLoad(makeFramework({ status: "pipeline_failed" }), [
+      makeArtifact({ id: "art_1", near_duplicate_blocked: true }),
+    ]);
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    const button = screen.getByRole("button", {
+      name: /run publishing checks/i,
+    });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/near-duplicate artifact/i)).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(api.submit).not.toHaveBeenCalled();
+  });
+
+  it("reports a short failure when checks come back failed", async () => {
+    mockLoad(makeFramework({ status: "draft" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+    api.submit.mockResolvedValue(makeFramework({ status: "pipeline_failed" }));
+
+    renderPersonalEditor();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /run publishing checks/i }),
+    );
+
+    expect(
+      await screen.findByText(/publishing checks failed/i),
+    ).toBeInTheDocument();
+  });
+
+  it("offers a back link to the frameworks list", async () => {
+    mockLoad(makeFramework({ status: "draft" }));
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    expect(
+      screen.getByRole("link", { name: /back to frameworks/i }),
+    ).toHaveAttribute("href", "/dashboard/frameworks");
+  });
+
   it("updates metadata through the selected seller adapter", async () => {
     const framework = makeFramework({ status: "draft" });
     mockLoad(framework);
