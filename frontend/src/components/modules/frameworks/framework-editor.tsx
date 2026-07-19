@@ -360,6 +360,21 @@ export function FrameworkEditor({
               onCompleted={() => void loadWorkspace(true)}
             />
           )}
+          {/* A contributor member drives checks to a pass but cannot publish;
+              live-state changes are reserved for org owners and admins. Explain
+              the missing publish action rather than leaving a dead-end. */}
+          {!canManageLiveState &&
+            framework.status === "pipeline_passed" && (
+              <div className="rounded-xl border border-success/30 bg-success/10 p-4">
+                <p className="text-sm font-semibold text-success">
+                  Ready to publish
+                </p>
+                <p className="mt-1 text-sm text-foreground-muted">
+                  All checks passed. An organization owner or admin can publish
+                  this framework to the marketplace.
+                </p>
+              </div>
+            )}
           {isReprocessing && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
               <p className="text-sm font-semibold text-warning">

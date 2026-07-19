@@ -376,6 +376,32 @@ describe("FrameworkEditor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("tells a non-managing member an admin must publish a ready framework", async () => {
+    // A contributor-team member can drive a framework to pipeline_passed but
+    // cannot publish (owner/admin only). Without a notice the workspace shows
+    // no publish button and no reason, stranding the member on "ready".
+    mockLoad(makeFramework({ status: "pipeline_passed" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+
+    renderWithToast(
+      <FrameworkEditor
+        basePath="/dashboard/organizations/org_1/frameworks"
+        canManageLiveState={false}
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org_1" }}
+      />,
+    );
+
+    await screen.findByText("Test Framework");
+    expect(
+      screen.getByText(/owner or admin can publish/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^publish$/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a re-scanning notice while the framework is processing", async () => {
     // Accepting a redacted copy (or re-running PII review) flips the framework
     // to `processing` and re-scans the file. Both action buttons correctly hide
