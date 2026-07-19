@@ -30,6 +30,9 @@ const SCAN_LABEL: Record<string, string> = {
   visible: "Scanned",
 };
 
+/** Poll cadence while a Deliverable is still being virus-scanned. */
+const SCAN_POLL_INTERVAL_MS = 4000;
+
 type DeliverableReviewCardProps = {
   projectId: string;
   milestoneId: string;
@@ -73,6 +76,20 @@ export function DeliverableReviewCard({
   useEffect(() => {
     void load();
   }, [load, milestoneStatus]);
+
+  // The virus scan flips scan_status from pending_scan to visible/quarantined
+  // in the background without changing the Milestone, so re-poll the Deliverable
+  // until the scan resolves — otherwise the card stays on "Scanning…" until a
+  // manual reload.
+  useEffect(() => {
+    if (deliverable?.scan_status !== "pending_scan") {
+      return;
+    }
+    const timer = setInterval(() => {
+      void load();
+    }, SCAN_POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [deliverable?.scan_status, load]);
 
   if (!deliverable) {
     return null;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeliverableReviewCard } from "@/components/modules/projects/deliverable-review-card";
@@ -87,6 +87,61 @@ describe("DeliverableReviewCard", () => {
         path: { org_id: "org-1", project_id: "project-1", deliverable_id: "deliv-1" },
       })
     );
+  });
+
+  it("polls while the file is scanning and updates when the scan finishes", async () => {
+    const scanning = {
+      id: "deliv-1",
+      milestone_id: "milestone-1",
+      project_id: "project-1",
+      contributor_id: "contrib-1",
+      created_at: "2026-06-20T10:00:00Z",
+      scan_status: "pending_scan",
+      status: "submitted",
+      description: "Done",
+      file_keys: ["file-1"],
+    };
+    const okResponse = new Response(null, { status: 200 });
+    listDeliverablesMock
+      .mockResolvedValueOnce({
+        data: { deliverables: [scanning] },
+        error: undefined,
+        response: okResponse,
+      } as never)
+      .mockResolvedValue({
+        data: {
+          deliverables: [{ ...scanning, scan_status: "visible" }],
+        },
+        error: undefined,
+        response: okResponse,
+      } as never);
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <DeliverableReviewCard
+          isOperator={false}
+          milestoneId="milestone-1"
+          milestoneStatus="submitted"
+          onChanged={vi.fn()}
+          projectId="project-1"
+        />,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText(/scanning/i)).toBeInTheDocument();
+      expect(listDeliverablesMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(listDeliverablesMock.mock.calls.length).toBeGreaterThan(1);
+      expect(screen.getByText(/scanned/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("routes a revision request through the organization endpoint", async () => {
