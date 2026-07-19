@@ -58,6 +58,11 @@ const adminLinks = [
     summary: "Audit external file-provider connections and revocation state.",
   },
   {
+    href: "/admin/waitlist",
+    label: "Waitlist",
+    summary: "Review pre-launch signups and demand by source.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",

@@ -307,6 +307,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/waitlist:
+    get:
+      tags:
+      - Admin
+      summary: List pre-launch waitlist signups
+      description: Return a paginated, read-only pre-launch waitlist directory with
+        an optional case-insensitive email search.
+      operationId: list_admin_waitlist_v1_admin_waitlist_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 320
+          - type: 'null'
+          title: Query
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWaitlistResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/connectors:
     get:
       tags:
@@ -15499,6 +15550,59 @@ components:
       - totp_code
       title: AdminUserUnsuspendRequest
       description: Request body for unsuspending a user account.
+    AdminWaitlistItem:
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+          title: Entry Id
+        email:
+          type: string
+          title: Email
+        source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - entry_id
+      - email
+      - source
+      - created_at
+      title: AdminWaitlistItem
+      description: One pre-launch waitlist signup for admin review.
+    AdminWaitlistResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminWaitlistItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminWaitlistResponse
+      description: Paginated waitlist directory for admins.
     AmendmentCreateRequest:
       properties:
         change_type:

@@ -43,6 +43,7 @@ from app.modules.admin.schemas import (
     AdminUserSuspendRequest,
     AdminUserSuspensionResponse,
     AdminUserUnsuspendRequest,
+    AdminWaitlistResponse,
 )
 from app.modules.attestation import credential_service
 from app.modules.attestation.schemas import (
@@ -303,6 +304,33 @@ async def list_admin_payouts(
         page_size=page_size,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
+
+
+@router.get(
+    "/waitlist",
+    response_model=AdminWaitlistResponse,
+    summary="List pre-launch waitlist signups",
+    description=(
+        "Return a paginated, read-only pre-launch waitlist directory with an "
+        "optional case-insensitive email search."
+    ),
+)
+async def list_admin_waitlist(
+    admin: AdminUser,
+    db: DatabaseSession,
+    query: Annotated[str | None, Query(min_length=1, max_length=320)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminWaitlistResponse:
+    """Return the admin pre-launch waitlist directory."""
+    del admin
+    waitlist = await service.list_admin_waitlist(
+        db=db,
+        query=query,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminWaitlistResponse.model_validate(waitlist)
 
 
 @router.get(

@@ -53,6 +53,7 @@ from app.modules.integrations.models import OAuthConnection
 from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
+from app.modules.waitlist.models import WaitlistEntry
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks.processing.minhash_index import (
     index_framework_artifacts,
@@ -1467,6 +1468,54 @@ async def list_admin_connectors(
                 "updated_at": connection.updated_at,
             }
             for connection in result.scalars().all()
+        ],
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_waitlist(
+    db: AsyncSession,
+    *,
+    query: str | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only pre-launch waitlist directory.
+
+    Args:
+        db: Async database session.
+        query: Optional case-insensitive email substring filter.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+    """
+    filters: list[ColumnElement[bool]] = []
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        filters.append(WaitlistEntry.email.ilike(f"%{normalized_query}%"))
+
+    total = await db.scalar(select(func.count(WaitlistEntry.id)).where(*filters))
+    result = await db.execute(
+        select(WaitlistEntry)
+        .where(*filters)
+        .order_by(desc(WaitlistEntry.created_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    return {
+        "items": [
+            {
+                "entry_id": entry.id,
+                "email": entry.email,
+                "source": entry.source,
+                "created_at": entry.created_at,
+            }
+            for entry in result.scalars().all()
         ],
         "total": int(total or 0),
         "page": page,

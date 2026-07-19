@@ -751,6 +751,26 @@ export type AdminUserUnsuspendRequest = {
 };
 
 /**
+ * One pre-launch waitlist signup for admin review.
+ */
+export type AdminWaitlistItem = {
+    entry_id: string;
+    email: string;
+    source: (string | null);
+    created_at: string;
+};
+
+/**
+ * Paginated waitlist directory for admins.
+ */
+export type AdminWaitlistResponse = {
+    items: Array<AdminWaitlistItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Project member request body for proposing a Proposal amendment.
  */
 export type AmendmentCreateRequest = {
@@ -4780,6 +4800,18 @@ export type ListAdminPayoutsV1AdminPayoutsGetData = {
 export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
 
 export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
+
+export type ListAdminWaitlistV1AdminWaitlistGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type ListAdminWaitlistV1AdminWaitlistGetResponse = (AdminWaitlistResponse);
+
+export type ListAdminWaitlistV1AdminWaitlistGetError = (HTTPValidationError);
 
 export type ListAdminConnectorsV1AdminConnectorsGetData = {
     query?: {

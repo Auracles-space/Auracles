@@ -489,3 +489,21 @@ class AdminConnectorsResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminWaitlistItem(BaseModel):
+    """One pre-launch waitlist signup for admin review."""
+
+    entry_id: UUID
+    email: str
+    source: str | None
+    created_at: datetime
+
+
+class AdminWaitlistResponse(BaseModel):
+    """Paginated waitlist directory for admins."""
+
+    items: list[AdminWaitlistItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
