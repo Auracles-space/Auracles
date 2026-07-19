@@ -102,6 +102,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_attestor_needs_info": "account",
     "org_attestor_approved": "account",
     "org_attestor_rejected": "account",
+    "admin_review_pending": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()
@@ -121,10 +122,13 @@ NOTIFICATION_CATEGORY_LABELS: Final[dict[str, str]] = {
 # Event types kept in the enum for internal/audit use but hidden from the user
 # preference matrix: each either notifies the actor about their own action
 # (project_created), is workspace-timeline noise rather than inbox-worthy
-# (milestone_created/updated), or duplicates an event the user is already
+# (milestone_created/updated), duplicates an event the user is already
 # notified about (attestation_published/rejected are covered by
-# attestation_report_submitted). Showing toggles for these would be dead
-# controls, so they are excluded from the displayed matrix.
+# attestation_report_submitted), or is role-targeted rather than user-scoped
+# (admin_review_pending fans out to whoever holds the admin role, so a
+# per-user toggle would be a dead control for every non-admin). Showing
+# toggles for these would be dead controls, so they are excluded from the
+# displayed matrix.
 HIDDEN_NOTIFICATION_TYPES: Final[frozenset[str]] = frozenset(
     {
         "project_created",
@@ -132,6 +136,7 @@ HIDDEN_NOTIFICATION_TYPES: Final[frozenset[str]] = frozenset(
         "milestone_updated",
         "attestation_published",
         "attestation_rejected",
+        "admin_review_pending",
     }
 )
 

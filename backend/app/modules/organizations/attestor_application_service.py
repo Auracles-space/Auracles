@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation import rubrics
 from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_MAX_BYTES,
@@ -435,6 +436,12 @@ async def submit_application(
         action="org_attestor_application_submitted",
         user_id=str(actor_id),
     ).info("Org attestor application submitted")
+    notify_admins_review_pending(
+        domain="org_attestor_application",
+        target_id=application.id,
+        body="An organization submitted an attestor application for KYB review.",
+        link="/admin/org-attestors",
+    )
     return application
 
 

@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import DeveloperAccount, DeveloperApplication
@@ -65,6 +66,14 @@ async def submit_application(
             target_id=application.id,
             metadata={"status": application.status},
         )
+    # Fan out to admins only after the application is committed, so the review
+    # queue item the notification points to is guaranteed to exist.
+    notify_admins_review_pending(
+        domain="developer_application",
+        target_id=application.id,
+        body=f"{application.company_name} submitted a Developer application.",
+        link="/admin/developer",
+    )
     return application
 
 

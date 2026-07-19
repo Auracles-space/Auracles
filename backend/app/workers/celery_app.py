@@ -24,6 +24,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         include=[
             "app.workers.tasks.artifacts",
             "app.workers.tasks.admin_beat",
+            "app.workers.tasks.admin_notifications",
             "app.workers.tasks.deliverable_scan",
             "app.workers.tasks.attestation_beat",
             "app.workers.tasks.attestation_pdf",

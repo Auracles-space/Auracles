@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import AttestationUploadSession, Credential
 from app.modules.attestation.schemas import (
     CredentialCreateRequest,
@@ -132,6 +133,12 @@ async def submit_credential(
         )
         await db.flush()
         await db.refresh(credential)
+    notify_admins_review_pending(
+        domain="credential",
+        target_id=credential.id,
+        body=f"Credential “{credential.title}” was submitted for verification.",
+        link="/admin/credentials",
+    )
     return credential
 
 

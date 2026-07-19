@@ -12,6 +12,7 @@ from uuid import UUID
 
 from loguru import logger
 
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import Attestation, AttestationOffer
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
@@ -229,7 +230,7 @@ def notify_reassigned(
 
 
 def notify_needs_admin(attestation: Attestation) -> None:
-    """Notify the requestor when automated matching requires Admin help."""
+    """Notify the requestor and fan out to admins when matching needs help."""
     _dispatch(
         user_id=attestation.requestor_id,
         notification_type="attestation_needs_admin",
@@ -237,6 +238,14 @@ def notify_needs_admin(attestation: Attestation) -> None:
         body="Automated matching could not assign an Attestor yet.",
         attestation=attestation,
         dedupe_suffix="requestor",
+    )
+    # The requestor notification above only tells the requestor; admins must be
+    # pinged too since manual assignment is theirs to perform.
+    notify_admins_review_pending(
+        domain="attestation",
+        target_id=attestation.id,
+        body="An attestation could not be auto-matched and needs manual assignment.",
+        link="/admin/attestations",
     )
 
 

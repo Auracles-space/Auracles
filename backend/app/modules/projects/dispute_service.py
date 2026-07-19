@@ -22,6 +22,7 @@ from sqlalchemy.orm import aliased
 from app.core.audit import write_audit
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
@@ -378,6 +379,12 @@ async def create_dispute(
             dispute_id=dispute.id,
             dedupe_key=f"dispute_raised:{dispute.id}:{user_id}",
         )
+    notify_admins_review_pending(
+        domain="project_dispute",
+        target_id=dispute.id,
+        body="A project milestone dispute was raised and may need resolution.",
+        link="/admin/disputes",
+    )
     return dispute
 
 
@@ -499,6 +506,12 @@ async def create_org_dispute(
             dispute_id=dispute.id,
             dedupe_key=f"dispute_raised:{dispute.id}:{user_id}",
         )
+    notify_admins_review_pending(
+        domain="project_dispute",
+        target_id=dispute.id,
+        body="A project milestone dispute was raised and may need resolution.",
+        link="/admin/disputes",
+    )
     return dispute
 
 
