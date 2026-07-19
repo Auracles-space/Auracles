@@ -307,6 +307,104 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/gdpr/deletion-requests:
+    get:
+      tags:
+      - Admin
+      summary: List account-deletion requests for GDPR oversight
+      description: Return a paginated, read-only account-deletion request queue with
+        a status filter, including any blocked-obligation reasons.
+      operationId: list_admin_deletion_requests_v1_admin_gdpr_deletion_requests_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|pending|scheduled|blocked|cancelled|completed)$
+          default: all
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDeletionRequestsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/gdpr/export-requests:
+    get:
+      tags:
+      - Admin
+      summary: List data-export requests for GDPR oversight
+      description: Return a paginated, read-only data-export request queue with a
+        status filter. Internal bundle storage keys are never included.
+      operationId: list_admin_export_requests_v1_admin_gdpr_export_requests_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|pending|processing|ready|failed|expired)$
+          default: all
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportRequestsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/suspend:
     post:
       tags:
@@ -13966,6 +14064,85 @@ components:
       - credentials
       title: AdminCredentialsResponse
       description: Paginated admin credential review queue.
+    AdminDeletionRequestItem:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        status:
+          type: string
+          enum:
+          - pending
+          - scheduled
+          - blocked
+          - cancelled
+          - completed
+          title: Status
+        blocked_reasons:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Blocked Reasons
+        scheduled_for:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Scheduled For
+        requested_at:
+          type: string
+          format: date-time
+          title: Requested At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+      type: object
+      required:
+      - request_id
+      - user_id
+      - status
+      - blocked_reasons
+      - scheduled_for
+      - requested_at
+      - completed_at
+      title: AdminDeletionRequestItem
+      description: One account-deletion request for the admin GDPR oversight queue.
+    AdminDeletionRequestsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminDeletionRequestItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminDeletionRequestsResponse
+      description: Paginated account-deletion request queue for admins.
     AdminDisputeResolveRequest:
       properties:
         resolution_type:
@@ -14230,6 +14407,89 @@ components:
       - released_by
       title: AdminEscrowResponse
       description: Response body for admin escrow state changes.
+    AdminExportRequestItem:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        status:
+          type: string
+          enum:
+          - pending
+          - processing
+          - ready
+          - failed
+          - expired
+          title: Status
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+        requested_at:
+          type: string
+          format: date-time
+          title: Requested At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+      type: object
+      required:
+      - request_id
+      - user_id
+      - status
+      - failure_reason
+      - requested_at
+      - completed_at
+      - expires_at
+      title: AdminExportRequestItem
+      description: 'One data-export request for the admin GDPR oversight queue.
+
+
+        Excludes ``bundle_key`` — that is an internal S3 pointer to the user''s
+
+        personal export and must never surface in an admin list.'
+    AdminExportRequestsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminExportRequestItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminExportRequestsResponse
+      description: Paginated data-export request queue for admins.
     AdminFrameworkDirectoryItem:
       properties:
         framework_id:

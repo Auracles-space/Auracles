@@ -48,6 +48,7 @@ from app.modules.frameworks.pipeline_gate import (
     evaluate_framework_pipeline,
 )
 from app.modules.frameworks.service import current_artifacts_block_publish
+from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
 from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
@@ -148,6 +149,15 @@ MODERATION_QUEUE_SORT_PRIORITY = {
 ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended", "kyc_pending")
 ADMIN_PAYOUT_STATUSES = ("all", "pending", "processing", "completed", "failed")
 ADMIN_PAYOUT_PROVIDERS = ("all", "stripe", "paystack")
+ADMIN_DELETION_STATUSES = (
+    "all",
+    "pending",
+    "scheduled",
+    "blocked",
+    "cancelled",
+    "completed",
+)
+ADMIN_EXPORT_STATUSES = ("all", "pending", "processing", "ready", "failed", "expired")
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -1263,6 +1273,129 @@ async def list_admin_payouts(
 
     return {
         "items": items,
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_deletion_requests(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only account-deletion request queue.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_DELETION_STATUSES``.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If the status filter is unsupported.
+    """
+    if status_filter not in ADMIN_DELETION_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported deletion request status filter.",
+        )
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(AccountDeletionRequest.status == status_filter)
+
+    total = await db.scalar(
+        select(func.count(AccountDeletionRequest.id)).where(*filters)
+    )
+    result = await db.execute(
+        select(AccountDeletionRequest)
+        .where(*filters)
+        .order_by(desc(AccountDeletionRequest.requested_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    return {
+        "items": [
+            {
+                "request_id": request.id,
+                "user_id": request.user_id,
+                "status": request.status,
+                "blocked_reasons": request.blocked_reasons or [],
+                "scheduled_for": request.scheduled_for,
+                "requested_at": request.requested_at,
+                "completed_at": request.completed_at,
+            }
+            for request in result.scalars().all()
+        ],
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_export_requests(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only data-export request queue.
+
+    The internal ``bundle_key`` S3 pointer is never included — only request
+    status and timestamps surface for oversight.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_EXPORT_STATUSES``.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If the status filter is unsupported.
+    """
+    if status_filter not in ADMIN_EXPORT_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported export request status filter.",
+        )
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(DataExportRequest.status == status_filter)
+
+    total = await db.scalar(select(func.count(DataExportRequest.id)).where(*filters))
+    result = await db.execute(
+        select(DataExportRequest)
+        .where(*filters)
+        .order_by(desc(DataExportRequest.requested_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    return {
+        "items": [
+            {
+                "request_id": request.id,
+                "user_id": request.user_id,
+                "status": request.status,
+                "failure_reason": request.failure_reason,
+                "requested_at": request.requested_at,
+                "completed_at": request.completed_at,
+                "expires_at": request.expires_at,
+            }
+            for request in result.scalars().all()
+        ],
         "total": int(total or 0),
         "page": page,
         "page_size": page_size,

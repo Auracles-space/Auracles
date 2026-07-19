@@ -18,9 +18,11 @@ from app.modules.admin.schemas import (
     AdminConfigItem,
     AdminConfigPatchRequest,
     AdminConfigResponse,
+    AdminDeletionRequestsResponse,
     AdminDisputeResolveRequest,
     AdminEscrowOverrideRequest,
     AdminEscrowResponse,
+    AdminExportRequestsResponse,
     AdminFrameworkDirectoryResponse,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
@@ -300,6 +302,72 @@ async def list_admin_payouts(
         page_size=page_size,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
+
+
+@router.get(
+    "/gdpr/deletion-requests",
+    response_model=AdminDeletionRequestsResponse,
+    summary="List account-deletion requests for GDPR oversight",
+    description=(
+        "Return a paginated, read-only account-deletion request queue with a "
+        "status filter, including any blocked-obligation reasons."
+    ),
+)
+async def list_admin_deletion_requests(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(
+            alias="status",
+            pattern="^(all|pending|scheduled|blocked|cancelled|completed)$",
+        ),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminDeletionRequestsResponse:
+    """Return the admin account-deletion request queue."""
+    del admin
+    requests = await service.list_admin_deletion_requests(
+        db=db,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminDeletionRequestsResponse.model_validate(requests)
+
+
+@router.get(
+    "/gdpr/export-requests",
+    response_model=AdminExportRequestsResponse,
+    summary="List data-export requests for GDPR oversight",
+    description=(
+        "Return a paginated, read-only data-export request queue with a status "
+        "filter. Internal bundle storage keys are never included."
+    ),
+)
+async def list_admin_export_requests(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(
+            alias="status",
+            pattern="^(all|pending|processing|ready|failed|expired)$",
+        ),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminExportRequestsResponse:
+    """Return the admin data-export request queue."""
+    del admin
+    requests = await service.list_admin_export_requests(
+        db=db,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminExportRequestsResponse.model_validate(requests)
 
 
 @router.post(

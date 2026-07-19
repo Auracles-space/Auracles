@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.security import verify_password
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
@@ -424,6 +425,9 @@ async def request_account_deletion(
     await _ensure_password_confirmation(user=user, payload=payload)
 
     user_id = user.id
+    created_request_id: UUID
+    created_blocked = False
+    blocked_response: AccountDeletionStatusResponse | None = None
     if db.in_transaction():
         await db.rollback()
     try:
@@ -474,24 +478,29 @@ async def request_account_deletion(
                         "reason_codes": [reason.code for reason in reasons],
                     },
                 )
-                return _status_response(request), status.HTTP_409_CONFLICT
-
-            grace_days = await _account_deletion_grace_days(db)
-            request = AccountDeletionRequest(
-                user_id=user_id,
-                status="scheduled",
-                blocked_reasons=[],
-                scheduled_for=datetime.now(UTC) + timedelta(days=grace_days),
-            )
-            db.add(request)
-            await db.flush()
-            await write_audit(
-                db=db,
-                actor_id=user_id,
-                action="account_deletion_requested",
-                target_type="account_deletion_request",
-                target_id=request.id,
-            )
+                created_request_id = request.id
+                created_blocked = True
+                blocked_response = _status_response(request)
+            else:
+                grace_days = await _account_deletion_grace_days(db)
+                request = AccountDeletionRequest(
+                    user_id=user_id,
+                    status="scheduled",
+                    blocked_reasons=[],
+                    scheduled_for=datetime.now(UTC) + timedelta(days=grace_days),
+                )
+                db.add(request)
+                await db.flush()
+                await write_audit(
+                    db=db,
+                    actor_id=user_id,
+                    action="account_deletion_requested",
+                    target_type="account_deletion_request",
+                    target_id=request.id,
+                )
+                created_request_id = request.id
+                created_blocked = False
+                blocked_response = None
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -499,6 +508,21 @@ async def request_account_deletion(
             detail="Account deletion is already pending.",
         ) from exc
 
+    # Deletion is irreversible and may be blocked by open obligations, so notify
+    # admins after the request commits regardless of which branch created it.
+    notify_admins_review_pending(
+        domain="account_deletion",
+        target_id=created_request_id,
+        body=(
+            "An account deletion request is blocked by open obligations."
+            if created_blocked
+            else "An account deletion request was scheduled and is pending."
+        ),
+        link="/admin/gdpr",
+    )
+
+    if blocked_response is not None:
+        return blocked_response, status.HTTP_409_CONFLICT
     return (
         await get_account_deletion_status(db=db, user_id=user_id),
         status.HTTP_202_ACCEPTED,

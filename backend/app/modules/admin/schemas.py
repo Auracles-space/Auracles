@@ -415,3 +415,49 @@ class AdminPayoutDirectoryResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminDeletionRequestItem(BaseModel):
+    """One account-deletion request for the admin GDPR oversight queue."""
+
+    request_id: UUID
+    user_id: UUID
+    status: Literal["pending", "scheduled", "blocked", "cancelled", "completed"]
+    blocked_reasons: list[dict[str, Any]]
+    scheduled_for: datetime | None
+    requested_at: datetime
+    completed_at: datetime | None
+
+
+class AdminDeletionRequestsResponse(BaseModel):
+    """Paginated account-deletion request queue for admins."""
+
+    items: list[AdminDeletionRequestItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class AdminExportRequestItem(BaseModel):
+    """One data-export request for the admin GDPR oversight queue.
+
+    Excludes ``bundle_key`` — that is an internal S3 pointer to the user's
+    personal export and must never surface in an admin list.
+    """
+
+    request_id: UUID
+    user_id: UUID
+    status: Literal["pending", "processing", "ready", "failed", "expired"]
+    failure_reason: str | None
+    requested_at: datetime
+    completed_at: datetime | None
+    expires_at: datetime | None
+
+
+class AdminExportRequestsResponse(BaseModel):
+    """Paginated data-export request queue for admins."""
+
+    items: list[AdminExportRequestItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

@@ -254,6 +254,33 @@ export type AdminCredentialsResponse = {
 };
 
 /**
+ * One account-deletion request for the admin GDPR oversight queue.
+ */
+export type AdminDeletionRequestItem = {
+    request_id: string;
+    user_id: string;
+    status: 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'completed';
+    blocked_reasons: Array<{
+        [key: string]: unknown;
+    }>;
+    scheduled_for: (string | null);
+    requested_at: string;
+    completed_at: (string | null);
+};
+
+export type status = 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'completed';
+
+/**
+ * Paginated account-deletion request queue for admins.
+ */
+export type AdminDeletionRequestsResponse = {
+    items: Array<AdminDeletionRequestItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Request body for resolving a Project dispute.
  */
 export type AdminDisputeResolveRequest = {
@@ -331,6 +358,34 @@ export type AdminEscrowResponse = {
 };
 
 /**
+ * One data-export request for the admin GDPR oversight queue.
+ *
+ * Excludes ``bundle_key`` — that is an internal S3 pointer to the user's
+ * personal export and must never surface in an admin list.
+ */
+export type AdminExportRequestItem = {
+    request_id: string;
+    user_id: string;
+    status: 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
+    failure_reason: (string | null);
+    requested_at: string;
+    completed_at: (string | null);
+    expires_at: (string | null);
+};
+
+export type status2 = 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
+
+/**
+ * Paginated data-export request queue for admins.
+ */
+export type AdminExportRequestsResponse = {
+    items: Array<AdminExportRequestItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * One Framework in the admin directory used to pick a delist target.
  */
 export type AdminFrameworkDirectoryItem = {
@@ -373,7 +428,7 @@ export type AdminKycReviewRequest = {
     notes?: (string | null);
 };
 
-export type status = 'verified' | 'rejected';
+export type status3 = 'verified' | 'rejected';
 
 /**
  * Response body for an admin identity-verification override.
@@ -517,7 +572,7 @@ export type beneficiary_type = 'contributor' | 'org';
 
 export type provider = 'stripe' | 'paystack';
 
-export type status2 = 'pending' | 'processing' | 'completed' | 'failed';
+export type status4 = 'pending' | 'processing' | 'completed' | 'failed';
 
 /**
  * Request body for overriding a near-duplicate rarity hard block.
@@ -1381,7 +1436,7 @@ export type CollectionResponse = {
     updated_at: string;
 };
 
-export type status3 = 'draft' | 'published' | 'unpublished';
+export type status5 = 'draft' | 'published' | 'unpublished';
 
 /**
  * Contributor request body for editing an unpublished Collection.
@@ -1907,7 +1962,7 @@ export type ExploreAttestationBadge = {
     attestation_count?: number;
 };
 
-export type status4 = 'attested' | 'conditionally_attested';
+export type status6 = 'attested' | 'conditionally_attested';
 
 /**
  * Paginated mixed catalog response for Framework and Collection cards.
@@ -2249,7 +2304,7 @@ export type FrameworkListItem = {
     updated_at: string;
 };
 
-export type status5 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status7 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 /**
  * Request body for editing Framework metadata without pricing changes.
@@ -4563,7 +4618,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status6 = 'processed' | 'received' | 'duplicate';
+export type status8 = 'processed' | 'received' | 'duplicate';
 
 /**
  * Request body for posting a user workspace message.
@@ -4696,6 +4751,30 @@ export type ListAdminPayoutsV1AdminPayoutsGetData = {
 export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
 
 export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetResponse = (AdminDeletionRequestsResponse);
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetError = (HTTPValidationError);
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetResponse = (AdminExportRequestsResponse);
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetError = (HTTPValidationError);
 
 export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
     body: AdminUserSuspendRequest;

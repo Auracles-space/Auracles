@@ -48,6 +48,11 @@ const adminLinks = [
     summary: "Monitor Contributor and Organization payouts and failed transfers.",
   },
   {
+    href: "/admin/gdpr",
+    label: "GDPR",
+    summary: "Review account-deletion and data-export requests and blockers.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",

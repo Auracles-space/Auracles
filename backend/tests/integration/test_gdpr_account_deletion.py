@@ -683,6 +683,43 @@ async def test_request_account_deletion_schedules_cooling_off_and_status_reads_i
     assert audit is not None
 
 
+async def test_request_account_deletion_notifies_admins(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scheduling a deletion fans out an admin-review alert for the request."""
+    del migrated_database, account_deletion_test_context
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        deletion_service,
+        "notify_admins_review_pending",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    user_id, _secret = await create_verified_user("notify-delete@auracles.space")
+
+    created = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9", "totp_code": None},
+    )
+
+    async with async_session_factory() as session:
+        request = await session.scalar(
+            select(AccountDeletionRequest).where(
+                AccountDeletionRequest.user_id == user_id
+            )
+        )
+
+    assert created.status_code == 202
+    assert request is not None
+    assert len(calls) == 1
+    assert calls[0]["domain"] == "account_deletion"
+    assert calls[0]["target_id"] == request.id
+    assert calls[0]["link"] == "/admin/gdpr"
+
+
 async def test_request_account_deletion_passwordless_account_skips_password(
     client: AsyncClient,
     migrated_database: None,
