@@ -969,6 +969,154 @@ async def test_contributor_can_set_preview_on_pipeline_failed_framework(
     assert preview.json()["preview_artifact_id"] == artifact_id
 
 
+async def test_publish_requires_preview_when_an_eligible_artifact_exists(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Publish is refused when no preview is set but a file could be shown.
+
+    Buyers can only inspect a Framework through its preview, so a passing
+    Framework with a preview-eligible Artifact must designate one first.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-needs-preview@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client, contributor_id, framework_id
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit", headers=headers
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish", headers=headers
+    )
+
+    assert response.status_code == 422
+    assert "preview" in response.json()["detail"].lower()
+
+
+async def test_publish_succeeds_once_a_preview_is_selected(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Selecting a preview while drafting unblocks publish for an eligible file."""
+    contributor_id = await create_user_with_roles(
+        "publish-with-preview@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client, contributor_id, framework_id
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    preview = await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit", headers=headers
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish", headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+
+
+async def test_preview_selectable_at_pipeline_passed_unblocks_publish(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A passing Framework with no preview is never trapped.
+
+    Reaching pipeline_passed without a preview must not dead-end: the
+    Contributor can still designate one at pipeline_passed and then publish.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-preview-at-passed@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client, contributor_id, framework_id
+    )
+    await mark_artifact_pipeline_state(framework_id, artifact_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit", headers=headers
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    preview = await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+
+    published = await client.post(
+        f"/v1/frameworks/{framework_id}/publish", headers=headers
+    )
+    assert published.status_code == 200
+    assert published.json()["status"] == "published"
+
+
+async def test_publish_allowed_without_preview_when_no_artifact_is_eligible(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """An all-sensitive Framework stays publishable without a preview.
+
+    When every current Artifact carries unredacted detected PII, none is
+    eligible to be shown publicly, so the preview requirement must not trap the
+    Framework — publish proceeds without one.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-no-eligible@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client, contributor_id, framework_id
+    )
+    # Detected-but-unredacted PII with no review outstanding: the pipeline gate
+    # passes (nothing to review), yet the file is ineligible as a preview.
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        pii_detected=True,
+        pii_review_needed=False,
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit", headers=headers
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish", headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+
+
 async def test_published_framework_artifact_delete_is_rejected(
     client: AsyncClient,
     migrated_database: None,
@@ -1984,6 +2132,13 @@ async def test_publish_requires_pipeline_pass_and_snapshots_current_artifacts(
         headers=headers,
     )
     await mark_artifact_pipeline_state(framework_id, artifact_id)
+    # Publish now requires a preview when a file is eligible; select one while
+    # the Framework is still a draft.
+    await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=headers,
+    )
     submitted = await client.post(
         f"/v1/frameworks/{framework_id}/submit",
         headers=headers,

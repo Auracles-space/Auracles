@@ -120,29 +120,34 @@ async def _seed_publishable_framework(
     *,
     storage: FakeArtifactStorage,
 ) -> None:
-    """Attach one clean current artifact and set the Framework to pipeline_passed."""
+    """Attach one clean current artifact and set the Framework to pipeline_passed.
+
+    Also designates the artifact as the preview so the Framework satisfies the
+    publish-time preview requirement, matching a realistically publishable draft.
+    """
     file_key = f"frameworks/{framework_id}/artifacts/publishable.pdf"
     storage.existing_keys.add(file_key)
     async with async_session_factory() as session:
         async with session.begin():
-            session.add(
-                Artifact(
-                    framework_id=UUID(framework_id),
-                    name="publishable.pdf",
-                    file_key=file_key,
-                    file_size=2048,
-                    mime_type="application/pdf",
-                    scan_status="clean",
-                    processing_status="processed",
-                    pii_detected=False,
-                    pii_review_needed=False,
-                    current_for_framework=True,
-                )
+            artifact = Artifact(
+                framework_id=UUID(framework_id),
+                name="publishable.pdf",
+                file_key=file_key,
+                file_size=2048,
+                mime_type="application/pdf",
+                scan_status="clean",
+                processing_status="processed",
+                pii_detected=False,
+                pii_review_needed=False,
+                current_for_framework=True,
             )
+            session.add(artifact)
+            await session.flush()
             framework = await session.get(Framework, UUID(framework_id))
             assert framework is not None
             framework.status = "pipeline_passed"
             framework.pipeline_failure_reasons = {}
+            framework.preview_artifact_id = artifact.id
 
 
 def _valid_framework_payload() -> dict[str, Any]:

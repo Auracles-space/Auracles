@@ -236,6 +236,12 @@ async def test_publish_deletes_source_preview_objects(
         contributor_email="preview-publish-cleanup@auracles.space",
     )
     await mark_artifact_pipeline_state(framework_id, artifact_id)
+    # Publish requires a preview when a file is eligible; select one while draft.
+    await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
     submitted = await client.post(
         f"/v1/frameworks/{framework_id}/submit",
         headers=auth_headers(contributor_id, ["contributor"]),

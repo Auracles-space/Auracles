@@ -337,13 +337,24 @@ def _payment_intent_event(
 
 
 async def _mark_framework_pipeline_passed(framework_id: UUID) -> None:
-    """Advance a submitted Framework to ``pipeline_passed`` for publish tests."""
+    """Advance a submitted Framework to ``pipeline_passed`` for publish tests.
+
+    Also designates a current Artifact as the preview so the Framework meets
+    the publish-time preview requirement.
+    """
     async with async_session_factory() as session:
         async with session.begin():
             framework = await session.get(Framework, framework_id)
             assert framework is not None
             framework.status = "pipeline_passed"
             framework.pipeline_failure_reasons = {}
+            artifact_id = await session.scalar(
+                select(Artifact.id).where(
+                    Artifact.framework_id == framework_id,
+                    Artifact.current_for_framework.is_(True),
+                )
+            )
+            framework.preview_artifact_id = artifact_id
 
 
 async def _age_transaction(transaction_id: UUID, *, hours: int) -> None:

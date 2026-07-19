@@ -313,6 +313,12 @@ async def test_saved_search_alert_flow_sends_digest_and_in_app_once(
         headers=auth_headers(contributor_id, ["contributor"]),
     )
     await mark_artifact_pipeline_passed(framework_id, artifact_id)
+    # Publish requires a preview when a file is eligible; select one while draft.
+    await client.patch(
+        f"/v1/frameworks/{framework_id}/preview-artifact",
+        json={"artifact_id": artifact_id},
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
     submitted = await client.post(
         f"/v1/frameworks/{framework_id}/submit",
         headers=auth_headers(contributor_id, ["contributor"]),

@@ -353,19 +353,42 @@ def _require_draft(framework: Framework) -> None:
         )
 
 
-# States where a Contributor may still choose the preview Artifact: the draft,
-# and a pipeline_failed Framework being fixed for a re-run. Both are pre-publish
-# and artifact-editable, so preview selection stays available in each.
-_PREVIEW_EDITABLE_STATUSES = {"draft", "pipeline_failed"}
+# States where a Contributor may still choose the preview Artifact: every
+# pre-publish status. Publish requires a preview when a file is eligible, and
+# the gate leaves a Framework in pipeline_passed, so preview selection must stay
+# open there too — otherwise a passing Framework with no preview is trapped.
+_PREVIEW_EDITABLE_STATUSES = {"draft", "pipeline_failed", "pipeline_passed"}
 
 
 def _require_preview_editable(framework: Framework) -> None:
-    """Reject preview changes unless the Framework is draft or pipeline_failed."""
+    """Reject preview changes unless the Framework is still pre-publish."""
     if framework.status not in _PREVIEW_EDITABLE_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Preview can only be set on a draft or failed Framework.",
+            detail="Preview can only be set before the Framework is published.",
         )
+
+
+def _artifact_preview_eligible(artifact: Artifact) -> bool:
+    """Report whether an Artifact may be exposed as the public preview.
+
+    The preview is publicly downloadable, so it must have cleared processing
+    and carry no unresolved PII — a redacted-and-accepted file qualifies, an
+    unresolved PII flag does not. Mirrors the frontend ``canBePreview`` rule so
+    the publish-time requirement and the manifest's UI stay in agreement.
+
+    Args:
+        artifact: The current Artifact to evaluate.
+
+    Returns:
+        True when the Artifact is safe to designate as the preview.
+    """
+    if artifact.processing_status != "processed" or artifact.pii_review_needed:
+        return False
+    if not artifact.pii_detected:
+        return True
+    redaction = (artifact.metadata_vector or {}).get("redaction") or {}
+    return bool(redaction.get("accepted"))
 
 
 # Statuses whose listing metadata (title, price, description, tags, taxonomy)
@@ -2756,6 +2779,20 @@ async def publish_framework(
                         "An artifact file is no longer available in storage. "
                         "Re-upload the affected artifact and resubmit."
                     ),
+                )
+
+            # Buyers can only inspect a Framework before purchase through its
+            # preview file, so require one whenever a current Artifact is
+            # eligible to be shown. A Framework whose every file is sensitive
+            # (no eligible Artifact) stays publishable without a preview so it
+            # is never trapped. Applies to personal and org sellers alike.
+            if framework.preview_artifact_id is None and any(
+                _artifact_preview_eligible(artifact)
+                for artifact in current_artifacts
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Select a preview file before publishing.",
                 )
 
             await _ensure_published_version_snapshot(

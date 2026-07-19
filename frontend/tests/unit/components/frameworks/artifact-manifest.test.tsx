@@ -226,13 +226,32 @@ describe("ArtifactManifest no-preview nudge", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("stays quiet when the framework is not a draft", () => {
+  it("nudges to set a preview at pipeline_passed before publish", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="pipeline_passed"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/buyers won't see a sample/i),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet once the framework is published", () => {
     render(
       <ArtifactManifest
         artifacts={[artifact()]}
         canRemove={false}
         frameworkId="framework-1"
-        frameworkStatus="pipeline_passed"
+        frameworkStatus="published"
         onPreviewSet={vi.fn()}
         onRemove={vi.fn()}
         previewArtifactId={null}
