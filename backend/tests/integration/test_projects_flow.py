@@ -1616,6 +1616,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
     )
 
     past_due = date.fromordinal(date.today().toordinal() - 1).isoformat()
+    valid_due = date.today().isoformat()
     after_deadline = await client.post(
         f"/v1/projects/{project_id}/milestones",
         headers=contributor_headers,
@@ -1649,7 +1650,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
             "description": "Due inside the project window.",
             "budget": "500.00",
             "currency": "USD",
-            "due_date": "2026-07-15",
+            "due_date": valid_due,
         },
     )
     milestone_id = valid.json().get("id") if valid.status_code == 201 else None
@@ -1662,7 +1663,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
     assert after_deadline.status_code == 422
     assert in_past.status_code == 422
     assert valid.status_code == 201
-    assert valid.json()["due_date"] == "2026-07-15"
+    assert valid.json()["due_date"] == valid_due
     assert edit_after_deadline.status_code == 422
 
 
