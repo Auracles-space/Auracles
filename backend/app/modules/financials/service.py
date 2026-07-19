@@ -71,6 +71,7 @@ from app.modules.organizations.models import (
     OrgAttestorApplication,
     OrgCapability,
     OrgLegalProfile,
+    OrgMember,
 )
 from app.modules.organizations.operator_service import operator_capability_active
 from app.workers.tasks.financials import generate_invoice_pdf
@@ -1064,6 +1065,24 @@ async def create_framework_purchase(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Framework not found.",
+            )
+
+        # Org frameworks have no single contributor id, so the individual
+        # self-purchase guard below never matches. Block any member of the
+        # selling org from buying its own Framework — same self-dealing and
+        # metric-gaming concern as the personal "cannot buy your own" rule.
+        buyer_is_seller_member = await db.scalar(
+            select(OrgMember.id)
+            .where(
+                OrgMember.org_id == seller.org_id,
+                OrgMember.user_id == operator_id,
+            )
+            .limit(1)
+        )
+        if buyer_is_seller_member is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You cannot purchase your own organization's Framework.",
             )
 
     if contributor_id == operator_id:

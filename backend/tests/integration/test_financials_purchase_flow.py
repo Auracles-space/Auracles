@@ -30,6 +30,7 @@ from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
 from app.modules.financials.schemas import PurchaseRequest
 from app.modules.frameworks.models import Framework, License
+from app.modules.organizations.models import Organization, OrgMember
 from app.shared.models.audit_log import AuditLog
 
 
@@ -60,6 +61,8 @@ async def reset_purchase_state() -> None:
         await session.execute(delete(CollectionFramework))
         await session.execute(delete(FrameworkCollection))
         await session.execute(delete(Framework))
+        await session.execute(delete(OrgMember))
+        await session.execute(delete(Organization))
         await session.execute(delete(UserRole))
         await session.execute(delete(User))
         await session.commit()
@@ -378,6 +381,73 @@ async def test_operator_cannot_purchase_framework_from_suspended_contributor(
     )
 
     assert response.status_code == 404
+
+
+async def test_org_member_cannot_purchase_own_org_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """A member of the selling org cannot buy that org's own Framework.
+
+    Mirrors the individual "cannot purchase your own Framework" rule: org
+    frameworks have no single contributor id, so ownership is matched on the
+    selling organization to block self-dealing and metric gaming.
+    """
+    del migrated_database, purchase_context
+    owner_id = await create_user_with_roles(
+        "org-self-buy-owner@auracles.space",
+        ["contributor"],
+    )
+    member_id = await create_user_with_roles(
+        "org-self-buy-member@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            org = Organization(
+                name="Self Buy Advisory",
+                slug="self-buy-advisory",
+                country="GB",
+                created_by=owner_id,
+            )
+            session.add(org)
+            await session.flush()
+            org_id = org.id
+            member_row = OrgMember(org_id=org_id, user_id=member_id, role="member")
+            session.add(member_row)
+            await session.flush()
+            authoring_member_id = member_row.id
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=None,
+                contributor_org_id=org_id,
+                authoring_member_id=authoring_member_id,
+                title="Org Revenue Playbook",
+                description="A practical operating system for revenue teams.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["revenue", "operations"],
+                price=Decimal("149.00"),
+                currency="USD",
+                license_types=["single_user", "organizational"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            framework_id = framework.id
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(member_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert response.status_code == 409
 
 
 async def test_operator_cannot_purchase_collection_from_suspended_contributor(
