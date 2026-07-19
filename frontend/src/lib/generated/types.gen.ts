@@ -6328,6 +6328,29 @@ export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifacts
 
 export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
 
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostResponse = (FrameworkResponse);
+
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostError = (HTTPValidationError);
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostData = {
+    body: SimilarityNoticeAcknowledgementRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostError = (HTTPValidationError);
+
 export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {

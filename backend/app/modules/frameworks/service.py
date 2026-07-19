@@ -2478,15 +2478,36 @@ async def acknowledge_soft_fail(
     ip_address: str | None,
 ) -> FrameworkResponse:
     """Record Contributor acknowledgement for external rarity soft failures."""
-    contributor_id = contributor.id
+    return await acknowledge_soft_fail_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id=framework_id,
+        ip_address=ip_address,
+    )
+
+
+async def acknowledge_soft_fail_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    ip_address: str | None,
+) -> FrameworkResponse:
+    """Acknowledge an external-rarity soft fail for personal or org Frameworks.
+
+    Owner-aware counterpart to :func:`acknowledge_soft_fail` that supports
+    organization-owned Frameworks (authoring gate) without weakening ownership.
+    """
+    actor_id = owner.actor_id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        framework = await _load_owned_framework_by_user_id(
-            db,
-            contributor_id,
-            framework_id,
-        )
+        framework = await _load_owned_framework_by_owner(db, owner, framework_id)
         if framework.status != "pipeline_failed":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -2523,7 +2544,7 @@ async def acknowledge_soft_fail(
         framework.pipeline_failure_reasons = failure_reasons
         await write_audit(
             db=db,
-            actor_id=contributor_id,
+            actor_id=actor_id,
             action="soft_fail_acknowledged",
             target_type="framework",
             target_id=framework.id,
@@ -2541,15 +2562,37 @@ async def acknowledge_similarity_notice(
     payload: SimilarityNoticeAcknowledgementRequest,
 ) -> FrameworkResponse:
     """Record Contributor context for a non-blocking similarity notice."""
-    contributor_id = contributor.id
+    return await acknowledge_similarity_notice_for_owner(
+        db=db,
+        owner=FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
+async def acknowledge_similarity_notice_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    payload: SimilarityNoticeAcknowledgementRequest,
+) -> FrameworkResponse:
+    """Record similarity-notice context for personal or org Frameworks.
+
+    Owner-aware counterpart to :func:`acknowledge_similarity_notice` that
+    supports organization-owned Frameworks (authoring gate) without weakening
+    ownership.
+    """
+    actor_id = owner.actor_id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        framework = await _load_owned_framework_by_user_id(
-            db,
-            contributor_id,
-            framework_id,
-        )
+        framework = await _load_owned_framework_by_owner(db, owner, framework_id)
         artifacts = (
             (
                 await db.execute(
@@ -2580,7 +2623,7 @@ async def acknowledge_similarity_notice(
             )
         await write_audit(
             db=db,
-            actor_id=contributor_id,
+            actor_id=actor_id,
             action="similarity_notice_acknowledged",
             target_type="framework",
             target_id=framework.id,

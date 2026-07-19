@@ -4,44 +4,49 @@
  * External rarity soft-fail acknowledgement.
  *
  * Acknowledgement records Contributor awareness; it does not bypass backend
- * hard gates such as virus or PII failures.
+ * hard gates such as virus or PII failures. Routes through the seller adapter
+ * so organization-owned Frameworks hit the organization endpoint; the personal
+ * SDK path 404s on them.
  */
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { acknowledgeFrameworkSoftFail } from "@/lib/generated/sdk.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
 type SoftFailAcknowledgementProps = {
+  api: FrameworkApi;
   frameworkId: string;
+  onAcknowledged: () => void;
 };
 
 /**
  * Render acknowledgement action for rarity soft fails.
  *
- * @param props - Framework id.
+ * @param props - Seller adapter, Framework id, and post-acknowledge reload.
  */
 export function SoftFailAcknowledgement({
+  api,
   frameworkId,
+  onAcknowledged,
 }: SoftFailAcknowledgementProps) {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function handleAcknowledge() {
-    configureBrowserClient();
-    const result = await acknowledgeFrameworkSoftFail({
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
+    setError(null);
+    setSaving(true);
+    try {
+      await api.acknowledgeSoftFail(frameworkId);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
+      setSaving(false);
       return;
     }
-    router.refresh();
+    setSaving(false);
+    onAcknowledged();
   }
 
   return (
@@ -51,7 +56,8 @@ export function SoftFailAcknowledgement({
         publish.
       </p>
       <button
-        className="mt-3 min-h-12 rounded-xl border border-warning px-4 py-2 text-sm font-semibold text-warning hover:bg-warning/10"
+        className="mt-3 min-h-12 rounded-xl border border-warning px-4 py-2 text-sm font-semibold text-warning hover:bg-warning/10 disabled:opacity-60 disabled:cursor-not-allowed"
+        disabled={saving}
         onClick={handleAcknowledge}
         type="button"
       >

@@ -265,6 +265,66 @@ describe("frameworkApiFor", () => {
     );
   });
 
+  it("acknowledges an org soft fail through the organization endpoint", async () => {
+    vi.mocked(
+      sdk.acknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPost,
+    ).mockResolvedValue({
+      data: { id: "framework-1", status: "pipeline_passed" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "org", orgId: "org-1" }).acknowledgeSoftFail(
+      "framework-1",
+    );
+
+    expect(
+      sdk.acknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { org_id: "org-1", framework_id: "framework-1" },
+      }),
+    );
+  });
+
+  it("acknowledges an org similarity notice through the organization endpoint", async () => {
+    vi.mocked(
+      sdk.acknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePost,
+    ).mockResolvedValue({
+      data: { id: "framework-1", status: "pipeline_passed" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({
+      kind: "org",
+      orgId: "org-1",
+    }).acknowledgeSimilarityNotice("framework-1", "Distinct sector focus.");
+
+    expect(
+      sdk.acknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { differentiation_note: "Distinct sector focus." },
+        path: { org_id: "org-1", framework_id: "framework-1" },
+      }),
+    );
+  });
+
+  it("acknowledges a personal soft fail through the personal endpoint", async () => {
+    vi.mocked(sdk.acknowledgeFrameworkSoftFail).mockResolvedValue({
+      data: { id: "framework-1", status: "pipeline_passed" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "user" }).acknowledgeSoftFail("framework-1");
+
+    expect(sdk.acknowledgeFrameworkSoftFail).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { framework_id: "framework-1" } }),
+    );
+  });
+
   it("resolves personal PII review through the personal endpoint", async () => {
     vi.mocked(sdk.resolveArtifactPiiReview).mockResolvedValue({
       data: { id: "artifact-1" },

@@ -79,6 +79,11 @@ export interface FrameworkApi {
   ): Promise<FrameworkResponse>;
   resolvePiiReview(id: string, artifactId: string): Promise<ArtifactResponse>;
   acceptRedaction(id: string, artifactId: string): Promise<ArtifactResponse>;
+  acknowledgeSoftFail(id: string): Promise<FrameworkResponse>;
+  acknowledgeSimilarityNotice(
+    id: string,
+    differentiationNote: string,
+  ): Promise<FrameworkResponse>;
   createArtifactUpload(
     id: string,
     body: ArtifactUploadUrlRequest,
@@ -244,6 +249,21 @@ function personalFrameworkApi(): FrameworkApi {
           path: { framework_id: id, artifact_id: artifactId },
         }),
       ),
+    acknowledgeSoftFail: (id) =>
+      unwrap(
+        sdk.acknowledgeFrameworkSoftFail({
+          headers: authorizedHeaders(),
+          path: { framework_id: id },
+        }),
+      ),
+    acknowledgeSimilarityNotice: (id, differentiationNote) =>
+      unwrap(
+        sdk.acknowledgeSimilarityNotice({
+          body: { differentiation_note: differentiationNote },
+          headers: authorizedHeaders(),
+          path: { framework_id: id },
+        }),
+      ),
     createArtifactUpload: (id, body) =>
       unwrap(
         sdk.requestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPost(
@@ -390,6 +410,25 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
           {
             headers: authorizedHeaders(),
             path: { ...orgPath, framework_id: id, artifact_id: artifactId },
+          },
+        ),
+      ),
+    acknowledgeSoftFail: (id) =>
+      unwrap(
+        sdk.acknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPost(
+          {
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id },
+          },
+        ),
+      ),
+    acknowledgeSimilarityNotice: (id, differentiationNote) =>
+      unwrap(
+        sdk.acknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePost(
+          {
+            body: { differentiation_note: differentiationNote },
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id },
           },
         ),
       ),

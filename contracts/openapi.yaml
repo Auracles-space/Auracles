@@ -6055,6 +6055,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/acknowledge-soft-fail:
+    post:
+      tags:
+      - Frameworks
+      summary: Acknowledge an organization Framework rarity soft fail
+      description: Acknowledge an external-rarity soft fail on an organization-owned
+        Framework for a member holding the contributor capability grant.
+      operationId: acknowledge_org_framework_soft_fail_v1_orgs__org_id__frameworks__framework_id__acknowledge_soft_fail_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/similarity-notice/acknowledge:
+    post:
+      tags:
+      - Frameworks
+      summary: Acknowledge an organization Framework similarity notice
+      description: Record differentiation context for a non-blocking similarity notice
+        on an organization-owned Framework for a member holding the contributor
+        capability grant.
+      operationId: acknowledge_org_framework_similarity_notice_v1_orgs__org_id__frameworks__framework_id__similarity_notice_acknowledge_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimilarityNoticeAcknowledgementRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:

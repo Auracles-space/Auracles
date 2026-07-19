@@ -409,7 +409,11 @@ export function FrameworkEditor({
           onResolved={() => void loadWorkspace(true)}
         />
         {hasRaritySoftFail ? (
-          <SoftFailAcknowledgement frameworkId={framework.id} />
+          <SoftFailAcknowledgement
+            api={api}
+            frameworkId={framework.id}
+            onAcknowledged={() => void loadWorkspace(true)}
+          />
         ) : null}
         {/* Versioning applies once a Framework has been published at least once
             (live or delisted); a never-published draft is edited in place, so

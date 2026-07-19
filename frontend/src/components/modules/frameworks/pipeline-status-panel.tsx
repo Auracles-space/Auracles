@@ -12,13 +12,7 @@ import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-
 import { isLengthBetween } from "@/lib/forms/validators";
 import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
-import { acknowledgeSimilarityNotice } from "@/lib/generated/sdk.gen";
 import type { ArtifactResponse, FrameworkResponse } from "@/lib/generated/types.gen";
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-  getAccessTokenHeaders,
-} from "@/lib/auth/form-client";
 
 type PipelineStatusPanelProps = {
   artifacts: ArtifactResponse[];
@@ -160,14 +154,16 @@ export function PipelineStatusPanel({
     setNoticeError(null);
     setNoticeSaved(false);
     setSavingNotice(true);
-    configureBrowserClient();
-    const result = await acknowledgeSimilarityNotice({
-      body: { differentiation_note: differentiationNote },
-      headers: getAccessTokenHeaders(),
-      path: { framework_id: frameworkId },
-    });
-    if (!result.response.ok || !result.data) {
-      setNoticeError(describeGeneratedError(result.error));
+    try {
+      // Route through the seller adapter so org-owned Frameworks hit the
+      // organization endpoint; the personal SDK path 404s on them.
+      await api.acknowledgeSimilarityNotice(frameworkId, differentiationNote);
+    } catch (caught) {
+      setNoticeError(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
       setSavingNotice(false);
       return;
     }

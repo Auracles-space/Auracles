@@ -835,6 +835,59 @@ async def accept_org_framework_redaction(
     )
 
 
+@org_router.post(
+    "/{framework_id}/acknowledge-soft-fail",
+    response_model=FrameworkResponse,
+    summary="Acknowledge an organization Framework rarity soft fail",
+    description=(
+        "Acknowledge an external-rarity soft fail on an organization-owned "
+        "Framework for a member holding the contributor capability grant."
+    ),
+)
+async def acknowledge_org_framework_soft_fail(
+    org_id: UUID,
+    framework_id: UUID,
+    request: Request,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Acknowledge a rarity soft fail on one organization-owned Framework."""
+    del org_id
+    return await service.acknowledge_soft_fail_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/similarity-notice/acknowledge",
+    response_model=FrameworkResponse,
+    summary="Acknowledge an organization Framework similarity notice",
+    description=(
+        "Record differentiation context for a non-blocking similarity notice "
+        "on an organization-owned Framework for a member holding the "
+        "contributor capability grant."
+    ),
+)
+async def acknowledge_org_framework_similarity_notice(
+    org_id: UUID,
+    framework_id: UUID,
+    payload: SimilarityNoticeAcknowledgementRequest,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Record similarity-notice context on one organization-owned Framework."""
+    del org_id
+    return await service.acknowledge_similarity_notice_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        payload=payload,
+    )
+
+
 @router.get("/{framework_id}/artifacts", response_model=list[ArtifactResponse])
 async def list_artifacts(
     framework_id: UUID,

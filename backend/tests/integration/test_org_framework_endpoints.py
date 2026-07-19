@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -1126,3 +1127,198 @@ async def test_org_framework_create_enforces_auth_membership_and_capability(
     assert unauthenticated.status_code == 401
     assert non_member.status_code == 403
     assert inactive_capability.status_code == 403
+
+
+async def _seed_rarity_soft_fail(framework_id: str) -> str:
+    """Fail the seeded Framework on an external-rarity soft check.
+
+    Sets a low external rarity and the ``external_check`` failure reason so the
+    Framework sits at ``pipeline_failed`` awaiting Contributor acknowledgement.
+    Returns the Artifact's id.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = await session.scalar(
+                select(Artifact).where(Artifact.framework_id == UUID(framework_id))
+            )
+            assert artifact is not None
+            artifact.processing_status = "processed"
+            artifact.internal_rarity = Decimal("1.0000")
+            artifact.external_rarity = Decimal("0.2000")
+            artifact.rarity_score = Decimal("0.2000")
+            framework = await session.get(Framework, UUID(framework_id))
+            assert framework is not None
+            framework.status = "pipeline_failed"
+            framework.pipeline_failure_reasons = {"external_check": "unavailable"}
+            return str(artifact.id)
+
+
+async def _seed_similarity_notice(framework_id: str) -> str:
+    """Attach a non-blocking similarity notice to the seeded Artifact.
+
+    Returns the Artifact's id.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = await session.scalar(
+                select(Artifact).where(Artifact.framework_id == UUID(framework_id))
+            )
+            assert artifact is not None
+            artifact.metadata_vector = {
+                "similarity_notice": {
+                    "average_review_score": "4.50",
+                    "jaccard": "0.8000",
+                    "nearest_match_artifact_id": str(UUID(int=1)),
+                    "nearest_match_framework_id": str(UUID(int=2)),
+                    "nearest_match_title": "Published Risk Framework",
+                    "review_count": 2,
+                }
+            }
+            return str(artifact.id)
+
+
+async def test_org_member_can_acknowledge_soft_fail(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A contributor-team member can acknowledge an org rarity soft fail.
+
+    Regression for the org authoring gap where acknowledge_soft_fail routed
+    through the personal-ownership endpoint and 404'd on an org-owned Framework.
+    """
+    owner_id = await create_user("org-softfail-owner")
+    member_id = await create_user("org-softfail-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-softfail")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    await _seed_rarity_soft_fail(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/acknowledge-soft-fail",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pipeline_passed"
+
+
+async def test_org_acknowledge_soft_fail_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot acknowledge an org soft fail."""
+    owner_id = await create_user("org-softfail-denied-owner")
+    member_id = await create_user("org-softfail-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-softfail-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    await _seed_rarity_soft_fail(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/acknowledge-soft-fail",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_org_member_can_acknowledge_similarity_notice(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A contributor-team member can acknowledge an org similarity notice.
+
+    Regression for the org authoring gap where acknowledge_similarity_notice
+    routed through the personal-ownership endpoint and 404'd on org Frameworks.
+    """
+    owner_id = await create_user("org-similarity-owner")
+    member_id = await create_user("org-similarity-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-similarity")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    await _seed_similarity_notice(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}"
+        f"/similarity-notice/acknowledge",
+        json={"differentiation_note": "Distinct implementation focus and sector."},
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+
+
+async def test_org_acknowledge_similarity_notice_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot ack an org similarity notice."""
+    owner_id = await create_user("org-similarity-denied-owner")
+    member_id = await create_user("org-similarity-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-similarity-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    await _seed_similarity_notice(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}"
+        f"/similarity-notice/acknowledge",
+        json={"differentiation_note": "Distinct implementation focus and sector."},
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
