@@ -259,6 +259,47 @@ describe("ProjectWorkspace", () => {
     );
   });
 
+  it("hides the Messages tab on an open org project before any proposal is accepted", async () => {
+    vi.mocked(loadCurrentUserSession).mockResolvedValue({
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Organization Admin",
+      email: "admin@example.com",
+      email_verified: true,
+      id: "admin-1",
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: [],
+    });
+    vi.mocked(getOrgProject).mockResolvedValue({
+      data: {
+        ...projectResponse(),
+        accepted_proposal_id: null,
+        operator_id: null,
+        operator_org_id: "org-1",
+        status: "open",
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listOrgProjectProposals).mockResolvedValue({
+      data: { proposals: [] },
+      error: undefined,
+      response: okResponse,
+    });
+
+    render(
+      <ProjectWorkspace
+        mode={{ kind: "org", orgId: "org-1" }}
+        projectId="project-1"
+      />,
+    );
+
+    await screen.findByRole("tab", { name: /overview/i });
+    expect(screen.queryByRole("tab", { name: /messages/i })).not.toBeInTheDocument();
+    expect(listWorkspaceMessages).not.toHaveBeenCalled();
+  });
+
   it("deletes an uncommenced org project from its detail page", async () => {
     const { deleteOrgProject } = await import("@/lib/generated/sdk.gen");
     vi.mocked(loadCurrentUserSession).mockResolvedValue({

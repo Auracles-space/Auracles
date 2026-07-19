@@ -220,7 +220,11 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
   const canFinalizePlan =
     milestones.length > 0 && milestoneRemainingCents === 0;
 
-  const isWorkspaceMember = isProjectOwner || isAssignedContributor;
+  // The workspace (Messages, disputes) opens only once a Proposal is accepted —
+  // an open Project has no counterparty to collaborate with, so the thread stays
+  // hidden for both the individual and organization Operator until then.
+  const isWorkspaceMember =
+    (isProjectOwner || isAssignedContributor) && project?.status !== "open";
 
   // Map each Milestone to its active dispute (open/under_review) if present,
   // otherwise its most recent resolved one, so the panel can show live status.
@@ -326,7 +330,9 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
         ? currentProject.operator_org_id === modeOrgId
         : currentProject.operator_id === activeUserId;
     const activeAssignedContributor = activeMyProposals.some((p) => p.status === "accepted");
-    const activeProjectMember = activeProjectOwner || activeAssignedContributor;
+    const activeProjectMember =
+      (activeProjectOwner || activeAssignedContributor) &&
+      currentProject.status !== "open";
 
     const [
       milestonesResult,
