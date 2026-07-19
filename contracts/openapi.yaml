@@ -1816,9 +1816,9 @@ paths:
       tags:
       - Attestation
       summary: List attestations for admin triage
-      description: "List Attestations in a given status for admin action. Defaults\
-        \ to the needs_admin queue \u2014 requests auto-matching could not staff,\
-        \ which an admin must assign or refund. Admin only."
+      description: List Attestations in a given status for admin action. Defaults
+        to the needs_admin queue — requests auto-matching could not staff, which an
+        admin must assign or refund. Admin only.
       operationId: list_admin_attestations_v1_admin_attestations_get
       security:
       - HTTPBearer: []
@@ -1848,9 +1848,9 @@ paths:
       tags:
       - Attestation
       summary: Attestation detail for admin oversight
-      description: "Return one Attestation plus its offer history \u2014 which org\
-        \ each offer went to (or was accepted by), offer statuses, and timestamps.\
-        \ Admin only."
+      description: Return one Attestation plus its offer history — which org each
+        offer went to (or was accepted by), offer statuses, and timestamps. Admin
+        only.
       operationId: get_admin_attestation_detail_v1_admin_attestations__attestation_id__get
       security:
       - HTTPBearer: []
@@ -5125,11 +5125,11 @@ paths:
       tags:
       - Frameworks
       summary: Re-sync a connector-bound artifact from its source
-      description: "Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's\
-        \ bound source into a new artifact version and re-runs the pipeline. Returns\
-        \ a new artifact id on change; 409 already_up_to_date when the source is unchanged.\
-        \ A 404 on the old id afterward means it was superseded \u2014 refetch the\
-        \ artifact list."
+      description: Owner-only, pre-publish-only. Pulls the latest bytes of the artifact's
+        bound source into a new artifact version and re-runs the pipeline. Returns
+        a new artifact id on change; 409 already_up_to_date when the source is unchanged.
+        A 404 on the old id afterward means it was superseded — refetch the artifact
+        list.
       operationId: resync_artifact_v1_frameworks__framework_id__artifacts__artifact_id__resync_post
       security:
       - HTTPBearer: []
@@ -5690,10 +5690,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FrameworkResponse'
-        '403':
-          description: Organization owner/admin and contributor capability required
-        '409':
-          description: Framework cannot be relisted in its current state
         '422':
           description: Validation Error
           content:
@@ -5788,8 +5784,8 @@ paths:
       tags:
       - Frameworks
       summary: Return an organization Framework to draft
-      description: Reset a checks-passed organization-owned Framework to draft so an
-        organization member holding the contributor capability can correct its
+      description: Reset a checks-passed organization-owned Framework to draft so
+        an organization member holding the contributor capability can correct its
         metadata, pricing, or files before re-running the pipeline.
       operationId: revise_org_framework_v1_orgs__org_id__frameworks__framework_id__revise_post
       security:
@@ -5939,10 +5935,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ArtifactResponse'
-                title: Response List Org Framework Artifacts V1 Orgs  Org Id  Frameworks
-                  Framework Id  Artifacts Get
-        '403':
-          description: Contributor capability grant required
+                title: Response List Org Framework Artifacts V1 Orgs  Org Id  Frameworks  Framework
+                  Id  Artifacts Get
         '422':
           description: Validation Error
           content:
@@ -6039,8 +6033,8 @@ paths:
       tags:
       - Frameworks
       summary: Re-run PII review on an organization Framework artifact
-      description: Reset a replaced PII-flagged Artifact and re-run processing on an
-        organization-owned Framework for a member holding the contributor grant.
+      description: Reset a replaced PII-flagged Artifact and re-run processing on
+        an organization-owned Framework for a member holding the contributor grant.
       operationId: resolve_org_framework_pii_review_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__resolve_pii_review_post
       security:
       - HTTPBearer: []
@@ -6084,8 +6078,8 @@ paths:
       tags:
       - Frameworks
       summary: Accept a redacted copy on an organization Framework artifact
-      description: Accept a generated redacted Artifact copy and re-run processing on
-        an organization-owned Framework for a member holding the contributor grant.
+      description: Accept a generated redacted Artifact copy and re-run processing
+        on an organization-owned Framework for a member holding the contributor grant.
       operationId: accept_org_framework_redaction_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__accept_redaction_post
       security:
       - HTTPBearer: []
@@ -6168,8 +6162,8 @@ paths:
       - Frameworks
       summary: Acknowledge an organization Framework similarity notice
       description: Record differentiation context for a non-blocking similarity notice
-        on an organization-owned Framework for a member holding the contributor
-        capability grant.
+        on an organization-owned Framework for a member holding the contributor capability
+        grant.
       operationId: acknowledge_org_framework_similarity_notice_v1_orgs__org_id__frameworks__framework_id__similarity_notice_acknowledge_post
       security:
       - HTTPBearer: []
@@ -7838,10 +7832,8 @@ paths:
       tags:
       - Organizations
       summary: Enable a capability on a team
-      description: >
-        Grant a marketplace capability (contributor/operator/attestor) to every
-        member of a team. Requires the org capability to already be active.
-        Owner/admin only.
+      description: Grant a marketplace capability to every member of a team. Requires
+        the org capability to already be active. Owner/admin only.
       operationId: enable_team_capability_v1_orgs__org_id__teams__team_id__capabilities__capability__put
       security:
       - HTTPBearer: []
@@ -7864,19 +7856,15 @@ paths:
         in: path
         required: true
         schema:
-          type: string
           enum:
           - contributor
           - operator
           - attestor
+          type: string
           title: Capability
       responses:
         '204':
           description: Successful Response
-        '403':
-          description: Not an org admin
-        '404':
-          description: Team not found
         '422':
           description: Validation Error
           content:
@@ -7910,19 +7898,21 @@ paths:
         in: path
         required: true
         schema:
-          type: string
           enum:
           - contributor
           - operator
           - attestor
+          type: string
           title: Capability
       responses:
         '204':
           description: Successful Response
-        '403':
-          description: Not an org admin
-        '404':
-          description: Team not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/nda:
     get:
       tags:
@@ -10494,6 +10484,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Projects
+      summary: Delete an uncommenced Project
+      description: Soft-delete an individually-operated open Project that has not
+        commenced.
+      operationId: delete_project_v1_projects__project_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/projects/{project_id}/proposals:
     post:
       tags:
@@ -11592,6 +11608,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}:
+    get:
+      tags:
+      - Projects
+      summary: Get an organization Project
+      description: Return one Project operated by the organization for an owner or
+        admin.
+      operationId: get_org_project_v1_orgs__org_id__projects__project_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Projects
+      summary: Delete an uncommenced organization Project
+      description: Soft-delete an organization-operated open Project that has not
+        commenced.
+      operationId: delete_org_project_v1_orgs__org_id__projects__project_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/projects/{project_id}/proposals:
     post:
       tags:
@@ -11630,6 +11717,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProposalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Projects
+      summary: List proposals for an organization Project
+      description: List incoming proposals for a Project operated by the organization.
+      operationId: list_org_project_proposals_v1_orgs__org_id__projects__project_id__proposals_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalsResponse'
         '422':
           description: Validation Error
           content:
@@ -11917,6 +12040,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/milestones/{milestone_id}/deliverables/{deliverable_id}/request-revision:
+    post:
+      tags:
+      - Projects
+      summary: Request revision on an organization Project Deliverable
+      description: Return submitted work for revision on a Project operated by the
+        organization as an owner or admin while the operator capability is active.
+      operationId: request_org_deliverable_revision_v1_orgs__org_id__projects__project_id__milestones__milestone_id__deliverables__deliverable_id__request_revision_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      - name: milestone_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Milestone Id
+      - name: deliverable_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Deliverable Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableRevisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverableResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/projects/{project_id}/disputes:
     post:
       tags:
@@ -11957,6 +12138,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DisputeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/projects/{project_id}/cancel-acceptance:
+    post:
+      tags:
+      - Projects
+      summary: Cancel an organization Project acceptance
+      description: Reopen an assigned organization Project before any Milestone is
+        funded.
+      operationId: cancel_org_acceptance_v1_orgs__org_id__projects__project_id__cancel_acceptance_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
         '422':
           description: Validation Error
           content:
@@ -16119,10 +16338,15 @@ components:
       - member_count
       - reputation
       title: AttestorDirectoryEntry
-      description: "Public attestor-organization directory row safe for anonymous\
-        \ browsing.\n\nLists the organization's public matching profile, completed-attestation\n\
-        count, member count, and certification mark. Never exposes individual member\n\
-        identities \u2014 attestation is credited to the organization, not its reviewers."
+      description: 'Public attestor-organization directory row safe for anonymous
+        browsing.
+
+
+        Lists the organization''s public matching profile, completed-attestation
+
+        count, member count, and certification mark. Never exposes individual member
+
+        identities — attestation is credited to the organization, not its reviewers.'
     AttestorDirectoryResponse:
       properties:
         attestors:
@@ -20676,7 +20900,6 @@ components:
             type: boolean
           type: object
           title: Grants
-          default: {}
         nda_required:
           type: boolean
           title: Nda Required
@@ -22453,10 +22676,12 @@ components:
       - refresh_url
       - return_url
       title: OrgPayoutAccountOnboardRequest
-      description: "Request body for onboarding an organization payout destination.\n\
-        \nThe organization's registered ``country`` is authoritative for provider\n\
-        routing, so \u2014 unlike the individual request \u2014 no country is accepted\
-        \ here."
+      description: 'Request body for onboarding an organization payout destination.
+
+
+        The organization''s registered ``country`` is authoritative for provider
+
+        routing, so — unlike the individual request — no country is accepted here.'
     OrgProposalCreateRequest:
       properties:
         scope:
@@ -22589,7 +22814,6 @@ components:
       - id
       - name
       - member_count
-      - capabilities
       - created_at
       title: OrgTeamResponse
       description: One organization team row with member count and enabled capabilities.
@@ -24523,9 +24747,12 @@ components:
       - expires_date
       - expired
       title: PublicCredentialResponse
-      description: "Verified Credential fields safe for public profile display.\n\n\
-        Never exposes evidence keys, verification URL, reference number, or review\n\
-        metadata \u2014 anti-gaming and PII protection."
+      description: 'Verified Credential fields safe for public profile display.
+
+
+        Never exposes evidence keys, verification URL, reference number, or review
+
+        metadata — anti-gaming and PII protection.'
     PublicOrganizationResponse:
       properties:
         slug:

@@ -1,14 +1,16 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectWorkspace } from "@/components/modules/projects/project-workspace";
 import { clearAuthToken } from "@/lib/auth/token-store";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 import {
+  getOrgProject,
   getProject,
   listDisputes,
   listMilestones,
   listMyProjectProposals,
+  listOrgProjectProposals,
   listProjectProposals,
   listWorkspaceMessages,
 } from "@/lib/generated/sdk.gen";
@@ -64,14 +66,29 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   createWorkspaceMessage: vi.fn(),
   finalizeMilestonePlan: vi.fn(),
   fundMilestone: vi.fn(),
+  getOrgProject: vi.fn(),
   getProject: vi.fn(),
   listDisputes: vi.fn(),
   listMilestones: vi.fn(),
   listMyProjectProposals: vi.fn(),
+  listOrgProjectProposals: vi.fn(),
   listProjectProposals: vi.fn(),
   listWorkspaceMessages: vi.fn(),
   submitDeliverable: vi.fn(),
   submitProposal: vi.fn(),
+  createProject: vi.fn(),
+  createOrgProject: vi.fn(),
+  acceptOrgProposal: vi.fn(),
+  fundOrgMilestone: vi.fn(),
+  approveOrgDeliverable: vi.fn(),
+  requestDeliverableRevision: vi.fn(),
+  requestOrgDeliverableRevision: vi.fn(),
+  createDispute: vi.fn(),
+  createOrgDispute: vi.fn(),
+  cancelAcceptance: vi.fn(),
+  cancelOrgAcceptance: vi.fn(),
+  deleteProject: vi.fn(),
+  deleteOrgProject: vi.fn(),
 }));
 
 const okResponse = new Response(null, { status: 200 });
@@ -174,6 +191,128 @@ describe("ProjectWorkspace", () => {
 
     expect(listProjectProposals).toHaveBeenCalledTimes(1);
     expect(listWorkspaceMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads an org-owned workspace and exposes operator controls to its admin", async () => {
+    vi.mocked(loadCurrentUserSession).mockResolvedValue({
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Organization Admin",
+      email: "admin@example.com",
+      email_verified: true,
+      id: "admin-1",
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: [],
+    });
+    vi.mocked(getOrgProject).mockResolvedValue({
+      data: {
+        ...projectResponse(),
+        accepted_proposal_id: null,
+        operator_id: null,
+        operator_org_id: "org-1",
+        status: "open",
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listOrgProjectProposals).mockResolvedValue({
+      data: {
+        proposals: [
+          {
+            budget: "1500.00",
+            contributor_id: "contributor-1",
+            created_at: "2026-06-20T11:00:00Z",
+            currency: "USD",
+            deliverables: [],
+            id: "proposal-1",
+            project_id: "project-1",
+            scope: "I will deliver the procurement model.",
+            status: "pending",
+            timeline_days: 21,
+            withdrawn_at: null,
+            accepted_at: null,
+          },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    });
+
+    render(
+      <ProjectWorkspace
+        mode={{ kind: "org", orgId: "org-1" }}
+        projectId="project-1"
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /accept proposal/i }),
+    ).toBeInTheDocument();
+    expect(getOrgProject).toHaveBeenCalledTimes(1);
+    expect(listOrgProjectProposals).toHaveBeenCalledTimes(1);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(listMyProjectProposals).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /back to projects/i })).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/org-1/projects",
+    );
+  });
+
+  it("deletes an uncommenced org project from its detail page", async () => {
+    const { deleteOrgProject } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(loadCurrentUserSession).mockResolvedValue({
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Organization Admin",
+      email: "admin@example.com",
+      email_verified: true,
+      id: "admin-1",
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: [],
+    });
+    vi.mocked(getOrgProject).mockResolvedValue({
+      data: {
+        ...projectResponse(),
+        accepted_proposal_id: null,
+        operator_id: null,
+        operator_org_id: "org-1",
+        status: "open",
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listOrgProjectProposals).mockResolvedValue({
+      data: { proposals: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listWorkspaceMessages).mockResolvedValue({
+      data: { messages: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(deleteOrgProject).mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+    } as never);
+    render(
+      <ProjectWorkspace
+        mode={{ kind: "org", orgId: "org-1" }}
+        projectId="project-1"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /^delete project$/i }));
+    const dialog = screen.getByRole("dialog", { name: /delete this project/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete project$/i }));
+
+    await waitFor(() => expect(deleteOrgProject).toHaveBeenCalledTimes(1));
+    expect(nav.replace).toHaveBeenCalledWith(
+      "/dashboard/organizations/org-1/projects",
+    );
   });
 
   it("clears the funding query params after returning funded from Stripe", async () => {

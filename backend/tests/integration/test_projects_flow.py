@@ -250,6 +250,75 @@ def proposal_payload() -> dict[str, Any]:
     }
 
 
+async def test_operator_soft_deletes_untouched_open_project(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """Deleting an uncommenced Project hides it without exposing it again."""
+    del migrated_database, project_context
+    operator_id = await create_user("delete-project@auracles.space", ["operator"])
+    headers = auth_headers(operator_id, ["operator"])
+    created = await client.post("/v1/projects", headers=headers, json=project_payload())
+    project_id = created.json()["id"]
+
+    deleted = await client.delete(f"/v1/projects/{project_id}", headers=headers)
+
+    assert deleted.status_code == 204
+    detail = await client.get(f"/v1/projects/{project_id}", headers=headers)
+    assert detail.status_code == 404
+    listing = await client.get(
+        "/v1/projects",
+        params={"role": "operator"},
+        headers=headers,
+    )
+    assert listing.status_code == 200
+    assert all(item["id"] != project_id for item in listing.json()["projects"])
+
+
+async def test_pending_proposal_blocks_project_deletion(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """An Operator cannot delete a Project while any bid remains pending."""
+    del migrated_database, project_context
+    operator_id = await create_user("delete-bid-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "delete-bid-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    assert proposed.status_code == 201
+
+    deleted = await client.delete(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+    )
+
+    assert deleted.status_code == 409
+    assert deleted.json()["detail"] == (
+        "Resolve every pending Proposal before deleting this Project."
+    )
+    detail = await client.get(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+    )
+    assert detail.status_code == 200
+
+
 async def test_operator_creates_project_contributor_proposes_and_operator_accepts(
     client: AsyncClient,
     migrated_database: None,
@@ -1547,6 +1616,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
     )
 
     past_due = date.fromordinal(date.today().toordinal() - 1).isoformat()
+    valid_due = date.today().isoformat()
     after_deadline = await client.post(
         f"/v1/projects/{project_id}/milestones",
         headers=contributor_headers,
@@ -1580,7 +1650,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
             "description": "Due inside the project window.",
             "budget": "500.00",
             "currency": "USD",
-            "due_date": "2026-07-15",
+            "due_date": valid_due,
         },
     )
     milestone_id = valid.json().get("id") if valid.status_code == 201 else None
@@ -1593,7 +1663,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
     assert after_deadline.status_code == 422
     assert in_past.status_code == 422
     assert valid.status_code == 201
-    assert valid.json()["due_date"] == "2026-07-15"
+    assert valid.json()["due_date"] == valid_due
     assert edit_after_deadline.status_code == 422
 
 

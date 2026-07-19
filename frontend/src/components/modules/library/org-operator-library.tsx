@@ -24,6 +24,7 @@ import {
 } from "@/lib/auth/form-client";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 import { FrameworkReviewPanel } from "./framework-review-panel";
 import { OrgLicenseGrantPanel } from "./org-license-grant-panel";
@@ -41,6 +42,8 @@ type OrgOperatorLibraryProps = {
  * Render Org Operator licenses and download actions.
  */
 export function OrgOperatorLibrary({ orgId }: OrgOperatorLibraryProps) {
+  const { role } = useOrganization();
+  const canManage = role === "admin" || role === "owner";
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,13 +92,19 @@ export function OrgOperatorLibrary({ orgId }: OrgOperatorLibraryProps) {
   return (
     <div className="grid gap-4">
       {items.map((item) => (
-        <LibraryCard item={item} orgId={orgId} key={item.license_id} />
+        <LibraryCard
+          canManage={canManage}
+          item={item}
+          orgId={orgId}
+          key={item.license_id}
+        />
       ))}
     </div>
   );
 }
 
 type LibraryCardProps = {
+  canManage: boolean;
   item: LibraryItem;
   orgId: string;
 };
@@ -105,7 +114,7 @@ type LibraryCardProps = {
  *
  * @param props - Org library item and orgId.
  */
-function LibraryCard({ item, orgId }: LibraryCardProps) {
+function LibraryCard({ canManage, item, orgId }: LibraryCardProps) {
   const [state, setState] = useState<LibraryCardState>({
     artifacts: [],
     error: null,
@@ -168,9 +177,11 @@ function LibraryCard({ item, orgId }: LibraryCardProps) {
             {item.current_version}.
           </p>
         </div>
-        <p className="font-semibold text-foreground">
-          {formatMoney(item.price, item.currency)}
-        </p>
+        {canManage ? (
+          <p className="font-semibold text-foreground">
+            {formatMoney(item.price, item.currency)}
+          </p>
+        ) : null}
       </div>
       <div className="mt-4 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
         <span>Status {formatLabel(item.status)}</span>
@@ -200,8 +211,12 @@ function LibraryCard({ item, orgId }: LibraryCardProps) {
           </button>
         ))}
       </div>
-      <FrameworkReviewPanel frameworkId={item.framework_id} />
-      <OrgLicenseGrantPanel orgId={orgId} licenseId={item.license_id} />
+      {canManage ? (
+        <>
+          <FrameworkReviewPanel frameworkId={item.framework_id} />
+          <OrgLicenseGrantPanel orgId={orgId} licenseId={item.license_id} />
+        </>
+      ) : null}
     </article>
   );
 }

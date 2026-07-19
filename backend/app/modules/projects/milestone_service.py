@@ -1467,17 +1467,17 @@ async def submit_deliverable(
     return deliverable
 
 
-async def request_deliverable_revision(
+async def _request_deliverable_revision(
     *,
     db: AsyncSession,
-    operator: User,
+    actor_id: UUID,
     project_id: UUID,
     milestone_id: UUID,
     deliverable_id: UUID,
     payload: DeliverableRevisionRequest,
+    operator_org_id: UUID | None,
 ) -> Deliverable:
-    """Request revision on a submitted Deliverable as Project Operator."""
-    operator_id = operator.id
+    """Request revision using either an individual or organization Operator."""
     if db.in_transaction():
         await db.rollback()
 
@@ -1489,7 +1489,12 @@ async def request_deliverable_revision(
                 milestone_id=milestone_id,
             )
         )
-        if project.operator_id != operator_id:
+        if operator_org_id is not None and project.operator_org_id != operator_org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if operator_org_id is None and project.operator_id != actor_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the Project Operator can request revisions.",
@@ -1522,13 +1527,19 @@ async def request_deliverable_revision(
                 },
             )
         )
+        audit_metadata = {
+            "project_id": str(project.id),
+            "milestone_id": str(milestone.id),
+        }
+        if operator_org_id is not None:
+            audit_metadata["operator_org_id"] = str(operator_org_id)
         await write_audit(
             db=db,
-            actor_id=operator_id,
+            actor_id=actor_id,
             action="deliverable_revision_requested",
             target_type="deliverable",
             target_id=deliverable.id,
-            metadata={"project_id": str(project.id), "milestone_id": str(milestone.id)},
+            metadata=audit_metadata,
         )
         revision_contributor_id = await _proposal_workspace_user_id(
             db, proposal=proposal
@@ -1543,6 +1554,49 @@ async def request_deliverable_revision(
         deliverable_id=deliverable.id,
     )
     return deliverable
+
+
+async def request_deliverable_revision(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    payload: DeliverableRevisionRequest,
+) -> Deliverable:
+    """Request revision on a submitted Deliverable as Project Operator."""
+    return await _request_deliverable_revision(
+        db=db,
+        actor_id=operator.id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+        payload=payload,
+        operator_org_id=None,
+    )
+
+
+async def request_org_deliverable_revision(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    payload: DeliverableRevisionRequest,
+) -> Deliverable:
+    """Request revision on work submitted to an organization-operated Project."""
+    return await _request_deliverable_revision(
+        db=db,
+        actor_id=actor_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+        payload=payload,
+        operator_org_id=org_id,
+    )
 
 
 async def approve_deliverable(

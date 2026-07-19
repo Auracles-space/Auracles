@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import { authTokenStore } from "@/lib/auth/token-store";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
+import { ProjectDeleteAction } from "@/components/modules/projects/project-delete-action";
 import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
 import { listOrgProjects, listProjects } from "@/lib/generated/sdk.gen";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
@@ -34,49 +35,74 @@ function statusLabel(status: string): string {
 /**
  * Render one Project row.
  */
-function ProjectCard({ project }: { project: ProjectResponse }) {
+function ProjectCard({
+  canDelete,
+  basePath,
+  mode,
+  onDeleted,
+  project,
+}: {
+  canDelete: boolean;
+  basePath: string;
+  mode: ProjectApiMode;
+  onDeleted: () => void;
+  project: ProjectResponse;
+}) {
   return (
-    <Link
-      className="block rounded-xl border border-border-default bg-surface-1 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors hover:border-border-strong"
-      href={`/projects/${project.id}`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-heading text-lg font-semibold text-foreground">
-            {project.title}
-          </h3>
-          <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground-muted">
-            {project.description}
-          </p>
-          {project.operator_name ? (
-            <p className="mt-2 text-xs text-foreground-subtle">
-              Posted by {project.operator_name}
+    <div className="relative">
+      <Link
+        className={`block rounded-xl border border-border-default bg-surface-1 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors hover:border-border-strong ${canDelete && project.status === "open" ? "pb-20" : ""}`}
+        href={`${basePath}/${project.id}`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-heading text-lg font-semibold text-foreground">
+              {project.title}
+            </h3>
+            <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground-muted">
+              {project.description}
             </p>
-          ) : null}
+            {project.operator_name ? (
+              <p className="mt-2 text-xs text-foreground-subtle">
+                Posted by {project.operator_name}
+              </p>
+            ) : null}
+          </div>
+          <span className="rounded-md border border-[#2563EB]/30 bg-[#2563EB]/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#2563EB]">
+            {statusLabel(project.status)}
+          </span>
         </div>
-        <span className="rounded-md border border-[#2563EB]/30 bg-[#2563EB]/10 px-2 py-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#2563EB]">
-          {statusLabel(project.status)}
-        </span>
-      </div>
-      <dl className="mt-4 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
-        <div>
-          <dt className="text-xs uppercase tracking-[0.05em]">Budget</dt>
-          <dd className="font-semibold text-foreground">
-            ${project.budget_min} - ${project.budget_max}
-          </dd>
+        <dl className="mt-4 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
+          <div>
+            <dt className="text-xs uppercase tracking-[0.05em]">Budget</dt>
+            <dd className="font-semibold text-foreground">
+              ${project.budget_min} - ${project.budget_max}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-[0.05em]">Category</dt>
+            <dd className="font-semibold text-foreground">{project.category}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-[0.05em]">Plan</dt>
+            <dd className="font-semibold text-foreground">
+              {statusLabel(project.milestone_plan_status)}
+            </dd>
+          </div>
+        </dl>
+      </Link>
+      {canDelete && project.status === "open" ? (
+        <div className="absolute bottom-4 right-4">
+          <ProjectDeleteAction
+            mode={mode}
+            onDeleted={onDeleted}
+            projectId={project.id}
+            projectTitle={project.title}
+            variant="icon"
+          />
         </div>
-        <div>
-          <dt className="text-xs uppercase tracking-[0.05em]">Category</dt>
-          <dd className="font-semibold text-foreground">{project.category}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-[0.05em]">Plan</dt>
-          <dd className="font-semibold text-foreground">
-            {statusLabel(project.milestone_plan_status)}
-          </dd>
-        </div>
-      </dl>
-    </Link>
+      ) : null}
+    </div>
   );
 }
 
@@ -88,10 +114,18 @@ function ProjectCard({ project }: { project: ProjectResponse }) {
  * @param emptyText - Directional copy shown when the list is empty.
  */
 function ProjectGrid({
+  canDelete = false,
+  basePath,
+  mode,
+  onDeleted,
   projects,
   loading,
   emptyText,
 }: {
+  canDelete?: boolean;
+  basePath: string;
+  mode: ProjectApiMode;
+  onDeleted: (projectId: string) => void;
   projects: ProjectResponse[];
   loading: boolean;
   emptyText: string;
@@ -109,7 +143,14 @@ function ProjectGrid({
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
+        <ProjectCard
+          basePath={basePath}
+          canDelete={canDelete}
+          key={project.id}
+          mode={mode}
+          onDeleted={() => onDeleted(project.id)}
+          project={project}
+        />
       ))}
     </div>
   );
@@ -173,6 +214,16 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
 
   const modeKind = mode.kind;
   const modeOrgId = mode.kind === "org" ? mode.orgId : undefined;
+  const projectBasePath =
+    mode.kind === "org"
+      ? `/dashboard/organizations/${mode.orgId}/projects`
+      : "/projects";
+
+  function removeDeletedProject(projectId: string): void {
+    setOperatorProjects((current) =>
+      current.filter((project) => project.id !== projectId),
+    );
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -251,7 +302,11 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         </div>
         <Link
           className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
-          href="/projects/new"
+          href={
+            mode.kind === "org"
+              ? `${projectBasePath}?view=create`
+              : `${projectBasePath}/new`
+          }
         >
           Post project
         </Link>
@@ -281,22 +336,32 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         >
           {activeTab === "open" ? (
             <ProjectGrid
+              basePath={projectBasePath}
               emptyText="No open Projects available right now. Check back soon."
               loading={loading}
+              mode={mode}
+              onDeleted={removeDeletedProject}
               projects={openProjects}
             />
           ) : null}
           {activeTab === "posted" ? (
             <ProjectGrid
+              basePath={projectBasePath}
+              canDelete
               emptyText="No posted Projects yet. Post one to start commissioning work."
               loading={loading}
+              mode={mode}
+              onDeleted={removeDeletedProject}
               projects={operatorProjects}
             />
           ) : null}
           {activeTab === "engagements" ? (
             <ProjectGrid
+              basePath={projectBasePath}
               emptyText="No active engagements yet. Accepted proposals appear here."
               loading={loading}
+              mode={mode}
+              onDeleted={removeDeletedProject}
               projects={assignedProjects}
             />
           ) : null}

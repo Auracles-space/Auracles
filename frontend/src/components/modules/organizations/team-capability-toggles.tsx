@@ -43,7 +43,7 @@ export function TeamCapabilityToggles({
     <div className="mt-3 flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {CAPABILITY_META.map(({ key, label }) => {
-          const enabled = team.capabilities.includes(key);
+          const enabled = team.capabilities?.includes(key) ?? false;
           const inactive = orgCapabilities[key] !== "active";
           const action = enabled ? "Disable" : "Enable";
 

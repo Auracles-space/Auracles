@@ -133,7 +133,11 @@ export function ProjectCreateForm({ mode = { kind: "self" } }: { mode?: ProjectA
       setError(describeGeneratedError(result.error));
       return;
     }
-    router.push(`/projects/${result.data.id}`);
+    const workspacePath =
+      mode.kind === "org"
+        ? `/dashboard/organizations/${mode.orgId}/projects/${result.data.id}`
+        : `/projects/${result.data.id}`;
+    router.push(workspacePath);
   }
 
   return (

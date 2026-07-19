@@ -20,7 +20,6 @@ import {
 import {
   downloadDeliverableFiles,
   listDeliverables,
-  requestDeliverableRevision,
 } from "@/lib/generated/sdk.gen";
 import type { DeliverableResponse } from "@/lib/generated/types.gen";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
@@ -133,15 +132,12 @@ export function DeliverableReviewCard({
     }
     setBusy(true);
     setError(null);
-    const result = await requestDeliverableRevision({
-      body: { revision_notes: revisionNotes.trim() },
-      headers: getAccessTokenHeaders(),
-      path: {
-        deliverable_id: deliverable.id,
-        milestone_id: milestoneId,
-        project_id: projectId,
-      },
-    });
+    const result = await projectApi(mode).requestDeliverableRevision(
+      projectId,
+      milestoneId,
+      deliverable.id,
+      { revision_notes: revisionNotes.trim() },
+    );
     setBusy(false);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));

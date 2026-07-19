@@ -125,6 +125,44 @@ describe("OrganizationShell contributor Frameworks tab", () => {
   });
 });
 
+describe("OrganizationShell member Operator library access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: {
+        required: false,
+        current_version: "1.0",
+        signed_version: null,
+        signed_at: null,
+      },
+    } as never);
+  });
+
+  it("shows Operator without admin-only Projects or Financials to a member", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "member",
+            capabilities: { operator: "active" },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(
+      await screen.findByRole("tab", { name: /^Operator$/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^Projects$/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /^Financials$/i })).toBeNull();
+  });
+});
+
 describe("OrganizationShell NDA tab", () => {
   beforeEach(() => {
     vi.clearAllMocks();

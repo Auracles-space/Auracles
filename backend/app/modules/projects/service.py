@@ -14,6 +14,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from loguru import logger
 from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +59,7 @@ MAX_ACTIVE_PROJECTS = 5
 
 def _project_query() -> Select[tuple[Project]]:
     """Return the base Project select used by read paths."""
-    return select(Project)
+    return select(Project).where(Project.deleted_at.is_(None))
 
 
 async def _load_project(db: AsyncSession, project_id: UUID) -> Project:
@@ -253,6 +254,7 @@ async def _insert_project(
                 select(func.count(Project.id)).where(
                     Project.operator_org_id == operator.org_id,
                     Project.status.in_(ACTIVE_PROJECT_STATUSES),
+                    Project.deleted_at.is_(None),
                 )
             )
         else:
@@ -264,6 +266,7 @@ async def _insert_project(
                 select(func.count(Project.id)).where(
                     Project.operator_id == operator.user_id,
                     Project.status.in_(ACTIVE_PROJECT_STATUSES),
+                    Project.deleted_at.is_(None),
                 )
             )
         if int(active_count or 0) >= MAX_ACTIVE_PROJECTS:
@@ -418,6 +421,28 @@ async def list_org_projects(
     )
 
 
+async def get_org_project(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    project_id: UUID,
+    org_name: str,
+) -> ProjectResponse:
+    """Return one Project operated by an organization or conceal it as missing."""
+    project = await db.scalar(
+        _project_query().where(
+            Project.id == project_id,
+            Project.operator_org_id == org_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+    return _project_with_operator_name(project, org_name)
+
+
 def _project_with_operator_name(
     project: Project, operator_name: str | None
 ) -> ProjectResponse:
@@ -538,7 +563,11 @@ async def update_project(
     async with db.begin():
         project = await db.scalar(
             select(Project)
-            .where(Project.id == project_id, Project.operator_id == operator_id)
+            .where(
+                Project.id == project_id,
+                Project.operator_id == operator_id,
+                Project.deleted_at.is_(None),
+            )
             .with_for_update()
         )
         if project is None:
@@ -580,6 +609,107 @@ async def update_project(
     return project
 
 
+async def _delete_project(
+    *,
+    db: AsyncSession,
+    actor_id: UUID,
+    project_id: UUID,
+    operator_org_id: UUID | None,
+) -> None:
+    """Soft-delete one uncommenced Project for either Operator identity."""
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        project_query = select(Project).where(
+            Project.id == project_id,
+            Project.deleted_at.is_(None),
+        )
+        if operator_org_id is None:
+            project_query = project_query.where(Project.operator_id == actor_id)
+        else:
+            project_query = project_query.where(
+                Project.operator_org_id == operator_org_id
+            )
+        project = await db.scalar(project_query.with_for_update())
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found.",
+            )
+        if project.status != "open":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only uncommenced open Projects can be deleted.",
+            )
+        pending_proposal_id = await db.scalar(
+            select(Proposal.id)
+            .where(
+                Proposal.project_id == project.id,
+                Proposal.status == "pending",
+            )
+            .limit(1)
+        )
+        if pending_proposal_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Resolve every pending Proposal before deleting this Project.",
+            )
+        project.deleted_at = datetime.now(UTC)
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="project_deleted",
+            target_type="project",
+            target_id=project.id,
+            metadata={
+                "operator_kind": "org" if operator_org_id is not None else "user",
+                "operator_org_id": (
+                    str(operator_org_id) if operator_org_id is not None else None
+                ),
+            },
+        )
+
+    logger.bind(
+        module="projects",
+        action="delete_project",
+        user_id=actor_id,
+        project_id=project_id,
+        operator_org_id=operator_org_id,
+    ).info("project_deleted")
+
+
+async def delete_project(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+) -> None:
+    """Soft-delete an uncommenced Project owned by an individual Operator."""
+    await _delete_project(
+        db=db,
+        actor_id=operator.id,
+        project_id=project_id,
+        operator_org_id=None,
+    )
+
+
+async def delete_org_project(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+) -> None:
+    """Soft-delete an uncommenced Project owned by an organization."""
+    await _delete_project(
+        db=db,
+        actor_id=actor_id,
+        project_id=project_id,
+        operator_org_id=org_id,
+    )
+
+
 async def submit_proposal(
     *,
     db: AsyncSession,
@@ -594,7 +724,9 @@ async def submit_proposal(
 
     async with db.begin():
         project = await db.scalar(
-            select(Project).where(Project.id == project_id).with_for_update()
+            select(Project)
+            .where(Project.id == project_id, Project.deleted_at.is_(None))
+            .with_for_update()
         )
         if project is None:
             raise HTTPException(
@@ -1010,6 +1142,41 @@ async def list_project_proposals(
     return ProposalsResponse(proposals=proposals)
 
 
+async def list_org_project_proposals(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    project_id: UUID,
+) -> ProposalsResponse:
+    """List proposals submitted to one organization-operated Project."""
+    from app.modules.organizations.models import Organization
+
+    project = await db.scalar(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.operator_org_id == org_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+    rows = await db.execute(
+        select(Proposal, User.display_name, Organization.name)
+        .outerjoin(User, User.id == Proposal.contributor_id)
+        .outerjoin(Organization, Organization.id == Proposal.contributor_org_id)
+        .where(Proposal.project_id == project_id)
+        .order_by(Proposal.created_at.desc())
+    )
+    return ProposalsResponse(
+        proposals=[
+            _proposal_with_name(proposal, user_name or org_name)
+            for proposal, user_name, org_name in rows.all()
+        ]
+    )
+
+
 async def list_my_project_proposals(
     *,
     db: AsyncSession,
@@ -1087,42 +1254,24 @@ async def withdraw_proposal(
     return proposal
 
 
-async def cancel_acceptance(
+async def _cancel_acceptance(
     *,
     db: AsyncSession,
-    user: User,
+    actor_id: UUID,
     project_id: UUID,
+    operator_org_id: UUID | None,
 ) -> Project:
-    """Cancel an unfunded Proposal acceptance and reopen the Project.
-
-    Either Project member may cancel while the Project is still ``assigned``
-    (no Escrow funded yet): the Operator to re-bid the work, or the Contributor
-    to back out. The accepted Proposal is marked ``rejected`` (Operator) or
-    ``withdrawn`` (Contributor), the Project returns to ``open`` with its plan
-    cleared, and the Contributor's draft Milestones are deleted. Once any
-    Milestone is funded the Project is ``in_progress`` and this is refused —
-    that exit belongs to the dispute flow, which settles held Escrow.
-
-    Args:
-        db: Async session.
-        user: Requesting Project member.
-        project_id: Project whose acceptance is cancelled.
-
-    Returns:
-        The reopened Project.
-
-    Raises:
-        HTTPException(403): If the user is not a Project member.
-        HTTPException(409): If there is no acceptance, or funding has begun.
-    """
-    user_id = user.id
+    """Cancel one acceptance for an individual member or operating org."""
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
-        project = await db.scalar(
-            select(Project).where(Project.id == project_id).with_for_update()
-        )
+        project_query = select(Project).where(Project.id == project_id)
+        if operator_org_id is not None:
+            project_query = project_query.where(
+                Project.operator_org_id == operator_org_id
+            )
+        project = await db.scalar(project_query.with_for_update())
         if project is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1146,14 +1295,18 @@ async def cancel_acceptance(
                 detail="Accepted Proposal is not available.",
             )
         workspace_user_id = await workspace_contributor_user_id(db, proposal=proposal)
-        if user_id not in {project.operator_id, workspace_user_id}:
+        acting_as_org_operator = operator_org_id is not None
+        if not acting_as_org_operator and actor_id not in {
+            project.operator_id,
+            workspace_user_id,
+        }:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Project members can cancel the acceptance.",
             )
 
         now = datetime.now(UTC)
-        if user_id == workspace_user_id:
+        if not acting_as_org_operator and actor_id == workspace_user_id:
             proposal.status = "withdrawn"
             proposal.withdrawn_at = now
         else:
@@ -1167,18 +1320,52 @@ async def cancel_acceptance(
 
         await write_audit(
             db=db,
-            actor_id=user_id,
+            actor_id=actor_id,
             action="proposal_acceptance_cancelled",
             target_type="project",
             target_id=project.id,
             metadata={
                 "proposal_id": str(proposal.id),
                 "proposal_status": proposal.status,
+                "operator_org_id": (
+                    str(operator_org_id) if operator_org_id is not None else None
+                ),
             },
         )
         await db.flush()
         await db.refresh(project)
     return project
+
+
+async def cancel_acceptance(
+    *,
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+) -> Project:
+    """Cancel an unfunded acceptance as an individual Project member."""
+    return await _cancel_acceptance(
+        db=db,
+        actor_id=user.id,
+        project_id=project_id,
+        operator_org_id=None,
+    )
+
+
+async def cancel_org_acceptance(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+) -> Project:
+    """Cancel an unfunded acceptance as the operating organization."""
+    return await _cancel_acceptance(
+        db=db,
+        actor_id=actor_id,
+        project_id=project_id,
+        operator_org_id=org_id,
+    )
 
 
 async def accept_proposal(

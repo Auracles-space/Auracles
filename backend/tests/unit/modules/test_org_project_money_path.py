@@ -40,7 +40,10 @@ from app.modules.projects.models import (
     Project,
     Proposal,
 )
-from app.modules.projects.schemas import DisputeCreateRequest
+from app.modules.projects.schemas import (
+    DeliverableRevisionRequest,
+    DisputeCreateRequest,
+)
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import projects_beat
@@ -527,6 +530,44 @@ async def test_org_approval_releases_escrow_to_individual_contributor(
     assert transaction.payee_id == contributor_id
     # The org remains the payer through release.
     assert transaction.payer_org_id == org["org_id"]
+
+
+async def test_org_operator_can_request_deliverable_revision(
+    migrated_database: None,
+    money_path_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An org operator can return submitted work without releasing Escrow."""
+    del migrated_database, money_path_state
+    _patch_notifications(monkeypatch)
+    org = await _seed_org(prefix="revision")
+    contributor_id = await _create_user("revision-contrib", ["contributor"])
+    seed = await _seed_org_project(
+        org_id=org["org_id"],
+        contributor_id=contributor_id,
+        milestone_status="funded",
+        project_status="in_progress",
+    )
+    deliverable_id = await _seed_submitted_deliverable(
+        milestone_id=seed["milestone_id"],
+        contributor_id=contributor_id,
+    )
+
+    async with async_session_factory() as db:
+        revised = await milestone_service.request_org_deliverable_revision(
+            db=db,
+            org_id=org["org_id"],
+            actor_id=org["admin_id"],
+            project_id=seed["project_id"],
+            milestone_id=seed["milestone_id"],
+            deliverable_id=deliverable_id,
+            payload=DeliverableRevisionRequest(
+                revision_notes="Please align the controls with the agreed scope."
+            ),
+        )
+
+    assert revised.status == "revision_requested"
+    assert revised.revision_notes == "Please align the controls with the agreed scope."
 
 
 async def test_org_approval_releases_escrow_to_org_contributor(

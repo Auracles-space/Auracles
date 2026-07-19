@@ -141,6 +141,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   if (contributorActive && (isAdmin || contributorGrant)) {
     tabs.push({ id: "frameworks", label: "Frameworks" });
   }
+  if (isOperator) {
+    tabs.push({ id: "operator", label: "Operator" });
+  }
   
   const counts = myOrg.counts;
   if (isAdmin) {
@@ -153,7 +156,6 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     tabs.push({ id: "attestor", label: "Attestor" });
 
     if (isOperator) {
-      tabs.push({ id: "operator", label: "Operator" });
       tabs.push({ id: "projects", label: "Projects" });
     }
 
