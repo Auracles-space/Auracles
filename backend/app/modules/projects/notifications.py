@@ -21,8 +21,17 @@ from app.modules.projects.models import Proposal
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 
-def _project_link(project_id: UUID) -> str:
-    """Return the dashboard route for a Project workspace or detail page."""
+def _project_link(project_id: UUID, operator_org_id: UUID | None = None) -> str:
+    """Return the dashboard route an Operator uses to open a Project.
+
+    Org-operated Projects live under the organization namespace; an org owner
+    or admin has no individual-Operator access, so the plain ``/projects/{id}``
+    detail route resolves to "Project is not visible to this user". When the
+    recipient is on the operating org's side, deep-link to the org route
+    instead so the notification opens the page they can actually see.
+    """
+    if operator_org_id is not None:
+        return f"/dashboard/organizations/{operator_org_id}/projects/{project_id}"
     return f"/projects/{project_id}"
 
 
@@ -35,6 +44,7 @@ def _dispatch(
     project_id: UUID,
     dedupe_key: str | None,
     extra_payload: dict[str, str] | None = None,
+    operator_org_id: UUID | None = None,
 ) -> None:
     """Queue one durable Project notification with realtime and email fanout."""
     payload = {"project_id": str(project_id)}
@@ -47,7 +57,7 @@ def _dispatch(
             title=title,
             body=body,
             payload=payload,
-            link=_project_link(project_id),
+            link=_project_link(project_id, operator_org_id),
             dedupe_key=dedupe_key,
         )
     except Exception as exc:  # noqa: BLE001 — never break the request on fanout.
@@ -60,7 +70,12 @@ def _dispatch(
         ).error("notification_dispatch_failed", error=str(exc))
 
 
-def notify_proposal_submitted(*, operator_id: UUID, proposal: Proposal) -> None:
+def notify_proposal_submitted(
+    *,
+    operator_id: UUID,
+    proposal: Proposal,
+    operator_org_id: UUID | None = None,
+) -> None:
     """Notify the Operator that a Contributor submitted a Proposal."""
     _dispatch(
         user_id=operator_id,
@@ -70,6 +85,7 @@ def notify_proposal_submitted(*, operator_id: UUID, proposal: Proposal) -> None:
         project_id=proposal.project_id,
         dedupe_key=f"proposal_submitted:{proposal.id}",
         extra_payload={"proposal_id": str(proposal.id)},
+        operator_org_id=operator_org_id,
     )
 
 
@@ -78,6 +94,7 @@ def notify_proposal_withdrawn(
     operator_id: UUID,
     project_id: UUID,
     proposal_id: UUID,
+    operator_org_id: UUID | None = None,
 ) -> None:
     """Notify the Operator that a Contributor withdrew their pending Proposal."""
     _dispatch(
@@ -88,6 +105,7 @@ def notify_proposal_withdrawn(
         project_id=project_id,
         dedupe_key=f"proposal_withdrawn:{proposal_id}",
         extra_payload={"proposal_id": str(proposal_id)},
+        operator_org_id=operator_org_id,
     )
 
 
@@ -130,6 +148,7 @@ def notify_milestone_plan_finalized(
     *,
     operator_id: UUID,
     project_id: UUID,
+    operator_org_id: UUID | None = None,
 ) -> None:
     """Notify the Operator that the Contributor finalized the Milestone plan.
 
@@ -149,6 +168,7 @@ def notify_milestone_plan_finalized(
         # genuine finalization must re-notify. The finalize service is state
         # guarded (draft-only), so a single transition fires exactly one notice.
         dedupe_key=None,
+        operator_org_id=operator_org_id,
     )
 
 
@@ -176,6 +196,7 @@ def notify_deliverable_submitted(
     project_id: UUID,
     milestone_id: UUID,
     deliverable_id: UUID,
+    operator_org_id: UUID | None = None,
 ) -> None:
     """Notify the Operator that a Deliverable was submitted for review."""
     _dispatch(
@@ -189,6 +210,7 @@ def notify_deliverable_submitted(
             "milestone_id": str(milestone_id),
             "deliverable_id": str(deliverable_id),
         },
+        operator_org_id=operator_org_id,
     )
 
 
@@ -267,6 +289,7 @@ def notify_operator_deliverable_auto_approved(
     project_id: UUID,
     milestone_id: UUID,
     deliverable_id: UUID,
+    operator_org_id: UUID | None = None,
 ) -> None:
     """Notify a Project Operator that inaction auto-approved a Deliverable.
 
@@ -290,6 +313,7 @@ def notify_operator_deliverable_auto_approved(
             "milestone_id": str(milestone_id),
             "deliverable_id": str(deliverable_id),
         },
+        operator_org_id=operator_org_id,
     )
 
 

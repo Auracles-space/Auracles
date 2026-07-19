@@ -1027,6 +1027,7 @@ async def finalize_milestone_plan(
         project_notifications.notify_milestone_plan_finalized(
             operator_id=operator_id,
             project_id=project_id,
+            operator_org_id=project.operator_org_id,
         )
     return project
 
@@ -1463,6 +1464,7 @@ async def submit_deliverable(
             project_id=project_id,
             milestone_id=milestone_id,
             deliverable_id=deliverable.id,
+            operator_org_id=project.operator_org_id,
         )
     return deliverable
 

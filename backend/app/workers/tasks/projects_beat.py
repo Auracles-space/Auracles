@@ -201,7 +201,7 @@ async def _auto_approve_deliverables() -> int:
     auto_approved_notifications: list[tuple[UUID, UUID, UUID, UUID]] = []
     # Org-operated Projects have no single Operator user; collect the operating
     # org's owner/admin recipients so the Operator side is notified too.
-    operator_notifications: list[tuple[list[UUID], UUID, UUID, UUID]] = []
+    operator_notifications: list[tuple[list[UUID], UUID, UUID, UUID, UUID]] = []
     async with async_session_factory() as db:
         async with db.begin():
             rows = (
@@ -285,6 +285,7 @@ async def _auto_approve_deliverables() -> int:
                             project.id,
                             milestone.id,
                             deliverable.id,
+                            project.operator_org_id,
                         )
                     )
                 await write_audit(
@@ -321,6 +322,7 @@ async def _auto_approve_deliverables() -> int:
         project_id,
         milestone_id,
         deliverable_id,
+        operator_org_id,
     ) in operator_notifications:
         for operator_id in operator_recipient_ids:
             project_notifications.notify_operator_deliverable_auto_approved(
@@ -328,6 +330,7 @@ async def _auto_approve_deliverables() -> int:
                 project_id=project_id,
                 milestone_id=milestone_id,
                 deliverable_id=deliverable_id,
+                operator_org_id=operator_org_id,
             )
     return auto_approved_count
 

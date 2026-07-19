@@ -784,6 +784,7 @@ async def submit_proposal(
         project_notifications.notify_proposal_submitted(
             operator_id=recipient_id,
             proposal=proposal,
+            operator_org_id=project.operator_org_id,
         )
     return proposal
 
@@ -905,6 +906,7 @@ async def submit_org_proposal(
         project_notifications.notify_proposal_submitted(
             operator_id=recipient_id,
             proposal=proposal,
+            operator_org_id=project.operator_org_id,
         )
     return proposal
 
