@@ -43,6 +43,11 @@ const adminLinks = [
     summary: "Resolve Project milestone disputes with escrow outcomes.",
   },
   {
+    href: "/admin/payouts",
+    label: "Payouts",
+    summary: "Monitor Contributor and Organization payouts and failed transfers.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",

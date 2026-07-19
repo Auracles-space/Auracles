@@ -384,3 +384,34 @@ class AdminModerationQueueResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminPayoutItem(BaseModel):
+    """One payout row for read-only admin oversight.
+
+    Deliberately excludes payout-account details (``provider_account_id``): those
+    are sensitive PII and never surface in an admin list per the PII rule. The
+    provider label and transfer reference are enough to investigate a payout.
+    """
+
+    payout_id: UUID
+    beneficiary_type: Literal["contributor", "org"]
+    beneficiary_id: UUID
+    provider: Literal["stripe", "paystack"]
+    amount: str
+    commission_deducted: str
+    net_amount: str
+    currency: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    provider_ref: str | None
+    initiated_at: datetime
+    completed_at: datetime | None
+
+
+class AdminPayoutDirectoryResponse(BaseModel):
+    """Paginated payout directory for admin financial oversight."""
+
+    items: list[AdminPayoutItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

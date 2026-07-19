@@ -482,6 +482,44 @@ export type AdminOrgsResponse = {
 };
 
 /**
+ * Paginated payout directory for admin financial oversight.
+ */
+export type AdminPayoutDirectoryResponse = {
+    items: Array<AdminPayoutItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * One payout row for read-only admin oversight.
+ *
+ * Deliberately excludes payout-account details (``provider_account_id``): those
+ * are sensitive PII and never surface in an admin list per the PII rule. The
+ * provider label and transfer reference are enough to investigate a payout.
+ */
+export type AdminPayoutItem = {
+    payout_id: string;
+    beneficiary_type: 'contributor' | 'org';
+    beneficiary_id: string;
+    provider: 'stripe' | 'paystack';
+    amount: string;
+    commission_deducted: string;
+    net_amount: string;
+    currency: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    provider_ref: (string | null);
+    initiated_at: string;
+    completed_at: (string | null);
+};
+
+export type beneficiary_type = 'contributor' | 'org';
+
+export type provider = 'stripe' | 'paystack';
+
+export type status2 = 'pending' | 'processing' | 'completed' | 'failed';
+
+/**
  * Request body for overriding a near-duplicate rarity hard block.
  */
 export type AdminRarityBlockOverrideRequest = {
@@ -1343,7 +1381,7 @@ export type CollectionResponse = {
     updated_at: string;
 };
 
-export type status2 = 'draft' | 'published' | 'unpublished';
+export type status3 = 'draft' | 'published' | 'unpublished';
 
 /**
  * Contributor request body for editing an unpublished Collection.
@@ -1869,7 +1907,7 @@ export type ExploreAttestationBadge = {
     attestation_count?: number;
 };
 
-export type status3 = 'attested' | 'conditionally_attested';
+export type status4 = 'attested' | 'conditionally_attested';
 
 /**
  * Paginated mixed catalog response for Framework and Collection cards.
@@ -2211,7 +2249,7 @@ export type FrameworkListItem = {
     updated_at: string;
 };
 
-export type status4 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status5 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 /**
  * Request body for editing Framework metadata without pricing changes.
@@ -4525,7 +4563,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status5 = 'processed' | 'received' | 'duplicate';
+export type status6 = 'processed' | 'received' | 'duplicate';
 
 /**
  * Request body for posting a user workspace message.
@@ -4645,6 +4683,19 @@ export type ListAdminUsersV1AdminUsersGetData = {
 export type ListAdminUsersV1AdminUsersGetResponse = (AdminUserDirectoryResponse);
 
 export type ListAdminUsersV1AdminUsersGetError = (HTTPValidationError);
+
+export type ListAdminPayoutsV1AdminPayoutsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        status?: string;
+    };
+};
+
+export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
+
+export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
 
 export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
     body: AdminUserSuspendRequest;

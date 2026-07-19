@@ -250,6 +250,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/payouts:
+    get:
+      tags:
+      - Admin
+      summary: List payouts for admin financial oversight
+      description: Return a paginated, read-only payout directory with status and
+        provider filters. Payout-account destination details are never included.
+      operationId: list_admin_payouts_v1_admin_payouts_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|pending|processing|completed|failed)$
+          default: all
+          title: Status
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|stripe|paystack)$
+          default: all
+          title: Provider
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayoutDirectoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/users/{user_id}/suspend:
     post:
       tags:
@@ -14560,6 +14617,113 @@ components:
       - page_size
       title: AdminOrgsResponse
       description: Paginated list of organizations for platform admins.
+    AdminPayoutDirectoryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminPayoutItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminPayoutDirectoryResponse
+      description: Paginated payout directory for admin financial oversight.
+    AdminPayoutItem:
+      properties:
+        payout_id:
+          type: string
+          format: uuid
+          title: Payout Id
+        beneficiary_type:
+          type: string
+          enum:
+          - contributor
+          - org
+          title: Beneficiary Type
+        beneficiary_id:
+          type: string
+          format: uuid
+          title: Beneficiary Id
+        provider:
+          type: string
+          enum:
+          - stripe
+          - paystack
+          title: Provider
+        amount:
+          type: string
+          title: Amount
+        commission_deducted:
+          type: string
+          title: Commission Deducted
+        net_amount:
+          type: string
+          title: Net Amount
+        currency:
+          type: string
+          title: Currency
+        status:
+          type: string
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+          title: Status
+        provider_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Ref
+        initiated_at:
+          type: string
+          format: date-time
+          title: Initiated At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+      type: object
+      required:
+      - payout_id
+      - beneficiary_type
+      - beneficiary_id
+      - provider
+      - amount
+      - commission_deducted
+      - net_amount
+      - currency
+      - status
+      - provider_ref
+      - initiated_at
+      - completed_at
+      title: AdminPayoutItem
+      description: 'One payout row for read-only admin oversight.
+
+
+        Deliberately excludes payout-account details (``provider_account_id``): those
+
+        are sensitive PII and never surface in an admin list per the PII rule. The
+
+        provider label and transfer reference are enough to investigate a payout.'
     AdminRarityBlockOverrideRequest:
       properties:
         reason:

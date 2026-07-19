@@ -26,6 +26,7 @@ from app.core.security import hash_payout_provider_account_id
 from app.integrations import persona, stripe
 from app.integrations.persona import PersonaProviderError
 from app.integrations.stripe import StripeProviderError
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
@@ -772,13 +773,16 @@ async def _handle_transfer_event(
     event: dict[str, Any],
     *,
     payout_status: str,
-) -> None:
+) -> list[Callable[[], None]]:
     """Apply Stripe transfer status to an existing payout row when present.
 
     Matches the payout first by stored ``provider_ref`` (the transfer id). When
     that misses — a ``transfer.created`` event can arrive before the worker
     commits ``provider_ref`` — falls back to the ``payout_id`` carried in the
     transfer metadata and backfills the reference. Unknown transfers no-op.
+
+    Returns post-commit callables (an admin failure alert on a newly failed
+    payout) so the notification only fires once the status change is durable.
     """
     transfer_id = _event_object_id(event)
     if transfer_id is None:
@@ -787,11 +791,11 @@ async def _handle_transfer_event(
     if payout is None:
         payout = await _payout_from_metadata(db, event)
         if payout is None:
-            return
+            return []
         if payout.provider_ref is None:
             payout.provider_ref = transfer_id
     if payout.status == payout_status:
-        return
+        return []
     payout.status = payout_status
     if payout_status == "completed":
         payout.completed_at = datetime.now(UTC)
@@ -803,6 +807,17 @@ async def _handle_transfer_event(
         target_id=payout.id,
         metadata={"provider": "stripe", "transfer_ref": transfer_id[-4:]},
     )
+    if payout_status != "failed":
+        return []
+    failed_payout_id = payout.id
+    return [
+        lambda: notify_admins_review_pending(
+            domain="payout",
+            target_id=failed_payout_id,
+            body="A payout transfer failed and needs admin investigation.",
+            link="/admin/payouts",
+        )
+    ]
 
 
 async def _dispatch_verified_event(
@@ -860,9 +875,11 @@ async def _dispatch_verified_event(
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
     if event_type == "transfer.reversed":
-        await _handle_transfer_event(db, event, payout_status="failed")
+        transfer_notifications = await _handle_transfer_event(
+            db, event, payout_status="failed"
+        )
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None, []
+        return "processed", None, transfer_notifications
     if event_type == "charge.refunded":
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []

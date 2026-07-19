@@ -29,6 +29,7 @@ from app.modules.admin.schemas import (
     AdminLicenseGrantRequest,
     AdminLicenseGrantResponse,
     AdminModerationQueueResponse,
+    AdminPayoutDirectoryResponse,
     AdminRarityBlockOverrideRequest,
     AdminReputationRecomputeRequest,
     AdminReputationRecomputeResponse,
@@ -264,6 +265,41 @@ async def list_admin_users(
         page_size=page_size,
     )
     return AdminUserDirectoryResponse.model_validate(users)
+
+
+@router.get(
+    "/payouts",
+    response_model=AdminPayoutDirectoryResponse,
+    summary="List payouts for admin financial oversight",
+    description=(
+        "Return a paginated, read-only payout directory with status and provider "
+        "filters. Payout-account destination details are never included."
+    ),
+)
+async def list_admin_payouts(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|pending|processing|completed|failed)$"),
+    ] = "all",
+    provider_filter: Annotated[
+        str,
+        Query(alias="provider", pattern="^(all|stripe|paystack)$"),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminPayoutDirectoryResponse:
+    """Return the admin payout oversight directory."""
+    del admin
+    payouts = await service.list_admin_payouts(
+        db=db,
+        status_filter=status_filter,
+        provider_filter=provider_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminPayoutDirectoryResponse.model_validate(payouts)
 
 
 @router.post(

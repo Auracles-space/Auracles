@@ -1770,6 +1770,38 @@ async def test_stripe_transfer_reversed_fails_payout(
     assert audit.target_id == payout_id
 
 
+async def test_stripe_transfer_reversed_notifies_admins(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed payout fans out an admin-review alert after the status commits."""
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        webhook_service,
+        "notify_admins_review_pending",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    payout_id, _ = await create_processing_payout(provider_ref="tr_notify_admins_789")
+    webhook_context["event"] = transfer_event(
+        "evt_transfer_reversed_notify",
+        "transfer.reversed",
+        transfer_id="tr_notify_admins_789",
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["domain"] == "payout"
+    assert calls[0]["target_id"] == payout_id
+    assert calls[0]["link"] == "/admin/payouts"
+
+
 async def test_stripe_transfer_created_matches_by_metadata_when_ref_missing(
     client: AsyncClient,
     webhook_context: dict[str, Any],

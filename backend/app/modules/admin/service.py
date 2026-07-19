@@ -30,7 +30,13 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials import escrow_service
-from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    Payout,
+    PayoutAccount,
+    PlatformConfig,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import (
     Artifact,
@@ -140,6 +146,8 @@ MODERATION_QUEUE_SORT_PRIORITY = {
     "rarity_review": 2,
 }
 ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended", "kyc_pending")
+ADMIN_PAYOUT_STATUSES = ("all", "pending", "processing", "completed", "failed")
+ADMIN_PAYOUT_PROVIDERS = ("all", "stripe", "paystack")
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -1163,6 +1171,98 @@ async def list_admin_users(
             }
             for user in users
         ],
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_payouts(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    provider_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only payout directory for admin oversight.
+
+    Joins each payout to its payout account for the provider label and maps the
+    contributor/org XOR to an explicit beneficiary type. Payout-account details
+    are never included — only the provider and transfer reference — so no
+    sensitive destination data leaks into the list.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_PAYOUT_STATUSES``.
+        provider_filter: One of ``ADMIN_PAYOUT_PROVIDERS``.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If a filter value is unsupported.
+    """
+    if status_filter not in ADMIN_PAYOUT_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported payout status filter.",
+        )
+    if provider_filter not in ADMIN_PAYOUT_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported payout provider filter.",
+        )
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(Payout.status == status_filter)
+    if provider_filter != "all":
+        filters.append(PayoutAccount.provider == provider_filter)
+
+    base = (
+        select(Payout, PayoutAccount)
+        .join(PayoutAccount, PayoutAccount.id == Payout.payout_account_id)
+        .where(*filters)
+    )
+    total = await db.scalar(
+        select(func.count())
+        .select_from(Payout)
+        .join(PayoutAccount, PayoutAccount.id == Payout.payout_account_id)
+        .where(*filters)
+    )
+    result = await db.execute(
+        base.order_by(desc(Payout.initiated_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    items = []
+    for payout, account in result.all():
+        is_contributor = payout.contributor_id is not None
+        items.append(
+            {
+                "payout_id": payout.id,
+                "beneficiary_type": "contributor" if is_contributor else "org",
+                "beneficiary_id": (
+                    payout.contributor_id if is_contributor else payout.org_id
+                ),
+                "provider": account.provider,
+                "amount": str(payout.amount),
+                "commission_deducted": str(payout.commission_deducted),
+                "net_amount": str(payout.net_amount),
+                "currency": payout.currency,
+                "status": payout.status,
+                "provider_ref": payout.provider_ref,
+                "initiated_at": payout.initiated_at,
+                "completed_at": payout.completed_at,
+            }
+        )
+
+    return {
+        "items": items,
         "total": int(total or 0),
         "page": page,
         "page_size": page_size,
