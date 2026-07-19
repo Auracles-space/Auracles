@@ -60,7 +60,7 @@ describe("OrgLicenseGrantPanel", () => {
   it("lists existing grants on load", async () => {
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [mockGrant],
+      data: { grants: [mockGrant] },
     });
 
     render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
@@ -76,7 +76,7 @@ describe("OrgLicenseGrantPanel", () => {
   it("allows adding a user grant", async () => {
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [],
+      data: { grants: [] },
     });
 
     render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
@@ -94,7 +94,7 @@ describe("OrgLicenseGrantPanel", () => {
     });
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [{ ...mockGrant, id: "grant-2" }],
+      data: { grants: [{ ...mockGrant, id: "grant-2" }] },
     });
 
     const addButton = screen.getByRole("button", { name: "Add Grant" });
@@ -111,7 +111,7 @@ describe("OrgLicenseGrantPanel", () => {
   it("allows adding a team grant", async () => {
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [],
+      data: { grants: [] },
     });
 
     render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
@@ -130,7 +130,9 @@ describe("OrgLicenseGrantPanel", () => {
     });
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [{ ...mockGrant, id: "grant-3", user_id: null, team_id: "team-1" }],
+      data: {
+        grants: [{ ...mockGrant, id: "grant-3", user_id: null, team_id: "team-1" }],
+      },
     });
 
     const addButton = screen.getByRole("button", { name: "Add Grant" });
@@ -147,7 +149,7 @@ describe("OrgLicenseGrantPanel", () => {
   it("allows revoking a grant", async () => {
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [mockGrant],
+      data: { grants: [mockGrant] },
     });
 
     render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
@@ -158,7 +160,7 @@ describe("OrgLicenseGrantPanel", () => {
     });
     vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
       response: { ok: true } as Response,
-      data: [],
+      data: { grants: [] },
     });
 
     const revokeButton = screen.getByLabelText("Revoke grant");

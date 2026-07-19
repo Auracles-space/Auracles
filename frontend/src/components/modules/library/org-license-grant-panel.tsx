@@ -81,7 +81,7 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
         return;
       }
       
-      setGrants(grantsRes.data);
+      setGrants(grantsRes.data.grants);
       setMembers(membersRes.data.members);
       setTeams(teamsRes.data.teams);
     } catch (e: unknown) {
@@ -97,7 +97,7 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
       path: { org_id: orgId, license_id: licenseId },
     });
     if (result.response.ok && result.data) {
-      setGrants(result.data);
+      setGrants(result.data.grants);
     }
   }
 
