@@ -16,9 +16,11 @@ import type {
 
 const LICENSE_TYPES = [
   ["single_user", "Single user"],
-  ["team", "Team"],
+  // Team and Enterprise tiers are not offered yet — only single-user and
+  // organization licenses are sold. Re-enable when those tiers ship.
+  // ["team", "Team"],
   ["organizational", "Organization"],
-  ["enterprise", "Enterprise"],
+  // ["enterprise", "Enterprise"],
 ] as const;
 
 type FrameworkPricingFormProps = {

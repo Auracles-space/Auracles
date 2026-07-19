@@ -61,7 +61,7 @@ describe("FrameworkPricingForm", () => {
       <FrameworkPricingForm api={api} framework={framework} onUpdated={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByLabelText(/team/i));
+    fireEvent.click(screen.getByRole("checkbox", { name: /organization/i }));
 
     expect(screen.getByRole("button", { name: /save pricing/i })).toBeEnabled();
   });
