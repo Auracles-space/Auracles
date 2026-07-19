@@ -236,6 +236,11 @@ export function FrameworkEditor({
   const submitBlock = deriveSubmitBlock(artifacts);
   const canRunChecks =
     framework.status === "draft" || framework.status === "pipeline_failed";
+  // Accepting a redacted copy or re-running PII review flips the Framework to
+  // `processing` and re-scans the file, which hides both action buttons. Surface
+  // an explicit notice so the workspace never looks stuck mid-rescan.
+  const isReprocessing =
+    framework.status === "processing" || framework.status === "submitted";
   const isLive = framework.status === "published";
   const isDelisted = framework.status === "unpublished";
   // Listing metadata (title, price, description, tags, taxonomy) is editable in
@@ -354,6 +359,18 @@ export function FrameworkEditor({
               frameworkId={framework.id}
               onCompleted={() => void loadWorkspace(true)}
             />
+          )}
+          {isReprocessing && (
+            <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+              <p className="text-sm font-semibold text-warning">
+                Re-scanning your file…
+              </p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                Your update is going through the publishing checks again. The
+                run-checks and publish actions reappear here once the scan
+                finishes.
+              </p>
+            </div>
           )}
         </FrameworkForm>
       </section>

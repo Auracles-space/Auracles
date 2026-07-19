@@ -376,6 +376,26 @@ describe("FrameworkEditor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows a re-scanning notice while the framework is processing", async () => {
+    // Accepting a redacted copy (or re-running PII review) flips the framework
+    // to `processing` and re-scans the file. Both action buttons correctly hide
+    // in that state; without an explicit notice the workspace looks stuck.
+    mockLoad(makeFramework({ status: "processing" }), [
+      makeArtifact({ id: "art_1", processing_status: "processing" }),
+    ]);
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    expect(screen.getByText(/re-scanning your file/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /run publishing checks/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^publish$/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("disables Run publishing checks when no artifact is attached", async () => {
     mockLoad(makeFramework({ status: "draft" }), []);
 
