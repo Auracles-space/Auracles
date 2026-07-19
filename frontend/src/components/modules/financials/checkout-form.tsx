@@ -167,7 +167,14 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
             options={{ clientSecret: session.clientSecret }}
             stripe={stripePromise}
           >
-            <CheckoutPaymentConfirmation transactionId={session.transactionId} />
+            <CheckoutPaymentConfirmation
+              successPath={
+                buyer.kind === "org"
+                  ? `/dashboard/organizations/${buyer.orgId}/operator/library`
+                  : "/library"
+              }
+              transactionId={session.transactionId}
+            />
           </Elements>
         </div>
       )}
@@ -339,7 +346,10 @@ export function CollectionCheckoutForm({
             options={{ clientSecret: session.clientSecret }}
             stripe={stripePromise}
           >
-            <CheckoutPaymentConfirmation transactionId={session.transactionId} />
+            <CheckoutPaymentConfirmation
+              successPath="/library"
+              transactionId={session.transactionId}
+            />
           </Elements>
         </div>
       )}
@@ -348,15 +358,18 @@ export function CollectionCheckoutForm({
 }
 
 type CheckoutPaymentConfirmationProps = {
+  successPath: string;
   transactionId: string;
 };
 
 /**
  * Confirm an initialized Stripe PaymentIntent from mounted Elements.
  *
- * @param props - Pending purchase transaction identifier for return routing.
+ * @param props - Success redirect path (personal or org library) and the
+ *   pending purchase transaction identifier for return routing.
  */
 function CheckoutPaymentConfirmation({
+  successPath,
   transactionId,
 }: CheckoutPaymentConfirmationProps) {
   const stripe = useStripe();
@@ -374,7 +387,7 @@ function CheckoutPaymentConfirmation({
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/library?purchase=${transactionId}`,
+        return_url: `${window.location.origin}${successPath}?purchase=${transactionId}`,
       },
     });
     setSubmitting(false);
