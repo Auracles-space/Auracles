@@ -285,6 +285,29 @@ describe("FrameworkEditor", () => {
     );
   });
 
+  it("hides the org pricing form while metadata is locked mid-pipeline", async () => {
+    // Pricing is metadata; the backend locks it outside draft/published/
+    // delisted. Showing an editable pricing form at pipeline_passed lets an
+    // admin submit a save that only 422s with the metadata-locked error.
+    mockLoad(makeFramework({ status: "pipeline_passed" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+
+    renderWithToast(
+      <FrameworkEditor
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org-1" }}
+        canManageLiveState
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    await screen.findByText("Test Framework");
+    expect(
+      screen.queryByRole("button", { name: /save pricing/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("lets a delisted framework edit metadata, relist, or start a new version", async () => {
     mockLoad(makeFramework({ status: "unpublished" }));
 

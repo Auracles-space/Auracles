@@ -390,7 +390,10 @@ export function FrameworkEditor({
         </FrameworkForm>
       </section>
       <aside className="grid gap-4 min-w-0">
-        {seller.kind === "org" && canManageLiveState ? (
+        {seller.kind === "org" && canManageLiveState && isMetadataEditable ? (
+          // Pricing is metadata; the backend locks it outside draft/published/
+          // delisted. Hide the editor while locked so a save cannot 422 — the
+          // metadata-lock banner above already explains the state.
           <FrameworkPricingForm
             api={api}
             framework={framework}
