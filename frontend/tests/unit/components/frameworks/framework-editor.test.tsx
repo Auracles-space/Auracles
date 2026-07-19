@@ -275,6 +275,10 @@ describe("FrameworkEditor", () => {
     );
 
     await screen.findByText("Test Framework");
+    // Save pricing only enables once a field changes; edit the base price first.
+    fireEvent.change(screen.getByLabelText(/base price/i), {
+      target: { value: "550.00" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save pricing/i }));
 
     expect(

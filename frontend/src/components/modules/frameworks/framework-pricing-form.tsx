@@ -41,6 +41,18 @@ export function FrameworkPricingForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only offer a save when the form differs from the saved pricing, so a
+  // no-op click can never fire a needless write. License order is irrelevant,
+  // so compare as sets.
+  const savedLicenseTypes = framework.pricing.license_types;
+  const licenseTypesChanged =
+    licenseTypes.length !== savedLicenseTypes.length ||
+    licenseTypes.some((type) => !savedLicenseTypes.includes(type));
+  const isDirty =
+    price !== framework.pricing.price ||
+    orgPrice !== (framework.pricing.org_price ?? "") ||
+    licenseTypesChanged;
+
   function toggleLicenseType(
     value: PricingConfig_Input["license_types"][number],
   ) {
@@ -126,7 +138,9 @@ export function FrameworkPricingForm({
       {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
       <button
         className="mt-4 min-h-12 rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90 disabled:opacity-60"
-        disabled={saving || !price.trim() || licenseTypes.length === 0}
+        disabled={
+          saving || !isDirty || !price.trim() || licenseTypes.length === 0
+        }
         onClick={savePricing}
         type="button"
       >
