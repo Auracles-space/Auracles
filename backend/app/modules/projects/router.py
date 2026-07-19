@@ -151,6 +151,23 @@ async def update_project(
     return ProjectResponse.model_validate(project)
 
 
+@router.delete(
+    "/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an uncommenced Project",
+    description=(
+        "Soft-delete an individually-operated open Project that has not commenced."
+    ),
+)
+async def delete_project(
+    project_id: UUID,
+    operator: OperatorUser,
+    db: DatabaseSession,
+) -> None:
+    """Soft-delete an uncommenced Project owned by the current Operator."""
+    await service.delete_project(db=db, operator=operator, project_id=project_id)
+
+
 @router.post(
     "/{project_id}/proposals",
     response_model=ProposalResponse,
@@ -226,6 +243,56 @@ async def list_org_projects(
     )
 
 
+@org_router.get(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    summary="Get an organization Project",
+    description=(
+        "Return one Project operated by the organization for an owner or admin."
+    ),
+)
+async def get_org_project(
+    org_id: UUID,
+    project_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Return one organization-operated Project inside its org namespace."""
+    del org_id
+    return await service.get_org_project(
+        db=db,
+        org_id=context.org.id,
+        project_id=project_id,
+        org_name=context.org.name,
+    )
+
+
+@org_router.delete(
+    "/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an uncommenced organization Project",
+    description=(
+        "Soft-delete an organization-operated open Project that has not commenced."
+    ),
+)
+async def delete_org_project(
+    org_id: UUID,
+    project_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> None:
+    """Soft-delete an uncommenced Project owned by the organization."""
+    del org_id
+    await service.delete_org_project(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+    )
+
+
 @org_router.post(
     "/projects/{project_id}/proposals",
     response_model=ProposalResponse,
@@ -258,6 +325,30 @@ async def submit_org_proposal(
         deliverables=[item.model_dump() for item in payload.deliverables],
     )
     return ProposalResponse.model_validate(proposal)
+
+
+@org_router.get(
+    "/projects/{project_id}/proposals",
+    response_model=ProposalsResponse,
+    summary="List proposals for an organization Project",
+    description=(
+        "List incoming proposals for a Project operated by the organization."
+    ),
+)
+async def list_org_project_proposals(
+    org_id: UUID,
+    project_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProposalsResponse:
+    """Return proposals submitted to one organization-operated Project."""
+    del org_id
+    return await service.list_org_project_proposals(
+        db=db,
+        org_id=context.org.id,
+        project_id=project_id,
+    )
 
 
 @org_router.post(
@@ -453,6 +544,40 @@ async def approve_org_deliverable(
 
 
 @org_router.post(
+    "/projects/{project_id}/milestones/{milestone_id}/deliverables/"
+    "{deliverable_id}/request-revision",
+    response_model=DeliverableResponse,
+    summary="Request revision on an organization Project Deliverable",
+    description=(
+        "Return submitted work for revision on a Project operated by the "
+        "organization as an owner or admin while the operator capability is active."
+    ),
+)
+async def request_org_deliverable_revision(
+    org_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    deliverable_id: UUID,
+    payload: DeliverableRevisionRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> DeliverableResponse:
+    """Send submitted work back for revision on an organization Project."""
+    del org_id
+    deliverable = await milestone_service.request_org_deliverable_revision(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        deliverable_id=deliverable_id,
+        payload=payload,
+    )
+    return DeliverableResponse.model_validate(deliverable)
+
+
+@org_router.post(
     "/projects/{project_id}/disputes",
     response_model=DisputeResponse,
     status_code=status.HTTP_201_CREATED,
@@ -481,6 +606,32 @@ async def create_org_dispute(
         payload=payload,
     )
     return DisputeResponse.model_validate(dispute)
+
+
+@org_router.post(
+    "/projects/{project_id}/cancel-acceptance",
+    response_model=ProjectResponse,
+    summary="Cancel an organization Project acceptance",
+    description=(
+        "Reopen an assigned organization Project before any Milestone is funded."
+    ),
+)
+async def cancel_org_acceptance(
+    org_id: UUID,
+    project_id: UUID,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Cancel an unfunded acceptance for an organization-operated Project."""
+    del org_id
+    project = await service.cancel_org_acceptance(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+    )
+    return ProjectResponse.model_validate(project)
 
 
 @router.get("/{project_id}/proposals", response_model=ProposalsResponse)

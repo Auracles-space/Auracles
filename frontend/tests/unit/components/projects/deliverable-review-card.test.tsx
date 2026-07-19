@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeliverableReviewCard } from "@/components/modules/projects/deliverable-review-card";
-import { approveOrgDeliverable, listDeliverables } from "@/lib/generated/sdk.gen";
+import {
+  approveOrgDeliverable,
+  listDeliverables,
+  requestOrgDeliverableRevision,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/form-client")>("@/lib/auth/form-client");
@@ -19,6 +23,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   downloadDeliverableFiles: vi.fn(),
   listDeliverables: vi.fn(),
   requestDeliverableRevision: vi.fn(),
+  requestOrgDeliverableRevision: vi.fn(),
 }));
 
 const approveOrgDeliverableMock = vi.mocked(approveOrgDeliverable);
@@ -81,6 +86,64 @@ describe("DeliverableReviewCard", () => {
       expect.objectContaining({
         path: { org_id: "org-1", project_id: "project-1", deliverable_id: "deliv-1" },
       })
+    );
+  });
+
+  it("routes a revision request through the organization endpoint", async () => {
+    listDeliverablesMock.mockResolvedValue({
+      data: {
+        deliverables: [
+          {
+            id: "deliv-1",
+            milestone_id: "milestone-1",
+            project_id: "project-1",
+            contributor_id: "contrib-1",
+            created_at: "2026-06-20T10:00:00Z",
+            scan_status: "visible",
+            status: "submitted",
+            description: "Done",
+            file_keys: ["file-1"],
+          },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    vi.mocked(requestOrgDeliverableRevision).mockResolvedValue({
+      data: {},
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(
+      <DeliverableReviewCard
+        isOperator={true}
+        milestoneId="milestone-1"
+        milestoneStatus="submitted"
+        mode={{ kind: "org", orgId: "org-1" }}
+        onChanged={vi.fn()}
+        projectId="project-1"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /request changes/i }));
+    fireEvent.change(
+      screen.getByPlaceholderText(/what needs to change/i),
+      { target: { value: "Please revise the controls." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+
+    await waitFor(() => expect(requestOrgDeliverableRevision).toHaveBeenCalledTimes(1));
+    expect(requestOrgDeliverableRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { revision_notes: "Please revise the controls." },
+        path: {
+          deliverable_id: "deliv-1",
+          milestone_id: "milestone-1",
+          org_id: "org-1",
+          project_id: "project-1",
+        },
+      }),
     );
   });
 });

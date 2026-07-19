@@ -14,6 +14,7 @@ import { DeliverableReviewCard } from "@/components/modules/projects/deliverable
 import { DeliverableSubmitForm } from "@/components/modules/projects/deliverable-submit-form";
 import { MilestoneDisputePanel } from "@/components/modules/projects/milestone-dispute-panel";
 import { MilestoneFundingPanel } from "@/components/modules/projects/milestone-funding-panel";
+import { ProjectDeleteAction } from "@/components/modules/projects/project-delete-action";
 import { PublishAsFrameworkButton } from "@/components/modules/projects/publish-as-framework-button";
 import { WorkspaceMessagePanel } from "@/components/modules/projects/workspace-message-panel";
 import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
@@ -27,18 +28,15 @@ import {
 } from "@/lib/auth/form-client";
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
-  cancelAcceptance,
   createMilestone,
   createWorkspaceMessage,
   deleteMilestone,
   finalizeMilestonePlan,
-  getProject,
   listDisputes,
   reopenMilestonePlan,
   updateMilestone,
   listMilestones,
   listMyProjectProposals,
-  listProjectProposals,
   listWorkspaceMessages,
   submitProposal,
 } from "@/lib/generated/sdk.gen";
@@ -161,11 +159,21 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
 
   const currentUserId = currentUser?.id ?? authTokenStore.getState().userId;
   const userRoles = currentUser?.roles ?? authTokenStore.getState().roles;
-  const isOperator = userRoles.includes("operator");
   const isContributor = userRoles.includes("contributor");
+  const modeKind = mode.kind;
+  const modeOrgId = mode.kind === "org" ? mode.orgId : undefined;
+  const projectListPath =
+    modeKind === "org" && modeOrgId !== undefined
+      ? `/dashboard/organizations/${modeOrgId}/projects`
+      : "/projects";
+  const projectWorkspacePath = `${projectListPath}/${projectId}`;
 
   // Project-specific roles and ownership
-  const isProjectOwner = project !== null && project.operator_id === currentUserId;
+  const isProjectOwner =
+    project !== null &&
+    (modeKind === "org"
+      ? project.operator_org_id === modeOrgId
+      : project.operator_id === currentUserId);
   const isAssignedContributor = myProposals.some((p) => p.status === "accepted");
 
   // Gating visibility of forms and actions
@@ -267,15 +275,15 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     setCurrentUser(sessionUser);
 
     const activeHeaders = getAccessTokenHeaders();
-    const activeRoles = sessionUser.roles;
     const activeUserId = sessionUser.id;
-    const isOperatorRole = activeRoles.includes("operator");
-    const isContributorRole = activeRoles.includes("contributor");
+    const isOperatorRole = sessionUser.roles.includes("operator");
+    const isContributorRole = sessionUser.roles.includes("contributor");
 
-    const projectResult = await getProject({
-      headers: activeHeaders,
-      path: { project_id: projectId },
-    });
+    const activeMode: ProjectApiMode =
+      modeKind === "org" && modeOrgId !== undefined
+        ? { kind: "org", orgId: modeOrgId }
+        : { kind: "self" };
+    const projectResult = await projectApi(activeMode).getProject(projectId);
     if (!projectResult.response.ok || !projectResult.data) {
       setError(describeGeneratedError(projectResult.error));
       return [];
@@ -290,13 +298,10 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
       operatorProposalResult,
       myProposalResult,
     ] = await Promise.all([
-      isOperatorRole
-        ? listProjectProposals({
-            headers: activeHeaders,
-            path: { project_id: projectId },
-          })
+      isOperatorRole || modeKind === "org"
+        ? projectApi(activeMode).listProjectProposals(projectId)
         : Promise.resolve({ response: new Response(), data: { proposals: [] }, error: undefined }),
-      isContributorRole
+      modeKind === "self" && isContributorRole
         ? listMyProjectProposals({
             headers: activeHeaders,
             path: { project_id: projectId },
@@ -316,7 +321,10 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
       setMyProposals(activeMyProposals);
     }
 
-    const activeProjectOwner = currentProject.operator_id === activeUserId;
+    const activeProjectOwner =
+      modeKind === "org"
+        ? currentProject.operator_org_id === modeOrgId
+        : currentProject.operator_id === activeUserId;
     const activeAssignedContributor = activeMyProposals.some((p) => p.status === "accepted");
     const activeProjectMember = activeProjectOwner || activeAssignedContributor;
 
@@ -357,7 +365,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
       setDisputes(disputesResult.data.disputes);
     }
     return nextMilestones;
-  }, [projectId]);
+  }, [modeKind, modeOrgId, projectId]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -494,10 +502,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
   }
 
   async function cancelAcceptanceAction() {
-    const result = await cancelAcceptance({
-      headers,
-      path: { project_id: projectId },
-    });
+    const result = await projectApi(mode).cancelAcceptance(projectId);
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
@@ -644,7 +649,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
       <div className="flex items-center">
         <Link
           className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline"
-          href="/projects"
+          href={projectListPath}
         >
           <svg
             className="h-4 w-4"
@@ -700,6 +705,14 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
             <span className="text-xs text-foreground-muted">
               Realtime {realtime.connected ? "connected" : "offline"}
             </span>
+            {isProjectOwner && project?.status === "open" ? (
+              <ProjectDeleteAction
+                mode={mode}
+                onDeleted={() => router.replace(projectListPath)}
+                projectId={project.id}
+                projectTitle={project.title}
+              />
+            ) : null}
           </div>
         </div>
       </div>
@@ -796,7 +809,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
           <div className="grid gap-2">
             {operatorProposals.length === 0 && myProposals.length === 0 ? (
               <p className="text-sm text-foreground-muted italic">
-                {isOperator
+                {isProjectOwner
                   ? "No proposals submitted yet."
                   : "Submit a proposal below to bid on this project."}
               </p>
@@ -1183,6 +1196,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                         milestoneId={fundingSession.milestoneId}
                         onCancel={() => setFundingSession(null)}
                         projectId={projectId}
+                        returnPath={projectWorkspacePath}
                         transactionId={fundingSession.transactionId}
                       />
                     ) : null}

@@ -146,7 +146,9 @@ describe("ProjectCreateForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /post project/i }));
 
     await waitFor(() => {
-      expect(push).toHaveBeenCalledWith("/projects/proj-org-1");
+      expect(push).toHaveBeenCalledWith(
+        "/dashboard/organizations/org-1/projects/proj-org-1",
+      );
     });
     expect(vi.mocked(createOrgProject)).toHaveBeenCalledWith(
       expect.objectContaining({ path: { org_id: "org-1" } })

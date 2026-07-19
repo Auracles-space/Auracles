@@ -384,6 +384,52 @@ async def test_org_project_lifecycle_accept_fund_approve_releases_escrow(
     assert released_transaction.payer_org_id == UUID(org_id)
 
 
+async def test_org_admin_can_list_incoming_project_proposals(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_money_context: None,
+) -> None:
+    """An org admin can review proposals submitted to its operated Project."""
+    del migrated_database, org_project_money_context
+    ctx = await _create_org_operated_project(client, org_prefix="proposal-inbox")
+
+    response = await client.get(
+        f"/v1/orgs/{ctx['org_id']}/projects/{ctx['project_id']}/proposals",
+        headers=auth(ctx["admin_token"]),
+    )
+
+    assert response.status_code == 200
+    proposals = response.json()["proposals"]
+    assert len(proposals) == 1
+    assert proposals[0]["id"] == ctx["proposal_id"]
+    assert proposals[0]["contributor_name"] is not None
+
+
+async def test_org_admin_can_cancel_unfunded_project_acceptance(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_money_context: None,
+) -> None:
+    """An org admin can reopen its assigned Project before escrow funding."""
+    del migrated_database, org_project_money_context
+    ctx = await _create_org_operated_project(client, org_prefix="cancel-acceptance")
+    accepted = await client.post(
+        f"/v1/orgs/{ctx['org_id']}/projects/{ctx['project_id']}/proposals/"
+        f"{ctx['proposal_id']}/accept",
+        headers=auth(ctx["admin_token"]),
+    )
+    assert accepted.status_code == 200
+
+    cancelled = await client.post(
+        f"/v1/orgs/{ctx['org_id']}/projects/{ctx['project_id']}/cancel-acceptance",
+        headers=auth(ctx["admin_token"]),
+    )
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "open"
+    assert cancelled.json()["accepted_proposal_id"] is None
+
+
 async def test_org_accept_endpoint_auth_and_rbac(
     client: AsyncClient,
     migrated_database: None,

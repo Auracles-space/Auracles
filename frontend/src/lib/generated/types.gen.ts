@@ -3356,7 +3356,7 @@ export type OrgTeamResponse = {
     id: string;
     name: string;
     member_count: number;
-    capabilities: Array<('contributor' | 'operator' | 'attestor')>;
+    capabilities?: Array<('contributor' | 'operator' | 'attestor')>;
     created_at: string;
 };
 
@@ -6231,7 +6231,7 @@ export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostData = {
 
 export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
 
-export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostError = (unknown | HTTPValidationError);
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostError = (HTTPValidationError);
 
 export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostData = {
     body: FrameworkVersionCreate;
@@ -6299,7 +6299,7 @@ export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGe
 
 export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetResponse = (Array<ArtifactResponse>);
 
-export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (unknown | HTTPValidationError);
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (HTTPValidationError);
 
 export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
     path: {
@@ -6864,7 +6864,7 @@ export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutD
 
 export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutResponse = (void);
 
-export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutError = (unknown | HTTPValidationError);
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutError = (HTTPValidationError);
 
 export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteData = {
     path: {
@@ -6876,7 +6876,7 @@ export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDel
 
 export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteResponse = (void);
 
-export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteError = (unknown);
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteError = (HTTPValidationError);
 
 export type GetNdaStatusV1OrgsOrgIdNdaGetData = {
     path: {
@@ -7671,6 +7671,16 @@ export type UpdateProjectV1ProjectsProjectIdPatchResponse = (ProjectResponse);
 
 export type UpdateProjectV1ProjectsProjectIdPatchError = (HTTPValidationError);
 
+export type DeleteProjectV1ProjectsProjectIdDeleteData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type DeleteProjectV1ProjectsProjectIdDeleteResponse = (void);
+
+export type DeleteProjectV1ProjectsProjectIdDeleteError = (HTTPValidationError);
+
 export type SubmitProposalV1ProjectsProjectIdProposalsPostData = {
     body: ProposalCreateRequest;
     path: {
@@ -7996,6 +8006,28 @@ export type ListOrgProjectsV1OrgsOrgIdProjectsGetResponse = (ProjectsResponse);
 
 export type ListOrgProjectsV1OrgsOrgIdProjectsGetError = (HTTPValidationError);
 
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetResponse = (ProjectResponse);
+
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetError = (HTTPValidationError);
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteResponse = (void);
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteError = (HTTPValidationError);
+
 export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostData = {
     body: OrgProposalCreateRequest;
     path: {
@@ -8007,6 +8039,17 @@ export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostData = {
 export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostResponse = (ProposalResponse);
 
 export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostError = (HTTPValidationError);
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetError = (HTTPValidationError);
 
 export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = {
     body: OrgProposalReassignRequest;
@@ -8087,6 +8130,20 @@ export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliver
 
 export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
 
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostData = {
+    body: DeliverableRevisionRequest;
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostResponse = (DeliverableResponse);
+
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
+
 export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData = {
     body: DisputeCreateRequest;
     path: {
@@ -8098,6 +8155,17 @@ export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData = {
 export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostResponse = (DisputeResponse);
 
 export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostError = (HTTPValidationError);
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
 
 export type ListPartnerCatalogV1PartnerCatalogGetData = {
     headers?: {

@@ -206,6 +206,76 @@ async def test_org_admin_can_list_org_projects(
     assert body["projects"][0]["operator_name"] == org["name"]
 
 
+async def test_org_admin_can_get_owned_project_but_not_cross_org_project(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_context: None,
+) -> None:
+    """Org project detail is available only inside its operator org namespace."""
+    del migrated_database, org_project_context
+    owner_id = await create_user("detail-owner")
+    other_owner_id = await create_user("detail-other-owner")
+    owner_token = create_access_token(owner_id, [])
+    other_owner_token = create_access_token(other_owner_id, [])
+    org = await create_org(client, owner_token, "operator-org-detail")
+    other_org = await create_org(
+        client,
+        other_owner_token,
+        "operator-org-detail-other",
+    )
+    await _activate_operator_capability(str(org["id"]))
+    await _activate_operator_capability(str(other_org["id"]))
+    created = await _post_project(client, str(org["id"]), owner_token)
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    owned = await client.get(
+        f"/v1/orgs/{org['id']}/projects/{project_id}",
+        headers=auth(owner_token),
+    )
+    cross_org = await client.get(
+        f"/v1/orgs/{other_org['id']}/projects/{project_id}",
+        headers=auth(other_owner_token),
+    )
+
+    assert owned.status_code == 200
+    assert owned.json()["operator_org_id"] == str(org["id"])
+    assert cross_org.status_code == 404
+
+
+async def test_org_owner_soft_deletes_untouched_open_project(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_context: None,
+) -> None:
+    """An org owner can hide an uncommenced Project from org reads."""
+    del migrated_database, org_project_context
+    owner_id = await create_user("delete-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "operator-org-delete")
+    await _activate_operator_capability(str(org["id"]))
+    created = await _post_project(client, str(org["id"]), owner_token)
+    project_id = created.json()["id"]
+
+    deleted = await client.delete(
+        f"/v1/orgs/{org['id']}/projects/{project_id}",
+        headers=auth(owner_token),
+    )
+
+    assert deleted.status_code == 204
+    detail = await client.get(
+        f"/v1/orgs/{org['id']}/projects/{project_id}",
+        headers=auth(owner_token),
+    )
+    assert detail.status_code == 404
+    listing = await client.get(
+        f"/v1/orgs/{org['id']}/projects",
+        headers=auth(owner_token),
+    )
+    assert listing.status_code == 200
+    assert listing.json()["projects"] == []
+
+
 async def test_org_project_list_forbidden_for_plain_member(
     client: AsyncClient,
     migrated_database: None,

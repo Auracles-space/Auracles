@@ -7,9 +7,14 @@
  */
 import {
   createProject, createOrgProject,
+  getProject, getOrgProject,
+  listProjectProposals, listOrgProjectProposals,
+  cancelAcceptance, cancelOrgAcceptance,
+  deleteProject, deleteOrgProject,
   acceptProposal, acceptOrgProposal,
   fundMilestone, fundOrgMilestone,
   approveDeliverable, approveOrgDeliverable,
+  requestDeliverableRevision, requestOrgDeliverableRevision,
   createDispute, createOrgDispute,
 } from "@/lib/generated/sdk.gen";
 import { configureBrowserClient, getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -30,6 +35,30 @@ export function projectApi(mode: ProjectApiMode) {
       mode.kind === "org"
         ? createOrgProject({ body: body as never, headers: headers(), path: { org_id: mode.orgId } })
         : createProject({ body: body as never, headers: headers() }),
+    getProject: (projectId: string) => {
+      const path = orgPath({ project_id: projectId }) as never;
+      return mode.kind === "org"
+        ? getOrgProject({ headers: headers(), path })
+        : getProject({ headers: headers(), path });
+    },
+    listProjectProposals: (projectId: string) => {
+      const path = orgPath({ project_id: projectId }) as never;
+      return mode.kind === "org"
+        ? listOrgProjectProposals({ headers: headers(), path })
+        : listProjectProposals({ headers: headers(), path });
+    },
+    cancelAcceptance: (projectId: string) => {
+      const path = orgPath({ project_id: projectId }) as never;
+      return mode.kind === "org"
+        ? cancelOrgAcceptance({ headers: headers(), path })
+        : cancelAcceptance({ headers: headers(), path });
+    },
+    deleteProject: (projectId: string) => {
+      const path = orgPath({ project_id: projectId }) as never;
+      return mode.kind === "org"
+        ? deleteOrgProject({ headers: headers(), path })
+        : deleteProject({ headers: headers(), path });
+    },
     acceptProposal: (projectId: string, proposalId: string) => {
       const path = orgPath({ project_id: projectId, proposal_id: proposalId }) as never;
       return mode.kind === "org"
@@ -50,6 +79,21 @@ export function projectApi(mode: ProjectApiMode) {
       return mode.kind === "org"
         ? approveOrgDeliverable({ headers: headers(), path })
         : approveDeliverable({ headers: headers(), path });
+    },
+    requestDeliverableRevision: (
+      projectId: string,
+      milestoneId: string,
+      deliverableId: string,
+      body: unknown,
+    ) => {
+      const path = orgPath({
+        project_id: projectId,
+        milestone_id: milestoneId,
+        deliverable_id: deliverableId,
+      }) as never;
+      return mode.kind === "org"
+        ? requestOrgDeliverableRevision({ body: body as never, headers: headers(), path })
+        : requestDeliverableRevision({ body: body as never, headers: headers(), path });
     },
     createDispute: (projectId: string, body: unknown) => {
       const path = orgPath({ project_id: projectId }) as never;
