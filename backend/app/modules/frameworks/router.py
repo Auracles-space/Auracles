@@ -783,6 +783,58 @@ async def set_org_framework_preview_artifact(
     )
 
 
+@org_router.post(
+    "/{framework_id}/artifacts/{artifact_id}/resolve-pii-review",
+    response_model=ArtifactResponse,
+    summary="Re-run PII review on an organization Framework artifact",
+    description=(
+        "Reset a replaced PII-flagged Artifact and re-run processing on an "
+        "organization-owned Framework for a member holding the contributor grant."
+    ),
+)
+async def resolve_org_framework_pii_review(
+    org_id: UUID,
+    framework_id: UUID,
+    artifact_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Re-run PII review for one organization-owned Framework Artifact."""
+    del org_id
+    return await service.resolve_pii_review_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/artifacts/{artifact_id}/accept-redaction",
+    response_model=ArtifactResponse,
+    summary="Accept a redacted copy on an organization Framework artifact",
+    description=(
+        "Accept a generated redacted Artifact copy and re-run processing on an "
+        "organization-owned Framework for a member holding the contributor grant."
+    ),
+)
+async def accept_org_framework_redaction(
+    org_id: UUID,
+    framework_id: UUID,
+    artifact_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Accept a redacted copy for one organization-owned Framework Artifact."""
+    del org_id
+    return await service.accept_redaction_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )
+
+
 @router.get("/{framework_id}/artifacts", response_model=list[ArtifactResponse])
 async def list_artifacts(
     framework_id: UUID,

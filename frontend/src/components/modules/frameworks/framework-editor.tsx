@@ -16,7 +16,6 @@ import { DelistButton } from "@/components/modules/frameworks/delist-button";
 import { RelistButton } from "@/components/modules/frameworks/relist-button";
 import { FrameworkForm } from "@/components/modules/frameworks/framework-form";
 import { FrameworkPricingForm } from "@/components/modules/frameworks/framework-pricing-form";
-import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-resolution";
 import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-status-panel";
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
 import { SoftFailAcknowledgement } from "@/components/modules/frameworks/soft-fail-acknowledgement";
@@ -403,11 +402,12 @@ export function FrameworkEditor({
           }
         />
         <PipelineStatusPanel
+          api={api}
           artifacts={artifacts}
           frameworkId={framework.id}
           frameworkStatus={framework.status}
+          onResolved={() => void loadWorkspace(true)}
         />
-        <PiiReviewResolution artifacts={artifacts} frameworkId={framework.id} />
         {hasRaritySoftFail ? (
           <SoftFailAcknowledgement frameworkId={framework.id} />
         ) : null}

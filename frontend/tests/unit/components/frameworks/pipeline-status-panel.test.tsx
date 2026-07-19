@@ -1,8 +1,15 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-status-panel";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
+
+/** Framework API adapter double for the panel's PII resolution actions. */
+const api = {
+  acceptRedaction: vi.fn(),
+  resolvePiiReview: vi.fn(),
+} as unknown as FrameworkApi;
 
 const baseArtifact: ArtifactResponse = {
   created_at: "2026-06-08T10:00:00Z",
@@ -32,6 +39,8 @@ describe("PipelineStatusPanel", () => {
         artifacts={[]}
         frameworkId="fw_123"
         frameworkStatus="draft"
+        api={api}
+        onResolved={vi.fn()}
       />,
     );
 
@@ -47,6 +56,8 @@ describe("PipelineStatusPanel", () => {
         artifacts={[baseArtifact]}
         frameworkId="fw_123"
         frameworkStatus="pipeline_passed"
+        api={api}
+        onResolved={vi.fn()}
       />,
     );
 
@@ -71,6 +82,8 @@ describe("PipelineStatusPanel", () => {
         ]}
         frameworkId="fw_123"
         frameworkStatus="pipeline_failed"
+        api={api}
+        onResolved={vi.fn()}
       />,
     );
 
@@ -91,6 +104,8 @@ describe("PipelineStatusPanel", () => {
         ]}
         frameworkId="fw_123"
         frameworkStatus="pipeline_failed"
+        api={api}
+        onResolved={vi.fn()}
       />,
     );
 
@@ -116,6 +131,8 @@ describe("PipelineStatusPanel", () => {
         ]}
         frameworkId="fw_123"
         frameworkStatus="pipeline_passed"
+        api={api}
+        onResolved={vi.fn()}
       />,
     );
 
@@ -124,6 +141,37 @@ describe("PipelineStatusPanel", () => {
     expect(screen.getByText(/4.50 average from 2 reviews/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Acknowledge notice" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the PII resolution dialog from the failed PII card", () => {
+    render(
+      <PipelineStatusPanel
+        artifacts={[
+          {
+            ...baseArtifact,
+            name: "flagged.pdf",
+            pii_detected: true,
+            pii_review_needed: true,
+            processing_status: "flagged_pii",
+          },
+        ]}
+        frameworkId="fw_123"
+        frameworkStatus="pipeline_failed"
+        api={api}
+        onResolved={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /resolve pii review/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /re-run pii review/i }),
     ).toBeInTheDocument();
   });
 });

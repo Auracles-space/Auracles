@@ -5965,6 +5965,96 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/{artifact_id}/resolve-pii-review:
+    post:
+      tags:
+      - Frameworks
+      summary: Re-run PII review on an organization Framework artifact
+      description: Reset a replaced PII-flagged Artifact and re-run processing on an
+        organization-owned Framework for a member holding the contributor grant.
+      operationId: resolve_org_framework_pii_review_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__resolve_pii_review_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/{artifact_id}/accept-redaction:
+    post:
+      tags:
+      - Frameworks
+      summary: Accept a redacted copy on an organization Framework artifact
+      description: Accept a generated redacted Artifact copy and re-run processing on
+        an organization-owned Framework for a member holding the contributor grant.
+      operationId: accept_org_framework_redaction_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__accept_redaction_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Artifact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/confirm:
     post:
       tags:

@@ -8,7 +8,9 @@
  */
 import { FormEvent, useState } from "react";
 
+import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-resolution";
 import { isLengthBetween } from "@/lib/forms/validators";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 import { formatFrameworkStatus } from "@/lib/marketplace/format";
 import { acknowledgeSimilarityNotice } from "@/lib/generated/sdk.gen";
 import type { ArtifactResponse, FrameworkResponse } from "@/lib/generated/types.gen";
@@ -22,6 +24,10 @@ type PipelineStatusPanelProps = {
   artifacts: ArtifactResponse[];
   frameworkId: string;
   frameworkStatus: FrameworkResponse["status"];
+  /** Seller-scoped Framework API adapter for the PII resolution actions. */
+  api: FrameworkApi;
+  /** Reload the workspace after a PII resolution succeeds. */
+  onResolved: () => void;
 };
 
 type PipelineCheck = {
@@ -137,6 +143,8 @@ export function PipelineStatusPanel({
   artifacts,
   frameworkId,
   frameworkStatus,
+  api,
+  onResolved,
 }: PipelineStatusPanelProps) {
   const checks = buildPipelineChecks(artifacts, frameworkStatus);
   const notices = artifacts.filter((artifact) => artifact.similarity_notice);
@@ -144,6 +152,7 @@ export function PipelineStatusPanel({
   const [noticeError, setNoticeError] = useState<string | null>(null);
   const [noticeSaved, setNoticeSaved] = useState(false);
   const [savingNotice, setSavingNotice] = useState(false);
+  const [piiOpen, setPiiOpen] = useState(false);
   const canAcknowledge = isLengthBetween(differentiationNote, 5, 1000);
 
   async function handleNoticeAcknowledgement(event: FormEvent<HTMLFormElement>) {
@@ -246,12 +255,32 @@ export function PipelineStatusPanel({
                   <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
                     {check.description}
                   </p>
+                  {check.label === "PII review" && isFail ? (
+                    <button
+                      className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl bg-error px-4 text-sm font-semibold text-background shadow-sm transition-colors hover:bg-error/90"
+                      onClick={() => setPiiOpen(true)}
+                      type="button"
+                    >
+                      Resolve PII review
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+      <PiiReviewResolution
+        api={api}
+        artifacts={artifacts}
+        frameworkId={frameworkId}
+        onClose={() => setPiiOpen(false)}
+        onResolved={() => {
+          setPiiOpen(false);
+          onResolved();
+        }}
+        open={piiOpen}
+      />
       {notices.length > 0 ? (
         <div className="mt-5 rounded-2xl border border-info/30 bg-info/10 p-4 shadow-sm">
           <p className="text-sm font-semibold text-info">

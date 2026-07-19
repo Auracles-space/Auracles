@@ -2,32 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PiiReviewResolution } from "@/components/modules/frameworks/pii-review-resolution";
-import {
-  acceptArtifactRedaction,
-  resolveArtifactPiiReview,
-} from "@/lib/generated/sdk.gen";
+import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
-
-const refresh = vi.fn();
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh }),
-}));
-
-vi.mock("@/lib/generated/sdk.gen", () => ({
-  acceptArtifactRedaction: vi.fn(),
-  client: {
-    interceptors: { response: { use: vi.fn() } },
-    setConfig: vi.fn(),
-  },
-  resolveArtifactPiiReview: vi.fn(),
-}));
-
-vi.mock("@/lib/auth/token-store", () => ({
-  authTokenStore: {
-    getState: () => ({ accessToken: "access-token" }),
-  },
-}));
 
 const baseArtifact: ArtifactResponse = {
   created_at: "2026-06-08T10:00:00Z",
@@ -48,24 +24,50 @@ const baseArtifact: ArtifactResponse = {
   redaction_status: "generated",
   scan_status: "clean",
   similarity_notice: null,
-};
+} as ArtifactResponse;
+
+/** Build a Framework API adapter double exposing only the PII actions used here. */
+function makeApi(overrides: Partial<FrameworkApi> = {}): FrameworkApi {
+  return {
+    acceptRedaction: vi.fn().mockResolvedValue(baseArtifact),
+    resolvePiiReview: vi.fn().mockResolvedValue(baseArtifact),
+    ...overrides,
+  } as unknown as FrameworkApi;
+}
 
 describe("PiiReviewResolution", () => {
   beforeEach(() => {
-    refresh.mockReset();
-    vi.mocked(acceptArtifactRedaction).mockReset();
-    vi.mocked(resolveArtifactPiiReview).mockReset();
+    vi.clearAllMocks();
   });
 
-  it("accepts a generated redacted copy without exposing storage details", async () => {
-    vi.mocked(acceptArtifactRedaction).mockResolvedValue({
-      data: { ...baseArtifact, pii_review_needed: false },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+  it("renders nothing when closed", () => {
+    const { container } = render(
+      <PiiReviewResolution
+        api={makeApi()}
+        artifacts={[baseArtifact]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open={false}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("accepts a generated redacted copy through the adapter, then reloads", async () => {
+    const api = makeApi();
+    const onResolved = vi.fn();
 
     render(
-      <PiiReviewResolution artifacts={[baseArtifact]} frameworkId="fw_123" />,
+      <PiiReviewResolution
+        api={api}
+        artifacts={[baseArtifact]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={onResolved}
+        open
+      />,
     );
 
     fireEvent.click(
@@ -73,20 +75,43 @@ describe("PiiReviewResolution", () => {
     );
 
     await waitFor(() => {
-      expect(acceptArtifactRedaction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          path: { artifact_id: "art_123", framework_id: "fw_123" },
-        }),
-      );
+      expect(api.acceptRedaction).toHaveBeenCalledWith("fw_123", "art_123");
     });
-    expect(resolveArtifactPiiReview).not.toHaveBeenCalled();
-    expect(refresh).toHaveBeenCalled();
+    expect(api.resolvePiiReview).not.toHaveBeenCalled();
+    expect(onResolved).toHaveBeenCalled();
     expect(screen.queryByText(/redacted\/a\.pdf/i)).not.toBeInTheDocument();
+  });
+
+  it("re-runs PII review through the adapter, then reloads", async () => {
+    const api = makeApi();
+    const onResolved = vi.fn();
+
+    render(
+      <PiiReviewResolution
+        api={api}
+        artifacts={[
+          { ...baseArtifact, redaction_available: false, redaction_status: null },
+        ]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={onResolved}
+        open
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /re-run pii review/i }));
+
+    await waitFor(() => {
+      expect(api.resolvePiiReview).toHaveBeenCalledWith("fw_123", "art_123");
+    });
+    expect(api.acceptRedaction).not.toHaveBeenCalled();
+    expect(onResolved).toHaveBeenCalled();
   });
 
   it("names the detected PII categories so the contributor knows what to remove", () => {
     render(
       <PiiReviewResolution
+        api={makeApi()}
         artifacts={[
           {
             ...baseArtifact,
@@ -96,6 +121,9 @@ describe("PiiReviewResolution", () => {
           },
         ]}
         frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open
       />,
     );
 
@@ -107,6 +135,7 @@ describe("PiiReviewResolution", () => {
   it("explains when automatic redaction could not be generated", () => {
     render(
       <PiiReviewResolution
+        api={makeApi()}
         artifacts={[
           {
             ...baseArtifact,
@@ -116,6 +145,9 @@ describe("PiiReviewResolution", () => {
           },
         ]}
         frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open
       />,
     );
 
@@ -127,14 +159,14 @@ describe("PiiReviewResolution", () => {
   it("keeps replacement rerun available when no redacted copy exists", () => {
     render(
       <PiiReviewResolution
+        api={makeApi()}
         artifacts={[
-          {
-            ...baseArtifact,
-            redaction_available: false,
-            redaction_status: null,
-          },
+          { ...baseArtifact, redaction_available: false, redaction_status: null },
         ]}
         frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open
       />,
     );
 

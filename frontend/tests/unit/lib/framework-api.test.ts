@@ -211,6 +211,79 @@ describe("frameworkApiFor", () => {
     );
   });
 
+  it("resolves org PII review through the organization endpoint", async () => {
+    vi.mocked(
+      sdk.resolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost,
+    ).mockResolvedValue({
+      data: { id: "artifact-1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "org", orgId: "org-1" }).resolvePiiReview(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(
+      sdk.resolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: {
+          org_id: "org-1",
+          framework_id: "framework-1",
+          artifact_id: "artifact-1",
+        },
+      }),
+    );
+  });
+
+  it("accepts an org redaction through the organization endpoint", async () => {
+    vi.mocked(
+      sdk.acceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPost,
+    ).mockResolvedValue({
+      data: { id: "artifact-1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "org", orgId: "org-1" }).acceptRedaction(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(
+      sdk.acceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: {
+          org_id: "org-1",
+          framework_id: "framework-1",
+          artifact_id: "artifact-1",
+        },
+      }),
+    );
+  });
+
+  it("resolves personal PII review through the personal endpoint", async () => {
+    vi.mocked(sdk.resolveArtifactPiiReview).mockResolvedValue({
+      data: { id: "artifact-1" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    await frameworkApiFor({ kind: "user" }).resolvePiiReview(
+      "framework-1",
+      "artifact-1",
+    );
+
+    expect(sdk.resolveArtifactPiiReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { framework_id: "framework-1", artifact_id: "artifact-1" },
+      }),
+    );
+  });
+
   it("preserves a backend capability grant denial as a safe error code", async () => {
     vi.mocked(
       sdk.listOrgFrameworksV1OrgsOrgIdFrameworksGet,

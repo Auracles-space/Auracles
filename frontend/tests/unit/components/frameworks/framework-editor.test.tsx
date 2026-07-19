@@ -524,8 +524,10 @@ describe("FrameworkEditor", () => {
 
       await vi.advanceTimersByTimeAsync(3000);
 
+      // The poll reflects the flagged state by surfacing the resolve action on
+      // the pipeline PII card (the resolution UI now lives behind that button).
       expect(
-        await screen.findByText("PII review required"),
+        await screen.findByRole("button", { name: /resolve pii review/i }),
       ).toBeInTheDocument();
     } finally {
       vi.useRealTimers();

@@ -2599,8 +2599,37 @@ async def resolve_pii_review(
     framework_id: UUID,
     artifact_id: UUID,
 ) -> ArtifactResponse:
-    """Reset a replaced PII Artifact and dispatch a fresh scan."""
-    framework = await _load_owned_framework(db, contributor, framework_id)
+    """Reset a replaced PII Artifact and dispatch a fresh scan.
+
+    Thin personal wrapper over :func:`resolve_pii_review_for_owner`; org callers
+    use the owner-aware function directly.
+    """
+    return await resolve_pii_review_for_owner(
+        db,
+        FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id,
+        artifact_id,
+    )
+
+
+async def resolve_pii_review_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Reset a replaced PII Artifact and dispatch a fresh scan.
+
+    Owner-aware counterpart to :func:`resolve_pii_review` that supports
+    organization-owned Frameworks (authoring gate) without weakening ownership.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
     if framework.status not in {"draft", "pipeline_failed"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -2623,7 +2652,7 @@ async def resolve_pii_review(
     framework.pipeline_failure_reasons = {}
     await write_audit(
         db=db,
-        actor_id=contributor.id,
+        actor_id=owner.actor_id,
         action="artifact_pii_review_resolved",
         target_type="artifact",
         target_id=artifact.id,
@@ -2641,8 +2670,37 @@ async def accept_redaction(
     framework_id: UUID,
     artifact_id: UUID,
 ) -> ArtifactResponse:
-    """Accept a generated redacted Artifact copy and re-run processing."""
-    framework = await _load_owned_framework(db, contributor, framework_id)
+    """Accept a generated redacted Artifact copy and re-run processing.
+
+    Thin personal wrapper over :func:`accept_redaction_for_owner`; org callers
+    use the owner-aware function directly.
+    """
+    return await accept_redaction_for_owner(
+        db,
+        FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id,
+        artifact_id,
+    )
+
+
+async def accept_redaction_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Accept a generated redacted Artifact copy and re-run processing.
+
+    Owner-aware counterpart to :func:`accept_redaction` that supports
+    organization-owned Frameworks (authoring gate) without weakening ownership.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
     artifact = await _load_owned_artifact(db, framework, artifact_id)
     metadata = dict(artifact.metadata_vector or {})
     redaction = dict(metadata.get("redaction") or {})
@@ -2665,7 +2723,7 @@ async def accept_redaction(
             "status": "accepted",
             "accepted": True,
             "accepted_at": datetime.now(UTC).isoformat(),
-            "accepted_by": str(contributor.id),
+            "accepted_by": str(owner.actor_id),
             "original_file_key": original_file_key,
             "clean_file_key": artifact.clean_file_key,
         }
@@ -2692,11 +2750,11 @@ async def accept_redaction(
         audit = ArtifactPiiAudit(artifact_id=artifact.id)
         db.add(audit)
     audit.flagged_for_review = False
-    audit.reviewed_by = contributor.id
+    audit.reviewed_by = owner.actor_id
     audit.reviewed_at = datetime.now(UTC)
     await write_audit(
         db=db,
-        actor_id=contributor.id,
+        actor_id=owner.actor_id,
         action="artifact_redaction_accepted",
         target_type="artifact",
         target_id=artifact.id,

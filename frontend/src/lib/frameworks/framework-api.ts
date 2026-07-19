@@ -77,6 +77,8 @@ export interface FrameworkApi {
     id: string,
     artifactId: string,
   ): Promise<FrameworkResponse>;
+  resolvePiiReview(id: string, artifactId: string): Promise<ArtifactResponse>;
+  acceptRedaction(id: string, artifactId: string): Promise<ArtifactResponse>;
   createArtifactUpload(
     id: string,
     body: ArtifactUploadUrlRequest,
@@ -228,6 +230,20 @@ function personalFrameworkApi(): FrameworkApi {
           path: { framework_id: id },
         }),
       ),
+    resolvePiiReview: (id, artifactId) =>
+      unwrap(
+        sdk.resolveArtifactPiiReview({
+          headers: authorizedHeaders(),
+          path: { framework_id: id, artifact_id: artifactId },
+        }),
+      ),
+    acceptRedaction: (id, artifactId) =>
+      unwrap(
+        sdk.acceptArtifactRedaction({
+          headers: authorizedHeaders(),
+          path: { framework_id: id, artifact_id: artifactId },
+        }),
+      ),
     createArtifactUpload: (id, body) =>
       unwrap(
         sdk.requestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPost(
@@ -356,6 +372,24 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
             body: { artifact_id: artifactId },
             headers: authorizedHeaders(),
             path: { ...orgPath, framework_id: id },
+          },
+        ),
+      ),
+    resolvePiiReview: (id, artifactId) =>
+      unwrap(
+        sdk.resolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost(
+          {
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id, artifact_id: artifactId },
+          },
+        ),
+      ),
+    acceptRedaction: (id, artifactId) =>
+      unwrap(
+        sdk.acceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPost(
+          {
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id, artifact_id: artifactId },
           },
         ),
       ),

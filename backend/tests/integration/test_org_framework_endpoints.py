@@ -670,6 +670,178 @@ async def test_org_set_preview_artifact_denied_for_plain_member(
     assert response.status_code == 403
 
 
+async def _seed_flagged_artifact(framework_id: str) -> str:
+    """Flag the seeded artifact for PII review and fail the Framework's gate.
+
+    Returns the flagged Artifact's id.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = await session.scalar(
+                select(Artifact).where(Artifact.framework_id == UUID(framework_id))
+            )
+            assert artifact is not None
+            artifact.processing_status = "flagged_pii"
+            artifact.pii_detected = True
+            artifact.pii_review_needed = True
+            framework = await session.get(Framework, UUID(framework_id))
+            assert framework is not None
+            framework.status = "pipeline_failed"
+            framework.pipeline_failure_reasons = {"pii": [str(artifact.id)]}
+            return str(artifact.id)
+
+
+async def test_org_member_can_resolve_pii_review(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A contributor-team member can re-run PII review on an org Framework.
+
+    Regression for the org authoring gap where resolve_pii_review routed
+    through the personal-ownership endpoint and 404'd on an org-owned Framework.
+    """
+    dispatched: list[str] = []
+
+    class FakeScanTask:
+        """Celery task double recording scan dispatches."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a scan dispatch instead of touching Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.scan_artifact",
+        FakeScanTask(),
+        raising=False,
+    )
+    owner_id = await create_user("org-pii-resolve-owner")
+    member_id = await create_user("org-pii-resolve-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-pii-resolve")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    artifact_id = await _seed_flagged_artifact(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}"
+        f"/artifacts/{artifact_id}/resolve-pii-review",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pii_review_needed"] is False
+    assert dispatched == [artifact_id]
+
+
+async def test_org_resolve_pii_review_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot resolve org PII review."""
+    owner_id = await create_user("org-pii-resolve-denied-owner")
+    member_id = await create_user("org-pii-resolve-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-pii-resolve-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    artifact_id = await _seed_flagged_artifact(framework_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}"
+        f"/artifacts/{artifact_id}/resolve-pii-review",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_org_member_can_accept_redaction(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A contributor-team member can accept a redacted copy on an org Framework."""
+    dispatched: list[str] = []
+
+    class FakeProcessTask:
+        """Celery task double recording processing dispatches."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a process dispatch instead of touching Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.process_artifact",
+        FakeProcessTask(),
+        raising=False,
+    )
+    owner_id = await create_user("org-redaction-owner")
+    member_id = await create_user("org-redaction-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-redaction")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+    artifact_id = await _seed_flagged_artifact(framework_id)
+    clean_file_key = f"frameworks/{framework_id}/artifacts/{artifact_id}/redacted/a.pdf"
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = await session.get(Artifact, UUID(artifact_id))
+            assert artifact is not None
+            artifact.clean_file_key = clean_file_key
+            artifact.metadata_vector = {
+                "redaction": {"status": "generated", "clean_file_key": clean_file_key}
+            }
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}"
+        f"/artifacts/{artifact_id}/accept-redaction",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pii_review_needed"] is False
+    assert dispatched == [artifact_id]
+
+
 async def test_org_relist_endpoint_admin(
     client: AsyncClient,
     org_framework_test_context: dict[str, Any],

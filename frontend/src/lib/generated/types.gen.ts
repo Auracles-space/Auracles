@@ -6304,6 +6304,30 @@ export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPrevie
 
 export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
 
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostResponse = (ArtifactResponse);
+
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostError = (HTTPValidationError);
+
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
+
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
+
 export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
     body: ArtifactConfirmRequest;
     path: {
